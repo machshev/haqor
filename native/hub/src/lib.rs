@@ -1,12 +1,13 @@
 //! This `hub` crate is the
 //! entry point of the Rust logic.
 
-mod actors;
+mod functions;
 mod signals;
 
-use actors::create_actors;
 use rinf::{dart_shutdown, write_interface};
 use tokio::spawn;
+
+use functions::get_verse_text;
 
 // Uncomment below to target the web.
 // use tokio_with_wasm::alias as tokio;
@@ -20,7 +21,7 @@ async fn main() {
     // Always use non-blocking async functions like `tokio::fs::File::open`.
     // If you must use blocking code, use `tokio::task::spawn_blocking`
     // or the equivalent provided by your async library.
-    spawn(create_actors());
+    spawn(get_verse_text());
 
     // Keep the main function running until Dart shutdown.
     dart_shutdown().await;
