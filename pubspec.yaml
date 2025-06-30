@@ -37,6 +37,7 @@ dependencies:
   rinf: ^8.6.0
   meta: ^1.16.0
   tuple: ^2.0.2
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:

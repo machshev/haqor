@@ -1,6 +1,7 @@
 import 'package:rinf/rinf.dart';
 import 'src/bindings/bindings.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 Future<void> main() async {
   await initializeRust(assignRustSignal);
@@ -33,7 +34,9 @@ class _MyHomePageState extends State<MyHomePage> {
   int _verse = 1;
 
   void _increment() {
-    setState(() {++_verse;});
+    setState(() {
+      ++_verse;
+    });
   }
 
   @override
@@ -46,13 +49,17 @@ class _MyHomePageState extends State<MyHomePage> {
           builder: (context, snapshot) {
             final signalPack = snapshot.data;
             if (signalPack == null) {
-              return Text('',
-              style: Theme.of(context).textTheme.headlineMedium,);
+              return Text('');
             }
             final verse = signalPack.message.text;
             return Text(
               verse.toString(),
-              style: Theme.of(context).textTheme.headlineMedium,
+              textDirection: TextDirection.rtl,
+              style: GoogleFonts.getFont(
+                "David Libre",
+                color: Colors.black,
+                decoration: TextDecoration.none,
+              ),
             );
           },
         ),
