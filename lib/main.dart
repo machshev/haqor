@@ -30,6 +30,12 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  int _verse = 1;
+
+  void _increment() {
+    setState(() {++_verse;});
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -40,7 +46,8 @@ class _MyHomePageState extends State<MyHomePage> {
           builder: (context, snapshot) {
             final signalPack = snapshot.data;
             if (signalPack == null) {
-              return Text('Nothing received yet');
+              return Text('',
+              style: Theme.of(context).textTheme.headlineMedium,);
             }
             final verse = signalPack.message.text;
             return Text(
@@ -51,7 +58,8 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
         ElevatedButton(
           onPressed: () async {
-            GetVerseText(book: 1, chapter: 1, verse: 1).sendSignalToRust();
+            GetVerseText(book: 1, chapter: 1, verse: _verse).sendSignalToRust();
+            _increment();
           },
           child: Text('Get Verse'),
         ),
