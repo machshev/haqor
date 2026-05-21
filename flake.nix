@@ -73,6 +73,8 @@
             lerc.dev
             libxkbcommon
             libepoxy
+            libGL
+            libGLU
 
             # If the dependencies need system libs, you usually need pkg-config + the lib
             openssl
@@ -96,6 +98,9 @@
           shellHook = ''
             export PATH=$PATH:''${CARGO_HOME:-~/.cargo}/bin
             export PATH=$PATH:''${RUSTUP_HOME:-~/.rustup}/toolchains/$RUSTC_VERSION-x86_64-unknown-linux-gnu/bin/
+            export LD_LIBRARY_PATH="/run/opengl-driver/lib:$LD_LIBRARY_PATH"
+            export __EGL_VENDOR_LIBRARY_DIRS="/run/opengl-driver/share/glvnd/egl_vendor.d"
+            export GDK_BACKEND=x11
           '';
 
           # Add precompiled library to rustc search path
