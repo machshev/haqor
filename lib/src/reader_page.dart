@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:rinf/rinf.dart';
 
 import 'bible_data.dart';
@@ -151,8 +150,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 children: [
                   Text(
                     book.hebrew,
-                    style: GoogleFonts.getFont(
-                      'David Libre',
+                    style: const TextStyle(
+                      fontFamily: 'Cardo',
+                      fontFamilyFallback: ['Noto Serif Hebrew'],
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                     ),

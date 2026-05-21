@@ -8,7 +8,14 @@ plugins {
 android {
     namespace = "com.example.haqor"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Use ANDROID_NDK_ROOT if set (e.g. from Nix devshell) to avoid SDK manager trying to install into read-only store
+    val ndkHome = System.getenv("ANDROID_NDK_ROOT")
+    if (!ndkHome.isNullOrEmpty()) {
+        ndkPath = ndkHome
+        ndkVersion = ndkHome.substringAfterLast("/")
+    } else {
+        ndkVersion = flutter.ndkVersion
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

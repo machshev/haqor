@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-
 import '../bindings/bindings.dart';
 
 class VerseRow extends StatelessWidget {
@@ -39,9 +37,11 @@ class VerseRow extends StatelessWidget {
               child: Text(
                 entry.text,
                 textDirection: TextDirection.rtl,
-                style: GoogleFonts.getFont(
-                  'David Libre',
+                style: TextStyle(
+                  fontFamily: 'Cardo',
+                  fontFamilyFallback: const ['Noto Serif Hebrew'],
                   fontSize: 20,
+                  fontWeight: FontWeight.w500,
                   height: 1.6,
                   color: isSelected
                       ? theme.colorScheme.onPrimaryContainer

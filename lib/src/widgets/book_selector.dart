@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-
 import '../bible_data.dart';
 
 class BookSelectorSheet extends StatelessWidget {
@@ -89,8 +87,9 @@ class _BookSectionHeader extends StatelessWidget {
         Text(
           hebrew,
           textDirection: TextDirection.rtl,
-          style: GoogleFonts.getFont(
-            'David Libre',
+          style: TextStyle(
+            fontFamily: 'Cardo',
+            fontFamilyFallback: const ['Noto Serif Hebrew'],
             fontSize: 13,
             fontWeight: FontWeight.bold,
             color: theme.colorScheme.primary,

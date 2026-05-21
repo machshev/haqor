@@ -1,7 +1,7 @@
 {
   description = "Haqor development environment";
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     flake-utils.url = "github:numtide/flake-utils";
   };
   outputs = {
@@ -18,11 +18,18 @@
           allowUnfree = true;
         };
       };
-      buildToolsVersion = "35.0.0";
+      ndkVersion = let
+        kt = builtins.readFile "${pkgs.flutter.unwrapped or pkgs.flutter}/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt";
+        lines = pkgs.lib.splitString "\n" kt;
+        ndkLine = pkgs.lib.findFirst (l: builtins.match ".*val ndkVersion.*" l != null) null lines;
+      in builtins.head (builtins.match "[^\"]*\"([0-9.]+)\".*" ndkLine);
       androidComposition = pkgs.androidenv.composeAndroidPackages {
-        buildToolsVersions = [buildToolsVersion "35.0.0"];
-        platformVersions = ["35"];
+        buildToolsVersions = ["34.0.0"];
+        platformVersions = ["34" "35" "36"];
+        cmakeVersions = ["3.22.1"];
         abiVersions = ["x86_64" "armeabi-v7a" "arm64-v8a"];
+        ndkVersions = [ndkVersion];
+        includeNDK = true;
         useGoogleAPIs = false;
         extraLicenses = [
           "android-googletv-license"
@@ -60,6 +67,7 @@
             llvmPackages.bintools
 
             # Linux target build deps
+            pango
             libsysprof-capture
             gtk3
             pcre2.dev
@@ -84,6 +92,7 @@
           # Flutter and Android SDK
           ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
           ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
+          ANDROID_NDK_ROOT = "${androidSdk}/libexec/android-sdk/ndk/${ndkVersion}";
           CHROME_EXECUTABLE = "google-chrome-stable";
           DART_ROOT = "${pkgs.flutter}/bin/cache/dart-sdk";
           FLUTTER_ROOT = pkgs.flutter;
@@ -101,6 +110,12 @@
             export LD_LIBRARY_PATH="/run/opengl-driver/lib:$LD_LIBRARY_PATH"
             export __EGL_VENDOR_LIBRARY_DIRS="/run/opengl-driver/share/glvnd/egl_vendor.d"
             export GDK_BACKEND=x11
+
+            # Write SDK/NDK paths into local.properties so Gradle finds them without trying to install
+            {
+              echo "sdk.dir=${androidSdk}/libexec/android-sdk"
+              echo "ndk.dir=${androidSdk}/libexec/android-sdk/ndk/${ndkVersion}"
+            } > "${toString ./.}/android/local.properties"
           '';
 
           # Add precompiled library to rustc search path
