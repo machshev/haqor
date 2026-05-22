@@ -8,6 +8,7 @@ import 'bindings/bindings.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
 import 'widgets/verse_row.dart';
+import 'widgets/word_info_sheet.dart';
 
 class BibleReaderPage extends StatefulWidget {
   const BibleReaderPage({super.key});
@@ -129,6 +130,16 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       setState(() => _chapter = result);
       _loadChapter();
     }
+  }
+
+  void _showWordInfo(String word) {
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => WordInfoSheet(word: word),
+    );
   }
 
   @override
@@ -260,6 +271,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                       onTap: () => setState(() {
                         _selectedVerse = isSelected ? null : entry.verse;
                       }),
+                      onWordTap: (word) => _showWordInfo(word),
                     );
                   },
                 ),

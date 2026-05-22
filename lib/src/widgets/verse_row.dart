@@ -8,16 +8,31 @@ class VerseRow extends StatelessWidget {
     required this.isSelected,
     required this.hebrewNumerals,
     required this.onTap,
+    required this.onWordTap,
   });
 
   final VerseEntry entry;
   final bool isSelected;
   final bool hebrewNumerals;
   final VoidCallback onTap;
+  final void Function(String word) onWordTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final wordStyle = TextStyle(
+      fontFamily: 'Cardo',
+      fontFamilyFallback: const ['Noto Serif Hebrew'],
+      fontSize: 20,
+      fontWeight: FontWeight.w500,
+      height: 1.6,
+      color: isSelected
+          ? theme.colorScheme.onPrimaryContainer
+          : theme.colorScheme.onSurface,
+    );
+
+    final words = entry.text.split(' ').where((w) => w.isNotEmpty).toList();
+
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -34,26 +49,30 @@ class VerseRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Text(
-                entry.text,
+              child: Wrap(
                 textDirection: TextDirection.rtl,
-                style: TextStyle(
-                  fontFamily: 'Cardo',
-                  fontFamilyFallback: const ['Noto Serif Hebrew'],
-                  fontSize: 20,
-                  fontWeight: FontWeight.w500,
-                  height: 1.6,
-                  color: isSelected
-                      ? theme.colorScheme.onPrimaryContainer
-                      : theme.colorScheme.onSurface,
-                ),
+                spacing: 4,
+                runSpacing: 2,
+                children: words.map((word) {
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onWordTap(word),
+                    child: Text(
+                      word,
+                      textDirection: TextDirection.rtl,
+                      style: wordStyle,
+                    ),
+                  );
+                }).toList(),
               ),
             ),
             const SizedBox(width: 8),
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                hebrewNumerals ? _toHebrewNumeral(entry.verse) : '${entry.verse}',
+                hebrewNumerals
+                    ? _toHebrewNumeral(entry.verse)
+                    : '${entry.verse}',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.primary,
                   fontWeight: FontWeight.bold,

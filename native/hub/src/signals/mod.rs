@@ -33,3 +33,30 @@ pub struct ChapterText {
     pub syriac: bool,
     pub verses: Vec<VerseEntry>,
 }
+
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetWordInfo {
+    pub word: String,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct BdbSummary {
+    pub headword: String,
+    pub gloss: String,
+}
+
+#[derive(Debug, Serialize, RustSignal)]
+pub struct WordInfo {
+    pub found: bool,
+    pub word: String,
+    pub consonants: String,
+    pub gloss: String,
+    pub gender: Option<String>,
+    pub number: Option<String>,
+    pub prefix: Option<String>,
+    pub suffix: Option<String>,
+    pub prepositions: Option<String>,
+    pub article: bool,
+    pub vav_con: bool,
+    pub bdb_entries: Vec<BdbSummary>,
+}
