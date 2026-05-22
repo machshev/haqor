@@ -84,6 +84,7 @@ pub async fn get_word_info() {
                     .map(|e| BdbSummary {
                         headword: e.headword,
                         gloss: e.gloss,
+                        content_json: e.content_json,
                     })
                     .collect();
                 WordInfo {

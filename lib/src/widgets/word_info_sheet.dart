@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
@@ -17,6 +18,7 @@ class WordInfoSheet extends StatefulWidget {
 class _WordInfoSheetState extends State<WordInfoSheet> {
   StreamSubscription<RustSignalPack<WordInfo>>? _sub;
   WordInfo? _info;
+  final Set<int> _expandedBdb = {};
 
   @override
   void initState() {
@@ -173,36 +175,70 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 8),
-          ...info.bdbEntries.map(
-            (e) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 4),
+          ...info.bdbEntries.indexed.map(
+            (entry) {
+              final (i, e) = entry;
+              final expanded = _expandedBdb.contains(i);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    e.headword,
-                    style: TextStyle(
-                      fontFamily: 'Cardo',
-                      fontFamilyFallback: const ['Noto Serif Hebrew'],
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                    textDirection: TextDirection.rtl,
-                  ),
-                  if (e.gloss.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '— ${e.gloss}',
-                        style: theme.textTheme.bodyMedium,
+                  InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () => setState(() {
+                      if (expanded) {
+                        _expandedBdb.remove(i);
+                      } else {
+                        _expandedBdb.add(i);
+                      }
+                    }),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Text(
+                            e.headword,
+                            style: TextStyle(
+                              fontFamily: 'Cardo',
+                              fontFamilyFallback: const ['Noto Serif Hebrew'],
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                            textDirection: TextDirection.rtl,
+                          ),
+                          if (e.gloss.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '— ${e.gloss}',
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ),
+                          ] else
+                            const Spacer(),
+                          Icon(
+                            expanded
+                                ? Icons.expand_less
+                                : Icons.expand_more,
+                            size: 18,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
+                  if (expanded && e.contentJson.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _BdbContent(
+                        contentJson: e.contentJson,
+                      ),
+                    ),
                 ],
-              ),
-            ),
+              );
+            },
           ),
         ],
         const SizedBox(height: 16),
@@ -238,5 +274,132 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
         ),
       ),
     );
+  }
+}
+
+class _BdbContent extends StatelessWidget {
+  const _BdbContent({required this.contentJson});
+
+  final String contentJson;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final Map<String, dynamic> data;
+    try {
+      data = jsonDecode(contentJson) as Map<String, dynamic>;
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+    final senses = data['senses'] as List<dynamic>? ?? [];
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: senses
+            .map<Widget>(
+              (s) => _buildSense(context, s as Map<String, dynamic>, 0),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _buildSense(
+    BuildContext context,
+    Map<String, dynamic> sense,
+    int depth,
+  ) {
+    final theme = Theme.of(context);
+    final num = sense['num'] as String?;
+    final form = sense['form'] as String?;
+    final definition = sense['definition'] as List<dynamic>?;
+    final subSenses = sense['senses'] as List<dynamic>?;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: depth * 12.0,
+        bottom: 4,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (form != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Text(
+                form,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          if (definition != null)
+            RichText(
+              text: TextSpan(
+                children: [
+                  if (num != null)
+                    TextSpan(
+                      text: '$num ',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ..._spansFromDefinition(context, definition),
+                ],
+              ),
+            ),
+          if (subSenses != null)
+            ...subSenses.map<Widget>(
+              (s) => _buildSense(
+                context,
+                s as Map<String, dynamic>,
+                depth + 1,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  List<InlineSpan> _spansFromDefinition(
+    BuildContext context,
+    List<dynamic> definition,
+  ) {
+    final theme = Theme.of(context);
+    final baseStyle = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurface,
+      height: 1.5,
+    );
+
+    return definition.map<InlineSpan>((spanData) {
+      final span = spanData as Map<String, dynamic>;
+      final text = span['t'] as String? ?? '';
+      final bold = span['b'] == true;
+      final italic = span['i'] == true;
+      final small = span['s'] == true;
+      final rtl = span['rtl'] == true;
+      final href = span['href'] as String?;
+
+      TextStyle style = (baseStyle ?? const TextStyle()).copyWith(
+        fontWeight: bold ? FontWeight.bold : null,
+        fontStyle: italic ? FontStyle.italic : null,
+        fontSize: small ? (baseStyle?.fontSize ?? 12) * 0.85 : null,
+        fontFamily: rtl ? 'Cardo' : null,
+        fontFamilyFallback: rtl ? const ['Noto Serif Hebrew'] : null,
+        color: href != null ? theme.colorScheme.primary : null,
+      );
+
+      return TextSpan(
+        text: text,
+        style: style,
+      );
+    }).toList();
   }
 }

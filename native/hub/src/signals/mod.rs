@@ -43,6 +43,7 @@ pub struct GetWordInfo {
 pub struct BdbSummary {
     pub headword: String,
     pub gloss: String,
+    pub content_json: String,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
