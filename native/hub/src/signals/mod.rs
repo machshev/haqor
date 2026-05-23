@@ -50,7 +50,7 @@ pub struct BdbSummary {
 pub struct WordInfo {
     pub found: bool,
     pub word: String,
-    pub consonants: String,
+    pub root: String,
     pub gloss: String,
     pub gender: Option<String>,
     pub number: Option<String>,

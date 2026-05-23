@@ -73,7 +73,7 @@ pub async fn get_word_info() {
         match bible.get_word_morphology(&lookup) {
             Ok(morph) => {
                 let bdb = bible
-                    .get_bdb_by_consonants(&morph.consonants)
+                    .lex_lookup(&req.word)
                     .unwrap_or_default();
                 let gloss = bdb
                     .first()
@@ -90,7 +90,7 @@ pub async fn get_word_info() {
                 WordInfo {
                     found: true,
                     word: morph.word,
-                    consonants: morph.consonants,
+                    root: morph.root,
                     gloss,
                     gender: morph.gender,
                     number: morph.number,
@@ -108,7 +108,7 @@ pub async fn get_word_info() {
                 WordInfo {
                     found: false,
                     word: req.word,
-                    consonants: String::new(),
+                    root: String::new(),
                     gloss: String::new(),
                     gender: None,
                     number: None,

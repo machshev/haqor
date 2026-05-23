@@ -22,7 +22,8 @@
         kt = builtins.readFile "${pkgs.flutter.unwrapped or pkgs.flutter}/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt";
         lines = pkgs.lib.splitString "\n" kt;
         ndkLine = pkgs.lib.findFirst (l: builtins.match ".*val ndkVersion.*" l != null) null lines;
-      in builtins.head (builtins.match "[^\"]*\"([0-9.]+)\".*" ndkLine);
+      in
+        builtins.head (builtins.match "[^\"]*\"([0-9.]+)\".*" ndkLine);
       androidComposition = pkgs.androidenv.composeAndroidPackages {
         buildToolsVersions = ["34.0.0"];
         platformVersions = ["34" "35" "36"];
