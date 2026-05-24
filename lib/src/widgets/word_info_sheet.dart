@@ -198,7 +198,12 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
 
     return ListView(
       controller: scrollController,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        4,
+        20,
+        4 + MediaQuery.viewPaddingOf(context).bottom,
+      ),
       children: [
         Row(
           crossAxisAlignment: CrossAxisAlignment.baseline,

@@ -306,9 +306,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           : _verses.isEmpty
               ? const Center(child: Text('No text found'))
               : ListView.builder(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    8,
+                    16,
+                    8 + MediaQuery.viewPaddingOf(context).bottom,
                   ),
                   itemCount: _verses.length,
                   itemBuilder: (context, i) {
