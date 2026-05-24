@@ -28,6 +28,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   int _bookIndex = 0;
   int _chapter = 1; // 1-based
   int? _selectedVerse; // 1-based verse number
+  int? _pendingVerse; // verse to select after next chapter load
   List<VerseEntry> _verses = [];
   bool _loading = true;
   // NT corpus: false = Hebrew (transliteration), true = Syriac (Peshitta)
@@ -46,6 +47,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         setState(() {
           _verses = pack.message.verses;
           _loading = false;
+          if (_pendingVerse != null) {
+            _selectedVerse = _pendingVerse;
+            _pendingVerse = null;
+          }
         });
       }
     });
@@ -166,7 +171,19 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => WordInfoSheet(word: word, syriac: _bookIndex >= 39),
+      builder: (ctx) => WordInfoSheet(
+        word: word,
+        syriac: _bookIndex >= 39,
+        onNavigateToPassage: (bookIndex, chapter, verse) {
+          Navigator.pop(ctx);
+          setState(() {
+            _bookIndex = bookIndex;
+            _chapter = chapter;
+            _pendingVerse = verse;
+          });
+          _loadChapter();
+        },
+      ),
     );
   }
 

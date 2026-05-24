@@ -1,16 +1,77 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
+import '../bible_data.dart';
+
+const Map<String, int> _kBdbBookToIndex = {
+  'Genesis': 0,
+  'Exodus': 1,
+  'Leviticus': 2,
+  'Numbers': 3,
+  'Deuteronomy': 4,
+  'Joshua': 5,
+  'Judges': 6,
+  'I Samuel': 7,
+  'II Samuel': 8,
+  'I Kings': 9,
+  'II Kings': 10,
+  'Isaiah': 11,
+  'Jeremiah': 12,
+  'Ezekiel': 13,
+  'Hosea': 14,
+  'Joel': 15,
+  'Amos': 16,
+  'Obadiah': 17,
+  'Jonah': 18,
+  'Micah': 19,
+  'Nahum': 20,
+  'Habakkuk': 21,
+  'Zephaniah': 22,
+  'Haggai': 23,
+  'Zechariah': 24,
+  'Malachi': 25,
+  'Psalms': 26,
+  'Proverbs': 27,
+  'Job': 28,
+  'Song of Songs': 29,
+  'Ruth': 30,
+  'Lamentations': 31,
+  'Ecclesiastes': 32,
+  'Esther': 33,
+  'Daniel': 34,
+  'Ezra': 35,
+  'Nehemiah': 36,
+  'I Chronicles': 37,
+  'II Chronicles': 38,
+};
+
+({int bookIndex, int chapter, int verse})? _parseBibleRef(String href) {
+  final match = RegExp(r'^(.+) (\d+):(\d+)$').firstMatch(href);
+  if (match == null) return null;
+  final bookName = match.group(1)!;
+  final chapter = int.tryParse(match.group(2)!) ?? 0;
+  final verse = int.tryParse(match.group(3)!) ?? 0;
+  final bookIndex = _kBdbBookToIndex[bookName];
+  if (bookIndex == null || chapter == 0 || verse == 0) return null;
+  return (bookIndex: bookIndex, chapter: chapter, verse: verse);
+}
 
 class WordInfoSheet extends StatefulWidget {
-  const WordInfoSheet({super.key, required this.word, required this.syriac});
+  const WordInfoSheet({
+    super.key,
+    required this.word,
+    required this.syriac,
+    this.onNavigateToPassage,
+  });
 
   final String word;
   final bool syriac;
+  final void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage;
 
   @override
   State<WordInfoSheet> createState() => _WordInfoSheetState();
@@ -20,7 +81,7 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
   StreamSubscription<RustSignalPack<WordInfo>>? _sub;
   WordInfo? _info;
   final Set<int> _expandedBdb = {};
-  bool _sedraExpanded = false;
+  bool _sedraExpanded = true;
 
   @override
   void initState() {
@@ -38,6 +99,27 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
   void dispose() {
     _sub?.cancel();
     super.dispose();
+  }
+
+  void _onBibleRefTap(BuildContext context, String href) {
+    final parsed = _parseBibleRef(href);
+    if (parsed == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => _BibleRefPreviewDialog(
+        displayRef: href,
+        bookIndex: parsed.bookIndex,
+        chapter: parsed.chapter,
+        verse: parsed.verse,
+        onNavigate: widget.onNavigateToPassage == null
+            ? null
+            : () => widget.onNavigateToPassage!(
+                parsed.bookIndex,
+                parsed.chapter,
+                parsed.verse,
+              ),
+      ),
+    );
   }
 
   @override
@@ -118,44 +200,40 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
       controller: scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
       children: [
-        // Hebrew word
-        Align(
-          alignment: Alignment.centerRight,
-          child: Text(
-            info.word,
-            style: TextStyle(
-              fontFamily: 'Cardo',
-              fontFamilyFallback: const ['Noto Serif Hebrew'],
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.onSurface,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            if (info.gloss.isNotEmpty)
+              Expanded(
+                child: Text(
+                  info.gloss,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              )
+            else
+              const Spacer(),
+            const SizedBox(width: 12),
+            Text(
+              info.word,
+              style: TextStyle(
+                fontFamily: 'Cardo',
+                fontFamilyFallback: const ['Noto Serif Hebrew'],
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurface,
+              ),
+              textDirection: TextDirection.rtl,
             ),
-            textDirection: TextDirection.rtl,
-          ),
-        ),
-        if (info.gloss.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(
-            info.gloss,
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: theme.colorScheme.primary,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
-        const SizedBox(height: 16),
-        const Divider(),
-        const SizedBox(height: 8),
-        Text(
-          'Morphology',
-          style: theme.textTheme.labelLarge?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+          ],
         ),
         const SizedBox(height: 8),
         Wrap(
-          spacing: 8,
-          runSpacing: 6,
+          spacing: 6,
+          runSpacing: 4,
           children: [
             if (info.gender != null) _chip(context, 'Gender', info.gender!),
             if (info.person != null) _chip(context, 'Person', info.person!),
@@ -172,7 +250,7 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
           ],
         ),
         if (info.bdbEntries.isNotEmpty) ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           const Divider(),
           const SizedBox(height: 8),
           Text(
@@ -240,6 +318,8 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
                       padding: const EdgeInsets.only(bottom: 8),
                       child: _BdbContent(
                         contentJson: e.contentJson,
+                        onBibleRefTap: (href) =>
+                            _onBibleRefTap(context, href),
                       ),
                     ),
                 ],
@@ -248,8 +328,6 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
           ),
         ],
         if (info.sedraEntries.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          const Divider(),
           const SizedBox(height: 8),
           InkWell(
             borderRadius: BorderRadius.circular(6),
@@ -354,9 +432,13 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
 }
 
 class _BdbContent extends StatelessWidget {
-  const _BdbContent({required this.contentJson});
+  const _BdbContent({
+    required this.contentJson,
+    required this.onBibleRefTap,
+  });
 
   final String contentJson;
+  final void Function(String href) onBibleRefTap;
 
   @override
   Widget build(BuildContext context) {
@@ -470,12 +552,118 @@ class _BdbContent extends StatelessWidget {
         fontFamily: rtl ? 'Cardo' : null,
         fontFamilyFallback: rtl ? const ['Noto Serif Hebrew'] : null,
         color: href != null ? theme.colorScheme.primary : null,
+        decoration: href != null ? TextDecoration.underline : null,
+        decorationColor: href != null ? theme.colorScheme.primary : null,
       );
 
-      return TextSpan(
-        text: text,
-        style: style,
-      );
+      if (href != null) {
+        final recognizer = TapGestureRecognizer()
+          ..onTap = () => onBibleRefTap(href);
+        return TextSpan(text: text, style: style, recognizer: recognizer);
+      }
+
+      return TextSpan(text: text, style: style);
     }).toList();
+  }
+}
+
+class _BibleRefPreviewDialog extends StatefulWidget {
+  const _BibleRefPreviewDialog({
+    required this.displayRef,
+    required this.bookIndex,
+    required this.chapter,
+    required this.verse,
+    this.onNavigate,
+  });
+
+  final String displayRef;
+  final int bookIndex;
+  final int chapter;
+  final int verse;
+  final VoidCallback? onNavigate;
+
+  @override
+  State<_BibleRefPreviewDialog> createState() =>
+      _BibleRefPreviewDialogState();
+}
+
+class _BibleRefPreviewDialogState extends State<_BibleRefPreviewDialog> {
+  StreamSubscription<RustSignalPack<VerseText>>? _sub;
+  String? _verseText;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = VerseText.rustSignalStream.listen((pack) {
+      if (mounted) {
+        setState(() => _verseText = pack.message.text);
+        _sub?.cancel();
+      }
+    });
+    GetVerseText(
+      book: widget.bookIndex + 1,
+      chapter: widget.chapter,
+      verse: widget.verse,
+    ).sendSignalToRust();
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final book = kBooks[widget.bookIndex];
+    return AlertDialog(
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            widget.displayRef,
+            style: theme.textTheme.titleMedium,
+          ),
+          Text(
+            '${book.transliteration} ${widget.chapter}:${widget.verse}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+      content: _verseText == null
+          ? const SizedBox(
+              height: 60,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          : Text(
+              _verseText!,
+              style: TextStyle(
+                fontFamily: 'Cardo',
+                fontFamilyFallback: const ['Noto Serif Hebrew'],
+                fontSize: 18,
+                height: 1.6,
+                color: theme.colorScheme.onSurface,
+              ),
+              textDirection: TextDirection.rtl,
+            ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+        if (widget.onNavigate != null)
+          FilledButton.tonal(
+            onPressed: () {
+              Navigator.pop(context);
+              widget.onNavigate!();
+            },
+            child: const Text('Go to passage'),
+          ),
+      ],
+    );
   }
 }
