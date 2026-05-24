@@ -1,4 +1,4 @@
-use crate::signals::{BdbSummary, ChapterText, GetChapter, GetVerseText, GetWordInfo, SedraSummary, VerseEntry, VerseText, WordInfo};
+use crate::signals::{BdbSummary, ChapterText, GetChapter, GetVerseText, GetWordInfo, SedraSummary, VerseEntry, VerseText, WordInfo, WordOccurrence};
 
 use rinf::{DartSignal, RustSignal, debug_print};
 use haqor_core::bible::Bible;
@@ -11,7 +11,7 @@ pub async fn get_verse_text() {
         let verse_ref = signal_pack.message;
         debug_print!("{:?}", verse_ref);
         match bible.get(verse_ref.book, verse_ref.chapter, verse_ref.verse) {
-            Ok(text) => VerseText { text }.send_signal_to_dart(),
+            Ok(text) => VerseText { book: verse_ref.book, chapter: verse_ref.chapter, verse: verse_ref.verse, text }.send_signal_to_dart(),
             Err(e) => debug_print!("get_verse_text error: {:?}", e),
         }
     }
@@ -59,6 +59,13 @@ fn strip_trope(word: &str) -> String {
                 && cp != 0x05C5
                 && cp != 0x05C6
         })
+        .collect()
+}
+
+fn to_signal_occurrences(occurrences: Vec<haqor_core::bible::WordOccurrence>) -> Vec<WordOccurrence> {
+    occurrences
+        .into_iter()
+        .map(|o| WordOccurrence { book: o.book, chapter: o.chapter, verse: o.verse })
         .collect()
 }
 
@@ -110,6 +117,8 @@ pub async fn get_word_info() {
                         state: morph.state,
                         tense: morph.tense,
                         form: morph.form,
+                        occurrences: Vec::new(),
+                        root_occurrences: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -133,6 +142,8 @@ pub async fn get_word_info() {
                         state: None,
                         tense: None,
                         form: None,
+                        occurrences: Vec::new(),
+                        root_occurrences: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -150,6 +161,12 @@ pub async fn get_word_info() {
                             content_json: e.content_json,
                         })
                         .collect();
+                    let occurrences = to_signal_occurrences(
+                        bible.word_occurrences(&lookup).unwrap_or_default(),
+                    );
+                    let root_occurrences = to_signal_occurrences(
+                        bible.word_occurrences_root(&morph.root).unwrap_or_default(),
+                    );
                     WordInfo {
                         found: true,
                         word: morph.word,
@@ -168,6 +185,8 @@ pub async fn get_word_info() {
                         state: None,
                         tense: None,
                         form: None,
+                        occurrences,
+                        root_occurrences,
                     }
                     .send_signal_to_dart();
                 }
@@ -191,6 +210,8 @@ pub async fn get_word_info() {
                         state: None,
                         tense: None,
                         form: None,
+                        occurrences: Vec::new(),
+                        root_occurrences: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }

@@ -82,6 +82,8 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
   WordInfo? _info;
   final Set<int> _expandedBdb = {};
   bool _sedraExpanded = true;
+  bool _occurrencesExpanded = false;
+  bool _rootOccurrencesExpanded = false;
 
   @override
   void initState() {
@@ -400,7 +402,85 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
             ),
           ],
         ],
+        if (info.occurrences.isNotEmpty)
+          _occurrenceSection(
+            context: context,
+            label: 'This form',
+            occurrences: info.occurrences,
+            expanded: _occurrencesExpanded,
+            onToggle: () =>
+                setState(() => _occurrencesExpanded = !_occurrencesExpanded),
+          ),
+        if (info.rootOccurrences.isNotEmpty)
+          _occurrenceSection(
+            context: context,
+            label: 'By root',
+            occurrences: info.rootOccurrences,
+            expanded: _rootOccurrencesExpanded,
+            onToggle: () => setState(
+                () => _rootOccurrencesExpanded = !_rootOccurrencesExpanded),
+          ),
         const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _occurrenceSection({
+    required BuildContext context,
+    required String label,
+    required List<WordOccurrence> occurrences,
+    required bool expanded,
+    required VoidCallback onToggle,
+  }) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 8),
+        InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: onToggle,
+          child: Row(
+            children: [
+              Text(
+                'Occurrences — $label (${occurrences.length})',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const Spacer(),
+              Icon(
+                expanded ? Icons.expand_less : Icons.expand_more,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+        if (expanded) ...[
+          const SizedBox(height: 4),
+          ...occurrences.map((o) {
+            final bookIndex = o.book - 1;
+            final bookName = bookIndex >= 0 && bookIndex < kBooks.length
+                ? kBooks[bookIndex].transliteration
+                : 'Book ${o.book}';
+            final ref = '$bookName ${o.chapter}:${o.verse}';
+            return _OccurrenceRow(
+              displayRef: ref,
+              bookIndex: bookIndex,
+              chapter: o.chapter,
+              verse: o.verse,
+              highlightWord: widget.word,
+              onTap: widget.onNavigateToPassage == null
+                  ? null
+                  : () => widget.onNavigateToPassage!(
+                        bookIndex,
+                        o.chapter,
+                        o.verse,
+                      ),
+            );
+          }),
+        ],
       ],
     );
   }
@@ -432,6 +512,139 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _OccurrenceRow extends StatefulWidget {
+  const _OccurrenceRow({
+    required this.displayRef,
+    required this.bookIndex,
+    required this.chapter,
+    required this.verse,
+    required this.highlightWord,
+    this.onTap,
+  });
+
+  final String displayRef;
+  final int bookIndex;
+  final int chapter;
+  final int verse;
+  final String highlightWord;
+  final VoidCallback? onTap;
+
+  @override
+  State<_OccurrenceRow> createState() => _OccurrenceRowState();
+}
+
+class _OccurrenceRowState extends State<_OccurrenceRow> {
+  StreamSubscription<RustSignalPack<VerseText>>? _sub;
+  String? _text;
+
+  @override
+  void initState() {
+    super.initState();
+    final targetBook = widget.bookIndex + 1;
+    _sub = VerseText.rustSignalStream.listen((pack) {
+      final msg = pack.message;
+      if (mounted &&
+          msg.book == targetBook &&
+          msg.chapter == widget.chapter &&
+          msg.verse == widget.verse) {
+        setState(() => _text = msg.text);
+        _sub?.cancel();
+      }
+    });
+    GetVerseText(
+      book: targetBook,
+      chapter: widget.chapter,
+      verse: widget.verse,
+    ).sendSignalToRust();
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  String _compactRef() {
+    final book = widget.bookIndex >= 0 && widget.bookIndex < kBooks.length
+        ? kBooks[widget.bookIndex]
+        : null;
+    if (book == null) return widget.displayRef;
+    return '${book.hebrew} ${widget.chapter}:${widget.verse}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final text = _text;
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: widget.onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (text == null)
+              SizedBox(
+                height: 20,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 1.5),
+                  ),
+                ),
+              )
+            else
+              _buildHighlightedText(context, text),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHighlightedText(BuildContext context, String text) {
+    final theme = Theme.of(context);
+    final baseStyle = TextStyle(
+      fontFamily: 'Cardo',
+      fontFamilyFallback: const ['Noto Serif Hebrew'],
+      fontSize: 15,
+      height: 1.5,
+      color: theme.colorScheme.onSurface,
+    );
+    final refStyle = TextStyle(
+      fontFamily: 'Cardo',
+      fontFamilyFallback: const ['Noto Serif Hebrew'],
+      fontSize: 12,
+      color: theme.colorScheme.primary,
+    );
+    final strippedTarget = _stripTrope(widget.highlightWord);
+    final tokens = text.split(' ');
+    final spans = <InlineSpan>[];
+    for (var i = 0; i < tokens.length; i++) {
+      if (i > 0) spans.add(const TextSpan(text: ' '));
+      final token = tokens[i];
+      if (_stripTrope(token) == strippedTarget) {
+        spans.add(TextSpan(
+          text: token,
+          style: baseStyle.copyWith(
+            backgroundColor: theme.colorScheme.primaryContainer,
+            color: theme.colorScheme.onPrimaryContainer,
+          ),
+        ));
+      } else {
+        spans.add(TextSpan(text: token, style: baseStyle));
+      }
+    }
+    spans.insert(0, TextSpan(text: '${_compactRef()}  ', style: refStyle));
+    return RichText(
+      text: TextSpan(children: spans),
+      textDirection: TextDirection.rtl,
     );
   }
 }
@@ -572,6 +785,22 @@ class _BdbContent extends StatelessWidget {
   }
 }
 
+
+String _stripTrope(String word) {
+  return String.fromCharCodes(
+    word.runes.where((cp) {
+      return !((cp >= 0x0591 && cp <= 0x05AF) ||
+          cp == 0x05BD ||
+          cp == 0x05BE ||
+          cp == 0x05C0 ||
+          cp == 0x05C3 ||
+          cp == 0x05C4 ||
+          cp == 0x05C5 ||
+          cp == 0x05C6);
+    }),
+  );
+}
+
 class _BibleRefPreviewDialog extends StatefulWidget {
   const _BibleRefPreviewDialog({
     required this.displayRef,
@@ -599,14 +828,19 @@ class _BibleRefPreviewDialogState extends State<_BibleRefPreviewDialog> {
   @override
   void initState() {
     super.initState();
+    final targetBook = widget.bookIndex + 1;
     _sub = VerseText.rustSignalStream.listen((pack) {
-      if (mounted) {
-        setState(() => _verseText = pack.message.text);
+      final msg = pack.message;
+      if (mounted &&
+          msg.book == targetBook &&
+          msg.chapter == widget.chapter &&
+          msg.verse == widget.verse) {
+        setState(() => _verseText = msg.text);
         _sub?.cancel();
       }
     });
     GetVerseText(
-      book: widget.bookIndex + 1,
+      book: targetBook,
       chapter: widget.chapter,
       verse: widget.verse,
     ).sendSignalToRust();
@@ -644,17 +878,7 @@ class _BibleRefPreviewDialogState extends State<_BibleRefPreviewDialog> {
               height: 60,
               child: Center(child: CircularProgressIndicator()),
             )
-          : Text(
-              _verseText!,
-              style: TextStyle(
-                fontFamily: 'Cardo',
-                fontFamilyFallback: const ['Noto Serif Hebrew'],
-                fontSize: 18,
-                height: 1.6,
-                color: theme.colorScheme.onSurface,
-              ),
-              textDirection: TextDirection.rtl,
-            ),
+          : _buildVerseText(context, _verseText!),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
@@ -669,6 +893,20 @@ class _BibleRefPreviewDialogState extends State<_BibleRefPreviewDialog> {
             child: const Text('Go to passage'),
           ),
       ],
+    );
+  }
+
+  Widget _buildVerseText(BuildContext context, String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontFamily: 'Cardo',
+        fontFamilyFallback: const ['Noto Serif Hebrew'],
+        fontSize: 18,
+        height: 1.6,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
+      textDirection: TextDirection.rtl,
     );
   }
 }

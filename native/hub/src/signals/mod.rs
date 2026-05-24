@@ -10,6 +10,9 @@ pub struct GetVerseText {
 
 #[derive(Debug, Serialize, RustSignal)]
 pub struct VerseText {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
     pub text: String,
 }
 
@@ -53,6 +56,13 @@ pub struct SedraSummary {
     pub meaning: String,
 }
 
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct WordOccurrence {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+}
+
 #[derive(Debug, Serialize, RustSignal)]
 pub struct WordInfo {
     pub found: bool,
@@ -72,4 +82,6 @@ pub struct WordInfo {
     pub state: Option<String>,
     pub tense: Option<String>,
     pub form: Option<String>,
+    pub occurrences: Vec<WordOccurrence>,
+    pub root_occurrences: Vec<WordOccurrence>,
 }
