@@ -40,7 +40,7 @@ class ChapterSelectorSheet extends StatelessWidget {
     final fontSize = (tileSize * 0.38).clamp(9.0, 16.0);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+      padding: EdgeInsets.fromLTRB(12, 8, 12, 16 + MediaQuery.viewPaddingOf(context).bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
