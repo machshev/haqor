@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bible_data.dart';
 import 'bindings/bindings.dart';
@@ -18,6 +19,11 @@ class BibleReaderPage extends StatefulWidget {
 }
 
 class _BibleReaderPageState extends State<BibleReaderPage> {
+  static const _kBook = 'book';
+  static const _kChapter = 'chapter';
+  static const _kNtSyriac = 'nt_syriac';
+  static const _kHebrewNumerals = 'hebrew_numerals';
+
   // book index is 0-based in kBooks, but the DB uses 1-based book numbers
   int _bookIndex = 0;
   int _chapter = 1; // 1-based
@@ -43,7 +49,28 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         });
       }
     });
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _bookIndex = (prefs.getInt(_kBook) ?? 0).clamp(0, kBooks.length - 1);
+      _chapter = (prefs.getInt(_kChapter) ?? 1).clamp(1, kBooks[_bookIndex].chapters);
+      _ntSyriac = prefs.getBool(_kNtSyriac) ?? false;
+      _hebrewNumerals = prefs.getBool(_kHebrewNumerals) ?? true;
+    });
     _loadChapter();
+  }
+
+  Future<void> _savePrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await Future.wait([
+      prefs.setInt(_kBook, _bookIndex),
+      prefs.setInt(_kChapter, _chapter),
+      prefs.setBool(_kNtSyriac, _ntSyriac),
+      prefs.setBool(_kHebrewNumerals, _hebrewNumerals),
+    ]);
   }
 
   @override
@@ -61,6 +88,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _selectedVerse = null;
       _verses = [];
     });
+    _savePrefs();
     GetChapter(
       book: _bookIndex + 1,
       chapter: _chapter,
@@ -211,10 +239,15 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 final useSyriac = value == 'syriac';
                 if (useSyriac != _ntSyriac) {
                   setState(() => _ntSyriac = useSyriac);
-                  if (_bookIndex >= 39) _loadChapter();
+                  if (_bookIndex >= 39) {
+                    _loadChapter(); // saves prefs
+                  } else {
+                    _savePrefs();
+                  }
                 }
               } else if (value == 'numeral_hebrew' || value == 'numeral_english') {
                 setState(() => _hebrewNumerals = value == 'numeral_hebrew');
+                _savePrefs();
               }
             },
             itemBuilder: (ctx) => [
