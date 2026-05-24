@@ -166,7 +166,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => WordInfoSheet(word: word),
+      builder: (ctx) => WordInfoSheet(word: word, syriac: _bookIndex >= 39),
     );
   }
 

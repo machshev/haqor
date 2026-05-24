@@ -37,6 +37,7 @@ pub struct ChapterText {
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetWordInfo {
     pub word: String,
+    pub syriac: bool,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]
@@ -44,6 +45,12 @@ pub struct BdbSummary {
     pub headword: String,
     pub gloss: String,
     pub content_json: String,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SedraSummary {
+    pub lexeme: String,
+    pub meaning: String,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
@@ -60,4 +67,9 @@ pub struct WordInfo {
     pub article: bool,
     pub vav_con: bool,
     pub bdb_entries: Vec<BdbSummary>,
+    pub sedra_entries: Vec<SedraSummary>,
+    pub person: Option<String>,
+    pub state: Option<String>,
+    pub tense: Option<String>,
+    pub form: Option<String>,
 }

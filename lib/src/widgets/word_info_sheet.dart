@@ -7,9 +7,10 @@ import 'package:rinf/rinf.dart';
 import '../bindings/bindings.dart';
 
 class WordInfoSheet extends StatefulWidget {
-  const WordInfoSheet({super.key, required this.word});
+  const WordInfoSheet({super.key, required this.word, required this.syriac});
 
   final String word;
+  final bool syriac;
 
   @override
   State<WordInfoSheet> createState() => _WordInfoSheetState();
@@ -19,6 +20,7 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
   StreamSubscription<RustSignalPack<WordInfo>>? _sub;
   WordInfo? _info;
   final Set<int> _expandedBdb = {};
+  bool _sedraExpanded = false;
 
   @override
   void initState() {
@@ -29,7 +31,7 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
         _sub?.cancel();
       }
     });
-    GetWordInfo(word: widget.word).sendSignalToRust();
+    GetWordInfo(word: widget.word, syriac: widget.syriac).sendSignalToRust();
   }
 
   @override
@@ -156,7 +158,11 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
           runSpacing: 6,
           children: [
             if (info.gender != null) _chip(context, 'Gender', info.gender!),
+            if (info.person != null) _chip(context, 'Person', info.person!),
             if (info.number != null) _chip(context, 'Number', info.number!),
+            if (info.state != null) _chip(context, 'State', info.state!),
+            if (info.tense != null) _chip(context, 'Tense', info.tense!),
+            if (info.form != null) _chip(context, 'Form', info.form!),
             if (info.prefix != null) _chip(context, 'Prefix', info.prefix!),
             if (info.suffix != null) _chip(context, 'Suffix', info.suffix!),
             if (info.prepositions != null)
@@ -240,6 +246,76 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
               );
             },
           ),
+        ],
+        if (info.sedraEntries.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 8),
+          InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () => setState(() => _sedraExpanded = !_sedraExpanded),
+            child: Row(
+              children: [
+                Text(
+                  'Sedra Lexicon',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const Spacer(),
+                Icon(
+                  _sedraExpanded ? Icons.expand_less : Icons.expand_more,
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+          if (_sedraExpanded) ...[
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest
+                    .withOpacity(0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: info.sedraEntries.map((e) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          e.lexeme,
+                          style: TextStyle(
+                            fontFamily: 'Cardo',
+                            fontFamilyFallback: const ['Noto Serif Hebrew'],
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                          textDirection: TextDirection.rtl,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            e.meaning,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
         ],
         const SizedBox(height: 16),
       ],
