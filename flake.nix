@@ -117,6 +117,16 @@
               echo "sdk.dir=${androidSdk}/libexec/android-sdk"
               echo "ndk.dir=${androidSdk}/libexec/android-sdk/ndk/${ndkVersion}"
             } > "${toString ./.}/android/local.properties"
+
+            # rinf_cli is not in nixpkgs — install via cargo if missing
+            # The CLI version should match the rinf pub package (currently ^8.6.0)
+            if ! command -v rinf &>/dev/null; then
+              echo "Installing rinf_cli..."
+              cargo install rinf_cli
+            fi
+
+            # Regenerate Dart signal bindings from Rust structs (lib/src/bindings/ is gitignored)
+            rinf gen
           '';
 
           # Add precompiled library to rustc search path
