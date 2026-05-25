@@ -11,6 +11,19 @@ import 'widgets/chapter_selector.dart';
 import 'widgets/verse_row.dart';
 import 'widgets/word_info_sheet.dart';
 
+class _Section {
+  final int bookIndex; // 0-based
+  final int chapter; // 1-based
+  final List<VerseEntry> verses;
+  final GlobalKey key;
+
+  _Section({
+    required this.bookIndex,
+    required this.chapter,
+    required this.verses,
+  }) : key = GlobalKey();
+}
+
 class BibleReaderPage extends StatefulWidget {
   const BibleReaderPage({super.key});
 
@@ -28,53 +41,167 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   static const _fontFamilies = ['Cardo', 'David Libre', 'Frank Ruhl Libre'];
 
-  // book index is 0-based in kBooks, but the DB uses 1-based book numbers
+  // Displayed in AppBar — tracks the chapter currently at the top of the viewport
   int _bookIndex = 0;
-  int _chapter = 1; // 1-based
-  int? _selectedVerse; // 1-based verse number
-  int? _pendingVerse; // verse to select after next chapter load
-  List<VerseEntry> _verses = [];
-  bool _loading = true;
-  // NT corpus: false = Hebrew (transliteration), true = Syriac (Peshitta)
+  int _chapter = 1;
+
+  // Selected verse (across any section)
+  int? _selectedBook;
+  int? _selectedChapter;
+  int? _selectedVerse;
+  int? _pendingVerse;
+
+  final List<_Section> _sections = [];
+  final Set<(int, int)> _pendingFetches = {}; // (1-based book, chapter)
+  bool _initialLoading = true;
+  bool _loadingNext = false;
+  bool _loadingPrev = false;
+
   bool _ntSyriac = false;
   bool _hebrewNumerals = true;
   double _fontSize = 20.0;
   String _fontFamily = 'Cardo';
 
   StreamSubscription<RustSignalPack<ChapterText>>? _sub;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _sub = ChapterText.rustSignalStream.listen((pack) {
-      if (pack.message.book == _bookIndex + 1 &&
-          pack.message.chapter == _chapter &&
-          pack.message.syriac == _activeSyriac) {
-        setState(() {
-          _verses = pack.message.verses;
-          _loading = false;
-          if (_pendingVerse != null) {
-            _selectedVerse = _pendingVerse;
-            _pendingVerse = null;
-          }
-        });
+      final msg = pack.message;
+      final fetchKey = (msg.book, msg.chapter);
+      if (!_pendingFetches.contains(fetchKey)) return;
+      if (msg.syriac != _isSyriac(msg.book - 1)) return;
+      _pendingFetches.remove(fetchKey);
+
+      final bookIdx = msg.book - 1;
+      // Ignore stale duplicate responses for chapters already loaded.
+      if (_sections.any((s) => s.bookIndex == bookIdx && s.chapter == msg.chapter)) {
+        return;
+      }
+      final goesOnTop = _sections.isNotEmpty &&
+          (bookIdx < _sections.first.bookIndex ||
+              (bookIdx == _sections.first.bookIndex &&
+                  msg.chapter < _sections.first.chapter));
+
+      final section = _Section(
+        bookIndex: bookIdx,
+        chapter: msg.chapter,
+        verses: msg.verses,
+      );
+
+      if (_pendingVerse != null &&
+          bookIdx == _bookIndex &&
+          msg.chapter == _chapter) {
+        _selectedBook = bookIdx;
+        _selectedChapter = msg.chapter;
+        _selectedVerse = _pendingVerse;
+        _pendingVerse = null;
+      }
+
+      if (goesOnTop) {
+        _prependSection(section);
+      } else {
+        _appendSection(section);
       }
     });
     _loadPrefs();
+  }
+
+  bool _isSyriac(int bookIndex) => bookIndex >= 39 && _ntSyriac;
+
+  // Appends a section at the bottom; evicts the top section first if over limit.
+  void _appendSection(_Section section) {
+    if (_sections.length >= 3) {
+      // Evict top section (content above viewport shrinks → compensate scroll).
+      final oldOffset =
+          _scrollController.hasClients ? _scrollController.offset : 0.0;
+      final oldExtent = _scrollController.hasClients
+          ? _scrollController.position.maxScrollExtent
+          : 0.0;
+      setState(() {
+        _sections.removeAt(0);
+        _initialLoading = false;
+        // Keep _loadingNext = true until the section actually lands.
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        final removedHeight =
+            oldExtent - _scrollController.position.maxScrollExtent;
+        _scrollController.jumpTo(
+          (oldOffset - removedHeight)
+              .clamp(0.0, _scrollController.position.maxScrollExtent),
+        );
+        setState(() {
+          _sections.add(section);
+          _loadingNext = false;
+        });
+      });
+    } else {
+      setState(() {
+        _sections.add(section);
+        _initialLoading = false;
+        _loadingNext = false;
+      });
+    }
+  }
+
+  // Prepends a section at the top; evicts the bottom section first if over
+  // limit (no scroll compensation needed for bottom eviction), then compensates
+  // for the content inserted above the current viewport position.
+  void _prependSection(_Section section) {
+    if (_sections.length >= 3) {
+      // Evict bottom first (scroll unaffected).
+      // Keep _loadingPrev = true until _doPrepend adds the section.
+      setState(() {
+        _sections.removeLast();
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _doPrepend(section);
+      });
+    } else {
+      _doPrepend(section);
+    }
+  }
+
+  void _doPrepend(_Section section) {
+    final oldOffset =
+        _scrollController.hasClients ? _scrollController.offset : 0.0;
+    final oldExtent = _scrollController.hasClients
+        ? _scrollController.position.maxScrollExtent
+        : 0.0;
+    setState(() {
+      _sections.insert(0, section);
+      _initialLoading = false;
+      _loadingPrev = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final addedHeight =
+          _scrollController.position.maxScrollExtent - oldExtent;
+      _scrollController.jumpTo(
+        (oldOffset + addedHeight)
+            .clamp(0.0, _scrollController.position.maxScrollExtent),
+      );
+    });
   }
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _bookIndex = (prefs.getInt(_kBook) ?? 0).clamp(0, kBooks.length - 1);
-      _chapter = (prefs.getInt(_kChapter) ?? 1).clamp(1, kBooks[_bookIndex].chapters);
+      _chapter =
+          (prefs.getInt(_kChapter) ?? 1).clamp(1, kBooks[_bookIndex].chapters);
       _ntSyriac = prefs.getBool(_kNtSyriac) ?? false;
       _hebrewNumerals = prefs.getBool(_kHebrewNumerals) ?? true;
       _fontSize = (prefs.getDouble(_kFontSize) ?? 20.0).clamp(16.0, 28.0);
       final savedFamily = prefs.getString(_kFontFamily) ?? 'Cardo';
       _fontFamily = _fontFamilies.contains(savedFamily) ? savedFamily : 'Cardo';
     });
-    _loadChapter();
+    _startAt(_bookIndex, _chapter);
   }
 
   Future<void> _savePrefs() async {
@@ -89,59 +216,111 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     ]);
   }
 
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
+  void _startAt(int bookIndex, int chapter) {
+    setState(() {
+      _sections.clear();
+      _pendingFetches.clear();
+      _bookIndex = bookIndex;
+      _chapter = chapter;
+      _initialLoading = true;
+      _loadingNext = false;
+      _loadingPrev = false;
+      _selectedBook = null;
+      _selectedChapter = null;
+      _selectedVerse = null;
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+    _savePrefs();
+    _fetchChapter(bookIndex, chapter);
   }
 
-  // Only NT books (index >= 39) can use Syriac
-  bool get _activeSyriac => _bookIndex >= 39 && _ntSyriac;
-
-  void _loadChapter() {
-    setState(() {
-      _loading = true;
-      _selectedVerse = null;
-      _verses = [];
-    });
-    _savePrefs();
+  void _fetchChapter(int bookIndex, int chapter) {
+    final key = (bookIndex + 1, chapter);
+    if (_pendingFetches.contains(key)) return;
+    if (_sections.any((s) => s.bookIndex == bookIndex && s.chapter == chapter)) {
+      return;
+    }
+    _pendingFetches.add(key);
     GetChapter(
-      book: _bookIndex + 1,
-      chapter: _chapter,
-      syriac: _activeSyriac,
+      book: bookIndex + 1,
+      chapter: chapter,
+      syriac: _isSyriac(bookIndex),
     ).sendSignalToRust();
   }
 
-  void _prevChapter() {
-    if (_chapter > 1) {
-      setState(() => _chapter--);
-      _loadChapter();
-    } else if (_bookIndex > 0) {
-      setState(() {
-        _bookIndex--;
-        _chapter = kBooks[_bookIndex].chapters;
-      });
-      _loadChapter();
+  void _onScroll() {
+    _updateCurrentChapter();
+    if (!_scrollController.hasClients || _sections.isEmpty) return;
+    final pixels = _scrollController.position.pixels;
+    final maxExtent = _scrollController.position.maxScrollExtent;
+    if (!_loadingPrev && pixels <= 800) {
+      _maybeLoadPrev();
+    }
+    if (!_loadingNext && pixels >= maxExtent - 800) {
+      _maybeLoadNext();
     }
   }
 
-  void _nextChapter() {
-    if (_chapter < kBooks[_bookIndex].chapters) {
-      setState(() => _chapter++);
-      _loadChapter();
-    } else if (_bookIndex < kBooks.length - 1) {
-      setState(() {
-        _bookIndex++;
-        _chapter = 1;
-      });
-      _loadChapter();
+  void _maybeLoadNext() {
+    if (_sections.isEmpty) return;
+    final last = _sections.last;
+    var nextBook = last.bookIndex;
+    var nextChapter = last.chapter + 1;
+    if (nextChapter > kBooks[nextBook].chapters) {
+      nextBook++;
+      nextChapter = 1;
+    }
+    if (nextBook >= kBooks.length) return;
+    setState(() => _loadingNext = true);
+    _fetchChapter(nextBook, nextChapter);
+  }
+
+  void _maybeLoadPrev() {
+    if (_sections.isEmpty) return;
+    final first = _sections.first;
+    var prevBook = first.bookIndex;
+    var prevChapter = first.chapter - 1;
+    if (prevChapter < 1) {
+      prevBook--;
+      if (prevBook < 0) return; // already at Genesis 1
+      prevChapter = kBooks[prevBook].chapters;
+    }
+    setState(() => _loadingPrev = true);
+    _fetchChapter(prevBook, prevChapter);
+  }
+
+  void _updateCurrentChapter() {
+    if (!mounted || _sections.isEmpty) return;
+    final appBarBottom = kToolbarHeight + MediaQuery.of(context).padding.top;
+    for (int i = _sections.length - 1; i >= 0; i--) {
+      final ctx = _sections[i].key.currentContext;
+      if (ctx == null) continue;
+      final box = ctx.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached) continue;
+      final y = box.localToGlobal(Offset.zero).dy;
+      if (y <= appBarBottom + 8) {
+        final b = _sections[i].bookIndex;
+        final c = _sections[i].chapter;
+        if (_bookIndex != b || _chapter != c) {
+          setState(() {
+            _bookIndex = b;
+            _chapter = c;
+          });
+          _savePrefs();
+        }
+        return;
+      }
     }
   }
 
-  bool get _hasPrev => _bookIndex > 0 || _chapter > 1;
-  bool get _hasNext =>
-      _bookIndex < kBooks.length - 1 ||
-      _chapter < kBooks[_bookIndex].chapters;
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _sub?.cancel();
+    super.dispose();
+  }
 
   Future<void> _showBookSelector() async {
     final result = await showModalBottomSheet<int>(
@@ -150,39 +329,40 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       isScrollControlled: true,
       builder: (ctx) => BookSelectorSheet(currentIndex: _bookIndex),
     );
-    if (result != null && result != _bookIndex) {
-      setState(() {
-        _bookIndex = result;
-        _chapter = 1;
-      });
-      if (kBooks[result].chapters > 1) {
-        await _showChapterSelector(alwaysLoad: true);
-      } else {
-        _loadChapter();
-      }
+    if (result == null || result == _bookIndex) return;
+    int newChapter = 1;
+    if (kBooks[result].chapters > 1) {
+      if (!mounted) return;
+      final picked = await showModalBottomSheet<int>(
+        context: context,
+        useSafeArea: true,
+        isScrollControlled: true,
+        builder: (ctx) => ChapterSelectorSheet(
+          total: kBooks[result].chapters,
+          current: 1,
+        ),
+      );
+      newChapter = picked ?? 1;
     }
+    _startAt(result, newChapter);
   }
 
-  Future<void> _showChapterSelector({bool alwaysLoad = false}) async {
-    final total = kBooks[_bookIndex].chapters;
+  Future<void> _selectChapter() async {
     final result = await showModalBottomSheet<int>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
       builder: (ctx) => ChapterSelectorSheet(
-        total: total,
+        total: kBooks[_bookIndex].chapters,
         current: _chapter,
       ),
     );
     if (result != null && result != _chapter) {
-      setState(() => _chapter = result);
-      _loadChapter();
-    } else if (alwaysLoad && result == null) {
-      _loadChapter();
+      _startAt(_bookIndex, result);
     }
   }
 
-  void _showWordInfo(String word) {
+  void _showWordInfo(String word, int bookIndex) {
     showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
@@ -190,15 +370,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => WordInfoSheet(
         word: word,
-        syriac: _bookIndex >= 39,
-        onNavigateToPassage: (bookIndex, chapter, verse) {
+        syriac: bookIndex >= 39,
+        onNavigateToPassage: (bi, chapter, verse) {
           Navigator.pop(ctx);
-          setState(() {
-            _bookIndex = bookIndex;
-            _chapter = chapter;
-            _pendingVerse = verse;
-          });
-          _loadChapter();
+          setState(() => _pendingVerse = verse);
+          _startAt(bi, chapter);
         },
       ),
     );
@@ -212,6 +388,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: theme.colorScheme.surface,
+        automaticallyImplyLeading: false,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -241,7 +418,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
             ),
             const SizedBox(width: 8),
             GestureDetector(
-              onTap: _showChapterSelector,
+              onTap: _selectChapter,
               child: Chip(
                 label: Text(
                   '$_chapter',
@@ -254,17 +431,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           ],
         ),
         centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios),
-          tooltip: 'Previous chapter',
-          onPressed: _hasPrev ? _prevChapter : null,
-        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.arrow_forward_ios),
-            tooltip: 'Next chapter',
-            onPressed: _hasNext ? _nextChapter : null,
-          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             tooltip: 'Settings',
@@ -274,12 +441,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 if (useSyriac != _ntSyriac) {
                   setState(() => _ntSyriac = useSyriac);
                   if (_bookIndex >= 39) {
-                    _loadChapter(); // saves prefs
+                    _startAt(_bookIndex, _chapter);
                   } else {
                     _savePrefs();
                   }
                 }
-              } else if (value == 'numeral_hebrew' || value == 'numeral_english') {
+              } else if (value == 'numeral_hebrew' ||
+                  value == 'numeral_english') {
                 setState(() => _hebrewNumerals = value == 'numeral_hebrew');
                 _savePrefs();
               } else if (value.startsWith('size_')) {
@@ -372,34 +540,128 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           ),
         ],
       ),
-      body: _loading
+      body: _initialLoading
           ? const Center(child: CircularProgressIndicator())
-          : _verses.isEmpty
+          : _sections.isEmpty
               ? const Center(child: Text('No text found'))
-              : ListView.builder(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    8,
-                    16,
-                    8 + MediaQuery.viewPaddingOf(context).bottom,
+              : _buildScrollView(),
+    );
+  }
+
+  Widget _buildScrollView() {
+    final bottomPadding = MediaQuery.viewPaddingOf(context).bottom;
+    return CustomScrollView(
+      controller: _scrollController,
+      slivers: [
+        if (_loadingPrev)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+        const SliverToBoxAdapter(child: SizedBox(height: 8)),
+        for (int i = 0; i < _sections.length; i++) ...[
+          SliverToBoxAdapter(
+            child: i == 0
+                ? SizedBox(key: _sections[0].key)
+                : _ChapterDivider(
+                    key: _sections[i].key,
+                    bookIndex: _sections[i].bookIndex,
+                    chapter: _sections[i].chapter,
                   ),
-                  itemCount: _verses.length,
-                  itemBuilder: (context, i) {
-                    final entry = _verses[i];
-                    final isSelected = entry.verse == _selectedVerse;
-                    return VerseRow(
-                      entry: entry,
-                      isSelected: isSelected,
-                      hebrewNumerals: _hebrewNumerals,
-                      onTap: () => setState(() {
-                        _selectedVerse = isSelected ? null : entry.verse;
-                      }),
-                      onWordTap: (word) => _showWordInfo(word),
-                      fontSize: _fontSize,
-                      fontFamily: _fontFamily,
-                    );
-                  },
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            sliver: SliverList.builder(
+              itemCount: _sections[i].verses.length,
+              itemBuilder: (context, j) {
+                final section = _sections[i];
+                final entry = section.verses[j];
+                final isSelected = entry.verse == _selectedVerse &&
+                    section.bookIndex == _selectedBook &&
+                    section.chapter == _selectedChapter;
+                return VerseRow(
+                  entry: entry,
+                  isSelected: isSelected,
+                  hebrewNumerals: _hebrewNumerals,
+                  onTap: () => setState(() {
+                    if (isSelected) {
+                      _selectedBook = null;
+                      _selectedChapter = null;
+                      _selectedVerse = null;
+                    } else {
+                      _selectedBook = section.bookIndex;
+                      _selectedChapter = section.chapter;
+                      _selectedVerse = entry.verse;
+                    }
+                  }),
+                  onWordTap: (word) => _showWordInfo(word, section.bookIndex),
+                  fontSize: _fontSize,
+                  fontFamily: _fontFamily,
+                );
+              },
+            ),
+          ),
+        ],
+        if (_loadingNext)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+        SliverToBoxAdapter(child: SizedBox(height: 8 + bottomPadding)),
+      ],
+    );
+  }
+}
+
+class _ChapterDivider extends StatelessWidget {
+  final int bookIndex;
+  final int chapter;
+
+  const _ChapterDivider({
+    super.key,
+    required this.bookIndex,
+    required this.chapter,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final book = kBooks[bookIndex];
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+      child: Row(
+        children: [
+          const Expanded(child: Divider()),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Column(
+              children: [
+                Text(
+                  book.hebrew,
+                  style: TextStyle(
+                    fontFamily: 'Cardo',
+                    fontFamilyFallback: const ['Noto Serif Hebrew'],
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
+                Text(
+                  '${book.transliteration} $chapter',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Expanded(child: Divider()),
+        ],
+      ),
     );
   }
 }
