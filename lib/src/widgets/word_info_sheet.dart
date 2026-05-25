@@ -77,17 +77,19 @@ class WordInfoSheet extends StatefulWidget {
   State<WordInfoSheet> createState() => _WordInfoSheetState();
 }
 
-class _WordInfoSheetState extends State<WordInfoSheet> {
+class _WordInfoSheetState extends State<WordInfoSheet>
+    with SingleTickerProviderStateMixin {
   StreamSubscription<RustSignalPack<WordInfo>>? _sub;
   WordInfo? _info;
   final Set<int> _expandedBdb = {};
-  bool _sedraExpanded = true;
-  bool _occurrencesExpanded = false;
-  bool _rootOccurrencesExpanded = false;
+  late final TabController _tabController;
+  bool _thisFormExpanded = true;
+  bool _byRootExpanded = true;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _sub = WordInfo.rustSignalStream.listen((pack) {
       if (mounted) {
         setState(() => _info = pack.message);
@@ -99,6 +101,7 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _sub?.cancel();
     super.dispose();
   }
@@ -130,9 +133,9 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
     final info = _info;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.45,
+      initialChildSize: 0.65,
       minChildSize: 0.3,
-      maxChildSize: 0.85,
+      maxChildSize: 0.92,
       expand: false,
       builder: (context, scrollController) {
         return Container(
@@ -198,68 +201,105 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
       );
     }
 
+    final bottomPad = MediaQuery.viewPaddingOf(context).bottom;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  if (info.gloss.isNotEmpty)
+                    Expanded(
+                      child: Text(
+                        info.gloss,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    )
+                  else
+                    const Spacer(),
+                  const SizedBox(width: 12),
+                  Text(
+                    info.word,
+                    style: TextStyle(
+                      fontFamily: 'Cardo',
+                      fontFamilyFallback: const ['Noto Serif Hebrew'],
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                    textDirection: TextDirection.rtl,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  if (info.gender != null)
+                    _chip(context, 'Gender', info.gender!),
+                  if (info.person != null)
+                    _chip(context, 'Person', info.person!),
+                  if (info.number != null)
+                    _chip(context, 'Number', info.number!),
+                  if (info.state != null) _chip(context, 'State', info.state!),
+                  if (info.tense != null) _chip(context, 'Tense', info.tense!),
+                  if (info.form != null) _chip(context, 'Form', info.form!),
+                  if (info.prefix != null)
+                    _chip(context, 'Prefix', info.prefix!),
+                  if (info.suffix != null)
+                    _chip(context, 'Suffix', info.suffix!),
+                  if (info.prepositions != null)
+                    _chip(context, 'Prep', info.prepositions!),
+                  if (info.article) _chip(context, 'Article', 'ה'),
+                  if (info.vavCon) _chip(context, 'Vav', 'consecutive'),
+                ],
+              ),
+            ],
+          ),
+        ),
+        TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Lexicon', height: 32),
+            Tab(text: 'Occurrences', height: 32),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildLexiconTab(context, scrollController, info, bottomPad),
+              _buildOccurrencesTab(context, info, bottomPad),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLexiconTab(
+    BuildContext context,
+    ScrollController scrollController,
+    WordInfo info,
+    double bottomPad,
+  ) {
+    final theme = Theme.of(context);
     return ListView(
       controller: scrollController,
-      padding: EdgeInsets.fromLTRB(
-        20,
-        4,
-        20,
-        4 + MediaQuery.viewPaddingOf(context).bottom,
-      ),
+      padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            if (info.gloss.isNotEmpty)
-              Expanded(
-                child: Text(
-                  info.gloss,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              )
-            else
-              const Spacer(),
-            const SizedBox(width: 12),
-            Text(
-              info.word,
-              style: TextStyle(
-                fontFamily: 'Cardo',
-                fontFamilyFallback: const ['Noto Serif Hebrew'],
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.onSurface,
-              ),
-              textDirection: TextDirection.rtl,
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 6,
-          runSpacing: 4,
-          children: [
-            if (info.gender != null) _chip(context, 'Gender', info.gender!),
-            if (info.person != null) _chip(context, 'Person', info.person!),
-            if (info.number != null) _chip(context, 'Number', info.number!),
-            if (info.state != null) _chip(context, 'State', info.state!),
-            if (info.tense != null) _chip(context, 'Tense', info.tense!),
-            if (info.form != null) _chip(context, 'Form', info.form!),
-            if (info.prefix != null) _chip(context, 'Prefix', info.prefix!),
-            if (info.suffix != null) _chip(context, 'Suffix', info.suffix!),
-            if (info.prepositions != null)
-              _chip(context, 'Prep', info.prepositions!),
-            if (info.article) _chip(context, 'Article', 'ה'),
-            if (info.vavCon) _chip(context, 'Vav', 'consecutive'),
-          ],
-        ),
         if (info.bdbEntries.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          const Divider(),
-          const SizedBox(height: 8),
           Text(
             'BDB Entries',
             style: theme.textTheme.labelLarge?.copyWith(
@@ -267,249 +307,230 @@ class _WordInfoSheetState extends State<WordInfoSheet> {
             ),
           ),
           const SizedBox(height: 4),
-          ...info.bdbEntries.indexed.map(
-            (entry) {
-              final (i, e) = entry;
-              final expanded = _expandedBdb.contains(i);
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  InkWell(
-                    borderRadius: BorderRadius.circular(6),
-                    onTap: () => setState(() {
-                      if (expanded) {
-                        _expandedBdb.remove(i);
-                      } else {
-                        _expandedBdb.add(i);
-                      }
-                    }),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Text(
-                            e.headword,
-                            style: TextStyle(
-                              fontFamily: 'Cardo',
-                              fontFamilyFallback: const ['Noto Serif Hebrew'],
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: theme.colorScheme.onSurface,
-                            ),
-                            textDirection: TextDirection.rtl,
-                          ),
-                          if (e.gloss.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                '— ${e.gloss}',
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                            ),
-                          ] else
-                            const Spacer(),
-                          Icon(
-                            expanded
-                                ? Icons.expand_less
-                                : Icons.expand_more,
-                            size: 18,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (expanded && e.contentJson.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _BdbContent(
-                        contentJson: e.contentJson,
-                        onBibleRefTap: (href) =>
-                            _onBibleRefTap(context, href),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ],
-        if (info.sedraEntries.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          InkWell(
-            borderRadius: BorderRadius.circular(6),
-            onTap: () => setState(() => _sedraExpanded = !_sedraExpanded),
-            child: Row(
+          ...info.bdbEntries.indexed.map((entry) {
+            final (i, e) = entry;
+            final expanded = _expandedBdb.contains(i);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  'Sedra Lexicon',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const Spacer(),
-                Icon(
-                  _sedraExpanded ? Icons.expand_less : Icons.expand_more,
-                  size: 18,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ],
-            ),
-          ),
-          if (_sedraExpanded) ...[
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest
-                    .withOpacity(0.5),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: info.sedraEntries.map((e) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
+                InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => setState(() {
+                    if (expanded) {
+                      _expandedBdb.remove(i);
+                    } else {
+                      _expandedBdb.add(i);
+                    }
+                  }),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Text(
-                          e.lexeme,
+                          e.headword,
                           style: TextStyle(
                             fontFamily: 'Cardo',
                             fontFamilyFallback: const ['Noto Serif Hebrew'],
-                            fontSize: 16,
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: theme.colorScheme.onSurface,
                           ),
                           textDirection: TextDirection.rtl,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            e.meaning,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurface,
+                        if (e.gloss.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '— ${e.gloss}',
+                              style: theme.textTheme.bodyMedium,
                             ),
                           ),
+                        ] else
+                          const Spacer(),
+                        Icon(
+                          expanded ? Icons.expand_less : Icons.expand_more,
+                          size: 18,
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ],
                     ),
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
+                  ),
+                ),
+                if (expanded && e.contentJson.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _BdbContent(
+                      contentJson: e.contentJson,
+                      onBibleRefTap: (href) => _onBibleRefTap(context, href),
+                    ),
+                  ),
+              ],
+            );
+          }),
         ],
-        if (info.occurrences.isNotEmpty)
-          _occurrenceSection(
-            context: context,
-            label: 'This form',
-            occurrences: info.occurrences,
-            expanded: _occurrencesExpanded,
-            onToggle: () =>
-                setState(() => _occurrencesExpanded = !_occurrencesExpanded),
+        if (info.sedraEntries.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Sedra Lexicon',
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        if (info.rootOccurrences.isNotEmpty)
-          _occurrenceSection(
-            context: context,
-            label: 'By root',
-            occurrences: info.rootOccurrences,
-            expanded: _rootOccurrencesExpanded,
-            onToggle: () => setState(
-                () => _rootOccurrencesExpanded = !_rootOccurrencesExpanded),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: info.sedraEntries.map((e) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        e.lexeme,
+                        style: TextStyle(
+                          fontFamily: 'Cardo',
+                          fontFamilyFallback: const ['Noto Serif Hebrew'],
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                        textDirection: TextDirection.rtl,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          e.meaning,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
           ),
-        const SizedBox(height: 16),
+        ],
       ],
     );
   }
 
-  Widget _occurrenceSection({
-    required BuildContext context,
-    required String label,
-    required List<WordOccurrence> occurrences,
-    required bool expanded,
-    required VoidCallback onToggle,
-  }) {
+  Widget _buildOccurrencesTab(
+    BuildContext context,
+    WordInfo info,
+    double bottomPad,
+  ) {
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    final both =
+        info.occurrences.isNotEmpty && info.rootOccurrences.isNotEmpty;
+
+    return ListView(
+      padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
       children: [
-        const SizedBox(height: 8),
-        InkWell(
-          borderRadius: BorderRadius.circular(6),
-          onTap: onToggle,
-          child: Row(
-            children: [
-              Text(
-                'Occurrences — $label (${occurrences.length})',
+        if (info.occurrences.isNotEmpty) ...[
+          if (both)
+            _sectionHeader(
+              context,
+              'This form (${info.occurrences.length})',
+              _thisFormExpanded,
+              () => setState(() => _thisFormExpanded = !_thisFormExpanded),
+            ),
+          if (!both || _thisFormExpanded) ..._occurrenceRows(info.occurrences),
+        ],
+        if (info.rootOccurrences.isNotEmpty) ...[
+          if (both) ...[
+            const SizedBox(height: 8),
+            _sectionHeader(
+              context,
+              'By root (${info.rootOccurrences.length})',
+              _byRootExpanded,
+              () => setState(() => _byRootExpanded = !_byRootExpanded),
+            ),
+          ],
+          if (!both || _byRootExpanded) ..._occurrenceRows(info.rootOccurrences),
+        ],
+      ],
+    );
+  }
+
+  List<Widget> _occurrenceRows(List<WordOccurrence> occurrences) {
+    return occurrences.map((o) {
+      final bookIndex = o.book - 1;
+      final bookName = bookIndex >= 0 && bookIndex < kBooks.length
+          ? kBooks[bookIndex].transliteration
+          : 'Book ${o.book}';
+      final ref = '$bookName ${o.chapter}:${o.verse}';
+      return _OccurrenceRow(
+        displayRef: ref,
+        bookIndex: bookIndex,
+        chapter: o.chapter,
+        verse: o.verse,
+        highlightWord: widget.word,
+        onTap: widget.onNavigateToPassage == null
+            ? null
+            : () => widget.onNavigateToPassage!(
+                  bookIndex,
+                  o.chapter,
+                  o.verse,
+                ),
+      );
+    }).toList();
+  }
+
+  Widget _sectionHeader(
+    BuildContext context,
+    String title,
+    bool expanded,
+    VoidCallback onTap,
+  ) {
+    final theme = Theme.of(context);
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4, top: 2),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
                 style: theme.textTheme.labelLarge?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-              const Spacer(),
-              Icon(
-                expanded ? Icons.expand_less : Icons.expand_more,
-                size: 18,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ],
-          ),
+            ),
+            Icon(
+              expanded ? Icons.expand_less : Icons.expand_more,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
         ),
-        if (expanded) ...[
-          const SizedBox(height: 4),
-          ...occurrences.map((o) {
-            final bookIndex = o.book - 1;
-            final bookName = bookIndex >= 0 && bookIndex < kBooks.length
-                ? kBooks[bookIndex].transliteration
-                : 'Book ${o.book}';
-            final ref = '$bookName ${o.chapter}:${o.verse}';
-            return _OccurrenceRow(
-              displayRef: ref,
-              bookIndex: bookIndex,
-              chapter: o.chapter,
-              verse: o.verse,
-              highlightWord: widget.word,
-              onTap: widget.onNavigateToPassage == null
-                  ? null
-                  : () => widget.onNavigateToPassage!(
-                        bookIndex,
-                        o.chapter,
-                        o.verse,
-                      ),
-            );
-          }),
-        ],
-      ],
+      ),
     );
   }
 
   Widget _chip(BuildContext context, String label, String value) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: theme.colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
       ),
-      child: RichText(
-        text: TextSpan(
-          children: [
-            TextSpan(
-              text: '$label: ',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSecondaryContainer.withOpacity(0.7),
-              ),
-            ),
-            TextSpan(
-              text: value,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSecondaryContainer,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
+      child: Text(
+        value,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSecondaryContainer,
         ),
       ),
     );

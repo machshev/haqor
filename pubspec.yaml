@@ -76,3 +76,13 @@ flutter:
     - family: Noto Serif Hebrew
       fonts:
         - asset: fonts/NotoSerifHebrew.ttf
+    - family: David Libre
+      fonts:
+        - asset: fonts/DavidLibre-Regular.ttf
+        - asset: fonts/DavidLibre-Medium.ttf
+          weight: 500
+        - asset: fonts/DavidLibre-Bold.ttf
+          weight: 700
+    - family: Frank Ruhl Libre
+      fonts:
+        - asset: fonts/FrankRuhlLibre.ttf

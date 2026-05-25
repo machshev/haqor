@@ -23,6 +23,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   static const _kChapter = 'chapter';
   static const _kNtSyriac = 'nt_syriac';
   static const _kHebrewNumerals = 'hebrew_numerals';
+  static const _kFontSize = 'font_size';
+  static const _kFontFamily = 'font_family';
+
+  static const _fontFamilies = ['Cardo', 'David Libre', 'Frank Ruhl Libre'];
 
   // book index is 0-based in kBooks, but the DB uses 1-based book numbers
   int _bookIndex = 0;
@@ -34,6 +38,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   // NT corpus: false = Hebrew (transliteration), true = Syriac (Peshitta)
   bool _ntSyriac = false;
   bool _hebrewNumerals = true;
+  double _fontSize = 20.0;
+  String _fontFamily = 'Cardo';
 
   StreamSubscription<RustSignalPack<ChapterText>>? _sub;
 
@@ -64,6 +70,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _chapter = (prefs.getInt(_kChapter) ?? 1).clamp(1, kBooks[_bookIndex].chapters);
       _ntSyriac = prefs.getBool(_kNtSyriac) ?? false;
       _hebrewNumerals = prefs.getBool(_kHebrewNumerals) ?? true;
+      _fontSize = (prefs.getDouble(_kFontSize) ?? 20.0).clamp(16.0, 28.0);
+      final savedFamily = prefs.getString(_kFontFamily) ?? 'Cardo';
+      _fontFamily = _fontFamilies.contains(savedFamily) ? savedFamily : 'Cardo';
     });
     _loadChapter();
   }
@@ -75,6 +84,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       prefs.setInt(_kChapter, _chapter),
       prefs.setBool(_kNtSyriac, _ntSyriac),
       prefs.setBool(_kHebrewNumerals, _hebrewNumerals),
+      prefs.setDouble(_kFontSize, _fontSize),
+      prefs.setString(_kFontFamily, _fontFamily),
     ]);
   }
 
@@ -144,11 +155,15 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         _bookIndex = result;
         _chapter = 1;
       });
-      _loadChapter();
+      if (kBooks[result].chapters > 1) {
+        await _showChapterSelector(alwaysLoad: true);
+      } else {
+        _loadChapter();
+      }
     }
   }
 
-  Future<void> _showChapterSelector() async {
+  Future<void> _showChapterSelector({bool alwaysLoad = false}) async {
     final total = kBooks[_bookIndex].chapters;
     final result = await showModalBottomSheet<int>(
       context: context,
@@ -161,6 +176,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     );
     if (result != null && result != _chapter) {
       setState(() => _chapter = result);
+      _loadChapter();
+    } else if (alwaysLoad && result == null) {
       _loadChapter();
     }
   }
@@ -265,6 +282,15 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               } else if (value == 'numeral_hebrew' || value == 'numeral_english') {
                 setState(() => _hebrewNumerals = value == 'numeral_hebrew');
                 _savePrefs();
+              } else if (value.startsWith('size_')) {
+                final size = double.tryParse(value.substring(5));
+                if (size != null) {
+                  setState(() => _fontSize = size);
+                  _savePrefs();
+                }
+              } else if (value.startsWith('font_')) {
+                setState(() => _fontFamily = value.substring(5));
+                _savePrefs();
               }
             },
             itemBuilder: (ctx) => [
@@ -297,6 +323,51 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 checked: !_hebrewNumerals,
                 child: const Text('English (1 2 3)'),
               ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                enabled: false,
+                child: Text('Font Size'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'size_16.0',
+                checked: _fontSize == 16.0,
+                child: const Text('Small'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'size_20.0',
+                checked: _fontSize == 20.0,
+                child: const Text('Medium'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'size_24.0',
+                checked: _fontSize == 24.0,
+                child: const Text('Large'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'size_28.0',
+                checked: _fontSize == 28.0,
+                child: const Text('Extra Large'),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                enabled: false,
+                child: Text('Font'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'font_Cardo',
+                checked: _fontFamily == 'Cardo',
+                child: const Text('Cardo'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'font_David Libre',
+                checked: _fontFamily == 'David Libre',
+                child: const Text('David Libre'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'font_Frank Ruhl Libre',
+                checked: _fontFamily == 'Frank Ruhl Libre',
+                child: const Text('Frank Ruhl Libre'),
+              ),
             ],
           ),
         ],
@@ -324,6 +395,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                         _selectedVerse = isSelected ? null : entry.verse;
                       }),
                       onWordTap: (word) => _showWordInfo(word),
+                      fontSize: _fontSize,
+                      fontFamily: _fontFamily,
                     );
                   },
                 ),

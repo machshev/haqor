@@ -9,6 +9,8 @@ class VerseRow extends StatelessWidget {
     required this.hebrewNumerals,
     required this.onTap,
     required this.onWordTap,
+    this.fontSize = 20.0,
+    this.fontFamily = 'Cardo',
   });
 
   final VerseEntry entry;
@@ -16,14 +18,16 @@ class VerseRow extends StatelessWidget {
   final bool hebrewNumerals;
   final VoidCallback onTap;
   final void Function(String word) onWordTap;
+  final double fontSize;
+  final String fontFamily;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final wordStyle = TextStyle(
-      fontFamily: 'Cardo',
+      fontFamily: fontFamily,
       fontFamilyFallback: const ['Noto Serif Hebrew'],
-      fontSize: 20,
+      fontSize: fontSize,
       fontWeight: FontWeight.w500,
       height: 1.6,
       color: isSelected

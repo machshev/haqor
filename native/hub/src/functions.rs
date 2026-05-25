@@ -99,6 +99,12 @@ pub async fn get_word_info() {
                             meaning: e.meaning,
                         })
                         .collect();
+                    let occurrences = to_signal_occurrences(
+                        bible.word_occurrences(&lookup).unwrap_or_default(),
+                    );
+                    let root_occurrences = to_signal_occurrences(
+                        bible.word_occurrences_root(&morph.root).unwrap_or_default(),
+                    );
                     WordInfo {
                         found: true,
                         word: morph.word,
@@ -117,8 +123,8 @@ pub async fn get_word_info() {
                         state: morph.state,
                         tense: morph.tense,
                         form: morph.form,
-                        occurrences: Vec::new(),
-                        root_occurrences: Vec::new(),
+                        occurrences,
+                        root_occurrences,
                     }
                     .send_signal_to_dart();
                 }
