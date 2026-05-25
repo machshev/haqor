@@ -11,6 +11,28 @@ import 'widgets/chapter_selector.dart';
 import 'widgets/verse_row.dart';
 import 'widgets/word_info_sheet.dart';
 
+class _PassageRef {
+  final int bookIndex;
+  final int chapter;
+  final int? verse;
+  const _PassageRef({required this.bookIndex, required this.chapter, this.verse});
+
+  String toStorageString() =>
+      verse != null ? '$bookIndex,$chapter,$verse' : '$bookIndex,$chapter';
+
+  static _PassageRef? fromStorageString(String s) {
+    final parts = s.split(',');
+    if (parts.length < 2) return null;
+    final b = int.tryParse(parts[0]);
+    final c = int.tryParse(parts[1]);
+    if (b == null || c == null) return null;
+    if (b < 0 || b >= kBooks.length) return null;
+    if (c < 1 || c > kBooks[b].chapters) return null;
+    final v = parts.length >= 3 ? int.tryParse(parts[2]) : null;
+    return _PassageRef(bookIndex: b, chapter: c, verse: v);
+  }
+}
+
 class _Section {
   final int bookIndex; // 0-based
   final int chapter; // 1-based
@@ -34,6 +56,8 @@ class BibleReaderPage extends StatefulWidget {
 class _BibleReaderPageState extends State<BibleReaderPage> {
   static const _kBook = 'book';
   static const _kChapter = 'chapter';
+  static const _kHistory = 'nav_history';
+  static const _kHistoryIndex = 'nav_history_index';
   static const _kNtSyriac = 'nt_syriac';
   static const _kHebrewNumerals = 'hebrew_numerals';
   static const _kFontSize = 'font_size';
@@ -51,6 +75,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   int? _selectedVerse;
   int? _pendingVerse;
   GlobalKey? _targetVerseKey;
+
+  final List<_PassageRef> _history = [];
+  int _historyIndex = -1;
+  bool _navigatingHistory = false;
+
+  bool get _canGoBack => _historyIndex > 0;
+  bool get _canGoForward => _historyIndex < _history.length - 1;
 
   final List<_Section> _sections = [];
   final Set<(int, int)> _pendingFetches = {}; // (1-based book, chapter)
@@ -209,7 +240,36 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       final savedFamily = prefs.getString(_kFontFamily) ?? 'Cardo';
       _fontFamily = _fontFamilies.contains(savedFamily) ? savedFamily : 'Cardo';
     });
+    final rawHistory = prefs.getStringList(_kHistory) ?? [];
+    final savedIndex = prefs.getInt(_kHistoryIndex) ?? -1;
+    if (rawHistory.isNotEmpty && savedIndex >= 0 && savedIndex < rawHistory.length) {
+      _history.clear();
+      for (final s in rawHistory) {
+        final ref = _PassageRef.fromStorageString(s);
+        if (ref != null) _history.add(ref);
+      }
+      if (_history.isNotEmpty) {
+        _historyIndex = savedIndex.clamp(0, _history.length - 1);
+        final current = _history[_historyIndex];
+        _bookIndex = current.bookIndex;
+        _chapter = current.chapter;
+        if (current.verse != null) setState(() => _pendingVerse = current.verse);
+        _startAt(_bookIndex, _chapter);
+        return;
+      }
+    }
+    _history.clear();
+    _history.add(_PassageRef(bookIndex: _bookIndex, chapter: _chapter));
+    _historyIndex = 0;
     _startAt(_bookIndex, _chapter);
+  }
+
+  Future<void> _saveHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await Future.wait([
+      prefs.setStringList(_kHistory, _history.map((r) => r.toStorageString()).toList()),
+      prefs.setInt(_kHistoryIndex, _historyIndex),
+    ]);
   }
 
   Future<void> _savePrefs() async {
@@ -222,6 +282,38 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       prefs.setDouble(_kFontSize, _fontSize),
       prefs.setString(_kFontFamily, _fontFamily),
     ]);
+  }
+
+  void _navigateTo(int bookIndex, int chapter, {int? verse}) {
+    if (!_navigatingHistory) {
+      if (_historyIndex < _history.length - 1) {
+        _history.removeRange(_historyIndex + 1, _history.length);
+      }
+      _history.add(_PassageRef(bookIndex: bookIndex, chapter: chapter, verse: verse));
+      if (_history.length > 10) _history.removeAt(0);
+      _historyIndex = _history.length - 1;
+    }
+    if (verse != null) setState(() => _pendingVerse = verse);
+    _startAt(bookIndex, chapter);
+    _saveHistory();
+  }
+
+  void _goBack() {
+    if (!_canGoBack) return;
+    _historyIndex--;
+    final ref = _history[_historyIndex];
+    _navigatingHistory = true;
+    _navigateTo(ref.bookIndex, ref.chapter, verse: ref.verse);
+    _navigatingHistory = false;
+  }
+
+  void _goForward() {
+    if (!_canGoForward) return;
+    _historyIndex++;
+    final ref = _history[_historyIndex];
+    _navigatingHistory = true;
+    _navigateTo(ref.bookIndex, ref.chapter, verse: ref.verse);
+    _navigatingHistory = false;
   }
 
   void _startAt(int bookIndex, int chapter) {
@@ -392,7 +484,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       );
       newChapter = picked ?? 1;
     }
-    _startAt(result, newChapter);
+    _navigateTo(result, newChapter);
   }
 
   Future<void> _selectChapter() async {
@@ -406,7 +498,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       ),
     );
     if (result != null && result != _chapter) {
-      _startAt(_bookIndex, result);
+      _navigateTo(_bookIndex, result);
     }
   }
 
@@ -421,8 +513,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         syriac: bookIndex >= 39,
         onNavigateToPassage: (bi, chapter, verse) {
           Navigator.pop(ctx);
-          setState(() => _pendingVerse = verse);
-          _startAt(bi, chapter);
+          _navigateTo(bi, chapter, verse: verse);
         },
       ),
     );
@@ -480,6 +571,16 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         ),
         centerTitle: true,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _canGoBack ? _goBack : null,
+            tooltip: 'Back',
+          ),
+          IconButton(
+            icon: const Icon(Icons.arrow_forward),
+            onPressed: _canGoForward ? _goForward : null,
+            tooltip: 'Forward',
+          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             tooltip: 'Settings',
