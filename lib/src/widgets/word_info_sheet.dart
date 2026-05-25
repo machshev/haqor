@@ -3,10 +3,14 @@ import 'dart:convert';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:rinf/rinf.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../bindings/bindings.dart';
 import '../bible_data.dart';
+
+const _kFlaggedWordsKey = 'debug_flagged_words';
 
 const Map<String, int> _kBdbBookToIndex = {
   'Genesis': 0,
@@ -85,6 +89,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   late final TabController _tabController;
   bool _thisFormExpanded = true;
   bool _byRootExpanded = true;
+  bool _isFlagged = false;
 
   @override
   void initState() {
@@ -97,6 +102,125 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       }
     });
     GetWordInfo(word: widget.word, syriac: widget.syriac).sendSignalToRust();
+    _loadFlagState();
+  }
+
+  Future<void> _loadFlagState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_kFlaggedWordsKey) ?? [];
+    final flagged = raw.any((e) {
+      try {
+        final map = jsonDecode(e) as Map<String, dynamic>;
+        return map['word'] == widget.word;
+      } catch (_) {
+        return false;
+      }
+    });
+    if (mounted) setState(() => _isFlagged = flagged);
+  }
+
+  Future<void> _openFlagDialog(BuildContext context, WordInfo info) async {
+    String existingNote = '';
+    if (_isFlagged) {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getStringList(_kFlaggedWordsKey) ?? [];
+      for (final e in raw) {
+        try {
+          final map = jsonDecode(e) as Map<String, dynamic>;
+          if (map['word'] == widget.word) {
+            existingNote = map['note'] as String? ?? '';
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (_) => _FlagNoteDialog(
+        word: info.word,
+        isFlagged: _isFlagged,
+        existingNote: existingNote,
+        onSave: (note) => _saveFlag(info, note),
+        onRemove: _removeFlag,
+      ),
+    );
+  }
+
+  Future<void> _saveFlag(WordInfo info, String note) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_kFlaggedWordsKey) ?? [];
+    final filtered = raw.where((e) {
+      try {
+        final map = jsonDecode(e) as Map<String, dynamic>;
+        return map['word'] != widget.word;
+      } catch (_) {
+        return true;
+      }
+    }).toList();
+    final entry = {
+      'word': widget.word,
+      'displayWord': info.word,
+      'gloss': info.gloss,
+      'root': info.root,
+      'syriac': widget.syriac,
+      'note': note,
+      'flaggedAt': DateTime.now().toIso8601String(),
+      'morphology': {
+        if (info.gender != null) 'gender': info.gender,
+        if (info.person != null) 'person': info.person,
+        if (info.number != null) 'number': info.number,
+        if (info.state != null) 'state': info.state,
+        if (info.tense != null) 'tense': info.tense,
+        if (info.form != null) 'form': info.form,
+        if (info.prefix != null) 'prefix': info.prefix,
+        if (info.suffix != null) 'suffix': info.suffix,
+        if (info.prepositions != null) 'prepositions': info.prepositions,
+        'article': info.article,
+        'vavCon': info.vavCon,
+      },
+    };
+    filtered.add(jsonEncode(entry));
+    await prefs.setStringList(_kFlaggedWordsKey, filtered);
+    if (mounted) setState(() => _isFlagged = true);
+  }
+
+  Future<void> _removeFlag() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_kFlaggedWordsKey) ?? [];
+    final updated = raw.where((e) {
+      try {
+        final map = jsonDecode(e) as Map<String, dynamic>;
+        return map['word'] != widget.word;
+      } catch (_) {
+        return true;
+      }
+    }).toList();
+    await prefs.setStringList(_kFlaggedWordsKey, updated);
+    if (mounted) setState(() => _isFlagged = false);
+  }
+
+  Future<void> _showFlaggedExport(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_kFlaggedWordsKey) ?? [];
+    final entries = raw
+        .map((e) {
+          try {
+            return jsonDecode(e) as Map<String, dynamic>;
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<Map<String, dynamic>>()
+        .toList();
+
+    if (!mounted) return;
+    final exportJson =
+        const JsonEncoder.withIndent('  ').convert({'flaggedWords': entries});
+    showDialog<void>(
+      context: context,
+      builder: (_) => _FlaggedWordsExportDialog(json: exportJson),
+    );
   }
 
   @override
@@ -215,6 +339,26 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
+                  GestureDetector(
+                    onLongPress: () => _showFlaggedExport(context),
+                    child: IconButton(
+                      iconSize: 20,
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: _isFlagged
+                          ? 'Flagged — long-press to export all'
+                          : 'Flag word as having issues',
+                      icon: Icon(
+                        _isFlagged ? Icons.flag : Icons.flag_outlined,
+                        color: _isFlagged
+                            ? theme.colorScheme.error
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                      onPressed: () => _openFlagDialog(context, info),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
                   if (info.gloss.isNotEmpty)
                     Expanded(
                       child: Text(
@@ -228,16 +372,32 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   else
                     const Spacer(),
                   const SizedBox(width: 12),
-                  Text(
-                    info.word,
-                    style: TextStyle(
-                      fontFamily: 'Cardo',
-                      fontFamilyFallback: const ['Noto Serif Hebrew'],
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                    textDirection: TextDirection.rtl,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        info.word,
+                        style: TextStyle(
+                          fontFamily: 'Cardo',
+                          fontFamilyFallback: const ['Noto Serif Hebrew'],
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                        textDirection: TextDirection.rtl,
+                      ),
+                      if (info.root.isNotEmpty)
+                        Text(
+                          info.root,
+                          style: TextStyle(
+                            fontFamily: 'Cardo',
+                            fontFamilyFallback: const ['Noto Serif Hebrew'],
+                            fontSize: 13,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          textDirection: TextDirection.rtl,
+                        ),
+                    ],
                   ),
                 ],
               ),
@@ -820,6 +980,143 @@ String _stripTrope(String word) {
           cp == 0x05C6);
     }),
   );
+}
+
+class _FlagNoteDialog extends StatefulWidget {
+  const _FlagNoteDialog({
+    required this.word,
+    required this.isFlagged,
+    required this.existingNote,
+    required this.onSave,
+    required this.onRemove,
+  });
+
+  final String word;
+  final bool isFlagged;
+  final String existingNote;
+  final void Function(String note) onSave;
+  final VoidCallback onRemove;
+
+  @override
+  State<_FlagNoteDialog> createState() => _FlagNoteDialogState();
+}
+
+class _FlagNoteDialogState extends State<_FlagNoteDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.existingNote);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: Text(
+        widget.word,
+        style: const TextStyle(
+          fontFamily: 'Cardo',
+          fontFamilyFallback: ['Noto Serif Hebrew'],
+          fontSize: 24,
+        ),
+        textDirection: TextDirection.rtl,
+      ),
+      content: TextField(
+        controller: _controller,
+        maxLines: 4,
+        autofocus: true,
+        decoration: const InputDecoration(
+          hintText: 'Describe the issue…',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        if (widget.isFlagged)
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.error,
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              widget.onRemove();
+            },
+            child: const Text('Remove flag'),
+          ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.pop(context);
+            widget.onSave(_controller.text.trim());
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
+class _FlaggedWordsExportDialog extends StatelessWidget {
+  const _FlaggedWordsExportDialog({required this.json});
+
+  final String json;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final count = (jsonDecode(json)['flaggedWords'] as List).length;
+    return AlertDialog(
+      title: Text('Flagged words ($count)'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: count == 0
+            ? Text(
+                'No words flagged yet.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              )
+            : SingleChildScrollView(
+                child: SelectableText(
+                  json,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+        if (count > 0)
+          FilledButton.tonal(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: json));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Copied to clipboard'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            child: const Text('Copy JSON'),
+          ),
+      ],
+    );
+  }
 }
 
 class _BibleRefPreviewDialog extends StatefulWidget {
