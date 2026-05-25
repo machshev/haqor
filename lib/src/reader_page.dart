@@ -50,6 +50,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   int? _selectedChapter;
   int? _selectedVerse;
   int? _pendingVerse;
+  GlobalKey? _targetVerseKey;
 
   final List<_Section> _sections = [];
   final Set<(int, int)> _pendingFetches = {}; // (1-based book, chapter)
@@ -92,12 +93,15 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         verses: msg.verses,
       );
 
+      int? targetVerse;
       if (_pendingVerse != null &&
           bookIdx == _bookIndex &&
           msg.chapter == _chapter) {
+        targetVerse = _pendingVerse;
         _selectedBook = bookIdx;
         _selectedChapter = msg.chapter;
-        _selectedVerse = _pendingVerse;
+        _selectedVerse = targetVerse;
+        _targetVerseKey = GlobalKey();
         _pendingVerse = null;
       }
 
@@ -105,6 +109,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         _prependSection(section);
       } else {
         _appendSection(section);
+      }
+
+      if (targetVerse != null) {
+        _scheduleScrollToVerse(section, targetVerse);
       }
     });
     _loadPrefs();
@@ -248,6 +256,46 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       chapter: chapter,
       syriac: _isSyriac(bookIndex),
     ).sendSignalToRust();
+  }
+
+  void _scheduleScrollToVerse(_Section section, int verse) {
+    final verseIdx = section.verses.indexWhere((v) => v.verse == verse);
+    if (verseIdx <= 0) {
+      // First verse is already at the top after navigation; nothing to do.
+      _targetVerseKey = null;
+      return;
+    }
+    _attemptScrollToVerse(section, verseIdx, retriesLeft: 3);
+  }
+
+  void _attemptScrollToVerse(_Section section, int verseIdx, {required int retriesLeft}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _targetVerseKey?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+        _targetVerseKey = null;
+        return;
+      }
+      if (retriesLeft <= 0) {
+        _targetVerseKey = null;
+        return;
+      }
+      // Verse not yet built; jump proportionally based on current maxScrollExtent
+      // (Flutter extrapolates this from laid-out items, so it improves each retry).
+      if (_scrollController.hasClients) {
+        final maxExtent = _scrollController.position.maxScrollExtent;
+        if (maxExtent > 0) {
+          final ratio = verseIdx / section.verses.length;
+          _scrollController.jumpTo((ratio * maxExtent).clamp(0.0, maxExtent));
+        }
+      }
+      _attemptScrollToVerse(section, verseIdx, retriesLeft: retriesLeft - 1);
+    });
   }
 
   void _onScroll() {
@@ -582,6 +630,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                     section.bookIndex == _selectedBook &&
                     section.chapter == _selectedChapter;
                 return VerseRow(
+                  key: isSelected ? _targetVerseKey : null,
                   entry: entry,
                   isSelected: isSelected,
                   hebrewNumerals: _hebrewNumerals,
