@@ -1,7 +1,8 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../bindings/bindings.dart';
 
-class VerseRow extends StatelessWidget {
+class VerseRow extends StatefulWidget {
   const VerseRow({
     super.key,
     required this.entry,
@@ -22,29 +23,81 @@ class VerseRow extends StatelessWidget {
   final String fontFamily;
 
   @override
+  State<VerseRow> createState() => _VerseRowState();
+}
+
+class _VerseRowState extends State<VerseRow> {
+  List<String> _words = [];
+  List<TapGestureRecognizer> _recognizers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _rebuild();
+  }
+
+  @override
+  void didUpdateWidget(VerseRow old) {
+    super.didUpdateWidget(old);
+    if (old.entry.text != widget.entry.text ||
+        old.onWordTap != widget.onWordTap) {
+      _disposeRecognizers();
+      _rebuild();
+    }
+  }
+
+  void _rebuild() {
+    _words = widget.entry.text.split(' ').where((w) => w.isNotEmpty).toList();
+    _recognizers = _words
+        .map((w) => TapGestureRecognizer()..onTap = () => widget.onWordTap(w))
+        .toList();
+  }
+
+  void _disposeRecognizers() {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    _recognizers = [];
+  }
+
+  @override
+  void dispose() {
+    _disposeRecognizers();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final wordStyle = TextStyle(
-      fontFamily: fontFamily,
+      fontFamily: widget.fontFamily,
       fontFamilyFallback: const ['Noto Serif Hebrew'],
-      fontSize: fontSize,
+      fontSize: widget.fontSize,
       fontWeight: FontWeight.w500,
       height: 1.6,
-      color: isSelected
+      color: widget.isSelected
           ? theme.colorScheme.onPrimaryContainer
           : theme.colorScheme.onSurface,
     );
 
-    final words = entry.text.split(' ').where((w) => w.isNotEmpty).toList();
+    final spans = <InlineSpan>[];
+    for (var i = 0; i < _words.length; i++) {
+      if (i > 0) spans.add(const TextSpan(text: ' '));
+      spans.add(TextSpan(
+        text: _words[i],
+        style: wordStyle,
+        recognizer: _recognizers[i],
+      ));
+    }
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         margin: const EdgeInsets.symmetric(vertical: 2),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected
+          color: widget.isSelected
               ? theme.colorScheme.primaryContainer
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
@@ -53,30 +106,18 @@ class VerseRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Wrap(
+              child: SelectableText.rich(
+                TextSpan(children: spans),
                 textDirection: TextDirection.rtl,
-                spacing: 4,
-                runSpacing: 2,
-                children: words.map((word) {
-                  return GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => onWordTap(word),
-                    child: Text(
-                      word,
-                      textDirection: TextDirection.rtl,
-                      style: wordStyle,
-                    ),
-                  );
-                }).toList(),
               ),
             ),
             const SizedBox(width: 8),
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                hebrewNumerals
-                    ? _toHebrewNumeral(entry.verse)
-                    : '${entry.verse}',
+                widget.hebrewNumerals
+                    ? _toHebrewNumeral(widget.entry.verse)
+                    : '${widget.entry.verse}',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.primary,
                   fontWeight: FontWeight.bold,

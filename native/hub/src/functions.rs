@@ -79,57 +79,55 @@ pub async fn get_word_info() {
         let lookup = strip_trope(&req.word);
 
         if req.syriac {
-            match bible.get_word_morphology_ara(&lookup) {
-                Ok(morph) => {
-                    let lex = bible.lex_lookup_ara(&lookup).unwrap_or_default();
-                    let gloss = lex.first().map(|e| e.gloss.clone()).unwrap_or_default();
-                    let bdb_entries = lex
-                        .into_iter()
-                        .map(|e| BdbSummary {
-                            headword: e.headword,
-                            gloss: e.gloss,
-                            content_json: e.content_json,
-                        })
-                        .collect();
-                    let sedra = bible.sedra_lookup(&lookup).unwrap_or_default();
-                    let sedra_entries = sedra
-                        .into_iter()
-                        .map(|e| SedraSummary {
-                            lexeme: e.lexeme,
-                            meaning: e.meaning,
-                        })
-                        .collect();
+            // NT lexicon now comes from the full SEDRA database (roots,
+            // lexemes, words, english) keyed directly on the displayed Hebrew
+            // word, which is the same bijective transliteration SEDRA stores.
+            let words = bible.sedra_word_info(&lookup).unwrap_or_default();
+            match words.first() {
+                Some(first) => {
+                    // One Sedra entry per distinct lexeme, meanings joined.
+                    let mut sedra_entries: Vec<SedraSummary> = Vec::new();
+                    for w in &words {
+                        if sedra_entries.iter().any(|e| e.lexeme == w.lexeme) {
+                            continue;
+                        }
+                        sedra_entries.push(SedraSummary {
+                            lexeme: w.lexeme.clone(),
+                            meaning: w.meanings.join("; "),
+                        });
+                    }
+                    let gloss = first.meanings.first().cloned().unwrap_or_default();
                     let occurrences = to_signal_occurrences(
                         bible.word_occurrences(&lookup).unwrap_or_default(),
                     );
                     let root_occurrences = to_signal_occurrences(
-                        bible.word_occurrences_root(&morph.root).unwrap_or_default(),
+                        bible.word_occurrences_root(&first.root).unwrap_or_default(),
                     );
                     WordInfo {
                         found: true,
-                        word: morph.word,
-                        root: morph.root,
+                        word: first.word.clone(),
+                        root: first.root.clone(),
                         gloss,
-                        gender: morph.gender,
-                        number: morph.number,
+                        gender: first.gender.clone(),
+                        number: first.number.clone(),
                         prefix: None,
-                        suffix: morph.suffix,
+                        suffix: first.suffix.clone(),
                         prepositions: None,
                         article: false,
                         vav_con: false,
-                        bdb_entries,
+                        bdb_entries: Vec::new(),
                         sedra_entries,
-                        person: morph.person,
-                        state: morph.state,
-                        tense: morph.tense,
-                        form: morph.form,
+                        person: first.person.clone(),
+                        state: first.state.clone(),
+                        tense: first.tense.clone(),
+                        form: first.form.clone(),
                         occurrences,
                         root_occurrences,
                     }
                     .send_signal_to_dart();
                 }
-                Err(e) => {
-                    debug_print!("get_word_info_ara error: {:?}", e);
+                None => {
+                    debug_print!("get_word_info: no SEDRA match for {:?}", lookup);
                     WordInfo {
                         found: false,
                         word: req.word,

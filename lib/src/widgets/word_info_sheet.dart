@@ -280,9 +280,11 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               ),
               const SizedBox(height: 12),
               Expanded(
-                child: info == null
-                    ? const Center(child: CircularProgressIndicator())
-                    : _buildContent(context, scrollController, info),
+                child: SelectionArea(
+                  child: info == null
+                      ? const Center(child: CircularProgressIndicator())
+                      : _buildContent(context, scrollController, info),
+                ),
               ),
             ],
           ),
@@ -378,8 +380,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                       Text(
                         info.word,
                         style: TextStyle(
-                          fontFamily: 'Cardo',
-                          fontFamilyFallback: const ['Noto Serif Hebrew'],
+                          fontFamily: 'Noto Serif Hebrew',
+                          fontFamilyFallback: const ['Cardo'],
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
                           color: theme.colorScheme.onSurface,
@@ -390,8 +392,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                         Text(
                           info.root,
                           style: TextStyle(
-                            fontFamily: 'Cardo',
-                            fontFamilyFallback: const ['Noto Serif Hebrew'],
+                            fontFamily: 'Noto Serif Hebrew',
+                            fontFamilyFallback: const ['Cardo'],
                             fontSize: 13,
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
@@ -487,31 +489,32 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Text(
-                          e.headword,
-                          style: TextStyle(
-                            fontFamily: 'Cardo',
-                            fontFamilyFallback: const ['Noto Serif Hebrew'],
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: theme.colorScheme.onSurface,
-                          ),
-                          textDirection: TextDirection.rtl,
+                        Icon(
+                          expanded ? Icons.expand_less : Icons.expand_more,
+                          size: 18,
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                         if (e.gloss.isNotEmpty) ...[
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '— ${e.gloss}',
+                              '${e.gloss} —',
                               style: theme.textTheme.bodyMedium,
                             ),
                           ),
                         ] else
                           const Spacer(),
-                        Icon(
-                          expanded ? Icons.expand_less : Icons.expand_more,
-                          size: 18,
-                          color: theme.colorScheme.onSurfaceVariant,
+                        const SizedBox(width: 8),
+                        Text(
+                          _normalizeHebrewCombining(e.headword),
+                          style: TextStyle(
+                            fontFamily: 'Noto Serif Hebrew',
+                            fontFamilyFallback: const ['Cardo'],
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                          textDirection: TextDirection.rtl,
                         ),
                       ],
                     ),
@@ -823,8 +826,8 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
       }
     }
     spans.insert(0, TextSpan(text: '${_compactRef()}  ', style: refStyle));
-    return RichText(
-      text: TextSpan(children: spans),
+    return SelectableText.rich(
+      TextSpan(children: spans),
       textDirection: TextDirection.rtl,
     );
   }
@@ -897,8 +900,8 @@ class _BdbContent extends StatelessWidget {
               ),
             ),
           if (definition != null)
-            RichText(
-              text: TextSpan(
+            SelectableText.rich(
+              TextSpan(
                 children: [
                   if (num != null)
                     TextSpan(
@@ -966,6 +969,29 @@ class _BdbContent extends StatelessWidget {
   }
 }
 
+
+/// BDB headwords are stored in Unicode NFC canonical order (vowel CCC=17 before
+/// dagesh/shin-dot CCC=21-24), but Cardo expects the traditional Hebrew encoding
+/// order (dagesh/shin-dot before vowel). Bubble-swap any such pairs.
+String _normalizeHebrewCombining(String text) {
+  final chars = text.runes.toList();
+  var i = 0;
+  while (i + 1 < chars.length) {
+    if (_isHebVowel(chars[i]) && _isHebDot(chars[i + 1])) {
+      final tmp = chars[i];
+      chars[i] = chars[i + 1];
+      chars[i + 1] = tmp;
+    } else {
+      i++;
+    }
+  }
+  return String.fromCharCodes(chars);
+}
+
+bool _isHebVowel(int cp) =>
+    (cp >= 0x05B0 && cp <= 0x05BD && cp != 0x05BC) || cp == 0x05C7;
+
+bool _isHebDot(int cp) => cp == 0x05BC || cp == 0x05C1 || cp == 0x05C2;
 
 String _stripTrope(String word) {
   return String.fromCharCodes(
@@ -1215,7 +1241,7 @@ class _BibleRefPreviewDialogState extends State<_BibleRefPreviewDialog> {
   }
 
   Widget _buildVerseText(BuildContext context, String text) {
-    return Text(
+    return SelectableText(
       text,
       style: TextStyle(
         fontFamily: 'Cardo',
