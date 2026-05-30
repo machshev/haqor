@@ -54,6 +54,9 @@ pub struct BdbSummary {
 pub struct SedraSummary {
     pub lexeme: String,
     pub meaning: String,
+    /// True for the lexeme of the word that was looked up (vs. sibling lexemes
+    /// of the same root shown for context).
+    pub is_current: bool,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]
@@ -61,6 +64,18 @@ pub struct WordOccurrence {
     pub book: u8,
     pub chapter: u8,
     pub verse: u8,
+}
+
+/// An NT occurrence tagged with which lexeme of the root tree it belongs to, so
+/// the UI can filter occurrences by lexeme. `lexeme_index` aligns with the order
+/// of `sedra_entries`. `words` holds the distinct word forms in that verse.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SedraOccurrence {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub lexeme_index: u32,
+    pub words: Vec<String>,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
@@ -84,4 +99,8 @@ pub struct WordInfo {
     pub form: Option<String>,
     pub occurrences: Vec<WordOccurrence>,
     pub root_occurrences: Vec<WordOccurrence>,
+    pub sedra_occurrences: Vec<SedraOccurrence>,
+    /// OT (Hebrew Bible) occurrences of the same consonantal root, for the NT
+    /// word info "OT" filter. Empty for roots without a Hebrew cognate.
+    pub ot_occurrences: Vec<WordOccurrence>,
 }

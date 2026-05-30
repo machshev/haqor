@@ -1,4 +1,4 @@
-use crate::signals::{BdbSummary, ChapterText, GetChapter, GetVerseText, GetWordInfo, SedraSummary, VerseEntry, VerseText, WordInfo, WordOccurrence};
+use crate::signals::{BdbSummary, ChapterText, GetChapter, GetVerseText, GetWordInfo, SedraOccurrence, SedraSummary, VerseEntry, VerseText, WordInfo, WordOccurrence};
 
 use rinf::{DartSignal, RustSignal, debug_print};
 use haqor_core::bible::Bible;
@@ -69,6 +69,21 @@ fn to_signal_occurrences(occurrences: Vec<haqor_core::bible::WordOccurrence>) ->
         .collect()
 }
 
+fn to_signal_sedra_occurrences(
+    occurrences: Vec<haqor_core::bible::SedraOccurrence>,
+) -> Vec<SedraOccurrence> {
+    occurrences
+        .into_iter()
+        .map(|o| SedraOccurrence {
+            book: o.book,
+            chapter: o.chapter,
+            verse: o.verse,
+            lexeme_index: o.lexeme_index,
+            words: o.words,
+        })
+        .collect()
+}
+
 pub async fn get_word_info() {
     let bible: Bible = Bible::default();
 
@@ -85,23 +100,32 @@ pub async fn get_word_info() {
             let words = bible.sedra_word_info(&lookup).unwrap_or_default();
             match words.first() {
                 Some(first) => {
-                    // One Sedra entry per distinct lexeme, meanings joined.
-                    let mut sedra_entries: Vec<SedraSummary> = Vec::new();
-                    for w in &words {
-                        if sedra_entries.iter().any(|e| e.lexeme == w.lexeme) {
-                            continue;
-                        }
-                        sedra_entries.push(SedraSummary {
-                            lexeme: w.lexeme.clone(),
-                            meaning: w.meanings.join("; "),
-                        });
-                    }
+                    // Overview of the whole root tree: every lexeme sharing the
+                    // root, with the looked-up word's own lexeme flagged.
+                    let sedra_entries = bible
+                        .sedra_root_tree(first.key_root, first.key_lexeme)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|l| SedraSummary {
+                            lexeme: l.lexeme,
+                            meaning: l.meanings.join("; "),
+                            is_current: l.is_current,
+                        })
+                        .collect();
                     let gloss = first.meanings.first().cloned().unwrap_or_default();
+                    // Occurrences of this lexeme, and of all lexemes of the root.
                     let occurrences = to_signal_occurrences(
-                        bible.word_occurrences(&lookup).unwrap_or_default(),
+                        bible.sedra_lexeme_occurrences(first.key_lexeme).unwrap_or_default(),
                     );
                     let root_occurrences = to_signal_occurrences(
-                        bible.word_occurrences_root(&first.root).unwrap_or_default(),
+                        bible.sedra_root_occurrences(first.key_root).unwrap_or_default(),
+                    );
+                    let sedra_occurrences = to_signal_sedra_occurrences(
+                        bible.sedra_root_occurrences_detailed(first.key_root).unwrap_or_default(),
+                    );
+                    // OT occurrences of the same consonantal root (legacy haqor.db).
+                    let ot_occurrences = to_signal_occurrences(
+                        bible.ot_root_occurrences(first.key_root).unwrap_or_default(),
                     );
                     WordInfo {
                         found: true,
@@ -123,6 +147,8 @@ pub async fn get_word_info() {
                         form: first.form.clone(),
                         occurrences,
                         root_occurrences,
+                        sedra_occurrences,
+                        ot_occurrences,
                     }
                     .send_signal_to_dart();
                 }
@@ -148,6 +174,8 @@ pub async fn get_word_info() {
                         form: None,
                         occurrences: Vec::new(),
                         root_occurrences: Vec::new(),
+                        sedra_occurrences: Vec::new(),
+                        ot_occurrences: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -191,6 +219,8 @@ pub async fn get_word_info() {
                         form: None,
                         occurrences,
                         root_occurrences,
+                        sedra_occurrences: Vec::new(),
+                        ot_occurrences: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -216,6 +246,8 @@ pub async fn get_word_info() {
                         form: None,
                         occurrences: Vec::new(),
                         root_occurrences: Vec::new(),
+                        sedra_occurrences: Vec::new(),
+                        ot_occurrences: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }

@@ -90,6 +90,13 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   bool _thisFormExpanded = true;
   bool _byRootExpanded = true;
   bool _isFlagged = false;
+  // NT-only: which lexeme indices (positions in info.sedraEntries) are shown in
+  // the occurrences list. Null until first built, then defaults to the looked-up
+  // lexeme. Empty set means "show all".
+  Set<int>? _selectedLexemes;
+  // NT-only: when true the occurrences list shows OT (Hebrew Bible) verses of
+  // the same consonantal root instead of the SEDRA-based NT occurrences.
+  bool _otSelected = false;
 
   @override
   void initState() {
@@ -257,7 +264,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     final info = _info;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.65,
+      initialChildSize: 0.75,
       minChildSize: 0.3,
       maxChildSize: 0.92,
       expand: false,
@@ -534,11 +541,24 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         ],
         if (info.sedraEntries.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Text(
-            'Sedra Lexicon',
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+          Row(
+            children: [
+              Text(
+                'Root tree',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const Spacer(),
+              if (info.root.isNotEmpty)
+                Text(
+                  '${info.root}  ·  ${info.sedraEntries.length} lexemes',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  textDirection: TextDirection.rtl,
+                ),
+            ],
           ),
           const SizedBox(height: 4),
           Container(
@@ -550,8 +570,19 @@ class _WordInfoSheetState extends State<WordInfoSheet>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: info.sedraEntries.map((e) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
+                return Container(
+                  margin: const EdgeInsets.symmetric(vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 3,
+                  ),
+                  decoration: e.isCurrent
+                      ? BoxDecoration(
+                          color: theme.colorScheme.primaryContainer
+                              .withOpacity(0.6),
+                          borderRadius: BorderRadius.circular(6),
+                        )
+                      : null,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.baseline,
                     textBaseline: TextBaseline.alphabetic,
@@ -563,7 +594,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                           fontFamilyFallback: const ['Noto Serif Hebrew'],
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurface,
+                          color: e.isCurrent
+                              ? theme.colorScheme.onPrimaryContainer
+                              : theme.colorScheme.onSurface,
                         ),
                         textDirection: TextDirection.rtl,
                       ),
@@ -572,7 +605,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                         child: Text(
                           e.meaning,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurface,
+                            color: e.isCurrent
+                                ? theme.colorScheme.onPrimaryContainer
+                                : theme.colorScheme.onSurface,
                           ),
                         ),
                       ),
@@ -592,7 +627,11 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     WordInfo info,
     double bottomPad,
   ) {
-    final theme = Theme.of(context);
+    // NT: lexeme-filterable list backed by the detailed SEDRA occurrences.
+    if (widget.syriac && info.sedraOccurrences.isNotEmpty) {
+      return _buildSedraOccurrencesTab(context, info, bottomPad);
+    }
+
     final both =
         info.occurrences.isNotEmpty && info.rootOccurrences.isNotEmpty;
 
@@ -603,11 +642,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           if (both)
             _sectionHeader(
               context,
-              'This form (${info.occurrences.length})',
+              '${widget.syriac ? 'This lexeme' : 'This form'} (${info.occurrences.length})',
               _thisFormExpanded,
               () => setState(() => _thisFormExpanded = !_thisFormExpanded),
             ),
-          if (!both || _thisFormExpanded) ..._occurrenceRows(info.occurrences),
+          if (!both || _thisFormExpanded)
+            ..._occurrenceRows(info.occurrences, [widget.word]),
         ],
         if (info.rootOccurrences.isNotEmpty) ...[
           if (both) ...[
@@ -619,13 +659,271 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               () => setState(() => _byRootExpanded = !_byRootExpanded),
             ),
           ],
-          if (!both || _byRootExpanded) ..._occurrenceRows(info.rootOccurrences),
+          if (!both || _byRootExpanded)
+            ..._occurrenceRows(info.rootOccurrences, [widget.word]),
         ],
       ],
     );
   }
 
-  List<Widget> _occurrenceRows(List<WordOccurrence> occurrences) {
+  Widget _buildSedraOccurrencesTab(
+    BuildContext context,
+    WordInfo info,
+    double bottomPad,
+  ) {
+    // Lazily default the filter to the looked-up lexeme.
+    if (_selectedLexemes == null) {
+      final current = info.sedraEntries.indexWhere((e) => e.isCurrent);
+      _selectedLexemes = {current >= 0 ? current : 0};
+    }
+    final selected = _selectedLexemes!;
+    final showAll = selected.isEmpty;
+
+    // Distinct-verse counts per lexeme index, for the chip labels.
+    final counts = <int, int>{};
+    for (final o in info.sedraOccurrences) {
+      counts[o.lexemeIndex] = (counts[o.lexemeIndex] ?? 0) + 1;
+    }
+
+    // Apply the filter, then merge rows that fall on the same verse so a verse
+    // appears once with all matched word forms highlighted.
+    final filtered = info.sedraOccurrences
+        .where((o) => showAll || selected.contains(o.lexemeIndex));
+    final byVerse = <String, _VerseOccurrence>{};
+    for (final o in filtered) {
+      final key = '${o.book}:${o.chapter}:${o.verse}';
+      final existing = byVerse[key];
+      if (existing == null) {
+        byVerse[key] = _VerseOccurrence(
+          book: o.book,
+          chapter: o.chapter,
+          verse: o.verse,
+          words: [...o.words],
+        );
+      } else {
+        for (final w in o.words) {
+          if (!existing.words.contains(w)) existing.words.add(w);
+        }
+      }
+    }
+    // When the OT filter is active, fold in the Hebrew-Bible occurrences of the
+    // same root alongside the NT (SEDRA) ones, then sort canonically. OT books
+    // (1–39) sort ahead of NT books (40–66), so the list reads in natural
+    // OT→NT order.
+    final verses = <_VerseOccurrence>[
+      if (_otSelected)
+        for (final o in info.otOccurrences)
+          _VerseOccurrence(
+            book: o.book,
+            chapter: o.chapter,
+            verse: o.verse,
+            words: const [],
+          ),
+      ...byVerse.values,
+    ];
+    verses.sort((a, b) {
+      if (a.book != b.book) return a.book.compareTo(b.book);
+      if (a.chapter != b.chapter) return a.chapter.compareTo(b.chapter);
+      return a.verse.compareTo(b.verse);
+    });
+
+    final theme = Theme.of(context);
+
+    // Compact summary of the active filter, shown on the filter button so the
+    // full chip list can live in a popup instead of eating vertical space.
+    final String lexemeSummary;
+    if (showAll) {
+      lexemeSummary = 'All lexemes';
+    } else if (selected.length == 1) {
+      final i = selected.first;
+      lexemeSummary = (i >= 0 && i < info.sedraEntries.length)
+          ? info.sedraEntries[i].lexeme
+          : 'All lexemes';
+    } else {
+      lexemeSummary = '${selected.length} lexemes';
+    }
+    final filterSummary = _otSelected ? '$lexemeSummary + OT' : lexemeSummary;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Pinned filter header — a single compact row so it stays out of the
+        // way on narrow screens. Tapping the button opens the lexeme picker.
+        Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            border: Border(
+              bottom: BorderSide(
+                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+              ),
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+          child: Row(
+            children: [
+              Flexible(
+                child: ActionChip(
+                  avatar: const Icon(Icons.filter_list, size: 18),
+                  label: Text(
+                    filterSummary,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Cardo',
+                      fontFamilyFallback: ['Noto Serif Hebrew'],
+                    ),
+                  ),
+                  onPressed: () =>
+                      _openLexemeFilterSheet(context, info, counts),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                '${verses.length} verse${verses.length == 1 ? '' : 's'}',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
+            children: _occurrenceVerseRows(verses),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openLexemeFilterSheet(
+    BuildContext context,
+    WordInfo info,
+    Map<int, int> counts,
+  ) async {
+    final theme = Theme.of(context);
+    const lexStyle = TextStyle(
+      fontFamily: 'Cardo',
+      fontFamilyFallback: ['Noto Serif Hebrew'],
+    );
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final selected = _selectedLexemes ?? {};
+            final showAll = selected.isEmpty;
+            // Toggle filter state on both the sheet and the underlying tab so
+            // the verse list stays in sync as selections change.
+            void apply(VoidCallback fn) {
+              setState(fn);
+              setSheetState(() {});
+            }
+
+            return SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(sheetContext).size.height * 0.6,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 12, 4),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Filter occurrences',
+                            style: theme.textTheme.titleSmall,
+                          ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            child: const Text('Done'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: [
+                          CheckboxListTile(
+                            dense: true,
+                            title: const Text('All lexemes'),
+                            value: showAll,
+                            onChanged: (_) => apply(() {
+                              _selectedLexemes = {};
+                            }),
+                          ),
+                          if (info.otOccurrences.isNotEmpty)
+                            CheckboxListTile(
+                              dense: true,
+                              title: Text(
+                                'Old Testament (${info.otOccurrences.length})',
+                              ),
+                              value: _otSelected,
+                              onChanged: (on) => apply(() {
+                                _otSelected = on ?? false;
+                              }),
+                            ),
+                          for (var i = 0; i < info.sedraEntries.length; i++)
+                            CheckboxListTile(
+                              dense: true,
+                              title: Text(
+                                '${info.sedraEntries[i].lexeme} (${counts[i] ?? 0})',
+                                style: lexStyle,
+                              ),
+                              value: selected.contains(i),
+                              onChanged: (on) => apply(() {
+                                final next = {...selected};
+                                if (on ?? false) {
+                                  next.add(i);
+                                } else {
+                                  next.remove(i);
+                                }
+                                _selectedLexemes = next;
+                              }),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  List<Widget> _occurrenceVerseRows(List<_VerseOccurrence> verses) {
+    return verses.map((v) {
+      final bookIndex = v.book - 1;
+      final bookName = bookIndex >= 0 && bookIndex < kBooks.length
+          ? kBooks[bookIndex].transliteration
+          : 'Book ${v.book}';
+      final ref = '$bookName ${v.chapter}:${v.verse}';
+      return _OccurrenceRow(
+        displayRef: ref,
+        bookIndex: bookIndex,
+        chapter: v.chapter,
+        verse: v.verse,
+        highlightWords: v.words,
+        onTap: widget.onNavigateToPassage == null
+            ? null
+            : () => widget.onNavigateToPassage!(bookIndex, v.chapter, v.verse),
+      );
+    }).toList();
+  }
+
+  List<Widget> _occurrenceRows(
+    List<WordOccurrence> occurrences,
+    List<String> highlightWords,
+  ) {
     return occurrences.map((o) {
       final bookIndex = o.book - 1;
       final bookName = bookIndex >= 0 && bookIndex < kBooks.length
@@ -637,7 +935,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         bookIndex: bookIndex,
         chapter: o.chapter,
         verse: o.verse,
-        highlightWord: widget.word,
+        highlightWords: highlightWords,
         onTap: widget.onNavigateToPassage == null
             ? null
             : () => widget.onNavigateToPassage!(
@@ -700,13 +998,29 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   }
 }
 
+/// A merged NT occurrence: a single verse with all the matched word forms to
+/// highlight within it.
+class _VerseOccurrence {
+  _VerseOccurrence({
+    required this.book,
+    required this.chapter,
+    required this.verse,
+    required this.words,
+  });
+
+  final int book;
+  final int chapter;
+  final int verse;
+  final List<String> words;
+}
+
 class _OccurrenceRow extends StatefulWidget {
   const _OccurrenceRow({
     required this.displayRef,
     required this.bookIndex,
     required this.chapter,
     required this.verse,
-    required this.highlightWord,
+    required this.highlightWords,
     this.onTap,
   });
 
@@ -714,7 +1028,7 @@ class _OccurrenceRow extends StatefulWidget {
   final int bookIndex;
   final int chapter;
   final int verse;
-  final String highlightWord;
+  final List<String> highlightWords;
   final VoidCallback? onTap;
 
   @override
@@ -762,7 +1076,6 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final text = _text;
     return InkWell(
       borderRadius: BorderRadius.circular(6),
@@ -807,13 +1120,14 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
       fontSize: 12,
       color: theme.colorScheme.primary,
     );
-    final strippedTarget = _stripTrope(widget.highlightWord);
+    final strippedTargets =
+        widget.highlightWords.map(_stripTrope).toSet();
     final tokens = text.split(' ');
     final spans = <InlineSpan>[];
     for (var i = 0; i < tokens.length; i++) {
       if (i > 0) spans.add(const TextSpan(text: ' '));
       final token = tokens[i];
-      if (_stripTrope(token) == strippedTarget) {
+      if (strippedTargets.contains(_stripTrope(token))) {
         spans.add(TextSpan(
           text: token,
           style: baseStyle.copyWith(
