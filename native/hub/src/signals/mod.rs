@@ -78,6 +78,18 @@ pub struct SedraOccurrence {
     pub words: Vec<String>,
 }
 
+/// An OT occurrence tagged with the surface form found in that verse, so the UI
+/// can filter a root's occurrences by inflected form (the OT analogue of
+/// `SedraOccurrence`'s lexeme filter). The form inventory is derived on the Dart
+/// side from the distinct `form` values.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct HebrewOccurrence {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub form: String,
+}
+
 #[derive(Debug, Serialize, RustSignal)]
 pub struct WordInfo {
     pub found: bool,
@@ -103,4 +115,7 @@ pub struct WordInfo {
     /// OT (Hebrew Bible) occurrences of the same consonantal root, for the NT
     /// word info "OT" filter. Empty for roots without a Hebrew cognate.
     pub ot_occurrences: Vec<WordOccurrence>,
+    /// OT root occurrences tagged with their surface form, for the OT word
+    /// info per-form filter. Empty for NT lookups.
+    pub hebrew_occurrences: Vec<HebrewOccurrence>,
 }

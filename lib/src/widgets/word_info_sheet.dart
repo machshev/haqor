@@ -87,9 +87,11 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   WordInfo? _info;
   final Set<int> _expandedBdb = {};
   late final TabController _tabController;
-  bool _thisFormExpanded = true;
-  bool _byRootExpanded = true;
   bool _isFlagged = false;
+  // OT-only: which surface forms of the root are shown in the occurrences list.
+  // Null until first built, then defaults to the looked-up word's form. Empty
+  // set means "show all forms".
+  Set<String>? _otForms;
   // NT-only: which lexeme indices (positions in info.sedraEntries) are shown in
   // the occurrences list. Null until first built, then defaults to the looked-up
   // lexeme. Empty set means "show all".
@@ -632,37 +634,244 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       return _buildSedraOccurrencesTab(context, info, bottomPad);
     }
 
-    final both =
-        info.occurrences.isNotEmpty && info.rootOccurrences.isNotEmpty;
+    if (info.occurrences.isNotEmpty || info.rootOccurrences.isNotEmpty) {
+      return _buildHebrewOccurrencesTab(context, info, bottomPad);
+    }
 
     return ListView(
       padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
+      children: const [],
+    );
+  }
+
+  /// OT counterpart of [_buildSedraOccurrencesTab]: a pinned filter header with
+  /// a verse count over a merged-by-verse list. The NT side filters by lexeme;
+  /// the OT side filters by surface form (the inflected forms sharing the root),
+  /// since the parse data carries no per-occurrence lexeme.
+  Widget _buildHebrewOccurrencesTab(
+    BuildContext context,
+    WordInfo info,
+    double bottomPad,
+  ) {
+    final theme = Theme.of(context);
+
+    // Older/edge data (e.g. an NT lookup with no detailed occurrences) has no
+    // per-form tagging — fall back to a flat root list highlighting the word.
+    if (info.hebrewOccurrences.isEmpty) {
+      final flat = [
+        for (final o in (info.rootOccurrences.isNotEmpty
+            ? info.rootOccurrences
+            : info.occurrences))
+          _VerseOccurrence(
+            book: o.book,
+            chapter: o.chapter,
+            verse: o.verse,
+            words: [widget.word],
+          ),
+      ];
+      return ListView(
+        padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
+        children: _occurrenceVerseRows(flat),
+      );
+    }
+
+    // Distinct-verse counts per surface form, for the chip labels. The detailed
+    // query already returns one row per (verse, form).
+    final counts = <String, int>{};
+    for (final o in info.hebrewOccurrences) {
+      counts[o.form] = (counts[o.form] ?? 0) + 1;
+    }
+    final forms = counts.keys.toList()
+      ..sort((a, b) {
+        final byCount = counts[b]!.compareTo(counts[a]!);
+        return byCount != 0 ? byCount : a.compareTo(b);
+      });
+
+    // Lazily default the filter to the looked-up word's form.
+    if (_otForms == null) {
+      final key = _surfaceKey(widget.word);
+      final match = forms.firstWhere(
+        (f) => _surfaceKey(f) == key,
+        orElse: () => '',
+      );
+      _otForms = match.isEmpty ? {} : {match};
+    }
+    final selected = _otForms!;
+    final showAll = selected.isEmpty;
+
+    // Apply the filter, then merge rows on the same verse so a verse appears
+    // once with all matched forms highlighted.
+    final byVerse = <String, _VerseOccurrence>{};
+    for (final o in info.hebrewOccurrences) {
+      if (!showAll && !selected.contains(o.form)) continue;
+      final key = '${o.book}:${o.chapter}:${o.verse}';
+      final existing = byVerse[key];
+      if (existing == null) {
+        byVerse[key] = _VerseOccurrence(
+          book: o.book,
+          chapter: o.chapter,
+          verse: o.verse,
+          words: [o.form],
+        );
+      } else if (!existing.words.contains(o.form)) {
+        existing.words.add(o.form);
+      }
+    }
+    final verses = byVerse.values.toList();
+    verses.sort((a, b) {
+      if (a.book != b.book) return a.book.compareTo(b.book);
+      if (a.chapter != b.chapter) return a.chapter.compareTo(b.chapter);
+      return a.verse.compareTo(b.verse);
+    });
+
+    final String filterSummary;
+    if (showAll) {
+      filterSummary = 'All forms';
+    } else if (selected.length == 1) {
+      filterSummary = selected.first;
+    } else {
+      filterSummary = '${selected.length} forms';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (info.occurrences.isNotEmpty) ...[
-          if (both)
-            _sectionHeader(
-              context,
-              '${widget.syriac ? 'This lexeme' : 'This form'} (${info.occurrences.length})',
-              _thisFormExpanded,
-              () => setState(() => _thisFormExpanded = !_thisFormExpanded),
+        Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            border: Border(
+              bottom: BorderSide(
+                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+              ),
             ),
-          if (!both || _thisFormExpanded)
-            ..._occurrenceRows(info.occurrences, [widget.word]),
-        ],
-        if (info.rootOccurrences.isNotEmpty) ...[
-          if (both) ...[
-            const SizedBox(height: 8),
-            _sectionHeader(
-              context,
-              'By root (${info.rootOccurrences.length})',
-              _byRootExpanded,
-              () => setState(() => _byRootExpanded = !_byRootExpanded),
-            ),
-          ],
-          if (!both || _byRootExpanded)
-            ..._occurrenceRows(info.rootOccurrences, [widget.word]),
-        ],
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+          child: Row(
+            children: [
+              Flexible(
+                child: ActionChip(
+                  avatar: const Icon(Icons.filter_list, size: 18),
+                  label: Text(
+                    filterSummary,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Cardo',
+                      fontFamilyFallback: ['Noto Serif Hebrew'],
+                    ),
+                  ),
+                  onPressed: () =>
+                      _openHebrewFilterSheet(context, forms, counts),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                '${verses.length} verse${verses.length == 1 ? '' : 's'}',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView(
+            padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
+            children: _occurrenceVerseRows(verses),
+          ),
+        ),
       ],
+    );
+  }
+
+  Future<void> _openHebrewFilterSheet(
+    BuildContext context,
+    List<String> forms,
+    Map<String, int> counts,
+  ) async {
+    final theme = Theme.of(context);
+    const formStyle = TextStyle(
+      fontFamily: 'Cardo',
+      fontFamilyFallback: ['Noto Serif Hebrew'],
+    );
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final selected = _otForms ?? {};
+            final showAll = selected.isEmpty;
+            void apply(VoidCallback fn) {
+              setState(fn);
+              setSheetState(() {});
+            }
+
+            return SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(sheetContext).size.height * 0.6,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 12, 4),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Filter occurrences',
+                            style: theme.textTheme.titleSmall,
+                          ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            child: const Text('Done'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: [
+                          CheckboxListTile(
+                            dense: true,
+                            title: const Text('All forms'),
+                            value: showAll,
+                            onChanged: (_) => apply(() {
+                              _otForms = {};
+                            }),
+                          ),
+                          for (final form in forms)
+                            CheckboxListTile(
+                              dense: true,
+                              title: Text(
+                                '$form (${counts[form] ?? 0})',
+                                style: formStyle,
+                                textDirection: TextDirection.rtl,
+                              ),
+                              value: selected.contains(form),
+                              onChanged: (on) => apply(() {
+                                final next = {...selected};
+                                if (on ?? false) {
+                                  next.add(form);
+                                } else {
+                                  next.remove(form);
+                                }
+                                _otForms = next;
+                              }),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -920,66 +1129,6 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     }).toList();
   }
 
-  List<Widget> _occurrenceRows(
-    List<WordOccurrence> occurrences,
-    List<String> highlightWords,
-  ) {
-    return occurrences.map((o) {
-      final bookIndex = o.book - 1;
-      final bookName = bookIndex >= 0 && bookIndex < kBooks.length
-          ? kBooks[bookIndex].transliteration
-          : 'Book ${o.book}';
-      final ref = '$bookName ${o.chapter}:${o.verse}';
-      return _OccurrenceRow(
-        displayRef: ref,
-        bookIndex: bookIndex,
-        chapter: o.chapter,
-        verse: o.verse,
-        highlightWords: highlightWords,
-        onTap: widget.onNavigateToPassage == null
-            ? null
-            : () => widget.onNavigateToPassage!(
-                  bookIndex,
-                  o.chapter,
-                  o.verse,
-                ),
-      );
-    }).toList();
-  }
-
-  Widget _sectionHeader(
-    BuildContext context,
-    String title,
-    bool expanded,
-    VoidCallback onTap,
-  ) {
-    final theme = Theme.of(context);
-    return InkWell(
-      borderRadius: BorderRadius.circular(6),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 4, top: 2),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-            Icon(
-              expanded ? Icons.expand_less : Icons.expand_more,
-              size: 18,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _chip(BuildContext context, String label, String value) {
     final theme = Theme.of(context);
     return Container(
@@ -1122,12 +1271,14 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
     );
     final strippedTargets =
         widget.highlightWords.map(_stripTrope).toSet();
+    final keyTargets = widget.highlightWords.map(_surfaceKey).toSet();
     final tokens = text.split(' ');
     final spans = <InlineSpan>[];
     for (var i = 0; i < tokens.length; i++) {
       if (i > 0) spans.add(const TextSpan(text: ' '));
       final token = tokens[i];
-      if (strippedTargets.contains(_stripTrope(token))) {
+      if (strippedTargets.contains(_stripTrope(token)) ||
+          keyTargets.contains(_surfaceKey(token))) {
         spans.add(TextSpan(
           text: token,
           style: baseStyle.copyWith(
@@ -1320,6 +1471,77 @@ String _stripTrope(String word) {
           cp == 0x05C6);
     }),
   );
+}
+
+int _hebCombiningClass(int cp) {
+  switch (cp) {
+    case 0x05B0:
+      return 10;
+    case 0x05B1:
+      return 11;
+    case 0x05B2:
+      return 12;
+    case 0x05B3:
+      return 13;
+    case 0x05B4:
+      return 14;
+    case 0x05B5:
+      return 15;
+    case 0x05B6:
+      return 16;
+    case 0x05B7:
+      return 17;
+    case 0x05B8:
+    case 0x05C7:
+      return 18;
+    case 0x05B9:
+      return 19;
+    case 0x05BB:
+      return 20;
+    case 0x05BC:
+      return 21;
+    case 0x05C1:
+      return 24;
+    case 0x05C2:
+      return 25;
+    default:
+      return 0;
+  }
+}
+
+/// Canonical surface key mirroring the Rust `normalize_surface`: keep only
+/// consonants and pointing (dropping cantillation/maqaf/etc.), then stable-sort
+/// each run of combining marks by combining class. Used to match the looked-up
+/// word and verse tokens against the DB's normalised surface forms regardless
+/// of trope or combining-mark order.
+String _surfaceKey(String word) {
+  final kept = word.runes.where((cp) {
+    return (cp >= 0x05D0 && cp <= 0x05EA) ||
+        (cp >= 0x05B0 && cp <= 0x05B9) ||
+        cp == 0x05BB ||
+        cp == 0x05BC ||
+        cp == 0x05C1 ||
+        cp == 0x05C2 ||
+        cp == 0x05C7;
+  }).toList();
+
+  final out = <int>[];
+  var i = 0;
+  while (i < kept.length) {
+    if (_hebCombiningClass(kept[i]) == 0) {
+      out.add(kept[i]);
+      i++;
+    } else {
+      final start = i;
+      while (i < kept.length && _hebCombiningClass(kept[i]) != 0) {
+        i++;
+      }
+      final run = kept.sublist(start, i)
+        ..sort((a, b) => _hebCombiningClass(a).compareTo(_hebCombiningClass(b)));
+      out.addAll(run);
+    }
+  }
+  return String.fromCharCodes(out);
 }
 
 class _FlagNoteDialog extends StatefulWidget {

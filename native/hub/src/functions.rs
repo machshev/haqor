@@ -1,4 +1,4 @@
-use crate::signals::{BdbSummary, ChapterText, GetChapter, GetVerseText, GetWordInfo, SedraOccurrence, SedraSummary, VerseEntry, VerseText, WordInfo, WordOccurrence};
+use crate::signals::{BdbSummary, ChapterText, GetChapter, GetVerseText, GetWordInfo, HebrewOccurrence, SedraOccurrence, SedraSummary, VerseEntry, VerseText, WordInfo, WordOccurrence};
 
 use rinf::{DartSignal, RustSignal, debug_print};
 use haqor_core::bible::Bible;
@@ -84,6 +84,20 @@ fn to_signal_sedra_occurrences(
         .collect()
 }
 
+fn to_signal_hebrew_occurrences(
+    occurrences: Vec<haqor_core::bible::HebrewOccurrence>,
+) -> Vec<HebrewOccurrence> {
+    occurrences
+        .into_iter()
+        .map(|o| HebrewOccurrence {
+            book: o.book,
+            chapter: o.chapter,
+            verse: o.verse,
+            form: o.form,
+        })
+        .collect()
+}
+
 pub async fn get_word_info() {
     let bible: Bible = Bible::default();
 
@@ -149,6 +163,7 @@ pub async fn get_word_info() {
                         root_occurrences,
                         sedra_occurrences,
                         ot_occurrences,
+                        hebrew_occurrences: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -176,16 +191,22 @@ pub async fn get_word_info() {
                         root_occurrences: Vec::new(),
                         sedra_occurrences: Vec::new(),
                         ot_occurrences: Vec::new(),
+                        hebrew_occurrences: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
             }
         } else {
-            match bible.get_word_morphology(&lookup) {
-                Ok(morph) => {
-                    let bdb = bible.lex_lookup(&req.word).unwrap_or_default();
-                    let gloss = bdb.first().map(|e| e.gloss.clone()).unwrap_or_default();
-                    let bdb_entries = bdb
+            // OT lexicon now comes from the Rust reverse-parse engine
+            // (`hebrew.db`) for morphology + occurrences, bridged to the
+            // OpenScriptures BDB lexicon (`lexicon.db`) by consonantal root for
+            // glossed root trees. `hebrew_word_info` normalises the lookup
+            // itself, so the raw word is passed through.
+            match bible.hebrew_word_info(&req.word) {
+                Some(info) => {
+                    let bdb_entries = bible
+                        .hebrew_bdb_by_root(&info.root)
+                        .unwrap_or_default()
                         .into_iter()
                         .map(|e| BdbSummary {
                             headword: e.headword,
@@ -194,38 +215,44 @@ pub async fn get_word_info() {
                         })
                         .collect();
                     let occurrences = to_signal_occurrences(
-                        bible.word_occurrences(&lookup).unwrap_or_default(),
+                        bible.hebrew_surface_occurrences(&req.word).unwrap_or_default(),
                     );
                     let root_occurrences = to_signal_occurrences(
-                        bible.word_occurrences_root(&morph.root).unwrap_or_default(),
+                        bible.hebrew_root_occurrences(&info.root).unwrap_or_default(),
+                    );
+                    let hebrew_occurrences = to_signal_hebrew_occurrences(
+                        bible
+                            .hebrew_root_occurrences_detailed(&info.root)
+                            .unwrap_or_default(),
                     );
                     WordInfo {
                         found: true,
-                        word: morph.word,
-                        root: morph.root,
-                        gloss,
-                        gender: morph.gender,
-                        number: morph.number,
-                        prefix: morph.prefix,
-                        suffix: morph.suffix,
-                        prepositions: morph.prepositions,
-                        article: morph.article,
-                        vav_con: morph.vav_con,
+                        word: info.word,
+                        root: info.root,
+                        gloss: info.gloss,
+                        gender: info.gender,
+                        number: info.number,
+                        prefix: info.prefix,
+                        suffix: None,
+                        prepositions: None,
+                        article: false,
+                        vav_con: info.vav_con,
                         bdb_entries,
                         sedra_entries: Vec::new(),
-                        person: None,
-                        state: None,
-                        tense: None,
-                        form: None,
+                        person: info.person,
+                        state: info.state,
+                        tense: info.tense,
+                        form: info.form,
                         occurrences,
                         root_occurrences,
                         sedra_occurrences: Vec::new(),
                         ot_occurrences: Vec::new(),
+                        hebrew_occurrences,
                     }
                     .send_signal_to_dart();
                 }
-                Err(e) => {
-                    debug_print!("get_word_info error: {:?}", e);
+                None => {
+                    debug_print!("get_word_info: no OT parse for {:?}", lookup);
                     WordInfo {
                         found: false,
                         word: req.word,
@@ -248,6 +275,7 @@ pub async fn get_word_info() {
                         root_occurrences: Vec::new(),
                         sedra_occurrences: Vec::new(),
                         ot_occurrences: Vec::new(),
+                        hebrew_occurrences: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
