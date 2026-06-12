@@ -10,6 +10,6 @@ src="$(dirname "$0")/../../haqor-core/data"
 dst="$(dirname "$0")/../assets/db"
 
 mkdir -p "$dst"
-for db in haqor bible sedra hebrew lexicon; do
+for db in bible sedra hebrew lexicon; do
   cp -v "$src/$db.db" "$dst/$db.db"
 done

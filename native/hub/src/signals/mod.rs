@@ -1,8 +1,8 @@
 use rinf::{DartSignal, RustSignal, SignalPiece};
 use serde::{Deserialize, Serialize};
 
-/// Directory holding the database files (haqor.db, bible.db, sedra.db,
-/// hebrew.db, lexicon.db). Sent once from Dart at startup, after the bundled
+/// Directory holding the database files (bible.db, sedra.db, hebrew.db,
+/// lexicon.db). Sent once from Dart at startup, after the bundled
 /// assets have been copied into app-local storage; no queries are answered
 /// until it arrives.
 #[derive(Debug, Deserialize, DartSignal)]

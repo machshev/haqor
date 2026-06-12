@@ -5,10 +5,9 @@ import 'package:path_provider/path_provider.dart';
 
 /// Bump whenever the bundled databases change (tool/sync-dbs.sh) so installed
 /// copies on devices are replaced on the next app start.
-const _dbVersion = 1;
+const _dbVersion = 2;
 
 const _dbFiles = [
-  'haqor.db',
   'bible.db',
   'sedra.db',
   'hebrew.db',

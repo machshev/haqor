@@ -164,7 +164,7 @@ pub async fn get_word_info(bible: SharedBible) {
                             .sedra_root_occurrences_detailed(first.key_root)
                             .unwrap_or_default(),
                     );
-                    // OT occurrences of the same consonantal root (legacy haqor.db).
+                    // OT occurrences of the same consonantal root.
                     let ot_occurrences = to_signal_occurrences(
                         bible
                             .ot_root_occurrences(first.key_root)
