@@ -3,12 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:rinf/rinf.dart';
 
 import 'src/bindings/bindings.dart';
+import 'src/db_installer.dart';
 import 'src/reader_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   await initializeRust(assignRustSignal);
+  // Tell Rust where the databases live; it answers no queries until it has
+  // opened them, so this must precede runApp (the reader queries in initState).
+  final dbDir = await installDatabases();
+  SetDataDir(path: dbDir).sendSignalToRust();
   runApp(const Haqor());
 }
 

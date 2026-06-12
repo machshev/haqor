@@ -1,30 +1,46 @@
-use crate::signals::{BdbSummary, ChapterText, GetChapter, GetVerseText, GetWordInfo, HebrewOccurrence, SedraOccurrence, SedraSummary, VerseEntry, VerseText, WordInfo, WordOccurrence};
+use crate::signals::{
+    BdbSummary, ChapterText, GetChapter, GetVerseText, GetWordInfo, HebrewOccurrence,
+    SedraOccurrence, SedraSummary, VerseEntry, VerseText, WordInfo, WordOccurrence,
+};
 
-use rinf::{DartSignal, RustSignal, debug_print};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
 use haqor_core::bible::Bible;
+use rinf::{DartSignal, RustSignal, debug_print};
 
-pub async fn get_verse_text() {
-    let bible: Bible = Bible::default();
+/// One database connection is shared by all query handlers. The databases are
+/// read-only, so a poisoned lock (a panic mid-query) leaves nothing
+/// inconsistent and the connection can keep being used.
+pub type SharedBible = Arc<Mutex<Bible>>;
 
+fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
+    bible.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+pub async fn get_verse_text(bible: SharedBible) {
     let receiver = GetVerseText::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let verse_ref = signal_pack.message;
         debug_print!("{:?}", verse_ref);
-        match bible.get(verse_ref.book, verse_ref.chapter, verse_ref.verse) {
-            Ok(text) => VerseText { book: verse_ref.book, chapter: verse_ref.chapter, verse: verse_ref.verse, text }.send_signal_to_dart(),
+        match lock(&bible).get(verse_ref.book, verse_ref.chapter, verse_ref.verse) {
+            Ok(text) => VerseText {
+                book: verse_ref.book,
+                chapter: verse_ref.chapter,
+                verse: verse_ref.verse,
+                text,
+            }
+            .send_signal_to_dart(),
             Err(e) => debug_print!("get_verse_text error: {:?}", e),
         }
     }
 }
 
-pub async fn get_chapter_text() {
-    let bible: Bible = Bible::default();
-
+pub async fn get_chapter_text(bible: SharedBible) {
     let receiver = GetChapter::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let req = signal_pack.message;
         debug_print!("{:?}", req);
-        match bible.get_chapter(req.book, req.chapter, req.syriac) {
+        match lock(&bible).get_chapter(req.book, req.chapter, req.syriac) {
             Ok(raw) => {
                 let verses = raw
                     .into_iter()
@@ -62,10 +78,16 @@ fn strip_trope(word: &str) -> String {
         .collect()
 }
 
-fn to_signal_occurrences(occurrences: Vec<haqor_core::bible::WordOccurrence>) -> Vec<WordOccurrence> {
+fn to_signal_occurrences(
+    occurrences: Vec<haqor_core::bible::WordOccurrence>,
+) -> Vec<WordOccurrence> {
     occurrences
         .into_iter()
-        .map(|o| WordOccurrence { book: o.book, chapter: o.chapter, verse: o.verse })
+        .map(|o| WordOccurrence {
+            book: o.book,
+            chapter: o.chapter,
+            verse: o.verse,
+        })
         .collect()
 }
 
@@ -98,11 +120,10 @@ fn to_signal_hebrew_occurrences(
         .collect()
 }
 
-pub async fn get_word_info() {
-    let bible: Bible = Bible::default();
-
+pub async fn get_word_info(bible: SharedBible) {
     let receiver = GetWordInfo::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
+        let bible = lock(&bible);
         let req = signal_pack.message;
         debug_print!("{:?}", req);
         let lookup = strip_trope(&req.word);
@@ -129,17 +150,25 @@ pub async fn get_word_info() {
                     let gloss = first.meanings.first().cloned().unwrap_or_default();
                     // Occurrences of this lexeme, and of all lexemes of the root.
                     let occurrences = to_signal_occurrences(
-                        bible.sedra_lexeme_occurrences(first.key_lexeme).unwrap_or_default(),
+                        bible
+                            .sedra_lexeme_occurrences(first.key_lexeme)
+                            .unwrap_or_default(),
                     );
                     let root_occurrences = to_signal_occurrences(
-                        bible.sedra_root_occurrences(first.key_root).unwrap_or_default(),
+                        bible
+                            .sedra_root_occurrences(first.key_root)
+                            .unwrap_or_default(),
                     );
                     let sedra_occurrences = to_signal_sedra_occurrences(
-                        bible.sedra_root_occurrences_detailed(first.key_root).unwrap_or_default(),
+                        bible
+                            .sedra_root_occurrences_detailed(first.key_root)
+                            .unwrap_or_default(),
                     );
                     // OT occurrences of the same consonantal root (legacy haqor.db).
                     let ot_occurrences = to_signal_occurrences(
-                        bible.ot_root_occurrences(first.key_root).unwrap_or_default(),
+                        bible
+                            .ot_root_occurrences(first.key_root)
+                            .unwrap_or_default(),
                     );
                     WordInfo {
                         found: true,
@@ -215,10 +244,14 @@ pub async fn get_word_info() {
                         })
                         .collect();
                     let occurrences = to_signal_occurrences(
-                        bible.hebrew_surface_occurrences(&req.word).unwrap_or_default(),
+                        bible
+                            .hebrew_surface_occurrences(&req.word)
+                            .unwrap_or_default(),
                     );
                     let root_occurrences = to_signal_occurrences(
-                        bible.hebrew_root_occurrences(&info.root).unwrap_or_default(),
+                        bible
+                            .hebrew_root_occurrences(&info.root)
+                            .unwrap_or_default(),
                     );
                     let hebrew_occurrences = to_signal_hebrew_occurrences(
                         bible
