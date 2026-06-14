@@ -1,6 +1,7 @@
 use crate::signals::{
-    BdbSummary, ChapterText, GetChapter, GetVerseText, GetWordInfo, HebrewOccurrence,
-    SedraOccurrence, SedraSummary, VerseEntry, VerseText, WordInfo, WordOccurrence,
+    BdbSummary, ChapterText, GetChapter, GetVerseText, GetVocab, GetWordInfo, GetWordOccurrences,
+    HebrewOccurrence, SedraOccurrence, SedraSummary, VerseEntry, VerseText, VocabEntry, VocabList,
+    WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -120,6 +121,32 @@ fn to_signal_hebrew_occurrences(
         .collect()
 }
 
+pub async fn get_vocab(bible: SharedBible) {
+    let receiver = GetVocab::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        match lock(&bible).vocab(req.limit, req.offset) {
+            Ok(entries) => VocabList {
+                offset: req.offset,
+                entries: entries
+                    .into_iter()
+                    .map(|e| VocabEntry {
+                        surface: e.surface,
+                        occurrences: e.occurrences,
+                        lexical_class: e.lexical_class,
+                        root: e.root,
+                        gloss: e.gloss,
+                        morph: e.morph,
+                    })
+                    .collect(),
+            }
+            .send_signal_to_dart(),
+            Err(e) => debug_print!("get_vocab error: {:?}", e),
+        }
+    }
+}
+
 pub async fn get_word_info(bible: SharedBible) {
     let receiver = GetWordInfo::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
@@ -148,28 +175,6 @@ pub async fn get_word_info(bible: SharedBible) {
                         })
                         .collect();
                     let gloss = first.meanings.first().cloned().unwrap_or_default();
-                    // Occurrences of this lexeme, and of all lexemes of the root.
-                    let occurrences = to_signal_occurrences(
-                        bible
-                            .sedra_lexeme_occurrences(first.key_lexeme)
-                            .unwrap_or_default(),
-                    );
-                    let root_occurrences = to_signal_occurrences(
-                        bible
-                            .sedra_root_occurrences(first.key_root)
-                            .unwrap_or_default(),
-                    );
-                    let sedra_occurrences = to_signal_sedra_occurrences(
-                        bible
-                            .sedra_root_occurrences_detailed(first.key_root)
-                            .unwrap_or_default(),
-                    );
-                    // OT occurrences of the same consonantal root.
-                    let ot_occurrences = to_signal_occurrences(
-                        bible
-                            .ot_root_occurrences(first.key_root)
-                            .unwrap_or_default(),
-                    );
                     WordInfo {
                         found: true,
                         word: first.word.clone(),
@@ -188,11 +193,6 @@ pub async fn get_word_info(bible: SharedBible) {
                         state: first.state.clone(),
                         tense: first.tense.clone(),
                         form: first.form.clone(),
-                        occurrences,
-                        root_occurrences,
-                        sedra_occurrences,
-                        ot_occurrences,
-                        hebrew_occurrences: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -216,11 +216,6 @@ pub async fn get_word_info(bible: SharedBible) {
                         state: None,
                         tense: None,
                         form: None,
-                        occurrences: Vec::new(),
-                        root_occurrences: Vec::new(),
-                        sedra_occurrences: Vec::new(),
-                        ot_occurrences: Vec::new(),
-                        hebrew_occurrences: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -243,21 +238,6 @@ pub async fn get_word_info(bible: SharedBible) {
                             content_json: e.content_json,
                         })
                         .collect();
-                    let occurrences = to_signal_occurrences(
-                        bible
-                            .hebrew_surface_occurrences(&req.word)
-                            .unwrap_or_default(),
-                    );
-                    let root_occurrences = to_signal_occurrences(
-                        bible
-                            .hebrew_root_occurrences(&info.root)
-                            .unwrap_or_default(),
-                    );
-                    let hebrew_occurrences = to_signal_hebrew_occurrences(
-                        bible
-                            .hebrew_root_occurrences_detailed(&info.root)
-                            .unwrap_or_default(),
-                    );
                     WordInfo {
                         found: true,
                         word: info.word,
@@ -276,11 +256,6 @@ pub async fn get_word_info(bible: SharedBible) {
                         state: info.state,
                         tense: info.tense,
                         form: info.form,
-                        occurrences,
-                        root_occurrences,
-                        sedra_occurrences: Vec::new(),
-                        ot_occurrences: Vec::new(),
-                        hebrew_occurrences,
                     }
                     .send_signal_to_dart();
                 }
@@ -304,15 +279,91 @@ pub async fn get_word_info(bible: SharedBible) {
                         state: None,
                         tense: None,
                         form: None,
-                        occurrences: Vec::new(),
-                        root_occurrences: Vec::new(),
-                        sedra_occurrences: Vec::new(),
-                        ot_occurrences: Vec::new(),
-                        hebrew_occurrences: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
             }
         }
+    }
+}
+
+/// Lazy occurrence lookup, split out of [`get_word_info`] so the Occurrences tab
+/// can defer the full-text root scans until it is actually opened. Re-derives
+/// the lexeme/root keys from the (cheap) lexicon lookup, then runs the scans.
+pub async fn get_word_occurrences(bible: SharedBible) {
+    let receiver = GetWordOccurrences::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let bible = lock(&bible);
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let lookup = strip_trope(&req.word);
+
+        if req.syriac {
+            let words = bible.sedra_word_info(&lookup).unwrap_or_default();
+            match words.first() {
+                Some(first) => WordOccurrences {
+                    found: true,
+                    occurrences: to_signal_occurrences(
+                        bible
+                            .sedra_lexeme_occurrences(first.key_lexeme)
+                            .unwrap_or_default(),
+                    ),
+                    root_occurrences: to_signal_occurrences(
+                        bible
+                            .sedra_root_occurrences(first.key_root)
+                            .unwrap_or_default(),
+                    ),
+                    sedra_occurrences: to_signal_sedra_occurrences(
+                        bible
+                            .sedra_root_occurrences_detailed(first.key_root)
+                            .unwrap_or_default(),
+                    ),
+                    ot_occurrences: to_signal_occurrences(
+                        bible
+                            .ot_root_occurrences(first.key_root)
+                            .unwrap_or_default(),
+                    ),
+                    hebrew_occurrences: Vec::new(),
+                }
+                .send_signal_to_dart(),
+                None => empty_word_occurrences().send_signal_to_dart(),
+            }
+        } else {
+            match bible.hebrew_word_info(&req.word) {
+                Some(info) => WordOccurrences {
+                    found: true,
+                    occurrences: to_signal_occurrences(
+                        bible
+                            .hebrew_surface_occurrences(&req.word)
+                            .unwrap_or_default(),
+                    ),
+                    root_occurrences: to_signal_occurrences(
+                        bible
+                            .hebrew_root_occurrences(&info.root)
+                            .unwrap_or_default(),
+                    ),
+                    sedra_occurrences: Vec::new(),
+                    ot_occurrences: Vec::new(),
+                    hebrew_occurrences: to_signal_hebrew_occurrences(
+                        bible
+                            .hebrew_root_occurrences_detailed(&info.root)
+                            .unwrap_or_default(),
+                    ),
+                }
+                .send_signal_to_dart(),
+                None => empty_word_occurrences().send_signal_to_dart(),
+            }
+        }
+    }
+}
+
+fn empty_word_occurrences() -> WordOccurrences {
+    WordOccurrences {
+        found: false,
+        occurrences: Vec::new(),
+        root_occurrences: Vec::new(),
+        sedra_occurrences: Vec::new(),
+        ot_occurrences: Vec::new(),
+        hebrew_occurrences: Vec::new(),
     }
 }

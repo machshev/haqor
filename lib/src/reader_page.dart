@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bible_data.dart';
 import 'bindings/bindings.dart';
+import 'tutor/tutor_page.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
 import 'widgets/verse_row.dart';
@@ -15,7 +16,11 @@ class _PassageRef {
   final int bookIndex;
   final int chapter;
   final int? verse;
-  const _PassageRef({required this.bookIndex, required this.chapter, this.verse});
+  const _PassageRef({
+    required this.bookIndex,
+    required this.chapter,
+    this.verse,
+  });
 
   String toStorageString() =>
       verse != null ? '$bookIndex,$chapter,$verse' : '$bookIndex,$chapter';
@@ -110,10 +115,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
       final bookIdx = msg.book - 1;
       // Ignore stale duplicate responses for chapters already loaded.
-      if (_sections.any((s) => s.bookIndex == bookIdx && s.chapter == msg.chapter)) {
+      if (_sections.any(
+        (s) => s.bookIndex == bookIdx && s.chapter == msg.chapter,
+      )) {
         return;
       }
-      final goesOnTop = _sections.isNotEmpty &&
+      final goesOnTop =
+          _sections.isNotEmpty &&
           (bookIdx < _sections.first.bookIndex ||
               (bookIdx == _sections.first.bookIndex &&
                   msg.chapter < _sections.first.chapter));
@@ -155,8 +163,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   void _appendSection(_Section section) {
     if (_sections.length >= 3) {
       // Evict top section (content above viewport shrinks → compensate scroll).
-      final oldOffset =
-          _scrollController.hasClients ? _scrollController.offset : 0.0;
+      final oldOffset = _scrollController.hasClients
+          ? _scrollController.offset
+          : 0.0;
       final oldExtent = _scrollController.hasClients
           ? _scrollController.position.maxScrollExtent
           : 0.0;
@@ -170,8 +179,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         final removedHeight =
             oldExtent - _scrollController.position.maxScrollExtent;
         _scrollController.jumpTo(
-          (oldOffset - removedHeight)
-              .clamp(0.0, _scrollController.position.maxScrollExtent),
+          (oldOffset - removedHeight).clamp(
+            0.0,
+            _scrollController.position.maxScrollExtent,
+          ),
         );
         setState(() {
           _sections.add(section);
@@ -207,8 +218,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   }
 
   void _doPrepend(_Section section) {
-    final oldOffset =
-        _scrollController.hasClients ? _scrollController.offset : 0.0;
+    final oldOffset = _scrollController.hasClients
+        ? _scrollController.offset
+        : 0.0;
     final oldExtent = _scrollController.hasClients
         ? _scrollController.position.maxScrollExtent
         : 0.0;
@@ -222,8 +234,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       final addedHeight =
           _scrollController.position.maxScrollExtent - oldExtent;
       _scrollController.jumpTo(
-        (oldOffset + addedHeight)
-            .clamp(0.0, _scrollController.position.maxScrollExtent),
+        (oldOffset + addedHeight).clamp(
+          0.0,
+          _scrollController.position.maxScrollExtent,
+        ),
       );
     });
   }
@@ -232,8 +246,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _bookIndex = (prefs.getInt(_kBook) ?? 0).clamp(0, kBooks.length - 1);
-      _chapter =
-          (prefs.getInt(_kChapter) ?? 1).clamp(1, kBooks[_bookIndex].chapters);
+      _chapter = (prefs.getInt(_kChapter) ?? 1).clamp(
+        1,
+        kBooks[_bookIndex].chapters,
+      );
       _ntSyriac = prefs.getBool(_kNtSyriac) ?? false;
       _hebrewNumerals = prefs.getBool(_kHebrewNumerals) ?? true;
       _fontSize = (prefs.getDouble(_kFontSize) ?? 20.0).clamp(16.0, 28.0);
@@ -242,7 +258,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     });
     final rawHistory = prefs.getStringList(_kHistory) ?? [];
     final savedIndex = prefs.getInt(_kHistoryIndex) ?? -1;
-    if (rawHistory.isNotEmpty && savedIndex >= 0 && savedIndex < rawHistory.length) {
+    if (rawHistory.isNotEmpty &&
+        savedIndex >= 0 &&
+        savedIndex < rawHistory.length) {
       _history.clear();
       for (final s in rawHistory) {
         final ref = _PassageRef.fromStorageString(s);
@@ -253,7 +271,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         final current = _history[_historyIndex];
         _bookIndex = current.bookIndex;
         _chapter = current.chapter;
-        if (current.verse != null) setState(() => _pendingVerse = current.verse);
+        if (current.verse != null) {
+          setState(() => _pendingVerse = current.verse);
+        }
         _startAt(_bookIndex, _chapter);
         return;
       }
@@ -267,7 +287,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   Future<void> _saveHistory() async {
     final prefs = await SharedPreferences.getInstance();
     await Future.wait([
-      prefs.setStringList(_kHistory, _history.map((r) => r.toStorageString()).toList()),
+      prefs.setStringList(
+        _kHistory,
+        _history.map((r) => r.toStorageString()).toList(),
+      ),
       prefs.setInt(_kHistoryIndex, _historyIndex),
     ]);
   }
@@ -289,7 +312,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       if (_historyIndex < _history.length - 1) {
         _history.removeRange(_historyIndex + 1, _history.length);
       }
-      _history.add(_PassageRef(bookIndex: bookIndex, chapter: chapter, verse: verse));
+      _history.add(
+        _PassageRef(bookIndex: bookIndex, chapter: chapter, verse: verse),
+      );
       if (_history.length > 10) _history.removeAt(0);
       _historyIndex = _history.length - 1;
     }
@@ -339,7 +364,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   void _fetchChapter(int bookIndex, int chapter) {
     final key = (bookIndex + 1, chapter);
     if (_pendingFetches.contains(key)) return;
-    if (_sections.any((s) => s.bookIndex == bookIndex && s.chapter == chapter)) {
+    if (_sections.any(
+      (s) => s.bookIndex == bookIndex && s.chapter == chapter,
+    )) {
       return;
     }
     _pendingFetches.add(key);
@@ -360,7 +387,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _attemptScrollToVerse(section, verseIdx, retriesLeft: 3);
   }
 
-  void _attemptScrollToVerse(_Section section, int verseIdx, {required int retriesLeft}) {
+  void _attemptScrollToVerse(
+    _Section section,
+    int verseIdx, {
+    required int retriesLeft,
+  }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final ctx = _targetVerseKey?.currentContext;
@@ -477,10 +508,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         context: context,
         useSafeArea: true,
         isScrollControlled: true,
-        builder: (ctx) => ChapterSelectorSheet(
-          total: kBooks[result].chapters,
-          current: 1,
-        ),
+        builder: (ctx) =>
+            ChapterSelectorSheet(total: kBooks[result].chapters, current: 1),
       );
       newChapter = picked ?? 1;
     }
@@ -581,6 +610,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
             onPressed: _canGoForward ? _goForward : null,
             tooltip: 'Forward',
           ),
+          IconButton(
+            icon: const Icon(Icons.school_outlined),
+            tooltip: 'Tutor',
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const TutorPage())),
+          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             tooltip: 'Settings',
@@ -626,10 +662,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 child: const Text('Syriac (Peshitta)'),
               ),
               const PopupMenuDivider(),
-              const PopupMenuItem(
-                enabled: false,
-                child: Text('Verse Numbers'),
-              ),
+              const PopupMenuItem(enabled: false, child: Text('Verse Numbers')),
               CheckedPopupMenuItem(
                 value: 'numeral_hebrew',
                 checked: _hebrewNumerals,
@@ -641,10 +674,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 child: const Text('English (1 2 3)'),
               ),
               const PopupMenuDivider(),
-              const PopupMenuItem(
-                enabled: false,
-                child: Text('Font Size'),
-              ),
+              const PopupMenuItem(enabled: false, child: Text('Font Size')),
               CheckedPopupMenuItem(
                 value: 'size_16.0',
                 checked: _fontSize == 16.0,
@@ -666,10 +696,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 child: const Text('Extra Large'),
               ),
               const PopupMenuDivider(),
-              const PopupMenuItem(
-                enabled: false,
-                child: Text('Font'),
-              ),
+              const PopupMenuItem(enabled: false, child: Text('Font')),
               CheckedPopupMenuItem(
                 value: 'font_Cardo',
                 checked: _fontFamily == 'Cardo',
@@ -692,8 +719,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       body: _initialLoading
           ? const Center(child: CircularProgressIndicator())
           : _sections.isEmpty
-              ? const Center(child: Text('No text found'))
-              : _buildScrollView(),
+          ? const Center(child: Text('No text found'))
+          : _buildScrollView(),
     );
   }
 
@@ -727,7 +754,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               itemBuilder: (context, j) {
                 final section = _sections[i];
                 final entry = section.verses[j];
-                final isSelected = entry.verse == _selectedVerse &&
+                final isSelected =
+                    entry.verse == _selectedVerse &&
                     section.bookIndex == _selectedBook &&
                     section.chapter == _selectedChapter;
                 return VerseRow(

@@ -52,6 +52,41 @@ pub struct GetWordInfo {
     pub syriac: bool,
 }
 
+/// Lazy companion to [`GetWordInfo`]: requests only the occurrence lists, which
+/// require full-text root scans and so are deferred until the Occurrences tab is
+/// first opened rather than computed up-front with the lexicon data.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetWordOccurrences {
+    pub word: String,
+    pub syriac: bool,
+}
+
+/// Request a page of the frequency-ordered learner vocabulary (tutor mode):
+/// distinct OT surface forms in descending occurrence order.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetVocab {
+    pub limit: u32,
+    pub offset: u32,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct VocabEntry {
+    pub surface: String,
+    pub occurrences: u32,
+    /// Pre-filter class ("function" or "proper") for surfaces that never
+    /// reached the parse engine; `None` for ordinary content words.
+    pub lexical_class: Option<String>,
+    pub root: String,
+    pub gloss: String,
+    pub morph: String,
+}
+
+#[derive(Debug, Serialize, RustSignal)]
+pub struct VocabList {
+    pub offset: u32,
+    pub entries: Vec<VocabEntry>,
+}
+
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct BdbSummary {
     pub headword: String,
@@ -118,6 +153,15 @@ pub struct WordInfo {
     pub state: Option<String>,
     pub tense: Option<String>,
     pub form: Option<String>,
+}
+
+/// Occurrence lists for a looked-up word, fetched lazily via
+/// [`GetWordOccurrences`] when the Occurrences tab is opened. The split keeps
+/// the initial [`WordInfo`] response (lexicon + morphology) fast, since these
+/// lists come from full-text scans of the root across the corpus.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct WordOccurrences {
+    pub found: bool,
     pub occurrences: Vec<WordOccurrence>,
     pub root_occurrences: Vec<WordOccurrence>,
     pub sedra_occurrences: Vec<SedraOccurrence>,

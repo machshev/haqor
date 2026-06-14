@@ -99,6 +99,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   // NT-only: when true the occurrences list shows OT (Hebrew Bible) verses of
   // the same consonantal root instead of the SEDRA-based NT occurrences.
   bool _otSelected = false;
+  // Occurrence lists are fetched lazily (full-text root scans) the first time
+  // the Occurrences tab is opened, so the sheet pops up on the lexicon data
+  // alone. Null until that fetch completes.
+  StreamSubscription<RustSignalPack<WordOccurrences>>? _occSub;
+  WordOccurrences? _occ;
+  bool _occRequested = false;
 
   @override
   void initState() {
@@ -108,10 +114,29 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       if (mounted) {
         setState(() => _info = pack.message);
         _sub?.cancel();
+        // Preload the occurrence scans in the background as soon as the lexicon
+        // data lands, so the Occurrences tab is already populated (or at least
+        // loading) by the time the user switches to it.
+        if (pack.message.found) _fetchOccurrences();
       }
     });
     GetWordInfo(word: widget.word, syriac: widget.syriac).sendSignalToRust();
     _loadFlagState();
+  }
+
+  // Fetch the occurrence lists (full-text root scans). Idempotent via
+  // [_occRequested] so the preload can't double-fire.
+  void _fetchOccurrences() {
+    if (_occRequested) return;
+    _occRequested = true;
+    _occSub = WordOccurrences.rustSignalStream.listen((pack) {
+      if (mounted) {
+        setState(() => _occ = pack.message);
+        _occSub?.cancel();
+      }
+    });
+    GetWordOccurrences(word: widget.word, syriac: widget.syriac)
+        .sendSignalToRust();
   }
 
   Future<void> _loadFlagState() async {
@@ -236,6 +261,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   void dispose() {
     _tabController.dispose();
     _sub?.cancel();
+    _occSub?.cancel();
     super.dispose();
   }
 
@@ -629,13 +655,20 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     WordInfo info,
     double bottomPad,
   ) {
-    // NT: lexeme-filterable list backed by the detailed SEDRA occurrences.
-    if (widget.syriac && info.sedraOccurrences.isNotEmpty) {
-      return _buildSedraOccurrencesTab(context, info, bottomPad);
+    // Occurrences are fetched lazily when this tab is first opened; show a
+    // spinner until the scan completes.
+    final occ = _occ;
+    if (occ == null) {
+      return const Center(child: CircularProgressIndicator());
     }
 
-    if (info.occurrences.isNotEmpty || info.rootOccurrences.isNotEmpty) {
-      return _buildHebrewOccurrencesTab(context, info, bottomPad);
+    // NT: lexeme-filterable list backed by the detailed SEDRA occurrences.
+    if (widget.syriac && occ.sedraOccurrences.isNotEmpty) {
+      return _buildSedraOccurrencesTab(context, info, occ, bottomPad);
+    }
+
+    if (occ.occurrences.isNotEmpty || occ.rootOccurrences.isNotEmpty) {
+      return _buildHebrewOccurrencesTab(context, info, occ, bottomPad);
     }
 
     return ListView(
@@ -651,17 +684,18 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   Widget _buildHebrewOccurrencesTab(
     BuildContext context,
     WordInfo info,
+    WordOccurrences occ,
     double bottomPad,
   ) {
     final theme = Theme.of(context);
 
     // Older/edge data (e.g. an NT lookup with no detailed occurrences) has no
     // per-form tagging — fall back to a flat root list highlighting the word.
-    if (info.hebrewOccurrences.isEmpty) {
+    if (occ.hebrewOccurrences.isEmpty) {
       final flat = [
-        for (final o in (info.rootOccurrences.isNotEmpty
-            ? info.rootOccurrences
-            : info.occurrences))
+        for (final o in (occ.rootOccurrences.isNotEmpty
+            ? occ.rootOccurrences
+            : occ.occurrences))
           _VerseOccurrence(
             book: o.book,
             chapter: o.chapter,
@@ -678,7 +712,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     // Distinct-verse counts per surface form, for the chip labels. The detailed
     // query already returns one row per (verse, form).
     final counts = <String, int>{};
-    for (final o in info.hebrewOccurrences) {
+    for (final o in occ.hebrewOccurrences) {
       counts[o.form] = (counts[o.form] ?? 0) + 1;
     }
     final forms = counts.keys.toList()
@@ -702,7 +736,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     // Apply the filter, then merge rows on the same verse so a verse appears
     // once with all matched forms highlighted.
     final byVerse = <String, _VerseOccurrence>{};
-    for (final o in info.hebrewOccurrences) {
+    for (final o in occ.hebrewOccurrences) {
       if (!showAll && !selected.contains(o.form)) continue;
       final key = '${o.book}:${o.chapter}:${o.verse}';
       final existing = byVerse[key];
@@ -878,6 +912,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   Widget _buildSedraOccurrencesTab(
     BuildContext context,
     WordInfo info,
+    WordOccurrences occ,
     double bottomPad,
   ) {
     // Lazily default the filter to the looked-up lexeme.
@@ -890,13 +925,13 @@ class _WordInfoSheetState extends State<WordInfoSheet>
 
     // Distinct-verse counts per lexeme index, for the chip labels.
     final counts = <int, int>{};
-    for (final o in info.sedraOccurrences) {
+    for (final o in occ.sedraOccurrences) {
       counts[o.lexemeIndex] = (counts[o.lexemeIndex] ?? 0) + 1;
     }
 
     // Apply the filter, then merge rows that fall on the same verse so a verse
     // appears once with all matched word forms highlighted.
-    final filtered = info.sedraOccurrences
+    final filtered = occ.sedraOccurrences
         .where((o) => showAll || selected.contains(o.lexemeIndex));
     final byVerse = <String, _VerseOccurrence>{};
     for (final o in filtered) {
@@ -921,7 +956,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     // OT→NT order.
     final verses = <_VerseOccurrence>[
       if (_otSelected)
-        for (final o in info.otOccurrences)
+        for (final o in occ.otOccurrences)
           _VerseOccurrence(
             book: o.book,
             chapter: o.chapter,
@@ -982,7 +1017,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                     ),
                   ),
                   onPressed: () =>
-                      _openLexemeFilterSheet(context, info, counts),
+                      _openLexemeFilterSheet(context, info, occ, counts),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1008,6 +1043,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   Future<void> _openLexemeFilterSheet(
     BuildContext context,
     WordInfo info,
+    WordOccurrences occ,
     Map<int, int> counts,
   ) async {
     final theme = Theme.of(context);
@@ -1067,11 +1103,11 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                               _selectedLexemes = {};
                             }),
                           ),
-                          if (info.otOccurrences.isNotEmpty)
+                          if (occ.otOccurrences.isNotEmpty)
                             CheckboxListTile(
                               dense: true,
                               title: Text(
-                                'Old Testament (${info.otOccurrences.length})',
+                                'Old Testament (${occ.otOccurrences.length})',
                               ),
                               value: _otSelected,
                               onChanged: (on) => apply(() {
@@ -1117,6 +1153,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           : 'Book ${v.book}';
       final ref = '$bookName ${v.chapter}:${v.verse}';
       return _OccurrenceRow(
+        // Stable identity per verse so Flutter never re-binds a row's State
+        // (which caches the fetched verse text) to a different verse on rebuild.
+        key: ValueKey('${v.book}:${v.chapter}:${v.verse}'),
         displayRef: ref,
         bookIndex: bookIndex,
         chapter: v.chapter,
@@ -1165,6 +1204,7 @@ class _VerseOccurrence {
 
 class _OccurrenceRow extends StatefulWidget {
   const _OccurrenceRow({
+    super.key,
     required this.displayRef,
     required this.bookIndex,
     required this.chapter,
@@ -1191,6 +1231,24 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
   @override
   void initState() {
     super.initState();
+    _fetch();
+  }
+
+  @override
+  void didUpdateWidget(_OccurrenceRow old) {
+    super.didUpdateWidget(old);
+    // Defensive: if this State is ever re-bound to a different verse, drop the
+    // cached text and fetch again rather than rendering the previous verse.
+    if (old.bookIndex != widget.bookIndex ||
+        old.chapter != widget.chapter ||
+        old.verse != widget.verse) {
+      _sub?.cancel();
+      _text = null;
+      _fetch();
+    }
+  }
+
+  void _fetch() {
     final targetBook = widget.bookIndex + 1;
     _sub = VerseText.rustSignalStream.listen((pack) {
       final msg = pack.message;
@@ -1294,6 +1352,9 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
     return SelectableText.rich(
       TextSpan(children: spans),
       textDirection: TextDirection.rtl,
+      // SelectableText swallows taps, so the wrapping InkWell never sees them;
+      // forward single taps to keep click-to-navigate working.
+      onTap: widget.onTap,
     );
   }
 }

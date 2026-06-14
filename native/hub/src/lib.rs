@@ -11,7 +11,9 @@ use haqor_core::bible::Bible;
 use rinf::{DartSignal, dart_shutdown, debug_print, write_interface};
 use tokio::spawn;
 
-use functions::{SharedBible, get_chapter_text, get_verse_text, get_word_info};
+use functions::{
+    SharedBible, get_chapter_text, get_verse_text, get_vocab, get_word_info, get_word_occurrences,
+};
 use signals::SetDataDir;
 
 // Uncomment below to target the web.
@@ -46,7 +48,9 @@ async fn main() {
     };
     spawn(get_verse_text(bible.clone()));
     spawn(get_chapter_text(bible.clone()));
-    spawn(get_word_info(bible));
+    spawn(get_vocab(bible.clone()));
+    spawn(get_word_info(bible.clone()));
+    spawn(get_word_occurrences(bible));
 
     // Keep the main function running until Dart shutdown.
     dart_shutdown().await;
