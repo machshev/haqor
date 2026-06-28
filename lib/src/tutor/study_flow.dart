@@ -279,9 +279,14 @@ class _GlyphCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final info = glyphInfo(glyph.glyph);
+    final combining = isNiqqud(glyph.glyph);
     // Combining points need a carrier; show them on a dotted circle.
-    final display = isNiqqud(glyph.glyph) ? '◌${glyph.glyph}' : glyph.glyph;
-    final kind = glyph.isConsonant ? 'letter' : 'vowel';
+    final display = combining ? '◌${glyph.glyph}' : glyph.glyph;
+    final kind = glyph.isConsonant
+        ? 'letter'
+        : combining
+        ? 'vowel'
+        : 'mark';
 
     return _CardShell(
       children: [

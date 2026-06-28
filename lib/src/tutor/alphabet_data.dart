@@ -228,9 +228,41 @@ const List<HebrewLetter> kNiqqud = [
   ),
 ];
 
+/// The reading marks that punctuate verses (taught lazily as the learner first
+/// reaches a verse containing them): the sof pasuq (verse-ending full stop) and
+/// the maqaf (joins short words). Unlike niqqud these are spacing characters, so
+/// they render on their own without a carrier circle.
+const List<HebrewLetter> kReadingMarks = [
+  HebrewLetter(
+    letter: '׃', // SOF PASUQ
+    name: 'Sof Pasuq',
+    hebrewName: 'סוֹף פָּסוּק',
+    translit: ':',
+    sound: 'two stacked dots that mark the end of a verse — a full stop',
+    value: 0,
+    example: 'הָאָרֶץ׃',
+    exampleTranslit: '…ha’arets ׃',
+    exampleMeaning: '“…the earth.” — the verse ends here',
+    tip: 'Every verse in the Bible closes with this mark.',
+  ),
+  HebrewLetter(
+    letter: '־', // MAQAF
+    name: 'Maqaf',
+    hebrewName: 'מַקָּף',
+    translit: '-',
+    sound: 'a high hyphen joining short words into a single reading unit',
+    value: 0,
+    example: 'כָּל־הָאָרֶץ',
+    exampleTranslit: 'kol-ha’arets',
+    exampleMeaning: 'all the earth',
+    tip: 'The joined words share one accent and are read together.',
+  ),
+];
+
 /// Teaching content for any single tutor glyph — a consonant (keyed by its bare
-/// medial form, which is what the engine sends after folding final forms) or a
-/// niqqud point. Returns null for an unrecognised codepoint.
+/// medial form, which is what the engine sends after folding final forms), a
+/// niqqud point, or a verse reading mark. Returns null for an unrecognised
+/// codepoint.
 HebrewLetter? glyphInfo(String glyph) {
   for (final l in kAlphabet) {
     if (l.letter == glyph) return l;
@@ -238,12 +270,25 @@ HebrewLetter? glyphInfo(String glyph) {
   for (final n in kNiqqud) {
     if (n.letter == glyph) return n;
   }
+  for (final m in kReadingMarks) {
+    if (m.letter == glyph) return m;
+  }
   return null;
 }
 
-/// True if [glyph] is a combining niqqud point (rather than a base consonant),
-/// so the UI knows to render it on a dotted circle.
-bool isNiqqud(String glyph) => glyph.isNotEmpty && glyph.codeUnitAt(0) >= 0x05B0 && glyph.codeUnitAt(0) <= 0x05C7;
+/// True if [glyph] is a combining niqqud point (vowels, dagesh, shin/sin dot,
+/// accents), so the UI renders it on a dotted circle. Spacing punctuation —
+/// maqaf (U+05BE), paseq (U+05C0), sof pasuq (U+05C3), nun hafukha (U+05C6) — is
+/// excluded; those display on their own.
+bool isNiqqud(String glyph) {
+  if (glyph.isEmpty) return false;
+  final c = glyph.codeUnitAt(0);
+  return (c >= 0x0591 && c <= 0x05BD) || // accents, vowels, meteg
+      c == 0x05BF || // rafe
+      (c >= 0x05C1 && c <= 0x05C2) || // shin / sin dot
+      (c >= 0x05C4 && c <= 0x05C5) || // upper / lower dot
+      c == 0x05C7; // qamats qatan
+}
 
 const List<HebrewLetter> kAlphabet = [
   HebrewLetter(
