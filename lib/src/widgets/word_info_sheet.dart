@@ -492,80 +492,102 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     double bottomPad,
   ) {
     final theme = Theme.of(context);
+
+    // One collapsible BDB lexeme row. The original list index keys its
+    // expansion state, so it stays stable when the list is split into the
+    // common and proper-noun groups below.
+    Widget buildBdbRow(int i, BdbSummary e) {
+      final expanded = _expandedBdb.contains(i);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () => setState(() {
+              if (expanded) {
+                _expandedBdb.remove(i);
+              } else {
+                _expandedBdb.add(i);
+              }
+            }),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(
+                    expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  if (e.gloss.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${e.gloss} —',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                  ] else
+                    const Spacer(),
+                  const SizedBox(width: 8),
+                  Text(
+                    _normalizeHebrewCombining(e.headword),
+                    style: TextStyle(
+                      fontFamily: 'Noto Serif Hebrew',
+                      fontFamilyFallback: const ['Cardo'],
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                    textDirection: TextDirection.rtl,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (expanded && e.contentJson.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _BdbContent(
+                contentJson: e.contentJson,
+                onBibleRefTap: (href) => _onBibleRefTap(context, href),
+              ),
+            ),
+        ],
+      );
+    }
+
+    Widget sectionHeading(String label) => Text(
+      label,
+      style: theme.textTheme.labelLarge?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+
+    // Proper names crowd out a root's actual meaning, so list them under their
+    // own heading after the common lexemes.
+    final common = info.bdbEntries.indexed
+        .where((p) => !p.$2.properNoun)
+        .toList();
+    final proper = info.bdbEntries.indexed
+        .where((p) => p.$2.properNoun)
+        .toList();
+
     return ListView(
       controller: scrollController,
       padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
       children: [
-        if (info.bdbEntries.isNotEmpty) ...[
-          Text(
-            'BDB Entries',
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
+        if (common.isNotEmpty) ...[
+          sectionHeading('BDB Entries'),
           const SizedBox(height: 4),
-          ...info.bdbEntries.indexed.map((entry) {
-            final (i, e) = entry;
-            final expanded = _expandedBdb.contains(i);
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                InkWell(
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: () => setState(() {
-                    if (expanded) {
-                      _expandedBdb.remove(i);
-                    } else {
-                      _expandedBdb.add(i);
-                    }
-                  }),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Icon(
-                          expanded ? Icons.expand_less : Icons.expand_more,
-                          size: 18,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        if (e.gloss.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              '${e.gloss} —',
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                          ),
-                        ] else
-                          const Spacer(),
-                        const SizedBox(width: 8),
-                        Text(
-                          _normalizeHebrewCombining(e.headword),
-                          style: TextStyle(
-                            fontFamily: 'Noto Serif Hebrew',
-                            fontFamilyFallback: const ['Cardo'],
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: theme.colorScheme.onSurface,
-                          ),
-                          textDirection: TextDirection.rtl,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (expanded && e.contentJson.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _BdbContent(
-                      contentJson: e.contentJson,
-                      onBibleRefTap: (href) => _onBibleRefTap(context, href),
-                    ),
-                  ),
-              ],
-            );
-          }),
+          ...common.map((p) => buildBdbRow(p.$1, p.$2)),
+        ],
+        if (proper.isNotEmpty) ...[
+          if (common.isNotEmpty) const SizedBox(height: 12),
+          sectionHeading('Proper nouns'),
+          const SizedBox(height: 4),
+          ...proper.map((p) => buildBdbRow(p.$1, p.$2)),
         ],
         if (info.sedraEntries.isNotEmpty) ...[
           const SizedBox(height: 8),

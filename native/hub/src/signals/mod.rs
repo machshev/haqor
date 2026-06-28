@@ -92,6 +92,10 @@ pub struct BdbSummary {
     pub headword: String,
     pub gloss: String,
     pub content_json: String,
+    /// BDB `n.pr.*` proper noun (a name of a person/place/people/deity). The
+    /// Lexicon tab groups these under their own heading, away from the root's
+    /// common lexemes.
+    pub proper_noun: bool,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]

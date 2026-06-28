@@ -242,6 +242,7 @@ pub async fn get_word_info(bible: SharedBible) {
                     .unwrap_or_default()
                         .into_iter()
                         .map(|e| BdbSummary {
+                            proper_noun: e.is_proper_noun(),
                             headword: e.headword,
                             gloss: e.gloss,
                             content_json: e.content_json,
