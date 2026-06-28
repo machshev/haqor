@@ -553,7 +553,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '${e.gloss} —',
+                        e.gloss,
                         style: theme.textTheme.bodyMedium,
                       ),
                     ),
