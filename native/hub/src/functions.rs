@@ -228,9 +228,18 @@ pub async fn get_word_info(bible: SharedBible) {
             // itself, so the raw word is passed through.
             match bible.hebrew_word_info(&req.word) {
                 Some(info) => {
-                    let bdb_entries = bible
-                        .hebrew_bdb_by_root(&info.root)
-                        .unwrap_or_default()
+                    // Function words / particles bridge through the lexicon with
+                    // no triliteral root, so their definition can't be fetched by
+                    // root; look the lexeme up by its surface form instead.
+                    let bdb_entries = if info.root.is_empty() {
+                        bible.hebrew_bdb_for_surface(
+                            &info.word,
+                            info.prefix.as_deref().unwrap_or(""),
+                        )
+                    } else {
+                        bible.hebrew_bdb_by_root(&info.root)
+                    }
+                    .unwrap_or_default()
                         .into_iter()
                         .map(|e| BdbSummary {
                             headword: e.headword,
