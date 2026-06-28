@@ -6,6 +6,7 @@ import 'package:rinf/rinf.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import 'alphabet_data.dart';
+import 'transliterate.dart';
 import 'vocab_overrides.dart';
 
 /// SM-2 grades, matching the Rust `Grade` enum order (0..3).
@@ -404,6 +405,17 @@ class _WordCard extends StatelessWidget {
             height: 1.2,
           ),
         ),
+        const SizedBox(height: 4),
+        // Always shown (even before the meaning is revealed) so the learner can
+        // sound the word out — that's the reading skill being practised.
+        Text(
+          transliterateHebrew(word.surface),
+          textAlign: TextAlign.center,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontStyle: FontStyle.italic,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(height: 8),
         Text(
           '${word.occurrences}× in the Old Testament',
@@ -613,22 +625,33 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
                 ),
               ),
               const SizedBox(height: 20),
-              _text == null
-                  ? const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator(),
-                    )
-                  : Text(
-                      _stripCantillation(_text!),
-                      textAlign: TextAlign.center,
-                      textDirection: TextDirection.rtl,
-                      style: const TextStyle(
-                        fontFamily: _hebrewFont,
-                        fontFamilyFallback: _hebrewFallback,
-                        fontSize: 32,
-                        height: 1.7,
-                      ),
-                    ),
+              if (_text == null)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(),
+                )
+              else ...[
+                Text(
+                  _stripCantillation(_text!),
+                  textAlign: TextAlign.center,
+                  textDirection: TextDirection.rtl,
+                  style: const TextStyle(
+                    fontFamily: _hebrewFont,
+                    fontFamilyFallback: _hebrewFallback,
+                    fontSize: 32,
+                    height: 1.7,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  transliterateHebrew(_text!),
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontStyle: FontStyle.italic,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
               if (examples.isNotEmpty) ...[
                 const SizedBox(height: 28),
                 Text(
