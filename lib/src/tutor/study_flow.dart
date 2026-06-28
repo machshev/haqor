@@ -507,6 +507,19 @@ class _TipBox extends StatelessWidget {
   }
 }
 
+/// Strip cantillation accents (te'amim, U+0591–U+05AF) and meteg (U+05BD) from a
+/// verse so the reading view matches the un-accented forms taught on the cards.
+/// Vowel points (niqqud) and word separators (space, maqaf) are kept.
+String _stripCantillation(String text) {
+  final buf = StringBuffer();
+  for (final r in text.runes) {
+    if (r >= 0x0591 && r <= 0x05AF) continue; // te'amim
+    if (r == 0x05BD) continue; // meteg
+    buf.writeCharCode(r);
+  }
+  return buf.toString();
+}
+
 /// Short reference label like "Dev 2:2" from a 1-based Haqor book number.
 String _refLabel(int book, int chapter, int verse) {
   final name = (book >= 1 && book <= kBooks.length)
@@ -601,7 +614,7 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
                       child: CircularProgressIndicator(),
                     )
                   : Text(
-                      _text!,
+                      _stripCantillation(_text!),
                       textAlign: TextAlign.center,
                       textDirection: TextDirection.rtl,
                       style: const TextStyle(
