@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bible_data.dart';
 import 'bindings/bindings.dart';
-import 'tutor/tutor_page.dart';
+import 'tutor/study_flow.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
 import 'widgets/verse_row.dart';
@@ -615,7 +615,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
             tooltip: 'Tutor',
             onPressed: () => Navigator.of(
               context,
-            ).push(MaterialPageRoute(builder: (_) => const TutorPage())),
+            ).push(MaterialPageRoute(builder: (_) => const StudyFlowPage())),
           ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),

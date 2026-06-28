@@ -1,12 +1,15 @@
 use crate::signals::{
-    BdbSummary, ChapterText, GetChapter, GetVerseText, GetVocab, GetWordInfo, GetWordOccurrences,
-    HebrewOccurrence, SedraOccurrence, SedraSummary, VerseEntry, VerseText, VocabEntry, VocabList,
-    WordInfo, WordOccurrence, WordOccurrences,
+    BdbSummary, ChapterText, GetChapter, GetNextStudyItem, GetVerseText, GetVocab, GetWordInfo,
+    GetWordOccurrences, GlyphCard, HebrewOccurrence, ResetTutor, SedraOccurrence, SedraSummary,
+    StudyItem, SubmitReview, TutorProgress, VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry,
+    VocabList, WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use haqor_core::bible::Bible;
+use haqor_core::tutor::{self, Grade, Track};
 use rinf::{DartSignal, RustSignal, debug_print};
 
 /// One database connection is shared by all query handlers. The databases are
@@ -450,5 +453,135 @@ fn empty_word_occurrences() -> WordOccurrences {
         sedra_occurrences: Vec::new(),
         ot_occurrences: Vec::new(),
         hebrew_occurrences: Vec::new(),
+    }
+}
+
+// --- Spaced-repetition reading tutor -------------------------------------
+
+/// Wall-clock now in epoch seconds (the SM-2 scheduler's time base). Tutor
+/// state is day-grained, so second precision is ample.
+fn now_epoch() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn to_signal_glyph(g: tutor::GlyphCard) -> GlyphCard {
+    GlyphCard {
+        glyph: g.glyph,
+        is_consonant: g.is_consonant,
+    }
+}
+
+fn to_signal_word(w: tutor::WordCard) -> WordCard {
+    WordCard {
+        surface_id: w.surface_id,
+        surface: w.surface,
+        occurrences: w.occurrences,
+        gloss: w.gloss,
+        root: w.root,
+        morph: w.morph,
+        new_glyphs: w.new_glyphs.into_iter().map(to_signal_glyph).collect(),
+    }
+}
+
+/// Map a core [`tutor::StudyItem`] to its tagged signal form, attaching the
+/// current progress counters so the UI can render a status header on any card.
+fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
+    let p = bible.tutor_progress().unwrap_or_default();
+    let progress = TutorProgress {
+        glyphs_known: p.glyphs_known,
+        words_known: p.words_known,
+        verses_readable: p.verses_readable,
+        total_verses: p.total_verses,
+    };
+    let mut out = StudyItem {
+        kind: String::new(),
+        glyph: None,
+        word: None,
+        verse: None,
+        progress,
+    };
+    match item {
+        tutor::StudyItem::NewGlyph(g) => {
+            out.kind = "new_glyph".into();
+            out.glyph = Some(to_signal_glyph(g));
+        }
+        tutor::StudyItem::ReviewGlyph(g) => {
+            out.kind = "review_glyph".into();
+            out.glyph = Some(to_signal_glyph(g));
+        }
+        tutor::StudyItem::NewWord(w) => {
+            out.kind = "new_word".into();
+            out.word = Some(to_signal_word(w));
+        }
+        tutor::StudyItem::ReviewWord(w) => {
+            out.kind = "review_word".into();
+            out.word = Some(to_signal_word(w));
+        }
+        tutor::StudyItem::ReadVerse(v) => {
+            out.kind = "read_verse".into();
+            out.verse = Some(VerseCard {
+                book: v.book,
+                chapter: v.chapter,
+                verse: v.verse,
+                examples: v
+                    .examples
+                    .into_iter()
+                    .map(|(book, chapter, verse)| VerseRef {
+                        book,
+                        chapter,
+                        verse,
+                    })
+                    .collect(),
+            });
+        }
+        tutor::StudyItem::Done => out.kind = "done".into(),
+    }
+    out
+}
+
+pub async fn get_next_study_item(bible: SharedBible) {
+    let receiver = GetNextStudyItem::get_dart_signal_receiver();
+    while let Some(_pack) = receiver.recv().await {
+        let bible = lock(&bible);
+        match bible.next_study_item(now_epoch()) {
+            Ok(item) => to_signal_study_item(&bible, item).send_signal_to_dart(),
+            Err(e) => debug_print!("get_next_study_item error: {:?}", e),
+        }
+    }
+}
+
+pub async fn submit_review(bible: SharedBible) {
+    let receiver = SubmitReview::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let track = match req.track.as_str() {
+            "glyph" => Track::Glyph,
+            _ => Track::Word,
+        };
+        let grade = Grade::from_i64(req.grade as i64).unwrap_or(Grade::Good);
+        let bible = lock(&bible);
+        match bible.submit_review(track, &req.key, grade, now_epoch()) {
+            Ok(item) => to_signal_study_item(&bible, item).send_signal_to_dart(),
+            Err(e) => debug_print!("submit_review error: {:?}", e),
+        }
+    }
+}
+
+pub async fn reset_tutor(bible: SharedBible) {
+    let receiver = ResetTutor::get_dart_signal_receiver();
+    while let Some(_pack) = receiver.recv().await {
+        let bible = lock(&bible);
+        match bible.reset_tutor() {
+            // Acknowledge by handing back the fresh first card.
+            Ok(()) => match bible.next_study_item(now_epoch()) {
+                Ok(item) => to_signal_study_item(&bible, item).send_signal_to_dart(),
+                Err(e) => debug_print!("reset_tutor (next) error: {:?}", e),
+            },
+            Err(e) => debug_print!("reset_tutor error: {:?}", e),
+        }
     }
 }

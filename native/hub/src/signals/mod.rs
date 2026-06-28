@@ -181,3 +181,89 @@ pub struct WordOccurrences {
     /// info per-form filter. Empty for NT lookups.
     pub hebrew_occurrences: Vec<HebrewOccurrence>,
 }
+
+// ---------------------------------------------------------------------------
+// Spaced-repetition reading tutor.
+//
+// The app drives a single never-ending study flow. It asks for the next card
+// with `GetNextStudyItem`, then answers each card with `SubmitReview` — whose
+// `StudyItem` response is the *next* card (one round-trip per card). A
+// `read_verse` card carries no grade, so the app advances past it with another
+// `GetNextStudyItem`.
+// ---------------------------------------------------------------------------
+
+/// Request the next study card (e.g. on launch, or after a gradeless read).
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetNextStudyItem {}
+
+/// Answer the current card; the `StudyItem` response is the next card. A glyph
+/// "intro" is just a `Good` grade on a fresh glyph.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SubmitReview {
+    /// `"glyph"` or `"word"`.
+    pub track: String,
+    /// The glyph character (folded) or the word surface form.
+    pub key: String,
+    /// 0 = Again, 1 = Hard, 2 = Good, 3 = Easy.
+    pub grade: u8,
+}
+
+/// Wipe all tutor progress (a dev/settings action).
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct ResetTutor {}
+
+/// A teachable glyph (consonant — final forms folded — or niqqud point). The
+/// teaching content is held on the Dart side keyed by `glyph`.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct GlyphCard {
+    pub glyph: String,
+    pub is_consonant: bool,
+}
+
+/// A word to learn or review, with its still-unintroduced glyphs.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct WordCard {
+    pub surface_id: i64,
+    pub surface: String,
+    pub occurrences: i64,
+    pub gloss: String,
+    pub root: String,
+    pub morph: String,
+    pub new_glyphs: Vec<GlyphCard>,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct VerseRef {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+}
+
+/// A fully-known verse offered to read, with other now-readable passages.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct VerseCard {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub examples: Vec<VerseRef>,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct TutorProgress {
+    pub glyphs_known: i64,
+    pub words_known: i64,
+    pub verses_readable: i64,
+    pub total_verses: i64,
+}
+
+/// The next thing for the learner to do. `kind` tags which payload is set:
+/// `"new_glyph"`/`"review_glyph"` → `glyph`; `"new_word"`/`"review_word"` →
+/// `word`; `"read_verse"` → `verse`; `"done"` → none.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct StudyItem {
+    pub kind: String,
+    pub glyph: Option<GlyphCard>,
+    pub word: Option<WordCard>,
+    pub verse: Option<VerseCard>,
+    pub progress: TutorProgress,
+}
