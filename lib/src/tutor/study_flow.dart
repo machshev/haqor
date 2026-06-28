@@ -281,8 +281,14 @@ class _GlyphCard extends StatelessWidget {
     final theme = Theme.of(context);
     final info = glyphInfo(glyph.glyph);
     final combining = isNiqqud(glyph.glyph);
-    // Combining points need a carrier; show them on a dotted circle.
-    final display = combining ? '◌${glyph.glyph}' : glyph.glyph;
+    // A vowel is taught on an already-learnt host consonant, the mark picked out
+    // in colour; other combining points fall back to a dotted-circle carrier.
+    final host = glyph.host;
+    final onHost = host != null && host.isNotEmpty;
+    // What the mark sits on: its host consonant, or a dotted circle. Only used
+    // for combining marks; consonants and reading marks show on their own.
+    final carrier = onHost ? host : '◌';
+    final base = combining ? carrier : glyph.glyph;
     final kind = glyph.isConsonant
         ? 'letter'
         : combining
@@ -299,9 +305,21 @@ class _GlyphCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        Text(
-          display,
+        // The mark highlighted in colour on its carrier; for a hosted vowel the
+        // carrier consonant stays in the normal colour so the new point stands out.
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(text: base),
+              if (combining)
+                TextSpan(
+                  text: glyph.glyph,
+                  style: TextStyle(color: theme.colorScheme.primary),
+                ),
+            ],
+          ),
           textAlign: TextAlign.center,
+          textDirection: TextDirection.rtl,
           style: const TextStyle(
             fontFamily: _hebrewFont,
             fontFamilyFallback: _hebrewFallback,
@@ -309,6 +327,18 @@ class _GlyphCard extends StatelessWidget {
             height: 1.2,
           ),
         ),
+        if (onHost) ...[
+          const SizedBox(height: 8),
+          // Sound out the (nonsense) syllable so the vowel's sound is clear.
+          Text(
+            '“${transliterateHebrew('$host${glyph.glyph}')}”',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontStyle: FontStyle.italic,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         if (isNew || revealed) ...[
           if (info != null) ...[

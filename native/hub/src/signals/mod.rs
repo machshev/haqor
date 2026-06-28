@@ -218,6 +218,8 @@ pub struct ResetTutor {}
 pub struct GlyphCard {
     pub glyph: String,
     pub is_consonant: bool,
+    /// For a vowel, an already-learnt consonant to display it on; else null.
+    pub host: Option<String>,
 }
 
 /// A word to learn or review, with its still-unintroduced glyphs.

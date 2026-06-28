@@ -471,6 +471,7 @@ fn to_signal_glyph(g: tutor::GlyphCard) -> GlyphCard {
     GlyphCard {
         glyph: g.glyph,
         is_consonant: g.is_consonant,
+        host: g.host,
     }
 }
 
