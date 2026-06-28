@@ -96,10 +96,11 @@ pub struct BdbSummary {
     pub headword: String,
     pub gloss: String,
     pub content_json: String,
-    /// BDB `n.pr.*` proper noun (a name of a person/place/people/deity). The
-    /// Lexicon tab groups these under their own heading, away from the root's
-    /// common lexemes.
-    pub proper_noun: bool,
+    /// Coarse part-of-speech bucket from the BDB `pos` marker — one of
+    /// `verb`, `noun`, `adjective`, `adverb`, `proper`, or `other`. The Lexicon
+    /// tab groups a root's lexemes under a heading per class (proper names, in
+    /// particular, crowd out the root's actual semantic range).
+    pub pos_category: String,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]

@@ -524,7 +524,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
 
     // One collapsible BDB lexeme row. The original list index keys its
     // expansion state, so it stays stable when the list is split into the
-    // common and proper-noun groups below.
+    // part-of-speech groups below.
     Widget buildBdbRow(int i, BdbSummary e) {
       final expanded = _expandedBdb.contains(i);
       return Column(
@@ -595,30 +595,37 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       ),
     );
 
-    // Proper names crowd out a root's actual meaning, so list them under their
-    // own heading after the common lexemes.
-    final common = info.bdbEntries.indexed
-        .where((p) => !p.$2.properNoun)
-        .toList();
-    final proper = info.bdbEntries.indexed
-        .where((p) => p.$2.properNoun)
-        .toList();
+    // Head a root's lexemes under their grammatical class. Proper names in
+    // particular crowd out the root's actual meaning, so they sit last under
+    // their own heading. `posCategory` is the BDB part-of-speech bucket set in
+    // the hub crate; the order here fixes how the groups stack.
+    const groups = <(String, String)>[
+      ('root', 'Roots'),
+      ('verb', 'Verbs'),
+      ('noun', 'Nouns'),
+      ('adjective', 'Adjectives'),
+      ('adverb', 'Adverbs'),
+      ('proper', 'Proper nouns'),
+      ('other', 'Other'),
+    ];
+
+    final rows = <Widget>[];
+    for (final (key, label) in groups) {
+      final entries = info.bdbEntries.indexed
+          .where((p) => p.$2.posCategory == key)
+          .toList();
+      if (entries.isEmpty) continue;
+      if (rows.isNotEmpty) rows.add(const SizedBox(height: 12));
+      rows.add(sectionHeading(label));
+      rows.add(const SizedBox(height: 4));
+      rows.addAll(entries.map((p) => buildBdbRow(p.$1, p.$2)));
+    }
 
     return ListView(
       controller: scrollController,
       padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
       children: [
-        if (common.isNotEmpty) ...[
-          sectionHeading('BDB Entries'),
-          const SizedBox(height: 4),
-          ...common.map((p) => buildBdbRow(p.$1, p.$2)),
-        ],
-        if (proper.isNotEmpty) ...[
-          if (common.isNotEmpty) const SizedBox(height: 12),
-          sectionHeading('Proper nouns'),
-          const SizedBox(height: 4),
-          ...proper.map((p) => buildBdbRow(p.$1, p.$2)),
-        ],
+        ...rows,
         if (info.sedraEntries.isNotEmpty) ...[
           const SizedBox(height: 8),
           Row(

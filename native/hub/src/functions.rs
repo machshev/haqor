@@ -166,7 +166,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         .unwrap_or_default()
                         .into_iter()
                         .map(|e| BdbSummary {
-                            proper_noun: e.is_proper_noun(),
+                            pos_category: e.pos_category().to_string(),
                             headword: e.headword,
                             gloss: e.gloss,
                             content_json: e.content_json,
@@ -176,7 +176,7 @@ pub async fn get_word_info(bible: SharedBible) {
                     // show the target lexeme on its own.
                     if bdb_entries.is_empty() {
                         bdb_entries.push(BdbSummary {
-                            proper_noun: entry.is_proper_noun(),
+                            pos_category: entry.pos_category().to_string(),
                             headword: entry.headword.clone(),
                             gloss: entry.gloss.clone(),
                             content_json: entry.content_json.clone(),
@@ -317,7 +317,7 @@ pub async fn get_word_info(bible: SharedBible) {
                     .unwrap_or_default()
                         .into_iter()
                         .map(|e| BdbSummary {
-                            proper_noun: e.is_proper_noun(),
+                            pos_category: e.pos_category().to_string(),
                             headword: e.headword,
                             gloss: e.gloss,
                             content_json: e.content_json,
