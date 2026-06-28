@@ -222,7 +222,8 @@ pub struct GlyphCard {
     pub host: Option<String>,
 }
 
-/// A word to learn or review, with its still-unintroduced glyphs.
+/// A word to learn or review, for one aspect: `"read"` (vocalisation) or
+/// `"mean"` (meaning).
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct WordCard {
     pub surface_id: i64,
@@ -231,7 +232,7 @@ pub struct WordCard {
     pub gloss: String,
     pub root: String,
     pub morph: String,
-    pub new_glyphs: Vec<GlyphCard>,
+    pub aspect: String,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]

@@ -18,6 +18,9 @@ const int _easy = 3;
 const String _hebrewFont = 'Cardo';
 const List<String> _hebrewFallback = ['Noto Serif Hebrew'];
 
+/// The SRS track for a word card: its reading or its meaning.
+String _wordTrack(WordCard w) => w.aspect == 'mean' ? 'word_mean' : 'word_read';
+
 /// The single, never-ending spaced-repetition reading flow. The Rust curriculum
 /// engine decides every card; this page just renders the current [StudyItem]
 /// and reports the learner's answer. Each [SubmitReview] response *is* the next
@@ -134,7 +137,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
           isNew: true,
           revealed: true,
           onReveal: () {},
-          onGrade: (g) => _grade('word', item.word!.surface, g),
+          onGrade: (g) => _grade(_wordTrack(item.word!), item.word!.surface, g),
         );
       case 'review_word':
         return _WordCard(
@@ -142,7 +145,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
           isNew: false,
           revealed: _revealed,
           onReveal: () => setState(() => _revealed = true),
-          onGrade: (g) => _grade('word', item.word!.surface, g),
+          onGrade: (g) => _grade(_wordTrack(item.word!), item.word!.surface, g),
         );
       case 'read_verse':
         return _ReadVerseView(card: item.verse!, onContinue: _next);
@@ -329,7 +332,7 @@ class _GlyphCard extends StatelessWidget {
             height: 1.2,
           ),
         ),
-        if (onHost) ...[
+        if (onHost && (isNew || revealed)) ...[
           const SizedBox(height: 8),
           // Sound out the (nonsense) syllable so the vowel's sound is clear.
           Text(
@@ -411,15 +414,23 @@ class _WordCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Prefer a curated learner gloss for the head of the frequency list.
+    // The "read" aspect drills pronunciation; the "mean" aspect drills meaning
+    // (by which point the word can already be read, so its sound is shown).
+    final isRead = word.aspect == 'read';
+    final translit = transliterateHebrew(word.surface);
     final gloss =
         kVocabOverrides[vocabKey(word.surface)]?.gloss ??
         (word.gloss.isEmpty ? '—' : word.gloss);
 
+    final prompt = isRead
+        ? (isNew ? 'New word — learn to read it' : 'How do you read this?')
+        : (isNew ? 'Now learn what it means' : 'What does it mean?');
+    final answerShown = isNew || revealed;
+
     return _CardShell(
       children: [
         Text(
-          isNew ? 'New word' : 'What does this mean?',
+          prompt,
           textAlign: TextAlign.center,
           style: theme.textTheme.labelLarge?.copyWith(
             color: theme.colorScheme.primary,
@@ -437,17 +448,19 @@ class _WordCard extends StatelessWidget {
             height: 1.2,
           ),
         ),
-        const SizedBox(height: 4),
-        // Always shown (even before the meaning is revealed) so the learner can
-        // sound the word out — that's the reading skill being practised.
-        Text(
-          transliterateHebrew(word.surface),
-          textAlign: TextAlign.center,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontStyle: FontStyle.italic,
-            color: theme.colorScheme.onSurfaceVariant,
+        // Meaning cards keep the pronunciation visible (reading is already
+        // known); reading cards hide it until reveal — it's the answer.
+        if (!isRead) ...[
+          const SizedBox(height: 4),
+          Text(
+            translit,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontStyle: FontStyle.italic,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
+        ],
         const SizedBox(height: 8),
         Text(
           '${word.occurrences}× in the Old Testament',
@@ -457,63 +470,52 @@ class _WordCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        if (isNew || revealed) ...[
-          Text(
-            gloss,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          if (word.morph.isNotEmpty) ...[
-            const SizedBox(height: 4),
+        if (answerShown) ...[
+          if (isRead)
+            // The answer to a reading card is how to say it.
             Text(
-              word.morph,
+              translit,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontStyle: FontStyle.italic,
+              ),
+            )
+          else ...[
+            Text(
+              gloss,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
               ),
             ),
-          ],
-          if (word.root.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              'root ${word.root}',
-              textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+            if (word.morph.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                word.morph,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
-          ],
-          // On the rare new word that still carries unintroduced glyphs, show
-          // them so nothing is unfamiliar before the drill.
-          if (word.newGlyphs.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
-              children: [
-                for (final g in word.newGlyphs)
-                  Chip(
-                    label: Text(
-                      isNiqqud(g.glyph) ? '◌${g.glyph}' : g.glyph,
-                      style: const TextStyle(
-                        fontFamily: _hebrewFont,
-                        fontFamilyFallback: _hebrewFallback,
-                        fontSize: 22,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            ],
+            if (word.root.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'root ${word.root}',
+                textAlign: TextAlign.center,
+                textDirection: TextDirection.rtl,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ],
           const SizedBox(height: 24),
           _GradeButtons(onGrade: onGrade, firstExposure: isNew),
         ] else
           OutlinedButton(
             onPressed: onReveal,
-            child: const Text('Reveal meaning'),
+            child: Text(isRead ? 'Reveal' : 'Reveal meaning'),
           ),
       ],
     );

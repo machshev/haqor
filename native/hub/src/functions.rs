@@ -483,7 +483,11 @@ fn to_signal_word(w: tutor::WordCard) -> WordCard {
         gloss: w.gloss,
         root: w.root,
         morph: w.morph,
-        new_glyphs: w.new_glyphs.into_iter().map(to_signal_glyph).collect(),
+        aspect: match w.aspect {
+            tutor::WordAspect::Read => "read",
+            tutor::WordAspect::Mean => "mean",
+        }
+        .to_string(),
     }
 }
 
@@ -561,7 +565,8 @@ pub async fn submit_review(bible: SharedBible) {
         debug_print!("{:?}", req);
         let track = match req.track.as_str() {
             "glyph" => Track::Glyph,
-            _ => Track::Word,
+            "word_mean" => Track::WordMean,
+            _ => Track::WordRead,
         };
         let grade = Grade::from_i64(req.grade as i64).unwrap_or(Grade::Good);
         let bible = lock(&bible);
