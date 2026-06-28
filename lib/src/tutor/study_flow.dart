@@ -314,7 +314,9 @@ class _GlyphCard extends StatelessWidget {
               if (combining)
                 TextSpan(
                   text: glyph.glyph,
-                  style: TextStyle(color: theme.colorScheme.primary),
+                  // Red stands out against the dark consonant far better than the
+                  // green theme accent.
+                  style: TextStyle(color: Colors.red.shade700),
                 ),
             ],
           ),
