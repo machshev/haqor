@@ -155,6 +155,81 @@ pub async fn get_word_info(bible: SharedBible) {
         debug_print!("{:?}", req);
         let lookup = strip_trope(&req.word);
 
+        // A Lexicon cross-reference hands back the target's BDB entry id rather
+        // than a surface word (root targets like בטח are never surface forms),
+        // so resolve it straight to the target entry's root tree.
+        if let Some(id) = req.bdb_id.as_deref().filter(|s| !s.is_empty()) {
+            match bible.hebrew_bdb_by_id(id) {
+                Ok(Some(entry)) => {
+                    let mut bdb_entries: Vec<BdbSummary> = bible
+                        .hebrew_bdb_by_root(&entry.root)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|e| BdbSummary {
+                            proper_noun: e.is_proper_noun(),
+                            headword: e.headword,
+                            gloss: e.gloss,
+                            content_json: e.content_json,
+                        })
+                        .collect();
+                    // A rootless entry (a particle) isn't reachable by root;
+                    // show the target lexeme on its own.
+                    if bdb_entries.is_empty() {
+                        bdb_entries.push(BdbSummary {
+                            proper_noun: entry.is_proper_noun(),
+                            headword: entry.headword.clone(),
+                            gloss: entry.gloss.clone(),
+                            content_json: entry.content_json.clone(),
+                        });
+                    }
+                    WordInfo {
+                        found: true,
+                        word: entry.headword,
+                        root: entry.root,
+                        gloss: entry.gloss,
+                        gender: None,
+                        number: None,
+                        prefix: None,
+                        suffix: None,
+                        prepositions: None,
+                        article: false,
+                        vav_con: false,
+                        bdb_entries,
+                        sedra_entries: Vec::new(),
+                        person: None,
+                        state: None,
+                        tense: None,
+                        form: None,
+                    }
+                    .send_signal_to_dart();
+                }
+                _ => {
+                    debug_print!("get_word_info: no BDB entry for id {:?}", id);
+                    WordInfo {
+                        found: false,
+                        word: req.word.clone(),
+                        root: String::new(),
+                        gloss: String::new(),
+                        gender: None,
+                        number: None,
+                        prefix: None,
+                        suffix: None,
+                        prepositions: None,
+                        article: false,
+                        vav_con: false,
+                        bdb_entries: Vec::new(),
+                        sedra_entries: Vec::new(),
+                        person: None,
+                        state: None,
+                        tense: None,
+                        form: None,
+                    }
+                    .send_signal_to_dart();
+                }
+            }
+            continue;
+        }
+
         if req.syriac {
             // NT lexicon now comes from the full SEDRA database (roots,
             // lexemes, words, english) keyed directly on the displayed Hebrew

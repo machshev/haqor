@@ -50,6 +50,10 @@ pub struct ChapterText {
 pub struct GetWordInfo {
     pub word: String,
     pub syriac: bool,
+    /// When set, look the entry up by BDB entry id instead of by `word` —
+    /// used to follow a Lexicon cross-reference to its target's root tree.
+    /// `word` then carries only the target headword, for the sheet title.
+    pub bdb_id: Option<String>,
 }
 
 /// Lazy companion to [`GetWordInfo`]: requests only the occurrence lists, which

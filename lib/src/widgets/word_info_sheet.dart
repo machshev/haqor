@@ -70,11 +70,16 @@ class WordInfoSheet extends StatefulWidget {
     super.key,
     required this.word,
     required this.syriac,
+    this.bdbId,
     this.onNavigateToPassage,
   });
 
   final String word;
   final bool syriac;
+  /// When set, the sheet shows the BDB entry with this id (a Lexicon
+  /// cross-reference target) rather than parsing [word] as a surface form;
+  /// [word] is then just the target headword for the title.
+  final String? bdbId;
   final void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage;
 
   @override
@@ -120,7 +125,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         if (pack.message.found) _fetchOccurrences();
       }
     });
-    GetWordInfo(word: widget.word, syriac: widget.syriac).sendSignalToRust();
+    GetWordInfo(word: widget.word, syriac: widget.syriac, bdbId: widget.bdbId)
+        .sendSignalToRust();
     _loadFlagState();
   }
 
@@ -282,6 +288,29 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                 parsed.chapter,
                 parsed.verse,
               ),
+      ),
+    );
+  }
+
+  // Follow a Lexicon cross-reference: open the target BDB entry in a stacked
+  // sheet. Drilling in keeps the trail (back returns here); navigating to a
+  // passage from the target closes both sheets first.
+  void _onXrefTap(String bdbId, String headword) {
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => WordInfoSheet(
+        word: headword,
+        syriac: false,
+        bdbId: bdbId,
+        onNavigateToPassage: widget.onNavigateToPassage == null
+            ? null
+            : (bi, chapter, verse) {
+                Navigator.pop(ctx);
+                widget.onNavigateToPassage!(bi, chapter, verse);
+              },
       ),
     );
   }
@@ -552,6 +581,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               child: _BdbContent(
                 contentJson: e.contentJson,
                 onBibleRefTap: (href) => _onBibleRefTap(context, href),
+                onXrefTap: _onXrefTap,
               ),
             ),
         ],
@@ -1385,10 +1415,12 @@ class _BdbContent extends StatelessWidget {
   const _BdbContent({
     required this.contentJson,
     required this.onBibleRefTap,
+    required this.onXrefTap,
   });
 
   final String contentJson;
   final void Function(String href) onBibleRefTap;
+  final void Function(String bdbId, String headword) onXrefTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1494,6 +1526,9 @@ class _BdbContent extends StatelessWidget {
       final small = span['s'] == true;
       final rtl = span['rtl'] == true;
       final href = span['href'] as String?;
+      // A <w src> cross-reference: tappable, navigates to the target entry.
+      final xref = span['xref'] as String?;
+      final isLink = href != null || xref != null;
 
       TextStyle style = (baseStyle ?? const TextStyle()).copyWith(
         fontWeight: bold ? FontWeight.bold : null,
@@ -1501,14 +1536,20 @@ class _BdbContent extends StatelessWidget {
         fontSize: small ? (baseStyle?.fontSize ?? 12) * 0.85 : null,
         fontFamily: rtl ? 'Cardo' : null,
         fontFamilyFallback: rtl ? const ['Noto Serif Hebrew'] : null,
-        color: href != null ? theme.colorScheme.primary : null,
-        decoration: href != null ? TextDecoration.underline : null,
-        decorationColor: href != null ? theme.colorScheme.primary : null,
+        color: isLink ? theme.colorScheme.primary : null,
+        decoration: isLink ? TextDecoration.underline : null,
+        decorationColor: isLink ? theme.colorScheme.primary : null,
       );
 
       if (href != null) {
         final recognizer = TapGestureRecognizer()
           ..onTap = () => onBibleRefTap(href);
+        return TextSpan(text: text, style: style, recognizer: recognizer);
+      }
+
+      if (xref != null) {
+        final recognizer = TapGestureRecognizer()
+          ..onTap = () => onXrefTap(xref, text);
         return TextSpan(text: text, style: style, recognizer: recognizer);
       }
 
