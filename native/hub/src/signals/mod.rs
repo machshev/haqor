@@ -196,16 +196,21 @@ pub struct WordOccurrences {
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetNextStudyItem {}
 
-/// Answer the current card; the `StudyItem` response is the next card. A glyph
-/// "intro" is just a `Good` grade on a fresh glyph.
+/// Answer the current card; the `StudyItem` response is the next card. The
+/// learner's self-assessed `confidence` (set on the grading slider) maps to an
+/// SM-2 grade; a fresh-glyph "intro" is just a mid `confidence` with no quiz.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct SubmitReview {
-    /// `"glyph"` or `"word"`.
+    /// `"glyph"`, `"word_read"` or `"word_mean"`.
     pub track: String,
     /// The glyph character (folded) or the word surface form.
     pub key: String,
-    /// 0 = Again, 1 = Hard, 2 = Good, 3 = Easy.
-    pub grade: u8,
+    /// Self-assessed confidence, 0..=100 (slider). <25 Again, <55 Hard,
+    /// <85 Good, else Easy.
+    pub confidence: u8,
+    /// Multiple-choice outcome: 0 = not a quiz (self-graded), 1 = wrong pick
+    /// (always lapses), 2 = correct pick (graded on confidence).
+    pub correct: u8,
 }
 
 /// Wipe all tutor progress (a dev/settings action).
@@ -220,6 +225,9 @@ pub struct GlyphCard {
     pub is_consonant: bool,
     /// For a vowel, an already-learnt consonant to display it on; else null.
     pub host: Option<String>,
+    /// Same-kind glyphs offered as wrong answers in a multiple-choice quiz;
+    /// empty when too few peers exist (the app self-grades instead).
+    pub distractors: Vec<String>,
 }
 
 /// A word to learn or review, for one aspect: `"read"` (vocalisation) or
@@ -233,6 +241,9 @@ pub struct WordCard {
     pub root: String,
     pub morph: String,
     pub aspect: String,
+    /// Plausible wrong glosses for a multiple-choice meaning quiz; filled only
+    /// for `"mean"` cards, empty when too few exist (the app self-grades).
+    pub distractors: Vec<String>,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]

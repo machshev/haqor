@@ -9,14 +9,26 @@ import 'alphabet_data.dart';
 import 'transliterate.dart';
 import 'vocab_overrides.dart';
 
-/// SM-2 grades, matching the Rust `Grade` enum order (0..3).
-const int _again = 0;
-const int _hard = 1;
-const int _good = 2;
-const int _easy = 3;
+/// Multiple-choice outcome, matching the Rust `SubmitReview.correct` codes.
+const int _notQuiz = 0; // self-graded (no quiz)
+const int _quizWrong = 1; // wrong pick — always lapses
+const int _quizCorrect = 2; // correct pick — graded on confidence
+
+/// Confidence (0..100) sent for a freshly-taught card's "Got it" — a solid
+/// "Good", matching the Rust `Grade::from_confidence` thresholds.
+const int _gotItConfidence = 70;
 
 const String _hebrewFont = 'Cardo';
 const List<String> _hebrewFallback = ['Noto Serif Hebrew'];
+
+/// The SM-2 grade a confidence value (0..100) lands in, mirroring the Rust
+/// `Grade::from_confidence` buckets (<25 Again, <55 Hard, <85 Good, else Easy).
+({String label, Color color}) _confidenceBucket(double c, ColorScheme scheme) {
+  if (c < 25) return (label: 'Again', color: scheme.error);
+  if (c < 55) return (label: 'Hard', color: Colors.orange.shade700);
+  if (c < 85) return (label: 'Good', color: Colors.green.shade700);
+  return (label: 'Easy', color: Colors.blue.shade700);
+}
 
 /// The SRS track for a word card: its reading or its meaning.
 String _wordTrack(WordCard w) => w.aspect == 'mean' ? 'word_mean' : 'word_read';
@@ -36,17 +48,13 @@ class StudyFlowPage extends StatefulWidget {
 class _StudyFlowPageState extends State<StudyFlowPage> {
   StreamSubscription<RustSignalPack<StudyItem>>? _sub;
   StudyItem? _item;
-  bool _revealed = false;
 
   @override
   void initState() {
     super.initState();
     _sub = StudyItem.rustSignalStream.listen((pack) {
       if (!mounted) return;
-      setState(() {
-        _item = pack.message;
-        _revealed = false;
-      });
+      setState(() => _item = pack.message);
     });
     GetNextStudyItem().sendSignalToRust();
   }
@@ -57,8 +65,16 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
     super.dispose();
   }
 
-  void _grade(String track, String key, int grade) =>
-      SubmitReview(track: track, key: key, grade: grade).sendSignalToRust();
+  /// Report an answer: `confidence` (0..100) is the slider self-rating; `correct`
+  /// is the multiple-choice outcome (see the `_quiz*` codes). The response is the
+  /// next card.
+  void _grade(String track, String key, int confidence, int correct) =>
+      SubmitReview(
+        track: track,
+        key: key,
+        confidence: confidence,
+        correct: correct,
+      ).sendSignalToRust();
 
   void _next() => GetNextStudyItem().sendSignalToRust();
 
@@ -116,36 +132,24 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   Widget _buildItem(BuildContext context, StudyItem item) {
     switch (item.kind) {
       case 'new_glyph':
-        return _GlyphCard(
-          glyph: item.glyph!,
-          isNew: true,
-          revealed: true,
-          onReveal: () {},
-          onGrade: (g) => _grade('glyph', item.glyph!.glyph, g),
-        );
       case 'review_glyph':
+        final g = item.glyph!;
         return _GlyphCard(
-          glyph: item.glyph!,
-          isNew: false,
-          revealed: _revealed,
-          onReveal: () => setState(() => _revealed = true),
-          onGrade: (g) => _grade('glyph', item.glyph!.glyph, g),
+          key: ValueKey('glyph:${g.glyph}:${item.kind}'),
+          glyph: g,
+          isNew: item.kind == 'new_glyph',
+          onGrade: (confidence, correct) =>
+              _grade('glyph', g.glyph, confidence, correct),
         );
       case 'new_word':
-        return _WordCard(
-          word: item.word!,
-          isNew: true,
-          revealed: true,
-          onReveal: () {},
-          onGrade: (g) => _grade(_wordTrack(item.word!), item.word!.surface, g),
-        );
       case 'review_word':
+        final w = item.word!;
         return _WordCard(
-          word: item.word!,
-          isNew: false,
-          revealed: _revealed,
-          onReveal: () => setState(() => _revealed = true),
-          onGrade: (g) => _grade(_wordTrack(item.word!), item.word!.surface, g),
+          key: ValueKey('word:${w.surface}:${w.aspect}:${item.kind}'),
+          word: w,
+          isNew: item.kind == 'new_word',
+          onGrade: (confidence, correct) =>
+              _grade(_wordTrack(w), w.surface, confidence, correct),
         );
       case 'read_verse':
         return _ReadVerseView(card: item.verse!, onContinue: _next);
@@ -223,41 +227,260 @@ class _CardShell extends StatelessWidget {
   }
 }
 
-/// Four SM-2 grade buttons (or a single "Got it" for a freshly-taught card).
-class _GradeButtons extends StatelessWidget {
-  final void Function(int grade) onGrade;
-  final bool firstExposure;
-  const _GradeButtons({required this.onGrade, this.firstExposure = false});
+/// A confidence slider that maps to an SM-2 grade on submit. Used to self-grade
+/// a revealed card, and to rate a correct multiple-choice answer. The live label
+/// shows which grade the current position lands in.
+class _ConfidenceSlider extends StatefulWidget {
+  /// `_notQuiz` (self-grade) or `_quizCorrect` (rating a correct pick).
+  final int correct;
+  final void Function(int confidence, int correct) onGrade;
+  const _ConfidenceSlider({required this.correct, required this.onGrade});
+
+  @override
+  State<_ConfidenceSlider> createState() => _ConfidenceSliderState();
+}
+
+class _ConfidenceSliderState extends State<_ConfidenceSlider> {
+  // Start in the middle of "Good": the honest default for a card you recalled.
+  double _value = 70;
 
   @override
   Widget build(BuildContext context) {
-    if (firstExposure) {
-      return FilledButton.icon(
-        onPressed: () => onGrade(_good),
-        icon: const Icon(Icons.check),
-        label: const Text('Got it'),
-      );
-    }
-    final scheme = Theme.of(context).colorScheme;
-    Widget btn(String label, int grade, Color color) => Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 3),
-        child: FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: color,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-          onPressed: () => onGrade(grade),
-          child: Text(label),
-        ),
+    final theme = Theme.of(context);
+    final bucket = _confidenceBucket(_value, theme.colorScheme);
+    Widget edge(String t) => Text(
+      t,
+      style: theme.textTheme.labelSmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
       ),
     );
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        btn('Again', _again, scheme.error),
-        btn('Hard', _hard, Colors.orange.shade700),
-        btn('Good', _good, Colors.green.shade700),
-        btn('Easy', _easy, Colors.blue.shade700),
+        Text(
+          'How well did you know it?',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          bucket.label,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.titleLarge?.copyWith(
+            color: bucket.color,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Row(
+          children: [
+            edge('Forgot'),
+            Expanded(
+              child: Slider(
+                value: _value,
+                min: 0,
+                max: 100,
+                divisions: 20,
+                activeColor: bucket.color,
+                label: bucket.label,
+                onChanged: (v) => setState(() => _value = v),
+              ),
+            ),
+            edge('Easy'),
+          ],
+        ),
+        const SizedBox(height: 8),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: bucket.color,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+          onPressed: () => widget.onGrade(_value.round(), widget.correct),
+          child: Text('Submit · ${bucket.label}'),
+        ),
+      ],
+    );
+  }
+}
+
+/// The answer-and-grade machine shared by glyph and word review cards.
+///
+/// * A freshly-taught card just shows its [answer] and a "Got it" button.
+/// * With enough [distractorLabels] (and a [correctLabel]) it runs a
+///   multiple-choice quiz: pick an option, see the answer, then a correct pick
+///   is rated on the confidence slider while a wrong pick always lapses.
+/// * Otherwise it self-grades: reveal the [answer], then rate it on the slider.
+class _Grader extends StatefulWidget {
+  final bool isNew;
+  final String revealLabel;
+  final Widget answer;
+  /// The right-answer option label; null disables the quiz (self-grade only).
+  final String? correctLabel;
+  final List<String> distractorLabels;
+  final void Function(int confidence, int correct) onGrade;
+
+  const _Grader({
+    required this.isNew,
+    required this.answer,
+    required this.onGrade,
+    this.revealLabel = 'Reveal',
+    this.correctLabel,
+    this.distractorLabels = const [],
+  });
+
+  @override
+  State<_Grader> createState() => _GraderState();
+}
+
+class _GraderState extends State<_Grader> {
+  /// Shuffled options for the quiz, or null when self-grading.
+  List<String>? _options;
+  int _correctIndex = 0;
+  bool _revealed = false;
+  int? _picked;
+
+  @override
+  void initState() {
+    super.initState();
+    final correct = widget.correctLabel?.trim();
+    if (widget.isNew || correct == null || correct.isEmpty) return;
+    final seen = <String>{correct.toLowerCase()};
+    final options = <String>[correct];
+    for (final d in widget.distractorLabels) {
+      final t = d.trim();
+      if (t.isEmpty || !seen.add(t.toLowerCase())) continue;
+      options.add(t);
+      if (options.length == 4) break;
+    }
+    // Need a full four-way choice for the quiz to be worthwhile.
+    if (options.length < 4) return;
+    options.shuffle();
+    _options = options;
+    _correctIndex = options.indexOf(correct);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.isNew) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          widget.answer,
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: () => widget.onGrade(_gotItConfidence, _notQuiz),
+            icon: const Icon(Icons.check),
+            label: const Text('Got it'),
+          ),
+        ],
+      );
+    }
+    final options = _options;
+    if (options == null) return _buildSelfGrade(context);
+    return _buildQuiz(context, options);
+  }
+
+  // Reveal, then rate on the confidence slider.
+  Widget _buildSelfGrade(BuildContext context) {
+    if (!_revealed) {
+      return OutlinedButton(
+        onPressed: () => setState(() => _revealed = true),
+        child: Text(widget.revealLabel),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        widget.answer,
+        const SizedBox(height: 24),
+        _ConfidenceSlider(correct: _notQuiz, onGrade: widget.onGrade),
+      ],
+    );
+  }
+
+  // Pick an option, then see the answer and grade.
+  Widget _buildQuiz(BuildContext context, List<String> options) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final picked = _picked;
+    final answered = picked != null;
+    final gotItRight = picked == _correctIndex;
+
+    Widget option(int i) {
+      // Before answering: plain tappable choices. After: the right answer turns
+      // green and a wrong pick turns red, so the mistake is clear.
+      Color? bg;
+      Color? fg;
+      if (answered) {
+        if (i == _correctIndex) {
+          bg = Colors.green.shade700;
+          fg = Colors.white;
+        } else if (i == picked) {
+          bg = scheme.error;
+          fg = scheme.onError;
+        }
+      }
+      final style = answered
+          ? FilledButton.styleFrom(
+              backgroundColor: bg ?? scheme.surfaceContainerHighest,
+              foregroundColor: fg ?? scheme.onSurfaceVariant,
+              disabledBackgroundColor: bg ?? scheme.surfaceContainerHighest,
+              disabledForegroundColor: fg ?? scheme.onSurfaceVariant,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            )
+          : null;
+      final child = Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: SizedBox(
+          width: double.infinity,
+          child: answered
+              ? FilledButton(
+                  onPressed: null,
+                  style: style,
+                  child: Text(options[i], textAlign: TextAlign.center),
+                )
+              : OutlinedButton(
+                  onPressed: () => setState(() {
+                    _picked = i;
+                    _revealed = true;
+                  }),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: Text(options[i], textAlign: TextAlign.center),
+                ),
+        ),
+      );
+      return child;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < options.length; i++) option(i),
+        if (answered) ...[
+          const SizedBox(height: 8),
+          Text(
+            gotItRight ? 'Correct' : 'Not quite',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: gotItRight ? Colors.green.shade700 : scheme.error,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          widget.answer,
+          const SizedBox(height: 24),
+          if (gotItRight)
+            _ConfidenceSlider(correct: _quizCorrect, onGrade: widget.onGrade)
+          else
+            FilledButton.icon(
+              onPressed: () => widget.onGrade(0, _quizWrong),
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('Continue'),
+            ),
+        ],
       ],
     );
   }
@@ -267,15 +490,12 @@ class _GradeButtons extends StatelessWidget {
 class _GlyphCard extends StatelessWidget {
   final GlyphCard glyph;
   final bool isNew;
-  final bool revealed;
-  final VoidCallback onReveal;
-  final void Function(int grade) onGrade;
+  final void Function(int confidence, int correct) onGrade;
 
   const _GlyphCard({
+    super.key,
     required this.glyph,
     required this.isNew,
-    required this.revealed,
-    required this.onReveal,
     required this.onGrade,
   });
 
@@ -332,8 +552,32 @@ class _GlyphCard extends StatelessWidget {
             height: 1.2,
           ),
         ),
-        if (onHost && (isNew || revealed)) ...[
-          const SizedBox(height: 8),
+        const SizedBox(height: 16),
+        _Grader(
+          isNew: isNew,
+          // Quiz on the glyph's name; only when we have a name to show.
+          correctLabel: info?.name,
+          distractorLabels: [
+            for (final d in glyph.distractors) glyphInfo(d)?.name ?? d,
+          ],
+          onGrade: onGrade,
+          answer: _glyphAnswer(context, info, host, onHost),
+        ),
+      ],
+    );
+  }
+
+  Widget _glyphAnswer(
+    BuildContext context,
+    HebrewLetter? info,
+    String? host,
+    bool onHost,
+  ) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (onHost) ...[
           // Sound out the (nonsense) syllable so the vowel's sound is clear.
           Text(
             '“${transliterateHebrew('$host${glyph.glyph}')}”',
@@ -343,53 +587,45 @@ class _GlyphCard extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
+          const SizedBox(height: 12),
         ],
-        const SizedBox(height: 16),
-        if (isNew || revealed) ...[
-          if (info != null) ...[
-            Text(
-              '${info.name} · ${info.hebrewName}',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+        if (info != null) ...[
+          Text(
+            '${info.name} · ${info.hebrewName}',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
             ),
-            const SizedBox(height: 4),
-            Text(
-              info.sound,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              info.example,
-              textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
-              style: const TextStyle(
-                fontFamily: _hebrewFont,
-                fontFamilyFallback: _hebrewFallback,
-                fontSize: 30,
-              ),
-            ),
-            Text(
-              '${info.exampleTranslit} — ${info.exampleMeaning}',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            if (info.tip != null) ...[
-              const SizedBox(height: 12),
-              _TipBox(text: info.tip!),
-            ],
-          ],
-          const SizedBox(height: 24),
-          _GradeButtons(onGrade: onGrade, firstExposure: isNew),
-        ] else
-          OutlinedButton(
-            onPressed: onReveal,
-            child: const Text('Reveal'),
           ),
+          const SizedBox(height: 4),
+          Text(
+            info.sound,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyLarge,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            info.example,
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.rtl,
+            style: const TextStyle(
+              fontFamily: _hebrewFont,
+              fontFamilyFallback: _hebrewFallback,
+              fontSize: 30,
+            ),
+          ),
+          Text(
+            '${info.exampleTranslit} — ${info.exampleMeaning}',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (info.tip != null) ...[
+            const SizedBox(height: 12),
+            _TipBox(text: info.tip!),
+          ],
+        ],
       ],
     );
   }
@@ -399,15 +635,12 @@ class _GlyphCard extends StatelessWidget {
 class _WordCard extends StatelessWidget {
   final WordCard word;
   final bool isNew;
-  final bool revealed;
-  final VoidCallback onReveal;
-  final void Function(int grade) onGrade;
+  final void Function(int confidence, int correct) onGrade;
 
   const _WordCard({
+    super.key,
     required this.word,
     required this.isNew,
-    required this.revealed,
-    required this.onReveal,
     required this.onGrade,
   });
 
@@ -425,7 +658,6 @@ class _WordCard extends StatelessWidget {
     final prompt = isRead
         ? (isNew ? 'New word — learn to read it' : 'How do you read this?')
         : (isNew ? 'Now learn what it means' : 'What does it mean?');
-    final answerShown = isNew || revealed;
 
     return _CardShell(
       children: [
@@ -449,7 +681,7 @@ class _WordCard extends StatelessWidget {
           ),
         ),
         // Meaning cards keep the pronunciation visible (reading is already
-        // known); reading cards hide it until reveal — it's the answer.
+        // known); reading cards hide it (it's the answer) until the grader reveals.
         if (!isRead) ...[
           const SizedBox(height: 4),
           Text(
@@ -470,53 +702,64 @@ class _WordCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        if (answerShown) ...[
-          if (isRead)
-            // The answer to a reading card is how to say it.
-            Text(
-              translit,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontStyle: FontStyle.italic,
-              ),
-            )
-          else ...[
-            Text(
-              gloss,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            if (word.morph.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                word.morph,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-            if (word.root.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                'root ${word.root}',
-                textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ],
-          const SizedBox(height: 24),
-          _GradeButtons(onGrade: onGrade, firstExposure: isNew),
-        ] else
-          OutlinedButton(
-            onPressed: onReveal,
-            child: Text(isRead ? 'Reveal' : 'Reveal meaning'),
+        _Grader(
+          isNew: isNew,
+          revealLabel: isRead ? 'Reveal' : 'Reveal meaning',
+          // Quiz only meaning cards (multiple-choice on the gloss); reading is
+          // a spoken skill, so it stays a reveal-and-self-grade card.
+          correctLabel: isRead ? null : gloss,
+          distractorLabels: word.distractors,
+          onGrade: onGrade,
+          answer: isRead
+              ? _readAnswer(context, translit)
+              : _meanAnswer(context, gloss),
+        ),
+      ],
+    );
+  }
+
+  // The answer to a reading card is how to say it.
+  Widget _readAnswer(BuildContext context, String translit) => Text(
+    translit,
+    textAlign: TextAlign.center,
+    style: Theme.of(
+      context,
+    ).textTheme.headlineSmall?.copyWith(fontStyle: FontStyle.italic),
+  );
+
+  Widget _meanAnswer(BuildContext context, String gloss) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          gloss,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
           ),
+        ),
+        if (word.morph.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            word.morph,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+        if (word.root.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            'root ${word.root}',
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.rtl,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ],
     );
   }

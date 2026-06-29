@@ -472,6 +472,7 @@ fn to_signal_glyph(g: tutor::GlyphCard) -> GlyphCard {
         glyph: g.glyph,
         is_consonant: g.is_consonant,
         host: g.host,
+        distractors: g.distractors,
     }
 }
 
@@ -488,6 +489,7 @@ fn to_signal_word(w: tutor::WordCard) -> WordCard {
             tutor::WordAspect::Mean => "mean",
         }
         .to_string(),
+        distractors: w.distractors,
     }
 }
 
@@ -568,7 +570,12 @@ pub async fn submit_review(bible: SharedBible) {
             "word_mean" => Track::WordMean,
             _ => Track::WordRead,
         };
-        let grade = Grade::from_i64(req.grade as i64).unwrap_or(Grade::Good);
+        let correct = match req.correct {
+            1 => Some(false),
+            2 => Some(true),
+            _ => None,
+        };
+        let grade = Grade::from_confidence(req.confidence, correct);
         let bible = lock(&bible);
         match bible.submit_review(track, &req.key, grade, now_epoch()) {
             Ok(item) => to_signal_study_item(&bible, item).send_signal_to_dart(),
