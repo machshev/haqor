@@ -31,6 +31,17 @@ const List<String> _hebrewFallback = ['Noto Serif Hebrew'];
   return (label: 'Easy', color: Colors.green.shade700);
 }
 
+/// A learner-facing syllable for a vowel taught on [host]: the host consonant's
+/// sound plus the vowel's *distinguishing* romanization — macron for a long
+/// vowel (qamats `ā` vs patah `a`, tsere `ē` vs segol `e`), breve for a hataf
+/// (`ă/ĕ/ŏ`), `ə` for sheva. [transliterateHebrew] collapses these to one of
+/// a/e/i/o/u, so vocalisation quizzes build their options from this instead.
+String _vowelSyllable(String? host, String vowelGlyph) {
+  final consonant = (host == null || host.isEmpty) ? '' : transliterateHebrew(host);
+  final vowel = glyphInfo(vowelGlyph)?.translit ?? '';
+  return '$consonant$vowel';
+}
+
 /// The SRS track for a word card: its reading or its meaning.
 String _wordTrack(WordCard w) => w.aspect == 'mean' ? 'word_mean' : 'word_read';
 
@@ -568,11 +579,16 @@ class _GlyphCard extends StatelessWidget {
         : combining
         ? 'vowel'
         : 'mark';
+    // A vowel is taught on a host, so quiz how the syllable *sounds* (not the
+    // vowel's name); the distinguishing romanization keeps long/short/sheva
+    // apart. Consonants and marks quiz by name (their sounds collide).
+    final isVowel = combining && onHost;
+    final reviewPrompt = isVowel ? 'How do you say this?' : 'Which $kind is this?';
 
     return _CardShell(
       children: [
         Text(
-          isNew ? 'New $kind' : 'Which $kind is this?',
+          isNew ? 'New $kind' : reviewPrompt,
           textAlign: TextAlign.center,
           style: theme.textTheme.labelLarge?.copyWith(
             color: theme.colorScheme.primary,
@@ -606,11 +622,11 @@ class _GlyphCard extends StatelessWidget {
         const SizedBox(height: 16),
         _Grader(
           isNew: isNew,
-          // Quiz on the glyph's name; only when we have a name to show.
-          correctLabel: info?.name,
-          distractorLabels: [
-            for (final d in glyph.distractors) glyphInfo(d)?.name ?? d,
-          ],
+          // Vowels quiz the syllable sound; consonants/marks quiz the name.
+          correctLabel: isVowel ? _vowelSyllable(host, glyph.glyph) : info?.name,
+          distractorLabels: isVowel
+              ? [for (final d in glyph.distractors) _vowelSyllable(host, d)]
+              : [for (final d in glyph.distractors) glyphInfo(d)?.name ?? d],
           onGrade: onGrade,
           answer: _glyphAnswer(context, info, host, onHost),
         ),
@@ -629,9 +645,9 @@ class _GlyphCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (onHost) ...[
-          // Sound out the (nonsense) syllable so the vowel's sound is clear.
+          // Sound out the (nonsense) syllable, keeping long/short/sheva distinct.
           Text(
-            '“${transliterateHebrew('$host${glyph.glyph}')}”',
+            '“${_vowelSyllable(host, glyph.glyph)}”',
             textAlign: TextAlign.center,
             style: theme.textTheme.titleMedium?.copyWith(
               fontStyle: FontStyle.italic,
