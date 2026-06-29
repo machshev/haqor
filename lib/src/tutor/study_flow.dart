@@ -24,10 +24,11 @@ const List<String> _hebrewFallback = ['Noto Serif Hebrew'];
 /// The SM-2 grade a confidence value (0..100) lands in, mirroring the Rust
 /// `Grade::from_confidence` buckets (<25 Again, <55 Hard, <85 Good, else Easy).
 ({String label, Color color}) _confidenceBucket(double c, ColorScheme scheme) {
+  // Red at the "forgot" end, ramping to green at the "easy" end.
   if (c < 25) return (label: 'Again', color: scheme.error);
-  if (c < 55) return (label: 'Hard', color: Colors.orange.shade700);
-  if (c < 85) return (label: 'Good', color: Colors.green.shade700);
-  return (label: 'Easy', color: Colors.blue.shade700);
+  if (c < 55) return (label: 'Hard', color: Colors.orange.shade800);
+  if (c < 85) return (label: 'Good', color: Colors.lightGreen.shade700);
+  return (label: 'Easy', color: Colors.green.shade700);
 }
 
 /// The SRS track for a word card: its reading or its meaning.
@@ -227,98 +228,112 @@ class _CardShell extends StatelessWidget {
   }
 }
 
-/// A confidence slider that *is* the grade button: drag (or tap the track) and
-/// the value you release on is submitted — no separate confirm tap. The live
-/// label shows which SM-2 grade the current position lands in. Used to
-/// self-grade a revealed card and to rate a correct multiple-choice answer.
-class _ConfidenceSlider extends StatefulWidget {
-  /// `_notQuiz` (self-grade) or `_quizCorrect` (rating a correct pick).
-  final int correct;
-  final void Function(int confidence, int correct) onGrade;
-  const _ConfidenceSlider({required this.correct, required this.onGrade});
+/// A button that doubles as a confidence dial. Press and hold, then slide left
+/// or right *across the button* to choose how well you knew it — its colour and
+/// label track the SM-2 grade (left = Again/Hard, right = Good/Easy) and the
+/// grade is committed on release. No separate slider or confirm tap.
+class _DragRateButton extends StatefulWidget {
+  final String label;
+  final bool enabled;
+  final void Function(int confidence) onCommit;
+  /// Fixed colours for a settled, non-interactive state (post-answer feedback).
+  final Color? settledColor;
+  final Color? settledFg;
+
+  const _DragRateButton({
+    required this.label,
+    required this.onCommit,
+    this.enabled = true,
+    this.settledColor,
+    this.settledFg,
+  });
 
   @override
-  State<_ConfidenceSlider> createState() => _ConfidenceSliderState();
+  State<_DragRateButton> createState() => _DragRateButtonState();
 }
 
-class _ConfidenceSliderState extends State<_ConfidenceSlider> {
-  // Start in the middle of "Good": the honest default for a card you recalled.
-  double _value = 70;
-  bool _submitted = false;
+class _DragRateButtonState extends State<_DragRateButton> {
+  // A press starts at "Good"; sliding right eases toward Easy, left toward Again.
+  static const double _base = 70;
+  // How much of the button's width a full-range swing takes (smaller = touchier).
+  static const double _span = 120;
 
-  void _commit(double v) {
-    if (_submitted) return;
-    setState(() => _submitted = true);
-    widget.onGrade(v.round(), widget.correct);
+  // Non-null while a finger is down: the confidence it currently reads (0..100).
+  double? _confidence;
+  double _startX = 0;
+
+  void _down(double dx) {
+    if (!widget.enabled) return;
+    setState(() {
+      _startX = dx;
+      _confidence = _base;
+    });
+  }
+
+  void _move(double dx, double width) {
+    if (!widget.enabled || _confidence == null) return;
+    final c = (_base + (dx - _startX) / width * _span).clamp(0.0, 100.0);
+    setState(() => _confidence = c);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bucket = _confidenceBucket(_value, theme.colorScheme);
-    Widget edge(String t) => Text(
-      t,
-      style: theme.textTheme.labelSmall?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'How well did you know it?',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.labelMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          bucket.label,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.headlineSmall?.copyWith(
-            color: bucket.color,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        Row(
-          children: [
-            edge('Forgot'),
-            Expanded(
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 8,
-                  thumbShape: const RoundSliderThumbShape(
-                    enabledThumbRadius: 12,
+    final scheme = theme.colorScheme;
+    final pressing = _confidence != null;
+    final bucket = pressing ? _confidenceBucket(_confidence!, scheme) : null;
+    final bg = bucket?.color ?? widget.settledColor;
+    final fg = bucket != null ? Colors.white : widget.settledFg;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        return Listener(
+          onPointerDown: (e) => _down(e.localPosition.dx),
+          onPointerMove: (e) => _move(e.localPosition.dx, width),
+          onPointerUp: (e) {
+            final c = _confidence;
+            if (c == null) return;
+            setState(() => _confidence = null);
+            widget.onCommit(c.round());
+          },
+          onPointerCancel: (_) => setState(() => _confidence = null),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 80),
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+            decoration: BoxDecoration(
+              color: bg ?? scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+              border: bg == null
+                  ? Border.all(color: scheme.outlineVariant)
+                  : null,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.label,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: fg ?? scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                child: Slider(
-                  value: _value,
-                  min: 0,
-                  max: 100,
-                  divisions: 20,
-                  activeColor: bucket.color,
-                  label: bucket.label,
-                  onChanged: _submitted
-                      ? null
-                      : (v) => setState(() => _value = v),
-                  // Releasing the thumb (or tapping the track) is the answer.
-                  onChangeEnd: _commit,
-                ),
-              ),
+                if (pressing) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    bucket!.label,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: fg,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ],
             ),
-            edge('Easy'),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Release to grade',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -327,9 +342,11 @@ class _ConfidenceSliderState extends State<_ConfidenceSlider> {
 ///
 /// * A freshly-taught card just shows its [answer] and a "Got it" button.
 /// * With enough [distractorLabels] (and a [correctLabel]) it runs a
-///   multiple-choice quiz: pick an option, see the answer, then a correct pick
-///   is rated on the confidence slider while a wrong pick always lapses.
-/// * Otherwise it self-grades: reveal the [answer], then rate it on the slider.
+///   multiple-choice quiz: press and hold the answer you mean, slide across it
+///   to set how well you knew it, and release. A correct pick commits at that
+///   confidence; a wrong pick reveals the answer and lapses.
+/// * Otherwise it self-grades: reveal the [answer], then hold-and-slide a single
+///   rate button the same way.
 class _Grader extends StatefulWidget {
   final bool isNew;
   final String revealLabel;
@@ -357,7 +374,9 @@ class _GraderState extends State<_Grader> {
   List<String>? _options;
   int _correctIndex = 0;
   bool _revealed = false;
-  int? _picked;
+  bool _committed = false;
+  /// A wrong pick, once released — switches the quiz to its feedback state.
+  int? _answeredWrongPick;
 
   @override
   void initState() {
@@ -402,8 +421,9 @@ class _GraderState extends State<_Grader> {
     return _buildQuiz(context, options);
   }
 
-  // Reveal, then rate on the confidence slider.
+  // Reveal, then hold-and-slide a single rate button to grade.
   Widget _buildSelfGrade(BuildContext context) {
+    final theme = Theme.of(context);
     if (!_revealed) {
       return OutlinedButton(
         onPressed: () => setState(() => _revealed = true),
@@ -415,92 +435,102 @@ class _GraderState extends State<_Grader> {
       children: [
         widget.answer,
         const SizedBox(height: 24),
-        _ConfidenceSlider(correct: _notQuiz, onGrade: widget.onGrade),
+        _DragRateButton(
+          label: 'Rate it',
+          enabled: !_committed,
+          onCommit: (c) {
+            if (_committed) return;
+            _committed = true;
+            widget.onGrade(c, _notQuiz);
+          },
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Hold and slide to rate how well you knew it',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
       ],
     );
   }
 
-  // Pick an option, then see the answer and grade.
+  // Hold an option and slide to set confidence; release commits. A correct pick
+  // grades on that confidence; a wrong one reveals the answer and lapses.
   Widget _buildQuiz(BuildContext context, List<String> options) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final picked = _picked;
-    final answered = picked != null;
-    final gotItRight = picked == _correctIndex;
+    final answeredWrong = _answeredWrongPick != null;
+
+    void release(int i, int confidence) {
+      if (_committed || _answeredWrongPick != null) return;
+      if (i == _correctIndex) {
+        _committed = true;
+        widget.onGrade(confidence, _quizCorrect);
+      } else {
+        setState(() => _answeredWrongPick = i);
+      }
+    }
 
     Widget option(int i) {
-      // Before answering: plain tappable choices. After: the right answer turns
-      // green and a wrong pick turns red, so the mistake is clear.
-      Color? bg;
+      // After a wrong answer: the right option turns green, the wrong pick red.
+      Color? settled;
       Color? fg;
-      if (answered) {
+      if (answeredWrong) {
         if (i == _correctIndex) {
-          bg = Colors.green.shade700;
+          settled = Colors.green.shade700;
           fg = Colors.white;
-        } else if (i == picked) {
-          bg = scheme.error;
+        } else if (i == _answeredWrongPick) {
+          settled = scheme.error;
           fg = scheme.onError;
         }
       }
-      final style = answered
-          ? FilledButton.styleFrom(
-              backgroundColor: bg ?? scheme.surfaceContainerHighest,
-              foregroundColor: fg ?? scheme.onSurfaceVariant,
-              disabledBackgroundColor: bg ?? scheme.surfaceContainerHighest,
-              disabledForegroundColor: fg ?? scheme.onSurfaceVariant,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            )
-          : null;
-      final child = Padding(
+      return Padding(
         padding: const EdgeInsets.only(bottom: 8),
-        child: SizedBox(
-          width: double.infinity,
-          child: answered
-              ? FilledButton(
-                  onPressed: null,
-                  style: style,
-                  child: Text(options[i], textAlign: TextAlign.center),
-                )
-              : OutlinedButton(
-                  onPressed: () => setState(() {
-                    _picked = i;
-                    _revealed = true;
-                  }),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  child: Text(options[i], textAlign: TextAlign.center),
-                ),
+        child: _DragRateButton(
+          label: options[i],
+          enabled: !answeredWrong && !_committed,
+          settledColor: settled,
+          settledFg: fg,
+          onCommit: (c) => release(i, c),
         ),
       );
-      return child;
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (var i = 0; i < options.length; i++) option(i),
-        if (answered) ...[
+        if (!answeredWrong)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Hold your answer, then slide to rate how well you knew it',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        if (answeredWrong) ...[
           const SizedBox(height: 8),
           Text(
-            gotItRight ? 'Correct' : 'Not quite',
+            'Not quite',
             textAlign: TextAlign.center,
             style: theme.textTheme.titleMedium?.copyWith(
-              color: gotItRight ? Colors.green.shade700 : scheme.error,
+              color: scheme.error,
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 12),
           widget.answer,
           const SizedBox(height: 24),
-          if (gotItRight)
-            _ConfidenceSlider(correct: _quizCorrect, onGrade: widget.onGrade)
-          else
-            FilledButton.icon(
-              onPressed: () => widget.onGrade(0, _quizWrong),
-              icon: const Icon(Icons.arrow_forward),
-              label: const Text('Continue'),
-            ),
+          FilledButton.icon(
+            onPressed: () => widget.onGrade(0, _quizWrong),
+            icon: const Icon(Icons.arrow_forward),
+            label: const Text('Continue'),
+          ),
         ],
       ],
     );
