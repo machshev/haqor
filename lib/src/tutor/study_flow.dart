@@ -227,9 +227,10 @@ class _CardShell extends StatelessWidget {
   }
 }
 
-/// A confidence slider that maps to an SM-2 grade on submit. Used to self-grade
-/// a revealed card, and to rate a correct multiple-choice answer. The live label
-/// shows which grade the current position lands in.
+/// A confidence slider that *is* the grade button: drag (or tap the track) and
+/// the value you release on is submitted — no separate confirm tap. The live
+/// label shows which SM-2 grade the current position lands in. Used to
+/// self-grade a revealed card and to rate a correct multiple-choice answer.
 class _ConfidenceSlider extends StatefulWidget {
   /// `_notQuiz` (self-grade) or `_quizCorrect` (rating a correct pick).
   final int correct;
@@ -243,6 +244,13 @@ class _ConfidenceSlider extends StatefulWidget {
 class _ConfidenceSliderState extends State<_ConfidenceSlider> {
   // Start in the middle of "Good": the honest default for a card you recalled.
   double _value = 70;
+  bool _submitted = false;
+
+  void _commit(double v) {
+    if (_submitted) return;
+    setState(() => _submitted = true);
+    widget.onGrade(v.round(), widget.correct);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -268,7 +276,7 @@ class _ConfidenceSliderState extends State<_ConfidenceSlider> {
         Text(
           bucket.label,
           textAlign: TextAlign.center,
-          style: theme.textTheme.titleLarge?.copyWith(
+          style: theme.textTheme.headlineSmall?.copyWith(
             color: bucket.color,
             fontWeight: FontWeight.bold,
           ),
@@ -277,27 +285,38 @@ class _ConfidenceSliderState extends State<_ConfidenceSlider> {
           children: [
             edge('Forgot'),
             Expanded(
-              child: Slider(
-                value: _value,
-                min: 0,
-                max: 100,
-                divisions: 20,
-                activeColor: bucket.color,
-                label: bucket.label,
-                onChanged: (v) => setState(() => _value = v),
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 8,
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 12,
+                  ),
+                ),
+                child: Slider(
+                  value: _value,
+                  min: 0,
+                  max: 100,
+                  divisions: 20,
+                  activeColor: bucket.color,
+                  label: bucket.label,
+                  onChanged: _submitted
+                      ? null
+                      : (v) => setState(() => _value = v),
+                  // Releasing the thumb (or tapping the track) is the answer.
+                  onChangeEnd: _commit,
+                ),
               ),
             ),
             edge('Easy'),
           ],
         ),
-        const SizedBox(height: 8),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: bucket.color,
-            padding: const EdgeInsets.symmetric(vertical: 14),
+        const SizedBox(height: 4),
+        Text(
+          'Release to grade',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
           ),
-          onPressed: () => widget.onGrade(_value.round(), widget.correct),
-          child: Text('Submit · ${bucket.label}'),
         ),
       ],
     );
@@ -705,10 +724,13 @@ class _WordCard extends StatelessWidget {
         _Grader(
           isNew: isNew,
           revealLabel: isRead ? 'Reveal' : 'Reveal meaning',
-          // Quiz only meaning cards (multiple-choice on the gloss); reading is
-          // a spoken skill, so it stays a reveal-and-self-grade card.
-          correctLabel: isRead ? null : gloss,
-          distractorLabels: word.distractors,
+          // Reading quizzes on the transliteration (the app transliterates the
+          // other surfaces into options); meaning quizzes on the gloss. Either
+          // falls back to reveal-and-self-grade when too few options exist.
+          correctLabel: isRead ? translit : gloss,
+          distractorLabels: isRead
+              ? [for (final d in word.distractors) transliterateHebrew(d)]
+              : word.distractors,
           onGrade: onGrade,
           answer: isRead
               ? _readAnswer(context, translit)
