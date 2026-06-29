@@ -372,8 +372,10 @@ class _GraderState extends State<_Grader> {
       options.add(t);
       if (options.length == 4) break;
     }
-    // Need a full four-way choice for the quiz to be worthwhile.
-    if (options.length < 4) return;
+    // Three or four options make a worthwhile quiz; fewer self-grades. Glyphs
+    // only draw distractors from already-introduced peers, so early on a
+    // same-kind pool of two (a three-way choice) is the most we can offer.
+    if (options.length < 3) return;
     options.shuffle();
     _options = options;
     _correctIndex = options.indexOf(correct);
