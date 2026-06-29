@@ -644,11 +644,11 @@ class _GlyphCard extends StatelessWidget {
         const SizedBox(height: 16),
         _Grader(
           isNew: isNew,
-          // Vowels quiz the syllable sound (with its "as in …" description);
-          // consonants/marks quiz the name.
+          // Vowels are quizzed by syllable sound, consonants/marks by name;
+          // either way each option shows its "… as in …" pronunciation.
           correct: isVowel
               ? (label: _vowelSyllable(host, glyph.glyph), sub: info?.sound)
-              : (info == null ? null : (label: info.name, sub: null)),
+              : (info == null ? null : (label: info.name, sub: info.sound)),
           distractors: isVowel
               ? [
                   for (final d in glyph.distractors)
@@ -656,7 +656,7 @@ class _GlyphCard extends StatelessWidget {
                 ]
               : [
                   for (final d in glyph.distractors)
-                    (label: glyphInfo(d)?.name ?? d, sub: null),
+                    (label: glyphInfo(d)?.name ?? d, sub: glyphInfo(d)?.sound),
                 ],
           onGrade: onGrade,
           answer: _glyphAnswer(context, info, host, onHost),
