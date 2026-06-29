@@ -136,7 +136,7 @@ const List<HebrewLetter> kNiqqud = [
     letter: 'ְ', // SHEVA
     name: 'Sheva',
     hebrewName: 'שְׁוָא',
-    translit: 'ə',
+    translit: 'ᵉ', // vocal sheva, shown as a superscript e (bᵉ)
     sound: 'a faint “uh”, or silent (closing a syllable)',
     value: 0,
     example: 'שְׁמַע',
@@ -148,7 +148,7 @@ const List<HebrewLetter> kNiqqud = [
     letter: 'ֱ', // HATAF SEGOL
     name: 'Hataf Segol',
     hebrewName: 'חֲטַף סֶגוֹל',
-    translit: 'ĕ',
+    translit: 'ᵉ', // hataf segol — reduced e (superscript)
     sound: 'a very short “e” — Segol hurried under a throaty letter',
     value: 0,
     example: 'אֱמֶת',
@@ -160,7 +160,7 @@ const List<HebrewLetter> kNiqqud = [
     letter: 'ֲ', // HATAF PATAH
     name: 'Hataf Patah',
     hebrewName: 'חֲטַף פַּתַח',
-    translit: 'ă',
+    translit: 'ᵃ', // hataf patah — reduced a (superscript)
     sound: 'a very short “a” — Patah hurried under a throaty letter',
     value: 0,
     example: 'אֲנִי',
@@ -172,7 +172,7 @@ const List<HebrewLetter> kNiqqud = [
     letter: 'ֳ', // HATAF QAMATS
     name: 'Hataf Qamats',
     hebrewName: 'חֲטַף קָמַץ',
-    translit: 'ŏ',
+    translit: 'ᵒ', // hataf qamats — reduced o (superscript)
     sound: 'a very short “o” — Qamats hurried under a throaty letter',
     value: 0,
     example: 'אֳנִי',

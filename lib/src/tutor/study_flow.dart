@@ -245,6 +245,8 @@ class _CardShell extends StatelessWidget {
 /// grade is committed on release. No separate slider or confirm tap.
 class _DragRateButton extends StatefulWidget {
   final String label;
+  /// An optional second line under the label (e.g. a vowel's "a as in father").
+  final String? subtitle;
   final bool enabled;
   final void Function(int confidence) onCommit;
   /// Fixed colours for a settled, non-interactive state (post-answer feedback).
@@ -254,6 +256,7 @@ class _DragRateButton extends StatefulWidget {
   const _DragRateButton({
     required this.label,
     required this.onCommit,
+    this.subtitle,
     this.enabled = true,
     this.settledColor,
     this.settledFg,
@@ -330,6 +333,16 @@ class _DragRateButtonState extends State<_DragRateButton> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                if (widget.subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    widget.subtitle!,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: fg ?? scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
                 if (pressing) ...[
                   const SizedBox(height: 2),
                   Text(
@@ -352,19 +365,24 @@ class _DragRateButtonState extends State<_DragRateButton> {
 /// The answer-and-grade machine shared by glyph and word review cards.
 ///
 /// * A freshly-taught card just shows its [answer] and a "Got it" button.
-/// * With enough [distractorLabels] (and a [correctLabel]) it runs a
+/// * With enough [distractors] (and a [correct] option) it runs a
 ///   multiple-choice quiz: press and hold the answer you mean, slide across it
 ///   to set how well you knew it, and release. A correct pick commits at that
 ///   confidence; a wrong pick reveals the answer and lapses.
 /// * Otherwise it self-grades: reveal the [answer], then hold-and-slide a single
 ///   rate button the same way.
+///
+/// Each option is a `(label, sub)` record: `label` is the headline (a syllable
+/// or word) and `sub` an optional second line (e.g. "a as in father").
+typedef _Option = ({String label, String? sub});
+
 class _Grader extends StatefulWidget {
   final bool isNew;
   final String revealLabel;
   final Widget answer;
-  /// The right-answer option label; null disables the quiz (self-grade only).
-  final String? correctLabel;
-  final List<String> distractorLabels;
+  /// The right-answer option; null disables the quiz (self-grade only).
+  final _Option? correct;
+  final List<_Option> distractors;
   final void Function(int confidence, int correct) onGrade;
 
   const _Grader({
@@ -372,8 +390,8 @@ class _Grader extends StatefulWidget {
     required this.answer,
     required this.onGrade,
     this.revealLabel = 'Reveal',
-    this.correctLabel,
-    this.distractorLabels = const [],
+    this.correct,
+    this.distractors = const [],
   });
 
   @override
@@ -382,7 +400,7 @@ class _Grader extends StatefulWidget {
 
 class _GraderState extends State<_Grader> {
   /// Shuffled options for the quiz, or null when self-grading.
-  List<String>? _options;
+  List<_Option>? _options;
   int _correctIndex = 0;
   bool _revealed = false;
   bool _committed = false;
@@ -392,14 +410,15 @@ class _GraderState extends State<_Grader> {
   @override
   void initState() {
     super.initState();
-    final correct = widget.correctLabel?.trim();
-    if (widget.isNew || correct == null || correct.isEmpty) return;
-    final seen = <String>{correct.toLowerCase()};
-    final options = <String>[correct];
-    for (final d in widget.distractorLabels) {
-      final t = d.trim();
+    final correct = widget.correct;
+    if (widget.isNew || correct == null || correct.label.trim().isEmpty) return;
+    final correctLabel = correct.label.trim();
+    final seen = <String>{correctLabel.toLowerCase()};
+    final options = <_Option>[(label: correctLabel, sub: correct.sub)];
+    for (final d in widget.distractors) {
+      final t = d.label.trim();
       if (t.isEmpty || !seen.add(t.toLowerCase())) continue;
-      options.add(t);
+      options.add((label: t, sub: d.sub));
       if (options.length == 4) break;
     }
     // Three or four options make a worthwhile quiz; fewer self-grades. Glyphs
@@ -408,7 +427,9 @@ class _GraderState extends State<_Grader> {
     if (options.length < 3) return;
     options.shuffle();
     _options = options;
-    _correctIndex = options.indexOf(correct);
+    _correctIndex = options.indexWhere(
+      (o) => o.label.toLowerCase() == correctLabel.toLowerCase(),
+    );
   }
 
   @override
@@ -469,7 +490,7 @@ class _GraderState extends State<_Grader> {
 
   // Hold an option and slide to set confidence; release commits. A correct pick
   // grades on that confidence; a wrong one reveals the answer and lapses.
-  Widget _buildQuiz(BuildContext context, List<String> options) {
+  Widget _buildQuiz(BuildContext context, List<_Option> options) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final answeredWrong = _answeredWrongPick != null;
@@ -500,7 +521,8 @@ class _GraderState extends State<_Grader> {
       return Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: _DragRateButton(
-          label: options[i],
+          label: options[i].label,
+          subtitle: options[i].sub,
           enabled: !answeredWrong && !_committed,
           settledColor: settled,
           settledFg: fg,
@@ -622,11 +644,20 @@ class _GlyphCard extends StatelessWidget {
         const SizedBox(height: 16),
         _Grader(
           isNew: isNew,
-          // Vowels quiz the syllable sound; consonants/marks quiz the name.
-          correctLabel: isVowel ? _vowelSyllable(host, glyph.glyph) : info?.name,
-          distractorLabels: isVowel
-              ? [for (final d in glyph.distractors) _vowelSyllable(host, d)]
-              : [for (final d in glyph.distractors) glyphInfo(d)?.name ?? d],
+          // Vowels quiz the syllable sound (with its "as in …" description);
+          // consonants/marks quiz the name.
+          correct: isVowel
+              ? (label: _vowelSyllable(host, glyph.glyph), sub: info?.sound)
+              : (info == null ? null : (label: info.name, sub: null)),
+          distractors: isVowel
+              ? [
+                  for (final d in glyph.distractors)
+                    (label: _vowelSyllable(host, d), sub: glyphInfo(d)?.sound),
+                ]
+              : [
+                  for (final d in glyph.distractors)
+                    (label: glyphInfo(d)?.name ?? d, sub: null),
+                ],
           onGrade: onGrade,
           answer: _glyphAnswer(context, info, host, onHost),
         ),
@@ -775,10 +806,13 @@ class _WordCard extends StatelessWidget {
           // Reading quizzes on the transliteration (the app transliterates the
           // other surfaces into options); meaning quizzes on the gloss. Either
           // falls back to reveal-and-self-grade when too few options exist.
-          correctLabel: isRead ? translit : gloss,
-          distractorLabels: isRead
-              ? [for (final d in word.distractors) transliterateHebrew(d)]
-              : word.distractors,
+          correct: (label: isRead ? translit : gloss, sub: null),
+          distractors: isRead
+              ? [
+                  for (final d in word.distractors)
+                    (label: transliterateHebrew(d), sub: null),
+                ]
+              : [for (final d in word.distractors) (label: d, sub: null)],
           onGrade: onGrade,
           answer: isRead
               ? _readAnswer(context, translit)
