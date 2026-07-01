@@ -32,13 +32,20 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
   StreamSubscription<RustSignalPack<CalibrationProbe>>? _probeSub;
 
   _OnboardStep _step = _OnboardStep.loading;
-  int _vocabCount = 0;
+  int _tierCount = 0;
 
-  // Binary search bounds over word-frequency rank (0 = most common word).
+  // Binary search bounds over difficulty tier (0 = easiest — the most common
+  // rarest-word verse in the corpus). Raw word-frequency rank isn't usable as
+  // the search domain here: Biblical Hebrew's frequency tail is dominated by
+  // hapax legomena, so most of the rank space collapses to one plateau of
+  // identical verses. Tiers are the distinct difficulty values, so every step
+  // probes a genuinely different verse.
   int _lo = 0;
   int _hi = 0;
+  // The last confirmed-readable probe's threshold (0 = nothing confirmed
+  // yet), handed to FinishCalibration verbatim.
   int _cutoff = 0;
-  int? _pendingRank;
+  int? _pendingTier;
   CalibrationProbe? _probe;
 
   @override
@@ -63,20 +70,20 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
       if (!s.needed) {
         _step = _OnboardStep.done;
       } else {
-        _vocabCount = s.vocabCount;
+        _tierCount = s.tierCount;
         _step = _OnboardStep.askAlphabet;
       }
     });
   }
 
   void _knowsAlphabet(bool known) {
-    if (!known || _vocabCount == 0) {
+    if (!known || _tierCount == 0) {
       setState(() => _step = _OnboardStep.done);
       return;
     }
     SetAlphabetKnown(known: true).sendSignalToRust();
     _lo = 0;
-    _hi = _vocabCount - 1;
+    _hi = _tierCount - 1;
     _cutoff = 0;
     setState(() => _step = _OnboardStep.calibrating);
     _askNext();
@@ -88,17 +95,17 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
       return;
     }
     final mid = _lo + (_hi - _lo) ~/ 2;
-    _pendingRank = mid;
+    _pendingTier = mid;
     setState(() => _probe = null);
-    GetCalibrationProbe(rank: mid).sendSignalToRust();
+    GetCalibrationProbe(tier: mid).sendSignalToRust();
   }
 
   void _onProbe(RustSignalPack<CalibrationProbe> pack) {
     if (!mounted) return;
     final p = pack.message;
-    if (p.rank != _pendingRank) return; // stale reply from an earlier step
+    if (p.tier != _pendingTier) return; // stale reply from an earlier step
     if (!p.found) {
-      // No verse anchors this rank (edge of the corpus) — treat as unread
+      // No verse anchors this tier (edge of the corpus) — treat as unread
       // and keep narrowing.
       _answer(false);
       return;
@@ -107,12 +114,12 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
   }
 
   /// `readable`: whether the learner says they could read the current probe
-  /// verse smoothly. Narrows the search toward the largest rank still
+  /// verse smoothly. Narrows the search toward the hardest tier still
   /// readable, then asks the next probe.
   void _answer(bool readable) {
-    final mid = _pendingRank!;
+    final mid = _pendingTier!;
     if (readable) {
-      _cutoff = mid + 1;
+      _cutoff = _probe!.minOccurrences;
       _lo = mid + 1;
     } else {
       _hi = mid - 1;
@@ -121,7 +128,7 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
   }
 
   void _finishCalibration() {
-    FinishCalibration(rankCutoff: _cutoff).sendSignalToRust();
+    FinishCalibration(minOccurrences: _cutoff).sendSignalToRust();
     setState(() => _step = _OnboardStep.done);
   }
 

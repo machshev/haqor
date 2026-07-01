@@ -324,9 +324,10 @@ pub struct StudyItem {
 // ordinary cold-start curriculum to reach anything actually new to them. The
 // app asks `GetOnboardingStatus` once (e.g. on opening the tutor); if
 // `needed`, it self-reports the alphabet via `SetAlphabetKnown`, then runs a
-// binary search over word-frequency rank using `GetCalibrationProbe` (each
-// probe is a real verse to judge readability of) and finishes with
-// `FinishCalibration` once converged.
+// binary search over `GetCalibrationProbe`'s distinct verse-difficulty tiers
+// (each probe is a real verse to judge readability of — searching raw
+// vocabulary rank instead would plateau across Biblical Hebrew's huge hapax-
+// legomenon tail) and finishes with `FinishCalibration` once converged.
 // ---------------------------------------------------------------------------
 
 /// Ask whether onboarding calibration should be offered.
@@ -336,9 +337,9 @@ pub struct GetOnboardingStatus {}
 #[derive(Debug, Serialize, RustSignal)]
 pub struct OnboardingStatus {
     pub needed: bool,
-    /// Distinct non-Aramaic vocabulary size — the domain for the
-    /// calibration binary search over word-frequency rank.
-    pub vocab_count: u32,
+    /// Number of distinct verse-difficulty tiers — the domain for the
+    /// calibration binary search (see `GetCalibrationProbe`).
+    pub tier_count: u32,
 }
 
 /// The learner's self-report on the "do you already know the alphabet?"
@@ -349,13 +350,12 @@ pub struct SetAlphabetKnown {
     pub known: bool,
 }
 
-/// Ask for a representative verse at a given frequency-rank cutoff, for the
-/// vocabulary-calibration binary search: the hardest verse still readable if
-/// the learner knows the `rank` most common words (0 = the single most
-/// common word).
+/// Ask for a representative verse at a given difficulty tier, for the
+/// vocabulary-calibration binary search: `tier` 0 is the easiest (most common
+/// rarest-word) verse in the corpus, counting up toward the rarest.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetCalibrationProbe {
-    pub rank: u32,
+    pub tier: u32,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
@@ -365,13 +365,18 @@ pub struct CalibrationProbe {
     pub chapter: u8,
     pub verse: u8,
     pub text: String,
-    pub rank: u32,
+    pub tier: u32,
+    /// This verse's difficulty: its rarest word's OT occurrence count. The
+    /// app tracks the threshold from the last confirmed-readable probe and
+    /// hands it back verbatim as `FinishCalibration.min_occurrences`.
+    pub min_occurrences: i64,
 }
 
-/// Finish onboarding calibration: mark the `rank_cutoff` most common words as
-/// already known (graduated), so the curriculum starts introducing new
-/// vocabulary from that frequency boundary instead of from scratch.
+/// Finish onboarding calibration: mark every word occurring at least
+/// `min_occurrences` times as already known (graduated), so the curriculum
+/// starts introducing new vocabulary from that frequency boundary instead of
+/// from scratch. A no-op for `min_occurrences <= 0` (nothing confirmed known).
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct FinishCalibration {
-    pub rank_cutoff: u32,
+    pub min_occurrences: i64,
 }

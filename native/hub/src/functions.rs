@@ -638,12 +638,8 @@ pub async fn get_onboarding_status(bible: SharedBible) {
             debug_print!("get_onboarding_status error: {:?}", e);
             false
         });
-        let vocab_count = bible.vocab_count().unwrap_or(0);
-        OnboardingStatus {
-            needed,
-            vocab_count,
-        }
-        .send_signal_to_dart();
+        let tier_count = bible.calibration_tier_count().unwrap_or(0);
+        OnboardingStatus { needed, tier_count }.send_signal_to_dart();
     }
 }
 
@@ -663,14 +659,15 @@ pub async fn get_calibration_probe(bible: SharedBible) {
     let receiver = GetCalibrationProbe::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let req = signal_pack.message;
-        match lock(&bible).calibration_probe(req.rank) {
+        match lock(&bible).calibration_probe(req.tier) {
             Ok(Some(p)) => CalibrationProbe {
                 found: true,
                 book: p.book,
                 chapter: p.chapter,
                 verse: p.verse,
                 text: p.text,
-                rank: p.rank,
+                tier: p.tier,
+                min_occurrences: p.min_occurrences,
             }
             .send_signal_to_dart(),
             Ok(None) => CalibrationProbe {
@@ -679,7 +676,8 @@ pub async fn get_calibration_probe(bible: SharedBible) {
                 chapter: 0,
                 verse: 0,
                 text: String::new(),
-                rank: req.rank,
+                tier: req.tier,
+                min_occurrences: 0,
             }
             .send_signal_to_dart(),
             Err(e) => debug_print!("get_calibration_probe error: {:?}", e),
@@ -691,7 +689,7 @@ pub async fn finish_calibration(bible: SharedBible) {
     let receiver = FinishCalibration::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let req = signal_pack.message;
-        if let Err(e) = lock(&bible).seed_known_vocab(req.rank_cutoff, now_epoch()) {
+        if let Err(e) = lock(&bible).seed_known_vocab(req.min_occurrences, now_epoch()) {
             debug_print!("finish_calibration error: {:?}", e);
         }
     }
