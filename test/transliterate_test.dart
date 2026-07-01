@@ -8,7 +8,7 @@ void main() {
       expect(transliterateHebrew('שָׁלוֹם'), 'shalom');
       expect(transliterateHebrew('בַּיִת'), 'bayit');
       expect(transliterateHebrew('תּוֹרָה'), 'torah'); // final he voiced
-      expect(transliterateHebrew('בְּרֵאשִׁית'), 'bereshit'); // mater yod folded
+      expect(transliterateHebrew('בְּרֵאשִׁית'), "bere'shit"); // aleph → '
     });
 
     test('dagesh hardens begadkefat', () {
@@ -28,7 +28,7 @@ void main() {
     });
 
     test('maqaf becomes a hyphen', () {
-      expect(transliterateHebrew('עַל־כֵּן'), 'al-ken');
+      expect(transliterateHebrew('עַל־כֵּן'), "'al-ken"); // ayin → '
     });
 
     test('spaces between words are kept', () {
@@ -43,6 +43,8 @@ void main() {
       expect(consonantOnset('מ'), 'm');
       expect(consonantOnset('ח'), 'ch');
       expect(consonantOnset('ב'), 'v'); // bare host: soft begadkefat
+      expect(consonantOnset('א'), "'"); // aleph
+      expect(consonantOnset('ע'), "'"); // ayin
     });
 
     test('non-consonants have no onset', () {

@@ -3,10 +3,10 @@
 ///
 /// This is deliberately *not* a scholarly transliteration. It makes pragmatic
 /// choices so the output reads naturally for a learner: modern consonant values
-/// (ח → "ch", צ → "ts"), sheva voiced as "e", matres lectionis (a vowel-letter
-/// vav or yod) folded into the vowel they lengthen, and furtive patah read
-/// before its guttural (רוּחַ → "ruach"). Cantillation is ignored; spaces are
-/// kept and a maqaf becomes a hyphen.
+/// (ח → "ch", צ → "ts"), aleph and ayin marked with an apostrophe, sheva voiced
+/// as "e", matres lectionis (a vowel-letter vav or yod) folded into the vowel
+/// they lengthen, and furtive patah read before its guttural (רוּחַ → "ruach").
+/// Cantillation is ignored; spaces are kept and a maqaf becomes a hyphen.
 library;
 
 // Niqqud / dagesh / shin-sin dots we consume; cantillation (U+0591–U+05AF) and
@@ -45,9 +45,9 @@ String _vowel(int c) {
 
 String _consonant(int c, {required bool dagesh, required bool sinDot}) {
   switch (c) {
-    case 0x05D0: // alef — silent carrier
-    case 0x05E2: // ayin — silent (modern)
-      return '';
+    case 0x05D0: // alef — glottal stop
+    case 0x05E2: // ayin
+      return "'";
     case 0x05D1: // bet
       return dagesh ? 'b' : 'v';
     case 0x05D2: // gimel
