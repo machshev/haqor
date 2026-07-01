@@ -141,6 +141,19 @@ String consonantOnset(String glyph) {
   return _consonant(c, dagesh: false, sinDot: false);
 }
 
+/// Strip cantillation accents (te'amim, U+0591–U+05AF) and meteg (U+05BD) from
+/// a verse so the reading view matches the un-accented forms taught on the
+/// cards. Vowel points (niqqud) and word separators (space, maqaf) are kept.
+String stripCantillation(String text) {
+  final buf = StringBuffer();
+  for (final r in text.runes) {
+    if (r >= 0x0591 && r <= 0x05AF) continue; // te'amim
+    if (r == 0x05BD) continue; // meteg
+    buf.writeCharCode(r);
+  }
+  return buf.toString();
+}
+
 String transliterateHebrew(String text) {
   final clusters = _clusters(text);
   final out = StringBuffer();

@@ -288,6 +288,9 @@ pub struct VerseCard {
     pub chapter: u8,
     pub verse: u8,
     pub examples: Vec<VerseRef>,
+    /// The verse's words in reading order, as `SubmitReview` `"word"` keys —
+    /// lets the app offer them for the learner to flag ones they misread.
+    pub words: Vec<String>,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]
@@ -311,4 +314,64 @@ pub struct StudyItem {
     pub word: Option<WordCard>,
     pub verse: Option<VerseCard>,
     pub progress: TutorProgress,
+}
+
+// ---------------------------------------------------------------------------
+// One-time onboarding calibration.
+//
+// Offered only while `progress.db` is still empty, so a learner who already
+// knows the alphabet and/or some vocabulary doesn't have to grind through the
+// ordinary cold-start curriculum to reach anything actually new to them. The
+// app asks `GetOnboardingStatus` once (e.g. on opening the tutor); if
+// `needed`, it self-reports the alphabet via `SetAlphabetKnown`, then runs a
+// binary search over word-frequency rank using `GetCalibrationProbe` (each
+// probe is a real verse to judge readability of) and finishes with
+// `FinishCalibration` once converged.
+// ---------------------------------------------------------------------------
+
+/// Ask whether onboarding calibration should be offered.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetOnboardingStatus {}
+
+#[derive(Debug, Serialize, RustSignal)]
+pub struct OnboardingStatus {
+    pub needed: bool,
+    /// Distinct non-Aramaic vocabulary size — the domain for the
+    /// calibration binary search over word-frequency rank.
+    pub vocab_count: u32,
+}
+
+/// The learner's self-report on the "do you already know the alphabet?"
+/// onboarding question. When true, every consonant/vowel point the curriculum
+/// would ever teach is marked already graduated.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SetAlphabetKnown {
+    pub known: bool,
+}
+
+/// Ask for a representative verse at a given frequency-rank cutoff, for the
+/// vocabulary-calibration binary search: the hardest verse still readable if
+/// the learner knows the `rank` most common words (0 = the single most
+/// common word).
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetCalibrationProbe {
+    pub rank: u32,
+}
+
+#[derive(Debug, Serialize, RustSignal)]
+pub struct CalibrationProbe {
+    pub found: bool,
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub text: String,
+    pub rank: u32,
+}
+
+/// Finish onboarding calibration: mark the `rank_cutoff` most common words as
+/// already known (graduated), so the curriculum starts introducing new
+/// vocabulary from that frequency boundary instead of from scratch.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct FinishCalibration {
+    pub rank_cutoff: u32,
 }

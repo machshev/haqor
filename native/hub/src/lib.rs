@@ -12,8 +12,9 @@ use rinf::{DartSignal, dart_shutdown, debug_print, write_interface};
 use tokio::spawn;
 
 use functions::{
-    SharedBible, get_chapter_text, get_next_study_item, get_tutor_stats, get_verse_text, get_vocab,
-    get_word_info, get_word_occurrences, reset_tutor, submit_review,
+    SharedBible, finish_calibration, get_calibration_probe, get_chapter_text, get_next_study_item,
+    get_onboarding_status, get_tutor_stats, get_verse_text, get_vocab, get_word_info,
+    get_word_occurrences, reset_tutor, set_alphabet_known, submit_review,
 };
 use signals::SetDataDir;
 
@@ -63,7 +64,11 @@ async fn main() {
     spawn(get_next_study_item(bible.clone()));
     spawn(submit_review(bible.clone()));
     spawn(reset_tutor(bible.clone()));
-    spawn(get_tutor_stats(bible));
+    spawn(get_tutor_stats(bible.clone()));
+    spawn(get_onboarding_status(bible.clone()));
+    spawn(set_alphabet_known(bible.clone()));
+    spawn(get_calibration_probe(bible.clone()));
+    spawn(finish_calibration(bible));
 
     // Keep the main function running until Dart shutdown.
     dart_shutdown().await;

@@ -1,8 +1,10 @@
 use crate::signals::{
-    BdbSummary, ChapterText, GetChapter, GetNextStudyItem, GetTutorStats, GetVerseText, GetVocab,
-    GetWordInfo, GetWordOccurrences, GlyphCard, HebrewOccurrence, ResetTutor, SedraOccurrence,
-    SedraSummary, StudyItem, SubmitReview, TutorProgress, TutorStats, VerseCard, VerseEntry,
-    VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence, WordOccurrences,
+    BdbSummary, CalibrationProbe, ChapterText, FinishCalibration, GetCalibrationProbe, GetChapter,
+    GetNextStudyItem, GetOnboardingStatus, GetTutorStats, GetVerseText, GetVocab, GetWordInfo,
+    GetWordOccurrences, GlyphCard, HebrewOccurrence, OnboardingStatus, ResetTutor, SedraOccurrence,
+    SedraSummary, SetAlphabetKnown, StudyItem, SubmitReview, TutorProgress, TutorStats, VerseCard,
+    VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence,
+    WordOccurrences,
 };
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -318,14 +320,14 @@ pub async fn get_word_info(bible: SharedBible) {
                         bible.hebrew_bdb_by_root(&info.root)
                     }
                     .unwrap_or_default()
-                        .into_iter()
-                        .map(|e| BdbSummary {
-                            pos_category: e.pos_category().to_string(),
-                            headword: e.headword,
-                            gloss: e.gloss,
-                            content_json: e.content_json,
-                        })
-                        .collect();
+                    .into_iter()
+                    .map(|e| BdbSummary {
+                        pos_category: e.pos_category().to_string(),
+                        headword: e.headword,
+                        gloss: e.gloss,
+                        content_json: e.content_json,
+                    })
+                    .collect();
                     WordInfo {
                         found: true,
                         word: info.word,
@@ -544,6 +546,7 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
                         verse,
                     })
                     .collect(),
+                words: v.words,
             });
         }
         tutor::StudyItem::Done => out.kind = "done".into(),
@@ -623,6 +626,73 @@ pub async fn get_tutor_stats(bible: SharedBible) {
             }
             .send_signal_to_dart(),
             Err(e) => debug_print!("get_tutor_stats error: {:?}", e),
+        }
+    }
+}
+
+pub async fn get_onboarding_status(bible: SharedBible) {
+    let receiver = GetOnboardingStatus::get_dart_signal_receiver();
+    while let Some(_pack) = receiver.recv().await {
+        let bible = lock(&bible);
+        let needed = bible.needs_onboarding().unwrap_or_else(|e| {
+            debug_print!("get_onboarding_status error: {:?}", e);
+            false
+        });
+        let vocab_count = bible.vocab_count().unwrap_or(0);
+        OnboardingStatus {
+            needed,
+            vocab_count,
+        }
+        .send_signal_to_dart();
+    }
+}
+
+pub async fn set_alphabet_known(bible: SharedBible) {
+    let receiver = SetAlphabetKnown::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        if req.known {
+            if let Err(e) = lock(&bible).seed_known_alphabet(now_epoch()) {
+                debug_print!("set_alphabet_known error: {:?}", e);
+            }
+        }
+    }
+}
+
+pub async fn get_calibration_probe(bible: SharedBible) {
+    let receiver = GetCalibrationProbe::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        match lock(&bible).calibration_probe(req.rank) {
+            Ok(Some(p)) => CalibrationProbe {
+                found: true,
+                book: p.book,
+                chapter: p.chapter,
+                verse: p.verse,
+                text: p.text,
+                rank: p.rank,
+            }
+            .send_signal_to_dart(),
+            Ok(None) => CalibrationProbe {
+                found: false,
+                book: 0,
+                chapter: 0,
+                verse: 0,
+                text: String::new(),
+                rank: req.rank,
+            }
+            .send_signal_to_dart(),
+            Err(e) => debug_print!("get_calibration_probe error: {:?}", e),
+        }
+    }
+}
+
+pub async fn finish_calibration(bible: SharedBible) {
+    let receiver = FinishCalibration::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        if let Err(e) = lock(&bible).seed_known_vocab(req.rank_cutoff, now_epoch()) {
+            debug_print!("finish_calibration error: {:?}", e);
         }
     }
 }

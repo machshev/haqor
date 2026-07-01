@@ -32,13 +32,16 @@ const List<String> _hebrewFallback = ['Noto Serif Hebrew'];
 }
 
 /// A learner-facing syllable for a vowel taught on [host]: the host consonant's
-/// sound plus the vowel's *distinguishing* romanization — macron for a long
-/// vowel (qamats `ā` vs patah `a`, tsere `ē` vs segol `e`), breve for a hataf
-/// (`ă/ĕ/ŏ`), `ə` for sheva. [transliterateHebrew] collapses these to one of
-/// a/e/i/o/u, so vocalisation quizzes build their options from this instead.
+/// sound plus the vowel's *distinguishing* respelling — a friendly digraph for
+/// a long vowel (qamats `ah` vs patah `a`, tsere `ey` vs segol `e`, holam `oh`),
+/// breve for a hataf (`ă/ĕ/ŏ`), `ə` for sheva. This is [HebrewLetter.vocalisation]
+/// where set, falling back to the scholarly [HebrewLetter.translit] (macron
+/// notation) otherwise. [transliterateHebrew] collapses all of this to one of
+/// a/e/i/o/u, so vocalisation quizzes build their options from here instead.
 String _vowelSyllable(String? host, String vowelGlyph) {
   final consonant = (host == null || host.isEmpty) ? '' : consonantOnset(host);
-  final vowel = glyphInfo(vowelGlyph)?.translit ?? '';
+  final info = glyphInfo(vowelGlyph);
+  final vowel = info?.vocalisation ?? info?.translit ?? '';
   return '$consonant$vowel';
 }
 
@@ -108,6 +111,20 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
       ).sendSignalToRust();
 
   void _next() => GetNextStudyItem().sendSignalToRust();
+
+  /// Demote each misread word (an "Again" grade lapses it back into review)
+  /// instead of gating the whole verse on one blanket grade — flagging a
+  /// shared word can re-lock other verses that depend on it too. With
+  /// nothing flagged, just move on.
+  void _submitMisread(List<String> words) {
+    if (words.isEmpty) {
+      _next();
+      return;
+    }
+    for (final w in words) {
+      _grade(_wordTrack, w, 0, _notQuiz);
+    }
+  }
 
   void _showStats() => showModalBottomSheet<void>(
     context: context,
@@ -210,7 +227,11 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
       case 'explain_mark':
         return _ExplainMarkView(glyph: item.glyph!, onContinue: _next);
       case 'read_verse':
-        return _ReadVerseView(card: item.verse!, onContinue: _next);
+        return _ReadVerseView(
+          card: item.verse!,
+          onContinue: _next,
+          onMisread: _submitMisread,
+        );
       case 'done':
         return const _DoneView();
       default:
@@ -1170,21 +1191,8 @@ class _TipBox extends StatelessWidget {
   }
 }
 
-/// Strip cantillation accents (te'amim, U+0591–U+05AF) and meteg (U+05BD) from a
-/// verse so the reading view matches the un-accented forms taught on the cards.
-/// Vowel points (niqqud) and word separators (space, maqaf) are kept.
-String _stripCantillation(String text) {
-  final buf = StringBuffer();
-  for (final r in text.runes) {
-    if (r >= 0x0591 && r <= 0x05AF) continue; // te'amim
-    if (r == 0x05BD) continue; // meteg
-    buf.writeCharCode(r);
-  }
-  return buf.toString();
-}
-
 /// Short reference label like "Dev 2:2" from a 1-based Haqor book number.
-String _refLabel(int book, int chapter, int verse) {
+String refLabel(int book, int chapter, int verse) {
   final name = (book >= 1 && book <= kBooks.length)
       ? kBooks[book - 1].short
       : '$book';
@@ -1288,7 +1296,15 @@ class _ExplainMarkView extends StatelessWidget {
 class _ReadVerseView extends StatefulWidget {
   final VerseCard card;
   final VoidCallback onContinue;
-  const _ReadVerseView({required this.card, required this.onContinue});
+  /// Called with the surfaces (word-track keys) the learner flagged as
+  /// misread, so the app can demote just those instead of gating the whole
+  /// verse on one blanket grade.
+  final void Function(List<String> misread) onMisread;
+  const _ReadVerseView({
+    required this.card,
+    required this.onContinue,
+    required this.onMisread,
+  });
 
   @override
   State<_ReadVerseView> createState() => _ReadVerseViewState();
@@ -1298,6 +1314,10 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
   StreamSubscription<RustSignalPack<VerseText>>? _sub;
   int _book = 0, _chapter = 0, _verse = 0;
   String? _text;
+  // Null while the learner hasn't answered "could you read this?" yet; once
+  // set to false, the word picker is shown for flagging misread words.
+  bool? _readOk;
+  final Set<int> _misread = {};
 
   @override
   void initState() {
@@ -1324,8 +1344,15 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
       _chapter = chapter;
       _verse = verse;
       _text = null;
+      _readOk = null;
+      _misread.clear();
     });
     GetVerseText(book: book, chapter: chapter, verse: verse).sendSignalToRust();
+  }
+
+  void _finish() {
+    final flagged = [for (final i in _misread) widget.card.words[i]];
+    widget.onMisread(flagged);
   }
 
   @override
@@ -1356,7 +1383,7 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
               ),
               const SizedBox(height: 8),
               Text(
-                _refLabel(_book, _chapter, _verse),
+                refLabel(_book, _chapter, _verse),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
@@ -1370,7 +1397,7 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
                 )
               else ...[
                 Text(
-                  _stripCantillation(_text!),
+                  stripCantillation(_text!),
                   textAlign: TextAlign.center,
                   textDirection: TextDirection.rtl,
                   style: const TextStyle(
@@ -1406,18 +1433,81 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
                   children: [
                     for (final e in examples)
                       ActionChip(
-                        label: Text(_refLabel(e.book, e.chapter, e.verse)),
+                        label: Text(refLabel(e.book, e.chapter, e.verse)),
                         onPressed: () => _load(e.book, e.chapter, e.verse),
                       ),
                   ],
                 ),
               ],
               const SizedBox(height: 32),
-              FilledButton.icon(
-                onPressed: widget.onContinue,
-                icon: const Icon(Icons.arrow_forward),
-                label: const Text('Continue'),
-              ),
+              if (_text != null && _readOk != false) ...[
+                Text(
+                  'Could you read that?',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => setState(() => _readOk = false),
+                      icon: const Icon(Icons.close),
+                      label: const Text('No'),
+                    ),
+                    const SizedBox(width: 16),
+                    FilledButton.icon(
+                      onPressed: widget.onContinue,
+                      icon: const Icon(Icons.check),
+                      label: const Text('Yes'),
+                    ),
+                  ],
+                ),
+              ] else if (_readOk == false) ...[
+                Text(
+                  'Tap any words you misread',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
+                  textDirection: TextDirection.rtl,
+                  children: [
+                    for (final (i, w) in widget.card.words.indexed)
+                      FilterChip(
+                        label: Text(
+                          stripCantillation(w),
+                          style: const TextStyle(
+                            fontFamily: _hebrewFont,
+                            fontFamilyFallback: _hebrewFallback,
+                            fontSize: 18,
+                          ),
+                        ),
+                        selected: _misread.contains(i),
+                        onSelected: (sel) => setState(() {
+                          if (sel) {
+                            _misread.add(i);
+                          } else {
+                            _misread.remove(i);
+                          }
+                        }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: _finish,
+                  icon: const Icon(Icons.arrow_forward),
+                  label: const Text('Continue'),
+                ),
+              ],
             ],
           ),
         ),
