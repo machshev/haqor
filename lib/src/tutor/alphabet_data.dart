@@ -8,7 +8,11 @@ class HebrewLetter {
   final String? finalForm; // sofit form, if any
   final String name; // English name
   final String hebrewName; // pointed Hebrew name
-  final String translit; // romanization of the consonant
+  final String translit; // scholarly romanization (macron for long vowels: ā ē ō)
+  // Friendlier respelling for quiz syllables, where a macron reads as
+  // unfamiliar; only set where it differs from [translit] (long vowels).
+  // Callers should fall back to [translit] when this is null.
+  final String? vocalisation;
   final String sound; // pronunciation guide
   final int value; // numeric (gematria) value
   final String example; // pointed example word
@@ -22,6 +26,7 @@ class HebrewLetter {
     required this.name,
     required this.hebrewName,
     required this.translit,
+    this.vocalisation,
     required this.sound,
     required this.value,
     required this.example,
@@ -65,6 +70,7 @@ const List<HebrewLetter> kNiqqud = [
     name: 'Qamats',
     hebrewName: 'קָמַץ',
     translit: 'ā',
+    vocalisation: 'ah',
     sound: 'a as in father (classically a longer “ah”)',
     value: 0,
     example: 'יָד',
@@ -89,6 +95,7 @@ const List<HebrewLetter> kNiqqud = [
     name: 'Tsere',
     hebrewName: 'צֵירֵי',
     translit: 'ē',
+    vocalisation: 'ey',
     sound: 'e as in they',
     value: 0,
     example: 'שֵׁם',
@@ -113,6 +120,7 @@ const List<HebrewLetter> kNiqqud = [
     name: 'Holam',
     hebrewName: 'חוֹלָם',
     translit: 'ō',
+    vocalisation: 'oh',
     sound: 'o as in bone',
     value: 0,
     example: 'לֹא',
