@@ -484,11 +484,9 @@ fn to_signal_word(w: tutor::WordCard) -> WordCard {
         gloss: w.gloss,
         root: w.root,
         morph: w.morph,
-        aspect: match w.aspect {
-            tutor::WordAspect::Read => "read",
-            tutor::WordAspect::Mean => "mean",
-        }
-        .to_string(),
+        // Words teach only meaning now; the field is retained for the signal
+        // shape but is always "mean".
+        aspect: "mean".to_string(),
         distractors: w.distractors,
     }
 }
@@ -567,8 +565,7 @@ pub async fn submit_review(bible: SharedBible) {
         debug_print!("{:?}", req);
         let track = match req.track.as_str() {
             "glyph" => Track::Glyph,
-            "word_mean" => Track::WordMean,
-            _ => Track::WordRead,
+            _ => Track::Word,
         };
         let correct = match req.correct {
             1 => Some(false),

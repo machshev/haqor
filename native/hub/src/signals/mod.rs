@@ -201,7 +201,7 @@ pub struct GetNextStudyItem {}
 /// SM-2 grade; a fresh-glyph "intro" is just a mid `confidence` with no quiz.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct SubmitReview {
-    /// `"glyph"`, `"word_read"` or `"word_mean"`.
+    /// `"glyph"` (a consonant, vowel/syllable, or mark) or `"word"` (meaning).
     pub track: String,
     /// The glyph character (folded) or the word surface form.
     pub key: String,
@@ -230,8 +230,9 @@ pub struct GlyphCard {
     pub distractors: Vec<String>,
 }
 
-/// A word to learn or review, for one aspect: `"read"` (vocalisation) or
-/// `"mean"` (meaning).
+/// A word to learn or review. Words teach only meaning (vocalisation is learnt
+/// from the glyph/syllable drill); `aspect` is retained for the signal shape and
+/// is always `"mean"`.
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct WordCard {
     pub surface_id: i64,

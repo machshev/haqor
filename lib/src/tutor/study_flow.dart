@@ -42,8 +42,18 @@ String _vowelSyllable(String? host, String vowelGlyph) {
   return '$consonant$vowel';
 }
 
-/// The SRS track for a word card: its reading or its meaning.
-String _wordTrack(WordCard w) => w.aspect == 'mean' ? 'word_mean' : 'word_read';
+/// A distractor syllable option from a core `"<consonant><vowel>"` string (two
+/// code points: a base consonant then a combining vowel point).
+_Option _syllableOption(String syllable) {
+  final runes = syllable.runes.toList();
+  final consonant = runes.isEmpty ? '' : String.fromCharCode(runes.first);
+  final vowel = runes.length > 1 ? String.fromCharCode(runes.last) : '';
+  return (label: _vowelSyllable(consonant, vowel), sub: glyphInfo(vowel)?.sound);
+}
+
+/// The SRS track for a word card. Words teach only meaning; reading is drilled
+/// at the glyph/syllable level.
+const String _wordTrack = 'word';
 
 /// The single, never-ending spaced-repetition reading flow. The Rust curriculum
 /// engine decides every card; this page just renders the current [StudyItem]
@@ -157,11 +167,11 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
       case 'review_word':
         final w = item.word!;
         return _WordCard(
-          key: ValueKey('word:${w.surface}:${w.aspect}:${item.kind}'),
+          key: ValueKey('word:${w.surface}:${item.kind}'),
           word: w,
           isNew: item.kind == 'new_word',
           onGrade: (confidence, correct) =>
-              _grade(_wordTrack(w), w.surface, confidence, correct),
+              _grade(_wordTrack, w.surface, confidence, correct),
         );
       case 'read_verse':
         return _ReadVerseView(card: item.verse!, onContinue: _next);
@@ -650,10 +660,7 @@ class _GlyphCard extends StatelessWidget {
               ? (label: _vowelSyllable(host, glyph.glyph), sub: info?.sound)
               : (info == null ? null : (label: info.name, sub: info.sound)),
           distractors: isVowel
-              ? [
-                  for (final d in glyph.distractors)
-                    (label: _vowelSyllable(host, d), sub: glyphInfo(d)?.sound),
-                ]
+              ? [for (final d in glyph.distractors) _syllableOption(d)]
               : [
                   for (final d in glyph.distractors)
                     (label: glyphInfo(d)?.name ?? d, sub: glyphInfo(d)?.sound),
@@ -745,17 +752,14 @@ class _WordCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // The "read" aspect drills pronunciation; the "mean" aspect drills meaning
-    // (by which point the word can already be read, so its sound is shown).
-    final isRead = word.aspect == 'read';
+    // Words teach only meaning; by now the word can already be sounded out (all
+    // its glyphs are known), so its pronunciation is shown alongside.
     final translit = transliterateHebrew(word.surface);
     final gloss =
         kVocabOverrides[vocabKey(word.surface)]?.gloss ??
         (word.gloss.isEmpty ? '—' : word.gloss);
 
-    final prompt = isRead
-        ? (isNew ? 'New word — learn to read it' : 'How do you read this?')
-        : (isNew ? 'Now learn what it means' : 'What does it mean?');
+    final prompt = isNew ? 'Now learn what it means' : 'What does it mean?';
 
     return _CardShell(
       children: [
@@ -778,19 +782,15 @@ class _WordCard extends StatelessWidget {
             height: 1.2,
           ),
         ),
-        // Meaning cards keep the pronunciation visible (reading is already
-        // known); reading cards hide it (it's the answer) until the grader reveals.
-        if (!isRead) ...[
-          const SizedBox(height: 4),
-          Text(
-            translit,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontStyle: FontStyle.italic,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+        const SizedBox(height: 4),
+        Text(
+          translit,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontStyle: FontStyle.italic,
+            color: theme.colorScheme.onSurfaceVariant,
           ),
-        ],
+        ),
         const SizedBox(height: 8),
         Text(
           '${word.occurrences}× in the Old Testament',
@@ -802,34 +802,17 @@ class _WordCard extends StatelessWidget {
         const SizedBox(height: 16),
         _Grader(
           isNew: isNew,
-          revealLabel: isRead ? 'Reveal' : 'Reveal meaning',
-          // Reading quizzes on the transliteration (the app transliterates the
-          // other surfaces into options); meaning quizzes on the gloss. Either
-          // falls back to reveal-and-self-grade when too few options exist.
-          correct: (label: isRead ? translit : gloss, sub: null),
-          distractors: isRead
-              ? [
-                  for (final d in word.distractors)
-                    (label: transliterateHebrew(d), sub: null),
-                ]
-              : [for (final d in word.distractors) (label: d, sub: null)],
+          revealLabel: 'Reveal meaning',
+          // The meaning quiz picks the gloss from other plausible glosses,
+          // falling back to reveal-and-self-grade when too few options exist.
+          correct: (label: gloss, sub: null),
+          distractors: [for (final d in word.distractors) (label: d, sub: null)],
           onGrade: onGrade,
-          answer: isRead
-              ? _readAnswer(context, translit)
-              : _meanAnswer(context, gloss),
+          answer: _meanAnswer(context, gloss),
         ),
       ],
     );
   }
-
-  // The answer to a reading card is how to say it.
-  Widget _readAnswer(BuildContext context, String translit) => Text(
-    translit,
-    textAlign: TextAlign.center,
-    style: Theme.of(
-      context,
-    ).textTheme.headlineSmall?.copyWith(fontStyle: FontStyle.italic),
-  );
 
   Widget _meanAnswer(BuildContext context, String gloss) {
     final theme = Theme.of(context);
