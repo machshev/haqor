@@ -128,6 +128,19 @@ bool _wordFinal(List<List<int>> clusters, int k) {
   return !_isBase(clusters[k + 1].first);
 }
 
+/// The onset sound of a single base consonant, for voicing a teaching syllable
+/// (e.g. building `הֶ` → "he"). Unlike [transliterateHebrew] this bypasses the
+/// word-level heuristics — most importantly the "silent final he" rule that
+/// drops a vowel-less he — so a lone host consonant is never swallowed. The
+/// consonant is read without dagesh (matching a bare, unpointed host), so a
+/// begadkefat letter takes its soft value (ב → "v").
+String consonantOnset(String glyph) {
+  if (glyph.isEmpty) return '';
+  final c = glyph.runes.first;
+  if (!_isBase(c)) return '';
+  return _consonant(c, dagesh: false, sinDot: false);
+}
+
 String transliterateHebrew(String text) {
   final clusters = _clusters(text);
   final out = StringBuffer();

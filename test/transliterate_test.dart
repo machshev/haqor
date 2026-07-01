@@ -35,4 +35,19 @@ void main() {
       expect(transliterateHebrew('בַּיִת שָׁלוֹם'), 'bayit shalom');
     });
   });
+
+  group('consonantOnset', () {
+    test('voices a lone consonant, incl. he (not swallowed as final)', () {
+      // The word-level "silent final he" rule must NOT apply to a syllable host.
+      expect(consonantOnset('ה'), 'h');
+      expect(consonantOnset('מ'), 'm');
+      expect(consonantOnset('ח'), 'ch');
+      expect(consonantOnset('ב'), 'v'); // bare host: soft begadkefat
+    });
+
+    test('non-consonants have no onset', () {
+      expect(consonantOnset(''), '');
+      expect(consonantOnset('ֶ'), ''); // a bare vowel point
+    });
+  });
 }

@@ -37,7 +37,7 @@ const List<String> _hebrewFallback = ['Noto Serif Hebrew'];
 /// (`ă/ĕ/ŏ`), `ə` for sheva. [transliterateHebrew] collapses these to one of
 /// a/e/i/o/u, so vocalisation quizzes build their options from this instead.
 String _vowelSyllable(String? host, String vowelGlyph) {
-  final consonant = (host == null || host.isEmpty) ? '' : transliterateHebrew(host);
+  final consonant = (host == null || host.isEmpty) ? '' : consonantOnset(host);
   final vowel = glyphInfo(vowelGlyph)?.translit ?? '';
   return '$consonant$vowel';
 }
@@ -621,6 +621,9 @@ class _GlyphCard extends StatelessWidget {
     // apart. Consonants and marks quiz by name (their sounds collide).
     final isVowel = combining && onHost;
     final reviewPrompt = isVowel ? 'How do you say this?' : 'Which $kind is this?';
+    // Highlight the mark in red only when *teaching* it (a new card); on a vowel
+    // review the whole syllable is being tested, so show it in one colour.
+    final highlightMark = combining && !(isVowel && !isNew);
 
     return _CardShell(
       children: [
@@ -632,19 +635,21 @@ class _GlyphCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        // The mark highlighted in colour on its carrier; for a hosted vowel the
-        // carrier consonant stays in the normal colour so the new point stands out.
+        // The mark highlighted in colour on its carrier while teaching; on a
+        // vowel review the whole syllable stays one colour (it's all being read).
         Text.rich(
           TextSpan(
             children: [
               TextSpan(text: base),
-              if (combining)
+              if (highlightMark)
                 TextSpan(
                   text: glyph.glyph,
                   // Red stands out against the dark consonant far better than the
                   // green theme accent.
                   style: TextStyle(color: Colors.red.shade700),
-                ),
+                )
+              else if (combining)
+                TextSpan(text: glyph.glyph),
             ],
           ),
           textAlign: TextAlign.center,
