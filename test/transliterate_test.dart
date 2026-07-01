@@ -7,7 +7,7 @@ void main() {
     test('common words read naturally', () {
       expect(transliterateHebrew('שָׁלוֹם'), 'shalom');
       expect(transliterateHebrew('בַּיִת'), 'bayit');
-      expect(transliterateHebrew('תּוֹרָה'), 'tora'); // silent final he
+      expect(transliterateHebrew('תּוֹרָה'), 'torah'); // final he voiced
       expect(transliterateHebrew('בְּרֵאשִׁית'), 'bereshit'); // mater yod folded
     });
 

@@ -187,16 +187,6 @@ String transliterateHebrew(String text) {
       continue;
     }
 
-    // Silent final he (no vowel, no mappiq): drop it.
-    if (base == 0x05D4 &&
-        isLast &&
-        vowels.isEmpty &&
-        !dagesh &&
-        !marks.contains(0x05B7)) {
-      lastVowel = '';
-      continue;
-    }
-
     // Furtive patah under a final guttural is sounded *before* it (רוּחַ → ruach).
     if (isLast &&
         marks.contains(0x05B7) &&
