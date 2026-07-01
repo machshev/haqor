@@ -58,8 +58,8 @@ const String _wordTrack = 'word';
 /// The single, never-ending spaced-repetition reading flow. The Rust curriculum
 /// engine decides every card; this page just renders the current [StudyItem]
 /// and reports the learner's answer. Each [SubmitReview] response *is* the next
-/// card (one round-trip); a `read_verse` card carries no grade, so we advance
-/// past it with another [GetNextStudyItem].
+/// card (one round-trip); a `read_verse` or `explain_mark` card carries no
+/// grade, so we advance past it with another [GetNextStudyItem].
 class StudyFlowPage extends StatefulWidget {
   const StudyFlowPage({super.key});
 
@@ -207,6 +207,8 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
           onGrade: (confidence, correct) =>
               _grade(_wordTrack, w.surface, confidence, correct),
         );
+      case 'explain_mark':
+        return _ExplainMarkView(glyph: item.glyph!, onContinue: _next);
       case 'read_verse':
         return _ReadVerseView(card: item.verse!, onContinue: _next);
       case 'done':
@@ -1191,6 +1193,98 @@ String _refLabel(int book, int chapter, int verse) {
 
 /// The reward: a fully-known verse to read for real, plus other now-readable
 /// passages sharing its vocabulary. Verse text is fetched on demand.
+/// Explain a reading mark (sof pasuq, maqaf) the first time a verse needs it.
+/// Unlike a letter or vowel it carries no sound of its own, so it is shown
+/// once with an explanation and never drilled — no grading, just a Continue
+/// button, like [_ReadVerseView].
+class _ExplainMarkView extends StatelessWidget {
+  final GlyphCard glyph;
+  final VoidCallback onContinue;
+  const _ExplainMarkView({required this.glyph, required this.onContinue});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final info = glyphInfo(glyph.glyph);
+    return _CardShell(
+      children: [
+        Text(
+          'Reading mark',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          glyph.glyph,
+          textAlign: TextAlign.center,
+          textDirection: TextDirection.rtl,
+          style: const TextStyle(
+            fontFamily: _hebrewFont,
+            fontFamilyFallback: _hebrewFallback,
+            fontSize: 96,
+            height: 1.2,
+          ),
+        ),
+        if (info != null) ...[
+          const SizedBox(height: 16),
+          Text(
+            info.name,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleLarge,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            info.sound,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (info.tip != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              info.tip!,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          Text(
+            info.example,
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.rtl,
+            style: const TextStyle(
+              fontFamily: _hebrewFont,
+              fontFamilyFallback: _hebrewFallback,
+              fontSize: 28,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${info.exampleTranslit} — ${info.exampleMeaning}',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+        const SizedBox(height: 32),
+        FilledButton.icon(
+          onPressed: onContinue,
+          icon: const Icon(Icons.arrow_forward),
+          label: const Text('Continue'),
+        ),
+      ],
+    );
+  }
+}
+
 class _ReadVerseView extends StatefulWidget {
   final VerseCard card;
   final VoidCallback onContinue;

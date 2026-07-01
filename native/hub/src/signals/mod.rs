@@ -188,8 +188,8 @@ pub struct WordOccurrences {
 // The app drives a single never-ending study flow. It asks for the next card
 // with `GetNextStudyItem`, then answers each card with `SubmitReview` — whose
 // `StudyItem` response is the *next* card (one round-trip per card). A
-// `read_verse` card carries no grade, so the app advances past it with another
-// `GetNextStudyItem`.
+// `read_verse` or `explain_mark` card carries no grade, so the app advances
+// past it with another `GetNextStudyItem`.
 // ---------------------------------------------------------------------------
 
 /// Request the next study card (e.g. on launch, or after a gradeless read).
@@ -299,8 +299,11 @@ pub struct TutorProgress {
 }
 
 /// The next thing for the learner to do. `kind` tags which payload is set:
-/// `"new_glyph"`/`"review_glyph"` → `glyph`; `"new_word"`/`"review_word"` →
-/// `word`; `"read_verse"` → `verse`; `"done"` → none.
+/// `"new_glyph"`/`"review_glyph"`/`"explain_mark"` → `glyph`;
+/// `"new_word"`/`"review_word"` → `word`; `"read_verse"` → `verse`;
+/// `"done"` → none. An `"explain_mark"` card (a reading mark: sof pasuq,
+/// maqaf) carries no grade, like `"read_verse"` — the app acknowledges it
+/// with another `GetNextStudyItem`, never `SubmitReview`.
 #[derive(Debug, Serialize, RustSignal)]
 pub struct StudyItem {
     pub kind: String,

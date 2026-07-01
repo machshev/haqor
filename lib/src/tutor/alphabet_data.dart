@@ -192,40 +192,6 @@ const List<HebrewLetter> kNiqqud = [
     exampleMeaning: 'all, every',
     tip: 'Identical in shape to Qamats; context tells you it is “o”.',
   ),
-  HebrewLetter(
-    letter: 'ּ', // DAGESH / MAPPIQ / SHURUQ dot
-    name: 'Dagesh',
-    hebrewName: 'דָּגֵשׁ',
-    translit: '·',
-    sound: 'a dot inside a letter — doubles it or hardens its sound (בּ b, ב v)',
-    value: 0,
-    example: 'בַּיִת',
-    exampleTranslit: 'bayit',
-    exampleMeaning: 'house',
-    tip: 'In וּ it marks the vowel “u”; in a final ה (mappiq) it is sounded.',
-  ),
-  HebrewLetter(
-    letter: 'ׁ', // SHIN DOT
-    name: 'Shin dot',
-    hebrewName: 'שִׁין',
-    translit: 'š',
-    sound: 'the dot on the upper right makes שׁ say “sh”',
-    value: 0,
-    example: 'שָׁלוֹם',
-    exampleTranslit: 'shalom',
-    exampleMeaning: 'peace',
-  ),
-  HebrewLetter(
-    letter: 'ׂ', // SIN DOT
-    name: 'Sin dot',
-    hebrewName: 'שִׂין',
-    translit: 'ś',
-    sound: 'the dot on the upper left makes שׂ say “s”',
-    value: 0,
-    example: 'יִשְׂרָאֵל',
-    exampleTranslit: 'yisra’el',
-    exampleMeaning: 'Israel',
-  ),
 ];
 
 /// The reading marks that punctuate verses (taught lazily as the learner first
@@ -260,9 +226,10 @@ const List<HebrewLetter> kReadingMarks = [
 ];
 
 /// Teaching content for any single tutor glyph — a consonant (keyed by its bare
-/// medial form, which is what the engine sends after folding final forms), a
-/// niqqud point, or a verse reading mark. Returns null for an unrecognised
-/// codepoint.
+/// medial form, which is what the engine sends after folding final forms; for
+/// bet/pe/shin, keyed by the letter plus its dagesh/shin-sin-dot, since that
+/// mark changes the letter's sound: 'בּ', 'פּ', 'שׁ', 'שׂ'), a niqqud point, or a
+/// verse reading mark. Returns null for an unrecognised glyph.
 HebrewLetter? glyphInfo(String glyph) {
   for (final l in kAlphabet) {
     if (l.letter == glyph) return l;
@@ -307,17 +274,29 @@ const List<HebrewLetter> kAlphabet = [
   ),
   HebrewLetter(
     letter: 'ב',
+    name: 'Vet',
+    hebrewName: 'בֵית',
+    translit: 'v',
+    sound: 'v as in vine',
+    value: 2,
+    example: 'אָב',
+    exampleTranslit: 'av',
+    exampleMeaning: 'father',
+    tip:
+        'Don’t confuse with Kaf (כ): Bet has a square corner and a small '
+        'heel at the bottom right. With a dagesh (בּ) it becomes Bet.',
+  ),
+  HebrewLetter(
+    letter: 'בּ', // BET + DAGESH
     name: 'Bet',
     hebrewName: 'בֵּית',
-    translit: 'b / v',
-    sound: 'b as in boy (בּ with dagesh); v as in vine (ב without)',
+    translit: 'b',
+    sound: 'b as in boy',
     value: 2,
     example: 'בַּיִת',
     exampleTranslit: 'bayit',
     exampleMeaning: 'house',
-    tip:
-        'Don’t confuse with Kaf (כ): Bet has a square corner and a small '
-        'heel at the bottom right.',
+    tip: 'The dot (dagesh) inside hardens Vet (ב) into Bet.',
   ),
   HebrewLetter(
     letter: 'ג',
@@ -504,14 +483,27 @@ const List<HebrewLetter> kAlphabet = [
   HebrewLetter(
     letter: 'פ',
     finalForm: 'ף',
+    name: 'Fe',
+    hebrewName: 'פֵא',
+    translit: 'f',
+    sound: 'f as in fish',
+    value: 80,
+    example: 'אֶלֶף',
+    exampleTranslit: 'elef',
+    exampleMeaning: 'thousand, ox',
+    tip: 'With a dagesh (פּ) it becomes Pe. Its final form ף drops below the line.',
+  ),
+  HebrewLetter(
+    letter: 'פּ', // PE + DAGESH
     name: 'Pe',
     hebrewName: 'פֵּא',
-    translit: 'p / f',
-    sound: 'p as in pay (פּ with dagesh); f as in fish (פ without)',
+    translit: 'p',
+    sound: 'p as in pay',
     value: 80,
     example: 'פֶּה',
     exampleTranslit: 'peh',
     exampleMeaning: 'mouth',
+    tip: 'The dot (dagesh) inside hardens Fe (פ) into Pe.',
   ),
   HebrewLetter(
     letter: 'צ',
@@ -550,17 +542,28 @@ const List<HebrewLetter> kAlphabet = [
     tip: 'Rounded corner — compare Dalet (ד), which is sharp.',
   ),
   HebrewLetter(
-    letter: 'ש',
+    letter: 'שׁ', // SHIN + SHIN DOT
     name: 'Shin',
     hebrewName: 'שִׁין',
-    translit: 'sh / ś',
-    sound:
-        'sh as in ship (שׁ, dot on the right); s as in sun (שׂ, dot on '
-        'the left)',
+    translit: 'sh',
+    sound: 'sh as in ship — dot on the upper right',
     value: 300,
     example: 'שָׁלוֹם',
     exampleTranslit: 'shalom',
     exampleMeaning: 'peace',
+    tip: 'The dot on the right makes it “sh”; on the left (שׂ) it is Sin, “s”.',
+  ),
+  HebrewLetter(
+    letter: 'שׂ', // SHIN + SIN DOT
+    name: 'Sin',
+    hebrewName: 'שִׂין',
+    translit: 's',
+    sound: 's as in sun — dot on the upper left',
+    value: 300,
+    example: 'יִשְׂרָאֵל',
+    exampleTranslit: 'yisra’el',
+    exampleMeaning: 'Israel',
+    tip: 'The dot on the left makes it “s”; on the right (שׁ) it is Shin, “sh”.',
   ),
   HebrewLetter(
     letter: 'ת',

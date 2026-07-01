@@ -525,6 +525,10 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
             out.kind = "review_word".into();
             out.word = Some(to_signal_word(w));
         }
+        tutor::StudyItem::ExplainMark(g) => {
+            out.kind = "explain_mark".into();
+            out.glyph = Some(to_signal_glyph(g));
+        }
         tutor::StudyItem::ReadVerse(v) => {
             out.kind = "read_verse".into();
             out.verse = Some(VerseCard {
