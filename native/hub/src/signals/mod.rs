@@ -217,6 +217,33 @@ pub struct SubmitReview {
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct ResetTutor {}
 
+/// Request the richer SRS statistics for the stats view (on demand, not per
+/// card). The reply is a single [`TutorStats`].
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetTutorStats {}
+
+/// Richer spaced-repetition statistics for the stats view. A card is *learning*
+/// while in the short in-session steps and *mature* once it graduates to
+/// day-scale spacing; *seen* is every introduced card.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct TutorStats {
+    pub glyphs_seen: i64,
+    pub glyphs_learning: i64,
+    pub glyphs_mature: i64,
+    pub words_seen: i64,
+    pub words_learning: i64,
+    pub words_mature: i64,
+    pub glyphs_due: i64,
+    pub words_due: i64,
+    pub reviews_today: i64,
+    pub reviews_total: i64,
+    pub streak_days: i64,
+    /// Share of answers recalled (not "Again"), 0..=100.
+    pub accuracy_pct: i64,
+    pub verses_readable: i64,
+    pub total_verses: i64,
+}
+
 /// A teachable glyph (consonant — final forms folded — or niqqud point). The
 /// teaching content is held on the Dart side keyed by `glyph`.
 #[derive(Debug, Serialize, SignalPiece)]

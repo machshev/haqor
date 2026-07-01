@@ -1,8 +1,8 @@
 use crate::signals::{
-    BdbSummary, ChapterText, GetChapter, GetNextStudyItem, GetVerseText, GetVocab, GetWordInfo,
-    GetWordOccurrences, GlyphCard, HebrewOccurrence, ResetTutor, SedraOccurrence, SedraSummary,
-    StudyItem, SubmitReview, TutorProgress, VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry,
-    VocabList, WordCard, WordInfo, WordOccurrence, WordOccurrences,
+    BdbSummary, ChapterText, GetChapter, GetNextStudyItem, GetTutorStats, GetVerseText, GetVocab,
+    GetWordInfo, GetWordOccurrences, GlyphCard, HebrewOccurrence, ResetTutor, SedraOccurrence,
+    SedraSummary, StudyItem, SubmitReview, TutorProgress, TutorStats, VerseCard, VerseEntry,
+    VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -592,6 +592,33 @@ pub async fn reset_tutor(bible: SharedBible) {
                 Err(e) => debug_print!("reset_tutor (next) error: {:?}", e),
             },
             Err(e) => debug_print!("reset_tutor error: {:?}", e),
+        }
+    }
+}
+
+pub async fn get_tutor_stats(bible: SharedBible) {
+    let receiver = GetTutorStats::get_dart_signal_receiver();
+    while let Some(_pack) = receiver.recv().await {
+        let bible = lock(&bible);
+        match bible.tutor_stats(now_epoch()) {
+            Ok(s) => TutorStats {
+                glyphs_seen: s.glyphs_seen,
+                glyphs_learning: s.glyphs_learning,
+                glyphs_mature: s.glyphs_mature,
+                words_seen: s.words_seen,
+                words_learning: s.words_learning,
+                words_mature: s.words_mature,
+                glyphs_due: s.glyphs_due,
+                words_due: s.words_due,
+                reviews_today: s.reviews_today,
+                reviews_total: s.reviews_total,
+                streak_days: s.streak_days,
+                accuracy_pct: s.accuracy_pct,
+                verses_readable: s.verses_readable,
+                total_verses: s.total_verses,
+            }
+            .send_signal_to_dart(),
+            Err(e) => debug_print!("get_tutor_stats error: {:?}", e),
         }
     }
 }

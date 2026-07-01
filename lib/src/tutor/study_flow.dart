@@ -70,13 +70,22 @@ class StudyFlowPage extends StatefulWidget {
 class _StudyFlowPageState extends State<StudyFlowPage> {
   StreamSubscription<RustSignalPack<StudyItem>>? _sub;
   StudyItem? _item;
+  // Bumped on every delivered card. The engine legitimately re-serves the same
+  // card back-to-back (it pulls an in-learning card forward to keep drilling),
+  // so a content-derived key can repeat — and a repeated key makes Flutter reuse
+  // the answer-and-grade State, leaving a just-committed quiz frozen. Keying the
+  // card subtree by this counter guarantees a fresh grader for every card.
+  int _seq = 0;
 
   @override
   void initState() {
     super.initState();
     _sub = StudyItem.rustSignalStream.listen((pack) {
       if (!mounted) return;
-      setState(() => _item = pack.message);
+      setState(() {
+        _item = pack.message;
+        _seq++;
+      });
     });
     GetNextStudyItem().sendSignalToRust();
   }
@@ -99,6 +108,13 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
       ).sendSignalToRust();
 
   void _next() => GetNextStudyItem().sendSignalToRust();
+
+  void _showStats() => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (_) => const _StatsSheet(),
+  );
 
   Future<void> _confirmReset() async {
     final ok = await showDialog<bool>(
@@ -134,6 +150,11 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         title: const Text('Learn to read'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.insights_outlined),
+            tooltip: 'Statistics',
+            onPressed: _showStats,
+          ),
+          IconButton(
             icon: const Icon(Icons.restart_alt),
             tooltip: 'Reset progress',
             onPressed: _confirmReset,
@@ -145,7 +166,15 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
           : Column(
               children: [
                 _ProgressStrip(progress: item.progress),
-                Expanded(child: _buildItem(context, item)),
+                // Key by the delivery counter so every card — even one whose
+                // content matches the previous card — gets a fresh subtree, and
+                // the grader never inherits a stale (committed) quiz State.
+                Expanded(
+                  child: KeyedSubtree(
+                    key: ValueKey(_seq),
+                    child: _buildItem(context, item),
+                  ),
+                ),
               ],
             ),
     );
@@ -227,6 +256,247 @@ class _ProgressStrip extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// On-demand spaced-repetition stats. Fetches [TutorStats] once when opened and
+/// updates live if a fresh one arrives (e.g. after a review while it's open).
+class _StatsSheet extends StatefulWidget {
+  const _StatsSheet();
+
+  @override
+  State<_StatsSheet> createState() => _StatsSheetState();
+}
+
+class _StatsSheetState extends State<_StatsSheet> {
+  StreamSubscription<RustSignalPack<TutorStats>>? _sub;
+  // Seed with the last value received so the numbers show instantly on reopen.
+  TutorStats? _stats = TutorStats.latestRustSignal?.message;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = TutorStats.rustSignalStream.listen((pack) {
+      if (!mounted) return;
+      setState(() => _stats = pack.message);
+    });
+    GetTutorStats().sendSignalToRust();
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final s = _stats;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+        child: s == null
+            ? const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Your progress',
+                    style: theme.textTheme.titleLarge,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  // Today at a glance.
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _StatTile(
+                          icon: Icons.local_fire_department,
+                          value: '${s.streakDays}',
+                          label: 'day streak',
+                          highlight: s.streakDays > 0,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _StatTile(
+                          icon: Icons.today_outlined,
+                          value: '${s.reviewsToday}',
+                          label: 'reviews today',
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _StatTile(
+                          icon: Icons.schedule,
+                          value: '${s.glyphsDue + s.wordsDue}',
+                          label: 'due now',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  _StatRow(
+                    label: 'Letters',
+                    known: s.glyphsMature,
+                    total: s.glyphsSeen,
+                    learning: s.glyphsLearning,
+                  ),
+                  const SizedBox(height: 12),
+                  _StatRow(
+                    label: 'Words',
+                    known: s.wordsMature,
+                    total: s.wordsSeen,
+                    learning: s.wordsLearning,
+                  ),
+                  const SizedBox(height: 12),
+                  _StatRow(
+                    label: 'Verses readable',
+                    known: s.versesReadable,
+                    total: s.totalVerses,
+                  ),
+                  const Divider(height: 32),
+                  _StatLine(
+                    label: 'Recall accuracy',
+                    value: s.reviewsTotal == 0 ? '—' : '${s.accuracyPct}%',
+                  ),
+                  const SizedBox(height: 8),
+                  _StatLine(
+                    label: 'Reviews all-time',
+                    value: '${s.reviewsTotal}',
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+/// A compact icon-over-number tile for the "today" summary row.
+class _StatTile extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+  final bool highlight;
+  const _StatTile({
+    required this.icon,
+    required this.value,
+    required this.label,
+    this.highlight = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final accent = highlight ? scheme.primary : scheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: accent, size: 22),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: highlight ? scheme.primary : null,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A labelled "known / total" progress bar with an optional in-learning count.
+class _StatRow extends StatelessWidget {
+  final String label;
+  final int known;
+  final int total;
+  final int? learning;
+  const _StatRow({
+    required this.label,
+    required this.known,
+    required this.total,
+    this.learning,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final frac = total == 0 ? 0.0 : known / total;
+    final learnNote = (learning != null && learning! > 0)
+        ? '  ·  ${learning!} learning'
+        : '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: theme.textTheme.titleSmall),
+            Text(
+              '$known / $total$learnNote',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(value: frac, minHeight: 6),
+        ),
+      ],
+    );
+  }
+}
+
+/// A simple label-and-value line for the summary figures.
+class _StatLine extends StatelessWidget {
+  final String label;
+  final String value;
+  const _StatLine({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        Text(
+          value,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }
