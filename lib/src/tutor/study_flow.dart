@@ -156,12 +156,17 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
       case 'new_glyph':
       case 'review_glyph':
         final g = item.glyph!;
+        // A vowel is drilled as a whole syllable (vowel on a host consonant), so
+        // grade the syllable — the core credits every glyph in it, not just the
+        // vowel. Consonants and marks grade their single glyph.
+        final host = g.host;
+        final key = (host != null && host.isNotEmpty) ? '$host${g.glyph}' : g.glyph;
         return _GlyphCard(
           key: ValueKey('glyph:${g.glyph}:${item.kind}'),
           glyph: g,
           isNew: item.kind == 'new_glyph',
           onGrade: (confidence, correct) =>
-              _grade('glyph', g.glyph, confidence, correct),
+              _grade('glyph', key, confidence, correct),
         );
       case 'new_word':
       case 'review_word':
