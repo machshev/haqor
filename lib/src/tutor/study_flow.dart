@@ -6,6 +6,7 @@ import 'package:rinf/rinf.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import 'alphabet_data.dart';
+import 'study_settings.dart';
 import 'transliterate.dart';
 
 /// Multiple-choice outcome, matching the Rust `SubmitReview.correct` codes.
@@ -173,6 +174,11 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
             icon: const Icon(Icons.insights_outlined),
             tooltip: 'Statistics',
             onPressed: _showStats,
+          ),
+          IconButton(
+            icon: const Icon(Icons.tune),
+            tooltip: 'Study pace',
+            onPressed: () => showStudySettings(context),
           ),
           IconButton(
             icon: const Icon(Icons.restart_alt),
