@@ -13,8 +13,9 @@ use tokio::spawn;
 
 use functions::{
     SharedBible, finish_calibration, get_calibration_probe, get_chapter_text, get_next_study_item,
-    get_onboarding_status, get_tutor_stats, get_verse_text, get_vocab, get_word_info,
-    get_word_occurrences, reset_tutor, set_alphabet_known, submit_review,
+    get_onboarding_status, get_tutor_settings, get_tutor_stats, get_verse_text, get_vocab,
+    get_word_info, get_word_occurrences, reset_tutor, set_alphabet_known, set_tutor_settings,
+    submit_review,
 };
 use signals::SetDataDir;
 
@@ -65,6 +66,8 @@ async fn main() {
     spawn(submit_review(bible.clone()));
     spawn(reset_tutor(bible.clone()));
     spawn(get_tutor_stats(bible.clone()));
+    spawn(get_tutor_settings(bible.clone()));
+    spawn(set_tutor_settings(bible.clone()));
     spawn(get_onboarding_status(bible.clone()));
     spawn(set_alphabet_known(bible.clone()));
     spawn(get_calibration_probe(bible.clone()));

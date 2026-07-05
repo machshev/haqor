@@ -244,6 +244,34 @@ pub struct TutorStats {
     pub total_verses: i64,
 }
 
+/// Request the current curriculum-pacing settings (on demand, e.g. when the
+/// settings sheet opens). The reply is a single [`TutorSettings`].
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetTutorSettings {}
+
+/// Update the curriculum-pacing settings; the reply is the stored
+/// [`TutorSettings`] (so the UI reflects any clamping).
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SetTutorSettings {
+    pub letters_per_batch: u8,
+    pub words_per_batch: u8,
+    pub grammar_gating: bool,
+    pub vocab_ratio: u8,
+}
+
+/// How fast the curriculum progresses in each dimension, configured by the
+/// learner: `letters_per_batch`/`words_per_batch` cap how many new letters /
+/// word meanings are in flight at once (gentler = smaller), `grammar_gating`
+/// introduces grammar rules one at a time, and `vocab_ratio` (0..=100) balances
+/// vocabulary growth against grammar expansion (higher = more vocabulary).
+#[derive(Debug, Serialize, RustSignal)]
+pub struct TutorSettings {
+    pub letters_per_batch: u8,
+    pub words_per_batch: u8,
+    pub grammar_gating: bool,
+    pub vocab_ratio: u8,
+}
+
 /// A teachable glyph (consonant — final forms folded — or niqqud point). The
 /// teaching content is held on the Dart side keyed by `glyph`.
 #[derive(Debug, Serialize, SignalPiece)]

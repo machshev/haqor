@@ -1,9 +1,10 @@
 use crate::signals::{
     BdbSummary, CalibrationProbe, ChapterText, FinishCalibration, GetCalibrationProbe, GetChapter,
-    GetNextStudyItem, GetOnboardingStatus, GetTutorStats, GetVerseText, GetVocab, GetWordInfo,
-    GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence, OnboardingStatus, ResetTutor,
-    SedraOccurrence,
-    SedraSummary, SetAlphabetKnown, StudyItem, SubmitReview, TutorProgress, TutorStats, VerseCard,
+    GetNextStudyItem, GetOnboardingStatus, GetTutorSettings, GetTutorStats, GetVerseText, GetVocab,
+    GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence, OnboardingStatus,
+    ResetTutor, SedraOccurrence,
+    SedraSummary, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, TutorProgress,
+    TutorSettings, TutorStats, VerseCard,
     VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence,
     WordOccurrences,
 };
@@ -659,6 +660,47 @@ pub async fn get_tutor_stats(bible: SharedBible) {
             .send_signal_to_dart(),
             Err(e) => debug_print!("get_tutor_stats error: {:?}", e),
         }
+    }
+}
+
+pub async fn get_tutor_settings(bible: SharedBible) {
+    let receiver = GetTutorSettings::get_dart_signal_receiver();
+    while let Some(_pack) = receiver.recv().await {
+        let bible = lock(&bible);
+        match bible.tutor_settings() {
+            Ok(s) => to_signal_settings(s).send_signal_to_dart(),
+            Err(e) => debug_print!("get_tutor_settings error: {:?}", e),
+        }
+    }
+}
+
+pub async fn set_tutor_settings(bible: SharedBible) {
+    let receiver = SetTutorSettings::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        let bible = lock(&bible);
+        let s = tutor::TutorSettings {
+            letters_per_batch: req.letters_per_batch,
+            words_per_batch: req.words_per_batch,
+            grammar_gating: req.grammar_gating,
+            vocab_ratio: req.vocab_ratio,
+        };
+        match bible
+            .set_tutor_settings(&s)
+            .and_then(|()| bible.tutor_settings())
+        {
+            Ok(stored) => to_signal_settings(stored).send_signal_to_dart(),
+            Err(e) => debug_print!("set_tutor_settings error: {:?}", e),
+        }
+    }
+}
+
+fn to_signal_settings(s: tutor::TutorSettings) -> TutorSettings {
+    TutorSettings {
+        letters_per_batch: s.letters_per_batch,
+        words_per_batch: s.words_per_batch,
+        grammar_gating: s.grammar_gating,
+        vocab_ratio: s.vocab_ratio,
     }
 }
 
