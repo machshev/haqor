@@ -225,6 +225,12 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         );
       case 'explain_mark':
         return _ExplainMarkView(glyph: item.glyph!, onContinue: _next);
+      case 'explain_grammar':
+        return _GrammarInfoView(
+          key: ValueKey('grammar:${item.grammar!.concept}'),
+          card: item.grammar!,
+          onContinue: _next,
+        );
       case 'read_verse':
         return _ReadVerseView(
           card: item.verse!,
@@ -1302,6 +1308,94 @@ class _ExplainMarkView extends StatelessWidget {
               fontStyle: FontStyle.italic,
             ),
           ),
+        ],
+        const SizedBox(height: 32),
+        FilledButton.icon(
+          onPressed: onContinue,
+          icon: const Icon(Icons.arrow_forward),
+          label: const Text('Continue'),
+        ),
+      ],
+    );
+  }
+}
+
+/// A one-time grammar concept card, illustrated by the word about to be learnt.
+/// Gradeless: acknowledged with a single Continue button, like [_ExplainMarkView].
+class _GrammarInfoView extends StatelessWidget {
+  final GrammarCard card;
+  final VoidCallback onContinue;
+  const _GrammarInfoView({super.key, required this.card, required this.onContinue});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final w = card.example;
+    final exampleGloss = w.inflected.isNotEmpty ? w.inflected : w.gloss;
+    return _CardShell(
+      children: [
+        Text(
+          'Grammar',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          card.title,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 16),
+        // The word the learner is about to meet, as the live illustration.
+        Text(
+          w.surface,
+          textAlign: TextAlign.center,
+          textDirection: TextDirection.rtl,
+          style: const TextStyle(
+            fontFamily: _hebrewFont,
+            fontFamilyFallback: _hebrewFallback,
+            fontSize: 56,
+            height: 1.2,
+          ),
+        ),
+        if (exampleGloss.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            exampleGloss,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontStyle: FontStyle.italic,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+        const SizedBox(height: 20),
+        Text(
+          card.explanation,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyLarge,
+        ),
+        if (card.formula.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _TipBox(text: card.formula),
+        ],
+        if (card.examples.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          for (final ex in card.examples)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Text(
+                ex,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: _hebrewFont,
+                  fontFamilyFallback: _hebrewFallback,
+                  fontSize: 20,
+                ),
+              ),
+            ),
         ],
         const SizedBox(height: 32),
         FilledButton.icon(

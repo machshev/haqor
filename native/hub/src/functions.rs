@@ -1,7 +1,8 @@
 use crate::signals::{
     BdbSummary, CalibrationProbe, ChapterText, FinishCalibration, GetCalibrationProbe, GetChapter,
     GetNextStudyItem, GetOnboardingStatus, GetTutorStats, GetVerseText, GetVocab, GetWordInfo,
-    GetWordOccurrences, GlyphCard, HebrewOccurrence, OnboardingStatus, ResetTutor, SedraOccurrence,
+    GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence, OnboardingStatus, ResetTutor,
+    SedraOccurrence,
     SedraSummary, SetAlphabetKnown, StudyItem, SubmitReview, TutorProgress, TutorStats, VerseCard,
     VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence,
     WordOccurrences,
@@ -509,6 +510,7 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
         kind: String::new(),
         glyph: None,
         word: None,
+        grammar: None,
         verse: None,
         progress,
     };
@@ -532,6 +534,17 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
         tutor::StudyItem::ExplainMark(g) => {
             out.kind = "explain_mark".into();
             out.glyph = Some(to_signal_glyph(g));
+        }
+        tutor::StudyItem::ExplainGrammar(c) => {
+            out.kind = "explain_grammar".into();
+            out.grammar = Some(GrammarCard {
+                concept: c.concept,
+                title: c.title,
+                explanation: c.explanation,
+                formula: c.formula,
+                examples: c.examples,
+                example: to_signal_word(c.example),
+            });
         }
         tutor::StudyItem::ReadVerse(v) => {
             out.kind = "read_verse".into();

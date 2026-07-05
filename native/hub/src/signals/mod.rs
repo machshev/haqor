@@ -308,17 +308,32 @@ pub struct TutorProgress {
     pub total_verses: i64,
 }
 
+/// A grammar concept shown once before the word that uses it, illustrated by
+/// that word. Carries no grade — acknowledged with another `GetNextStudyItem`.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct GrammarCard {
+    pub concept: String,
+    pub title: String,
+    pub explanation: String,
+    /// A compact formula, empty when none.
+    pub formula: String,
+    pub examples: Vec<String>,
+    /// The word about to be learnt, which exercises this concept.
+    pub example: WordCard,
+}
+
 /// The next thing for the learner to do. `kind` tags which payload is set:
 /// `"new_glyph"`/`"review_glyph"`/`"explain_mark"` → `glyph`;
-/// `"new_word"`/`"review_word"` → `word`; `"read_verse"` → `verse`;
-/// `"done"` → none. An `"explain_mark"` card (a reading mark: sof pasuq,
-/// maqaf) carries no grade, like `"read_verse"` — the app acknowledges it
-/// with another `GetNextStudyItem`, never `SubmitReview`.
+/// `"new_word"`/`"review_word"` → `word`; `"explain_grammar"` → `grammar`;
+/// `"read_verse"` → `verse`; `"done"` → none. The `"explain_mark"` and
+/// `"explain_grammar"` cards carry no grade, like `"read_verse"` — the app
+/// acknowledges them with another `GetNextStudyItem`, never `SubmitReview`.
 #[derive(Debug, Serialize, RustSignal)]
 pub struct StudyItem {
     pub kind: String,
     pub glyph: Option<GlyphCard>,
     pub word: Option<WordCard>,
+    pub grammar: Option<GrammarCard>,
     pub verse: Option<VerseCard>,
     pub progress: TutorProgress,
 }
