@@ -485,6 +485,7 @@ fn to_signal_word(w: tutor::WordCard) -> WordCard {
         occurrences: w.occurrences,
         gloss: w.gloss,
         inflected: w.inflected,
+        note: w.note,
         root: w.root,
         morph: w.morph,
         // Words teach only meaning now; the field is retained for the signal

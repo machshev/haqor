@@ -7,7 +7,6 @@ import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import 'alphabet_data.dart';
 import 'transliterate.dart';
-import 'vocab_overrides.dart';
 
 /// Multiple-choice outcome, matching the Rust `SubmitReview.correct` codes.
 const int _notQuiz = 0; // self-graded (no quiz)
@@ -1058,9 +1057,9 @@ class _WordCard extends StatelessWidget {
     // Words teach only meaning; by now the word can already be sounded out (all
     // its glyphs are known), so its pronunciation is shown alongside.
     final translit = transliterateHebrew(word.surface);
-    final gloss =
-        kVocabOverrides[vocabKey(word.surface)]?.gloss ??
-        (word.gloss.isEmpty ? '—' : word.gloss);
+    // The core already applies curated overrides and inflection; the app just
+    // presents word.gloss / word.inflected / word.note.
+    final gloss = word.gloss.isEmpty ? '—' : word.gloss;
 
     final prompt = isNew ? 'Now learn what it means' : 'What does it mean?';
 
@@ -1119,13 +1118,10 @@ class _WordCard extends StatelessWidget {
 
   Widget _meanAnswer(BuildContext context, String gloss) {
     final theme = Theme.of(context);
-    // The specific form rendered in English ("and he said"). A curated override
-    // is already an inflected learner gloss, so only show the engine's inflected
-    // form when no override applies and it adds something over the base sense.
-    final hasOverride = kVocabOverrides.containsKey(vocabKey(word.surface));
+    // The core supplies the inflected form ("and he said") only when it adds
+    // something over the base gloss (empty for curated / function words).
     final inflected =
-        (!hasOverride &&
-            word.inflected.isNotEmpty &&
+        (word.inflected.isNotEmpty &&
             word.inflected.toLowerCase() != word.gloss.toLowerCase())
         ? word.inflected
         : null;
@@ -1170,6 +1166,10 @@ class _WordCard extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
+        ],
+        if (word.note.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _TipBox(text: word.note),
         ],
       ],
     );

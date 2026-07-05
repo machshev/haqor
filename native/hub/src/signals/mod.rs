@@ -267,8 +267,12 @@ pub struct WordCard {
     pub occurrences: i64,
     pub gloss: String,
     /// The specific inflected form in English ("and he said", "his word") for
-    /// the answer side; falls back to `gloss` for function words / proper nouns.
+    /// the answer side; empty when a curated gloss already gives the meaning or
+    /// for a function word / proper noun.
     pub inflected: String,
+    /// Composition/teaching note for a curated word ("לְ (to) + ־וֹ (him)"),
+    /// empty otherwise.
+    pub note: String,
     pub root: String,
     pub morph: String,
     pub aspect: String,
