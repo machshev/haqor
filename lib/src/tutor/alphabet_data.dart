@@ -233,14 +233,15 @@ const List<HebrewLetter> kReadingMarks = [
   ),
 ];
 
-/// Teaching content for any single tutor glyph — a consonant (keyed by its bare
-/// medial form, which is what the engine sends after folding final forms; for
+/// Teaching content for any single tutor glyph — a consonant (keyed by its
+/// medial form or, for the five sofit letters, its final form, since the
+/// engine now teaches final forms as their own distinct glyphs; for
 /// bet/pe/shin, keyed by the letter plus its dagesh/shin-sin-dot, since that
 /// mark changes the letter's sound: 'בּ', 'פּ', 'שׁ', 'שׂ'), a niqqud point, or a
 /// verse reading mark. Returns null for an unrecognised glyph.
 HebrewLetter? glyphInfo(String glyph) {
   for (final l in kAlphabet) {
-    if (l.letter == glyph) return l;
+    if (l.letter == glyph || l.finalForm == glyph) return l;
   }
   for (final n in kNiqqud) {
     if (n.letter == glyph) return n;
