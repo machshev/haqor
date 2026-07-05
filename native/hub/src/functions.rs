@@ -684,6 +684,7 @@ pub async fn set_tutor_settings(bible: SharedBible) {
             words_per_batch: req.words_per_batch,
             grammar_gating: req.grammar_gating,
             vocab_ratio: req.vocab_ratio,
+            letters_ratio: req.letters_ratio,
         };
         match bible
             .set_tutor_settings(&s)
@@ -701,6 +702,7 @@ fn to_signal_settings(s: tutor::TutorSettings) -> TutorSettings {
         words_per_batch: s.words_per_batch,
         grammar_gating: s.grammar_gating,
         vocab_ratio: s.vocab_ratio,
+        letters_ratio: s.letters_ratio,
     }
 }
 

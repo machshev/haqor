@@ -257,6 +257,10 @@ pub struct SetTutorSettings {
     pub words_per_batch: u8,
     pub grammar_gating: bool,
     pub vocab_ratio: u8,
+    /// Letters↔words balance (0..=100): the share of new-material introductions
+    /// spent on new letters vs. reading a word already spelt with known letters.
+    /// Lower is more word-forward.
+    pub letters_ratio: u8,
 }
 
 /// How fast the curriculum progresses in each dimension, configured by the
@@ -270,6 +274,10 @@ pub struct TutorSettings {
     pub words_per_batch: u8,
     pub grammar_gating: bool,
     pub vocab_ratio: u8,
+    /// Letters↔words balance (0..=100): the share of new-material introductions
+    /// spent on new letters vs. reading a word already spelt with known letters.
+    /// Lower is more word-forward.
+    pub letters_ratio: u8,
 }
 
 /// A teachable glyph (consonant — final forms folded — or niqqud point). The

@@ -31,6 +31,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   int _wordsPerBatch = 8;
   bool _grammarGating = true;
   int _vocabRatio = 75;
+  int _lettersRatio = 30;
   bool _loaded = false;
 
   @override
@@ -61,6 +62,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     _wordsPerBatch = s.wordsPerBatch;
     _grammarGating = s.grammarGating;
     _vocabRatio = s.vocabRatio;
+    _lettersRatio = s.lettersRatio;
   }
 
   @override
@@ -75,6 +77,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
       wordsPerBatch: _wordsPerBatch,
       grammarGating: _grammarGating,
       vocabRatio: _vocabRatio,
+      lettersRatio: _lettersRatio,
     ).sendSignalToRust();
   }
 
@@ -123,6 +126,45 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                   Text(
                     'Fewer at once means each is drilled to memory before the '
                     'next arrives — a gentler ramp.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+                  Text('Focus', style: theme.textTheme.labelLarge),
+                  Slider(
+                    value: _lettersRatio.toDouble(),
+                    min: 0,
+                    max: 100,
+                    divisions: 20,
+                    label: _lettersRatio <= 50
+                        ? 'Words +${50 - _lettersRatio}'
+                        : 'Letters +${_lettersRatio - 50}',
+                    onChanged: (v) => setState(() => _lettersRatio = v.round()),
+                    onChangeEnd: (_) => _send(),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Read words sooner',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      Text(
+                        'Learn letters faster',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Toward words, the tutor teaches a word as soon as you know '
+                    'its letters instead of pressing on with new ones.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
