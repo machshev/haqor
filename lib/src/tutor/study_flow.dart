@@ -1119,6 +1119,16 @@ class _WordCard extends StatelessWidget {
 
   Widget _meanAnswer(BuildContext context, String gloss) {
     final theme = Theme.of(context);
+    // The specific form rendered in English ("and he said"). A curated override
+    // is already an inflected learner gloss, so only show the engine's inflected
+    // form when no override applies and it adds something over the base sense.
+    final hasOverride = kVocabOverrides.containsKey(vocabKey(word.surface));
+    final inflected =
+        (!hasOverride &&
+            word.inflected.isNotEmpty &&
+            word.inflected.toLowerCase() != word.gloss.toLowerCase())
+        ? word.inflected
+        : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1129,6 +1139,17 @@ class _WordCard extends StatelessWidget {
             fontWeight: FontWeight.bold,
           ),
         ),
+        if (inflected != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            'this form: “$inflected”',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: theme.colorScheme.primary,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
         if (word.morph.isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(

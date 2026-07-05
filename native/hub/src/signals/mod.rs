@@ -266,6 +266,9 @@ pub struct WordCard {
     pub surface: String,
     pub occurrences: i64,
     pub gloss: String,
+    /// The specific inflected form in English ("and he said", "his word") for
+    /// the answer side; falls back to `gloss` for function words / proper nouns.
+    pub inflected: String,
     pub root: String,
     pub morph: String,
     pub aspect: String,
