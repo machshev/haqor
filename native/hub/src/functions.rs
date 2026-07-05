@@ -489,10 +489,18 @@ fn to_signal_word(w: tutor::WordCard) -> WordCard {
         note: w.note,
         root: w.root,
         morph: w.morph,
-        // Words teach only meaning now; the field is retained for the signal
-        // shape but is always "mean".
         aspect: "mean".to_string(),
         distractors: w.distractors,
+    }
+}
+
+/// Map a core form-drill [`tutor::WordCard`] to the signal, tagged `"form"`.
+/// The `gloss` field carries the inflected answer and `distractors` the
+/// contrasting inflections for the "which form?" quiz.
+fn to_signal_form(w: tutor::WordCard) -> WordCard {
+    WordCard {
+        aspect: "form".to_string(),
+        ..to_signal_word(w)
     }
 }
 
@@ -530,6 +538,14 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
         tutor::StudyItem::ReviewWord(w) => {
             out.kind = "review_word".into();
             out.word = Some(to_signal_word(w));
+        }
+        tutor::StudyItem::NewFormDrill(w) => {
+            out.kind = "new_form".into();
+            out.word = Some(to_signal_form(w));
+        }
+        tutor::StudyItem::ReviewFormDrill(w) => {
+            out.kind = "review_form".into();
+            out.word = Some(to_signal_form(w));
         }
         tutor::StudyItem::ExplainMark(g) => {
             out.kind = "explain_mark".into();
@@ -587,6 +603,7 @@ pub async fn submit_review(bible: SharedBible) {
         debug_print!("{:?}", req);
         let track = match req.track.as_str() {
             "glyph" => Track::Glyph,
+            "form" => Track::Form,
             _ => Track::Word,
         };
         let correct = match req.correct {

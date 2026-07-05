@@ -54,8 +54,12 @@ _Option _syllableOption(String syllable) {
 }
 
 /// The SRS track for a word card. Words teach only meaning; reading is drilled
-/// at the glyph/syllable level.
+/// at the glyph/syllable level, and grammatical form on the `_formTrack`.
 const String _wordTrack = 'word';
+
+/// The SRS track for a "which form is this?" drill (tracked separately from a
+/// word's meaning).
+const String _formTrack = 'form';
 
 /// The single, never-ending spaced-repetition reading flow. The Rust curriculum
 /// engine decides every card; this page just renders the current [StudyItem]
@@ -222,6 +226,17 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
           isNew: item.kind == 'new_word',
           onGrade: (confidence, correct) =>
               _grade(_wordTrack, w.surface, confidence, correct),
+        );
+      case 'new_form':
+      case 'review_form':
+        final w = item.word!;
+        return _WordCard(
+          key: ValueKey('form:${w.surface}:${item.kind}'),
+          word: w,
+          isNew: item.kind == 'new_form',
+          isForm: true,
+          onGrade: (confidence, correct) =>
+              _grade(_formTrack, w.surface, confidence, correct),
         );
       case 'explain_mark':
         return _ExplainMarkView(glyph: item.glyph!, onContinue: _next);
@@ -1048,12 +1063,17 @@ class _GlyphCard extends StatelessWidget {
 class _WordCard extends StatelessWidget {
   final WordCard word;
   final bool isNew;
+  /// A "which grammatical form is this?" drill rather than a meaning card. The
+  /// answer (`word.gloss`) is the inflected form and the distractors are other
+  /// inflections of the same word.
+  final bool isForm;
   final void Function(int confidence, int correct) onGrade;
 
   const _WordCard({
     super.key,
     required this.word,
     required this.isNew,
+    this.isForm = false,
     required this.onGrade,
   });
 
@@ -1067,7 +1087,9 @@ class _WordCard extends StatelessWidget {
     // presents word.gloss / word.inflected / word.note.
     final gloss = word.gloss.isEmpty ? '—' : word.gloss;
 
-    final prompt = isNew ? 'Now learn what it means' : 'What does it mean?';
+    final prompt = isForm
+        ? (isNew ? 'Now learn this form' : 'Which form is this?')
+        : (isNew ? 'Now learn what it means' : 'What does it mean?');
 
     return _CardShell(
       children: [
@@ -1110,9 +1132,9 @@ class _WordCard extends StatelessWidget {
         const SizedBox(height: 16),
         _Grader(
           isNew: isNew,
-          revealLabel: 'Reveal meaning',
-          // The meaning quiz picks the gloss from other plausible glosses,
-          // falling back to reveal-and-self-grade when too few options exist.
+          revealLabel: isForm ? 'Reveal form' : 'Reveal meaning',
+          // The quiz picks the answer from other plausible options, falling back
+          // to reveal-and-self-grade when too few options exist.
           correct: (label: gloss, sub: null),
           distractors: [for (final d in word.distractors) (label: d, sub: null)],
           onGrade: onGrade,
