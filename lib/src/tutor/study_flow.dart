@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
@@ -89,6 +90,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   void initState() {
     super.initState();
     _sub = StudyItem.rustSignalStream.listen((pack) {
+      debugPrint('card shown: ${pack.message}');
       if (!mounted) return;
       setState(() {
         _item = pack.message;
