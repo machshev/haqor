@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
+import 'loading_message.dart';
 import 'study_flow.dart';
 import 'transliterate.dart';
 
@@ -136,7 +137,9 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
   Widget build(BuildContext context) {
     switch (_step) {
       case _OnboardStep.loading:
-        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        return const Scaffold(
+          body: Center(child: LoadingMessage(text: 'Setting up your tutor…')),
+        );
       case _OnboardStep.askAlphabet:
         return _AlphabetQuestion(onAnswer: _knowsAlphabet);
       case _OnboardStep.calibrating:

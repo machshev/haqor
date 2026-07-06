@@ -6,6 +6,7 @@ import 'package:rinf/rinf.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import 'alphabet_data.dart';
+import 'loading_message.dart';
 import 'study_settings.dart';
 import 'transliterate.dart';
 
@@ -188,7 +189,9 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         ],
       ),
       body: item == null
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: LoadingMessage(text: 'Preparing your first lesson…'),
+            )
           : Column(
               children: [
                 _ProgressStrip(progress: item.progress),

@@ -626,11 +626,18 @@ pub async fn reset_tutor(bible: SharedBible) {
     while let Some(_pack) = receiver.recv().await {
         let bible = lock(&bible);
         match bible.reset_tutor() {
-            // Acknowledge by handing back the fresh first card.
-            Ok(()) => match bible.next_study_item(now_epoch()) {
-                Ok(item) => to_signal_study_item(&bible, item).send_signal_to_dart(),
-                Err(e) => debug_print!("reset_tutor (next) error: {:?}", e),
-            },
+            // Reset always empties glyph_srs/word_srs, so onboarding is always
+            // needed again — push a fresh status so the app routes back through
+            // it (TutorEntryPage is already subscribed) instead of resuming the
+            // study flow with a new-but-still-post-onboarding card.
+            Ok(()) => {
+                let tier_count = bible.calibration_tier_count().unwrap_or(0);
+                OnboardingStatus {
+                    needed: true,
+                    tier_count,
+                }
+                .send_signal_to_dart();
+            }
             Err(e) => debug_print!("reset_tutor error: {:?}", e),
         }
     }
