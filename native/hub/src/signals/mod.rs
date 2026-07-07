@@ -365,9 +365,11 @@ pub struct GrammarCard {
 /// The next thing for the learner to do. `kind` tags which payload is set:
 /// `"new_glyph"`/`"review_glyph"`/`"explain_mark"`/`"explain_final_forms"` → `glyph`;
 /// `"new_word"`/`"review_word"` → `word`; `"explain_grammar"` → `grammar`;
-/// `"read_verse"` → `verse`; `"done"` → none. The `"explain_mark"`,
-/// `"explain_final_forms"` and `"explain_grammar"` cards carry no grade, like
-/// `"read_verse"` — the app
+/// `"explain_intro"` → `intro` (a language-intro card key —
+/// `"intro_rtl"`/`"intro_alphabet"`/`"intro_vowels"` — whose teaching content
+/// is held on the Dart side); `"read_verse"` → `verse`; `"done"` → none. The
+/// `"explain_mark"`, `"explain_final_forms"`, `"explain_grammar"` and
+/// `"explain_intro"` cards carry no grade, like `"read_verse"` — the app
 /// acknowledges them with another `GetNextStudyItem`, never `SubmitReview`.
 #[derive(Debug, Serialize, RustSignal)]
 pub struct StudyItem {
@@ -375,8 +377,37 @@ pub struct StudyItem {
     pub glyph: Option<GlyphCard>,
     pub word: Option<WordCard>,
     pub grammar: Option<GrammarCard>,
+    pub intro: Option<String>,
     pub verse: Option<VerseCard>,
     pub progress: TutorProgress,
+}
+
+/// Ask for every explanation card the learner has already been shown, for the
+/// tutor's reference page.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetSeenConcepts {}
+
+/// One already-shown explanation card. `kind` says how to render it:
+/// `"intro"` and `"final_forms"` keep their teaching content on the Dart side
+/// (keyed by `key`), a `"mark"` card's `key` is the reading-mark glyph itself,
+/// and a `"grammar"` card carries its content in the remaining fields (empty
+/// for the other kinds).
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SeenConcept {
+    pub kind: String,
+    pub key: String,
+    pub title: String,
+    pub explanation: String,
+    pub formula: String,
+    pub examples: Vec<String>,
+}
+
+/// Every explanation card already unlocked, in reference order: the intro
+/// deck, final forms, reading marks (order met), then grammar concepts in
+/// teaching order.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct SeenConcepts {
+    pub cards: Vec<SeenConcept>,
 }
 
 // ---------------------------------------------------------------------------

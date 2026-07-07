@@ -1,12 +1,11 @@
 use crate::signals::{
     BdbSummary, CalibrationProbe, ChapterText, FinishCalibration, GetCalibrationProbe, GetChapter,
-    GetNextStudyItem, GetOnboardingStatus, GetTutorSettings, GetTutorStats, GetVerseText, GetVocab,
-    GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence, OnboardingStatus,
-    ResetTutor, SedraOccurrence,
-    SedraSummary, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, TutorProgress,
-    TutorSettings, TutorStats, VerseCard,
-    VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence,
-    WordOccurrences,
+    GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts, GetTutorSettings, GetTutorStats,
+    GetVerseText, GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard,
+    HebrewOccurrence, OnboardingStatus, ResetTutor, SedraOccurrence, SedraSummary, SeenConcept,
+    SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, TutorProgress,
+    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry, VocabList,
+    WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -521,6 +520,7 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
         glyph: None,
         word: None,
         grammar: None,
+        intro: None,
         verse: None,
         progress,
     };
@@ -556,6 +556,10 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
         tutor::StudyItem::ExplainFinalForms(g) => {
             out.kind = "explain_final_forms".into();
             out.glyph = Some(to_signal_glyph(g));
+        }
+        tutor::StudyItem::ExplainIntro(key) => {
+            out.kind = "explain_intro".into();
+            out.intro = Some(key);
         }
         tutor::StudyItem::ExplainGrammar(c) => {
             out.kind = "explain_grammar".into();
@@ -644,6 +648,30 @@ pub async fn reset_tutor(bible: SharedBible) {
                 .send_signal_to_dart();
             }
             Err(e) => debug_print!("reset_tutor error: {:?}", e),
+        }
+    }
+}
+
+pub async fn get_seen_concepts(bible: SharedBible) {
+    let receiver = GetSeenConcepts::get_dart_signal_receiver();
+    while let Some(_pack) = receiver.recv().await {
+        let bible = lock(&bible);
+        match bible.seen_concepts() {
+            Ok(cards) => SeenConcepts {
+                cards: cards
+                    .into_iter()
+                    .map(|c| SeenConcept {
+                        kind: c.kind,
+                        key: c.key,
+                        title: c.title,
+                        explanation: c.explanation,
+                        formula: c.formula,
+                        examples: c.examples,
+                    })
+                    .collect(),
+            }
+            .send_signal_to_dart(),
+            Err(e) => debug_print!("get_seen_concepts error: {:?}", e),
         }
     }
 }

@@ -7,6 +7,8 @@ import 'package:rinf/rinf.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import 'alphabet_data.dart';
+import 'concept_reference.dart';
+import 'intro_content.dart';
 import 'loading_message.dart';
 import 'study_settings.dart';
 import 'transliterate.dart';
@@ -175,6 +177,13 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         title: const Text('Learn to read'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.menu_book_outlined),
+            tooltip: 'Reference',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ConceptReferencePage()),
+            ),
+          ),
+          IconButton(
             icon: const Icon(Icons.insights_outlined),
             tooltip: 'Statistics',
             onPressed: _showStats,
@@ -252,6 +261,8 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         );
       case 'explain_mark':
         return _ExplainMarkView(glyph: item.glyph!, onContinue: _next);
+      case 'explain_intro':
+        return _ExplainIntroView(introKey: item.intro!, onContinue: _next);
       case 'explain_final_forms':
         return _ExplainFinalFormsView(glyph: item.glyph!, onContinue: _next);
       case 'explain_grammar':
@@ -1377,6 +1388,46 @@ class _ExplainMarkView extends StatelessWidget {
   }
 }
 
+/// One card of the language-intro deck (reading direction, the alphabet, the
+/// vowel points), shown once each before anything else is taught. The content
+/// lives in [IntroCardBody], shared with the reference page. Gradeless, like
+/// [_ExplainMarkView].
+class _ExplainIntroView extends StatelessWidget {
+  final String introKey;
+  final VoidCallback onContinue;
+  const _ExplainIntroView({required this.introKey, required this.onContinue});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _CardShell(
+      children: [
+        Text(
+          'Before we start',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          introTitle(introKey),
+          textAlign: TextAlign.center,
+          style: theme.textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 20),
+        IntroCardBody(introKey: introKey),
+        const SizedBox(height: 32),
+        FilledButton.icon(
+          onPressed: onContinue,
+          icon: const Icon(Icons.arrow_forward),
+          label: const Text('Continue'),
+        ),
+      ],
+    );
+  }
+}
+
 /// A one-time explanation of the final-forms concept, shown before the first
 /// final-form letter is introduced: five letters change shape at the end of a
 /// word. Leads with the pair about to be met (medial base, then the final
@@ -1420,37 +1471,13 @@ class _ExplainFinalFormsView extends StatelessWidget {
         ),
         const SizedBox(height: 20),
         Text(
-          'Five letters put on a different shape when they come last in a '
-          'word. The sound stays exactly the same — only the shape changes. '
-          'Each final form is learnt as its own letter.',
+          kFinalFormsExplanation,
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyLarge,
         ),
         const SizedBox(height: 20),
         // All five pairs, medial then final (reading order), finals in red.
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 20,
-          runSpacing: 8,
-          children: [
-            for (final l in kAlphabet)
-              if (l.finalForm != null)
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(text: '${l.letter} '),
-                      TextSpan(text: l.finalForm, style: red),
-                    ],
-                  ),
-                  textDirection: TextDirection.rtl,
-                  style: const TextStyle(
-                    fontFamily: _hebrewFont,
-                    fontFamilyFallback: _hebrewFallback,
-                    fontSize: 32,
-                  ),
-                ),
-          ],
-        ),
+        const FinalFormsPairs(),
         const SizedBox(height: 32),
         FilledButton.icon(
           onPressed: onContinue,
