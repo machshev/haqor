@@ -290,7 +290,7 @@ class _ProgressStrip extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '${progress.wordsKnown} words · ${progress.glyphsKnown} letters',
+                '${progress.wordsKnown} words · ${progress.lettersKnown} letters · ${progress.vowelsKnown} vowels',
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -398,9 +398,16 @@ class _StatsSheetState extends State<_StatsSheet> {
                   const SizedBox(height: 24),
                   _StatRow(
                     label: 'Letters',
-                    known: s.glyphsMature,
-                    total: s.glyphsSeen,
-                    learning: s.glyphsLearning,
+                    known: s.lettersMature,
+                    total: s.lettersSeen,
+                    learning: s.lettersLearning,
+                  ),
+                  const SizedBox(height: 12),
+                  _StatRow(
+                    label: 'Vowels',
+                    known: s.vowelsMature,
+                    total: s.vowelsSeen,
+                    learning: s.vowelsLearning,
                   ),
                   const SizedBox(height: 12),
                   _StatRow(

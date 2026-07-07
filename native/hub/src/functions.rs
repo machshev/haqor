@@ -510,7 +510,8 @@ fn to_signal_form(w: tutor::WordCard) -> WordCard {
 fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
     let p = bible.tutor_progress().unwrap_or_default();
     let progress = TutorProgress {
-        glyphs_known: p.glyphs_known,
+        letters_known: p.letters_known,
+        vowels_known: p.vowels_known,
         words_known: p.words_known,
         verses_readable: p.verses_readable,
         total_verses: p.total_verses,
@@ -649,9 +650,12 @@ pub async fn get_tutor_stats(bible: SharedBible) {
         let bible = lock(&bible);
         match bible.tutor_stats(now_epoch()) {
             Ok(s) => TutorStats {
-                glyphs_seen: s.glyphs_seen,
-                glyphs_learning: s.glyphs_learning,
-                glyphs_mature: s.glyphs_mature,
+                letters_seen: s.letters_seen,
+                letters_learning: s.letters_learning,
+                letters_mature: s.letters_mature,
+                vowels_seen: s.vowels_seen,
+                vowels_learning: s.vowels_learning,
+                vowels_mature: s.vowels_mature,
                 words_seen: s.words_seen,
                 words_learning: s.words_learning,
                 words_mature: s.words_mature,

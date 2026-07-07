@@ -227,9 +227,12 @@ pub struct GetTutorStats {}
 /// day-scale spacing; *seen* is every introduced card.
 #[derive(Debug, Serialize, RustSignal)]
 pub struct TutorStats {
-    pub glyphs_seen: i64,
-    pub glyphs_learning: i64,
-    pub glyphs_mature: i64,
+    pub letters_seen: i64,
+    pub letters_learning: i64,
+    pub letters_mature: i64,
+    pub vowels_seen: i64,
+    pub vowels_learning: i64,
+    pub vowels_mature: i64,
     pub words_seen: i64,
     pub words_learning: i64,
     pub words_mature: i64,
@@ -338,7 +341,8 @@ pub struct VerseCard {
 
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct TutorProgress {
-    pub glyphs_known: i64,
+    pub letters_known: i64,
+    pub vowels_known: i64,
     pub words_known: i64,
     pub verses_readable: i64,
     pub total_verses: i64,
