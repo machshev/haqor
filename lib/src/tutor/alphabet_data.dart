@@ -256,10 +256,13 @@ const List<HebrewLetter> kReadingMarks = [
 /// engine now teaches final forms as their own distinct glyphs; for
 /// bet/pe/shin, keyed by the letter plus its dagesh/shin-sin-dot, since that
 /// mark changes the letter's sound: 'בּ', 'פּ', 'שׁ', 'שׂ'), a niqqud point, or a
-/// verse reading mark. Returns null for an unrecognised glyph.
+/// verse reading mark. A final form gets its own derived entry ("Final Mem",
+/// an end-of-word example) so its cards never masquerade as the medial
+/// letter. Returns null for an unrecognised glyph.
 HebrewLetter? glyphInfo(String glyph) {
   for (final l in kAlphabet) {
-    if (l.letter == glyph || l.finalForm == glyph) return l;
+    if (l.letter == glyph) return l;
+    if (l.finalForm == glyph) return _finalInfo(l);
   }
   for (final n in kNiqqud) {
     if (n.letter == glyph) return n;
@@ -268,6 +271,46 @@ HebrewLetter? glyphInfo(String glyph) {
     if (m.letter == glyph) return m;
   }
   return null;
+}
+
+/// The medial (mid-word) base of a final-form glyph (ך→כ … ץ→צ), or null when
+/// [glyph] is not one of the five finals. Used to show the familiar shape
+/// alongside when a final form is taught.
+String? medialForm(String glyph) {
+  for (final l in kAlphabet) {
+    if (l.finalForm == glyph) return l.letter;
+  }
+  return null;
+}
+
+/// Example words for the five final forms — each *ends* in its final form, so
+/// the new shape is shown in its natural end-of-word position.
+const Map<String, (String, String, String)> _finalExamples = {
+  'ך': ('מֶלֶךְ', 'melekh', 'king'),
+  'ם': ('יוֹם', 'yom', 'day'),
+  'ן': ('בֵּן', 'ben', 'son'),
+  'ף': ('כֶּסֶף', 'kesef', 'silver'),
+  'ץ': ('אֶרֶץ', 'erets', 'earth, land'),
+};
+
+/// The derived entry for [l]'s final form: same sound and value, its own name
+/// ("Final Mem" / "מֵם סוֹפִית") and an end-of-word example.
+HebrewLetter _finalInfo(HebrewLetter l) {
+  final ex = _finalExamples[l.finalForm];
+  return HebrewLetter(
+    letter: l.finalForm!,
+    name: 'Final ${l.name}',
+    hebrewName: '${l.hebrewName} סוֹפִית',
+    translit: l.translit,
+    sound: l.sound,
+    value: l.value,
+    example: ex?.$1 ?? l.example,
+    exampleTranslit: ex?.$2 ?? l.exampleTranslit,
+    exampleMeaning: ex?.$3 ?? l.exampleMeaning,
+    tip:
+        'The shape ${l.name} (${l.letter}) takes at the end of a word — '
+        'same sound, different shape.',
+  );
 }
 
 /// True if [glyph] is a combining niqqud point (vowels, dagesh, shin/sin dot,

@@ -67,8 +67,9 @@ const String _formTrack = 'form';
 /// The single, never-ending spaced-repetition reading flow. The Rust curriculum
 /// engine decides every card; this page just renders the current [StudyItem]
 /// and reports the learner's answer. Each [SubmitReview] response *is* the next
-/// card (one round-trip); a `read_verse` or `explain_mark` card carries no
-/// grade, so we advance past it with another [GetNextStudyItem].
+/// card (one round-trip); a `read_verse`, `explain_mark` or
+/// `explain_final_forms` card carries no grade, so we advance past it with
+/// another [GetNextStudyItem].
 class StudyFlowPage extends StatefulWidget {
   const StudyFlowPage({super.key});
 
@@ -251,6 +252,8 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         );
       case 'explain_mark':
         return _ExplainMarkView(glyph: item.glyph!, onContinue: _next);
+      case 'explain_final_forms':
+        return _ExplainFinalFormsView(glyph: item.glyph!, onContinue: _next);
       case 'explain_grammar':
         return _GrammarInfoView(
           key: ValueKey('grammar:${item.grammar!.concept}'),
@@ -955,6 +958,12 @@ class _GlyphCard extends StatelessWidget {
     // Highlight the mark in red only when *teaching* it (a new card); on a vowel
     // review the whole syllable is being tested, so show it in one colour.
     final highlightMark = combining && !(isVowel && !isNew);
+    // A final form is taught with its medial base alongside — the familiar
+    // shape first, the new end-of-word shape picked out in red (mirroring how
+    // a new vowel is highlighted on its host). Reviews show the glyph alone:
+    // the medial form would give the letter's name away.
+    final medial = medialForm(glyph.glyph);
+    final teachFinal = isNew && medial != null;
 
     return _CardShell(
       children: [
@@ -971,16 +980,24 @@ class _GlyphCard extends StatelessWidget {
         Text.rich(
           TextSpan(
             children: [
-              TextSpan(text: base),
-              if (highlightMark)
+              if (teachFinal) ...[
+                TextSpan(text: '$medial '),
                 TextSpan(
                   text: glyph.glyph,
-                  // Red stands out against the dark consonant far better than the
-                  // green theme accent.
                   style: TextStyle(color: Colors.red.shade700),
-                )
-              else if (combining)
-                TextSpan(text: glyph.glyph),
+                ),
+              ] else ...[
+                TextSpan(text: base),
+                if (highlightMark)
+                  TextSpan(
+                    text: glyph.glyph,
+                    // Red stands out against the dark consonant far better than
+                    // the green theme accent.
+                    style: TextStyle(color: Colors.red.shade700),
+                  )
+                else if (combining)
+                  TextSpan(text: glyph.glyph),
+              ],
             ],
           ),
           textAlign: TextAlign.center,
@@ -1349,6 +1366,91 @@ class _ExplainMarkView extends StatelessWidget {
             ),
           ),
         ],
+        const SizedBox(height: 32),
+        FilledButton.icon(
+          onPressed: onContinue,
+          icon: const Icon(Icons.arrow_forward),
+          label: const Text('Continue'),
+        ),
+      ],
+    );
+  }
+}
+
+/// A one-time explanation of the final-forms concept, shown before the first
+/// final-form letter is introduced: five letters change shape at the end of a
+/// word. Leads with the pair about to be met (medial base, then the final
+/// form in red), then lists all five pairs. Gradeless, like [_ExplainMarkView].
+class _ExplainFinalFormsView extends StatelessWidget {
+  final GlyphCard glyph;
+  final VoidCallback onContinue;
+  const _ExplainFinalFormsView({required this.glyph, required this.onContinue});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final medial = medialForm(glyph.glyph);
+    final red = TextStyle(color: Colors.red.shade700);
+    return _CardShell(
+      children: [
+        Text(
+          'Final letters',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 16),
+        // The pair the learner is about to meet, the new shape in red.
+        Text.rich(
+          TextSpan(
+            children: [
+              if (medial != null) TextSpan(text: '$medial '),
+              TextSpan(text: glyph.glyph, style: red),
+            ],
+          ),
+          textAlign: TextAlign.center,
+          textDirection: TextDirection.rtl,
+          style: const TextStyle(
+            fontFamily: _hebrewFont,
+            fontFamilyFallback: _hebrewFallback,
+            fontSize: 96,
+            height: 1.2,
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          'Five letters put on a different shape when they come last in a '
+          'word. The sound stays exactly the same — only the shape changes. '
+          'Each final form is learnt as its own letter.',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyLarge,
+        ),
+        const SizedBox(height: 20),
+        // All five pairs, medial then final (reading order), finals in red.
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 20,
+          runSpacing: 8,
+          children: [
+            for (final l in kAlphabet)
+              if (l.finalForm != null)
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(text: '${l.letter} '),
+                      TextSpan(text: l.finalForm, style: red),
+                    ],
+                  ),
+                  textDirection: TextDirection.rtl,
+                  style: const TextStyle(
+                    fontFamily: _hebrewFont,
+                    fontFamilyFallback: _hebrewFallback,
+                    fontSize: 32,
+                  ),
+                ),
+          ],
+        ),
         const SizedBox(height: 32),
         FilledButton.icon(
           onPressed: onContinue,

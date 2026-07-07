@@ -553,6 +553,10 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
             out.kind = "explain_mark".into();
             out.glyph = Some(to_signal_glyph(g));
         }
+        tutor::StudyItem::ExplainFinalForms(g) => {
+            out.kind = "explain_final_forms".into();
+            out.glyph = Some(to_signal_glyph(g));
+        }
         tutor::StudyItem::ExplainGrammar(c) => {
             out.kind = "explain_grammar".into();
             out.grammar = Some(GrammarCard {
