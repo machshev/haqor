@@ -141,6 +141,24 @@ const List<HebrewLetter> kNiqqud = [
     tip: 'Three diagonal dots under the letter.',
   ),
   HebrewLetter(
+    // Not a combining mark: a vav carrying a dagesh with no vowel of its own is
+    // the shureq vowel. The engine teaches it as its own atomic glyph (like בּ),
+    // so it renders standalone — [isNiqqud] is false for it, no carrier circle.
+    letter: 'וּ', // VAV + DAGESH (shureq)
+    name: 'Shureq',
+    hebrewName: 'שׁוּרֶק',
+    translit: 'û',
+    vocalisation: 'oo',
+    sound: 'u as in flute — a vav with a dot in its middle, read as a vowel',
+    value: 0,
+    example: 'סוּס',
+    exampleTranslit: 'sus',
+    exampleMeaning: 'horse',
+    tip:
+        'Not the consonant Vav: the dot makes the letter itself the vowel '
+        '“oo”. Compare Qubuts (three dots under a letter), the same sound.',
+  ),
+  HebrewLetter(
     letter: 'ְ', // SHEVA
     name: 'Sheva',
     hebrewName: 'שְׁוָא',
