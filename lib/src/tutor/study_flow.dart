@@ -767,9 +767,9 @@ class _GraderState extends State<_Grader> {
       options.add((label: t, sub: d.sub));
       if (options.length == 4) break;
     }
-    // Three or four options make a worthwhile quiz; fewer self-grades. Glyphs
-    // only draw distractors from already-introduced peers, so early on a
-    // same-kind pool of two (a three-way choice) is the most we can offer.
+    // Three or four options make a worthwhile quiz; fewer self-grades. The
+    // core prefers already-introduced peers as distractors and tops up from
+    // upcoming glyphs/meanings, so this is only a safety net.
     if (options.length < 3) return;
     options.shuffle();
     _options = options;
