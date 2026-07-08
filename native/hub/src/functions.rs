@@ -3,7 +3,8 @@ use crate::signals::{
     GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts, GetTutorSettings, GetTutorStats,
     GetVerseText, GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard,
     HebrewOccurrence, OnboardingStatus, ResetTutor, SedraOccurrence, SedraSummary, SeenConcept,
-    SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, TutorProgress,
+    SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, SuffixCard,
+    TutorProgress,
     TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry, VocabList,
     WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
@@ -504,6 +505,18 @@ fn to_signal_form(w: tutor::WordCard) -> WordCard {
     }
 }
 
+fn to_signal_suffix(s: tutor::SuffixCard) -> SuffixCard {
+    SuffixCard {
+        key: s.key,
+        meaning: s.meaning,
+        surface: s.surface,
+        stem: s.stem,
+        suffix: s.suffix,
+        gloss: s.gloss,
+        distractors: s.distractors,
+    }
+}
+
 /// Map a core [`tutor::StudyItem`] to its tagged signal form, attaching the
 /// current progress counters so the UI can render a status header on any card.
 fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
@@ -519,6 +532,7 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
         kind: String::new(),
         glyph: None,
         word: None,
+        suffix: None,
         grammar: None,
         intro: None,
         verse: None,
@@ -548,6 +562,14 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
         tutor::StudyItem::ReviewFormDrill(w) => {
             out.kind = "review_form".into();
             out.word = Some(to_signal_form(w));
+        }
+        tutor::StudyItem::NewSuffixDrill(s) => {
+            out.kind = "new_suffix".into();
+            out.suffix = Some(to_signal_suffix(s));
+        }
+        tutor::StudyItem::ReviewSuffixDrill(s) => {
+            out.kind = "review_suffix".into();
+            out.suffix = Some(to_signal_suffix(s));
         }
         tutor::StudyItem::ExplainMark(g) => {
             out.kind = "explain_mark".into();
@@ -614,6 +636,7 @@ pub async fn submit_review(bible: SharedBible) {
         let track = match req.track.as_str() {
             "glyph" => Track::Glyph,
             "form" => Track::Form,
+            "suffix" => Track::Suffix,
             _ => Track::Word,
         };
         let correct = match req.correct {

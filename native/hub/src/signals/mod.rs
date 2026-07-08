@@ -320,6 +320,27 @@ pub struct WordCard {
     pub distractors: Vec<String>,
 }
 
+/// A pronominal-ending drill: the ending shown on a known host word with its
+/// span highlighted in red (`surface == stem + suffix`; render `stem` plain
+/// and `suffix` red, as a new vowel is shown on its host consonant). The quiz
+/// asks which pronoun the ending stands for; `meaning` is the answer and
+/// `distractors` the other endings' meanings. Graded with track `"suffix"`
+/// and `key` as the `SubmitReview` key.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SuffixCard {
+    /// Person-gender-number key ("1cs", "3ms") — the `"suffix"` grading key.
+    pub key: String,
+    /// The pronoun the ending stands for ("me", "him") — the quiz answer.
+    pub meaning: String,
+    pub surface: String,
+    pub stem: String,
+    pub suffix: String,
+    /// The host's learner gloss ("to me") for the answer side; may be empty.
+    pub gloss: String,
+    /// Empty when too few exist for a quiz (the app self-grades instead).
+    pub distractors: Vec<String>,
+}
+
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct VerseRef {
     pub book: u8,
@@ -364,7 +385,8 @@ pub struct GrammarCard {
 
 /// The next thing for the learner to do. `kind` tags which payload is set:
 /// `"new_glyph"`/`"review_glyph"`/`"explain_mark"`/`"explain_final_forms"` → `glyph`;
-/// `"new_word"`/`"review_word"` → `word`; `"explain_grammar"` → `grammar`;
+/// `"new_word"`/`"review_word"` → `word`; `"new_suffix"`/`"review_suffix"` →
+/// `suffix`; `"explain_grammar"` → `grammar`;
 /// `"explain_intro"` → `intro` (a language-intro card key —
 /// `"intro_rtl"`/`"intro_alphabet"`/`"intro_vowels"` — whose teaching content
 /// is held on the Dart side); `"read_verse"` → `verse`; `"done"` → none. The
@@ -376,6 +398,7 @@ pub struct StudyItem {
     pub kind: String,
     pub glyph: Option<GlyphCard>,
     pub word: Option<WordCard>,
+    pub suffix: Option<SuffixCard>,
     pub grammar: Option<GrammarCard>,
     pub intro: Option<String>,
     pub verse: Option<VerseCard>,

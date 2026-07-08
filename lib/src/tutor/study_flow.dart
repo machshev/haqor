@@ -66,6 +66,10 @@ const String _wordTrack = 'word';
 /// word's meaning).
 const String _formTrack = 'form';
 
+/// The SRS track for a pronominal-ending drill (the ending highlighted on a
+/// known host word); the review key is the ending's person-gender-number key.
+const String _suffixTrack = 'suffix';
+
 /// The single, never-ending spaced-repetition reading flow. The Rust curriculum
 /// engine decides every card; this page just renders the current [StudyItem]
 /// and reports the learner's answer. Each [SubmitReview] response *is* the next
@@ -258,6 +262,16 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
           isForm: true,
           onGrade: (confidence, correct) =>
               _grade(_formTrack, w.surface, confidence, correct),
+        );
+      case 'new_suffix':
+      case 'review_suffix':
+        final s = item.suffix!;
+        return _SuffixCard(
+          key: ValueKey('suffix:${s.key}:${s.surface}:${item.kind}'),
+          card: s,
+          isNew: item.kind == 'new_suffix',
+          onGrade: (confidence, correct) =>
+              _grade(_suffixTrack, s.key, confidence, correct),
         );
       case 'explain_mark':
         return _ExplainMarkView(glyph: item.glyph!, onContinue: _next);
@@ -1244,6 +1258,109 @@ class _WordCard extends StatelessWidget {
         if (word.note.isNotEmpty) ...[
           const SizedBox(height: 8),
           _TipBox(text: word.note),
+        ],
+      ],
+    );
+  }
+}
+
+/// Teach or review a pronominal ending, shown in red on a host word the
+/// learner already knows — the same highlight a new vowel gets on its host
+/// consonant. Reviews rotate the host, so the ending (not one word's shape)
+/// is what's being tested; the quiz asks which pronoun it stands for.
+class _SuffixCard extends StatelessWidget {
+  final SuffixCard card;
+  final bool isNew;
+  final void Function(int confidence, int correct) onGrade;
+
+  const _SuffixCard({
+    super.key,
+    required this.card,
+    required this.isNew,
+    required this.onGrade,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final translit = transliterateHebrew(card.surface);
+
+    return _CardShell(
+      children: [
+        Text(
+          isNew ? 'New word ending' : 'Who is the red ending?',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 16),
+        // The host word with the ending's span picked out in red.
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(text: card.stem),
+              TextSpan(
+                text: card.suffix,
+                style: TextStyle(color: Colors.red.shade700),
+              ),
+            ],
+          ),
+          textAlign: TextAlign.center,
+          textDirection: TextDirection.rtl,
+          style: const TextStyle(
+            fontFamily: _hebrewFont,
+            fontFamilyFallback: _hebrewFallback,
+            fontSize: 72,
+            height: 1.2,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          translit,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontStyle: FontStyle.italic,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _Grader(
+          isNew: isNew,
+          revealLabel: 'Reveal pronoun',
+          correct: (label: card.meaning, sub: null),
+          distractors: [
+            for (final d in card.distractors) (label: d, sub: null),
+          ],
+          onGrade: onGrade,
+          answer: _suffixAnswer(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _suffixAnswer(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          card.meaning,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        if (card.gloss.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            '${card.surface} — “${card.gloss}”',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: theme.colorScheme.primary,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
         ],
       ],
     );
