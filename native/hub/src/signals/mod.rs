@@ -358,6 +358,9 @@ pub struct VerseCard {
     /// The verse's words in reading order, as `SubmitReview` `"word"` keys —
     /// lets the app offer them for the learner to flag ones they misread.
     pub words: Vec<String>,
+    /// Aligned with `words`: true where the word is a proper name, so the
+    /// verse view can render names distinctly (sounded out, not translated).
+    pub names: Vec<bool>,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]
@@ -379,7 +382,8 @@ pub struct GrammarCard {
     /// A compact formula, empty when none.
     pub formula: String,
     pub examples: Vec<String>,
-    /// The word about to be learnt, which exercises this concept.
+    /// A familiar word illustrating this concept (not necessarily the word
+    /// about to be learnt).
     pub example: WordCard,
 }
 

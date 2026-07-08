@@ -610,6 +610,7 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
                     })
                     .collect(),
                 words: v.words,
+                names: v.names,
             });
         }
         tutor::StudyItem::Done => out.kind = "done".into(),

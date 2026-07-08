@@ -1756,6 +1756,62 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
     widget.onMisread(flagged);
   }
 
+  bool _isName(int wordIndex) {
+    final names = widget.card.names;
+    return wordIndex < names.length && names[wordIndex];
+  }
+
+  /// Whether the verse being displayed is the card's own verse (an example
+  /// chip can swap in another passage, whose words the card doesn't describe).
+  bool get _onCardVerse =>
+      _book == widget.card.book &&
+      _chapter == widget.card.chapter &&
+      _verse == widget.card.verse;
+
+  /// The verse text as spans with proper names coloured. A word unit ends at
+  /// whitespace or a maqaf, aligning units with [VerseCard.words] (units
+  /// without a Hebrew letter — a trailing sof pasuq — belong to no word).
+  /// Falls back to one plain span if the alignment doesn't work out.
+  List<TextSpan> _verseSpans(String text, TextStyle base, Color nameColor) {
+    final words = widget.card.words;
+    final names = widget.card.names;
+    if (!_onCardVerse || names.length != words.length || !names.contains(true)) {
+      return [TextSpan(text: text, style: base)];
+    }
+    final spans = <TextSpan>[];
+    var wordIndex = 0;
+    var aligned = true;
+    final unit = StringBuffer();
+    void flush() {
+      if (unit.isEmpty) return;
+      final s = unit.toString();
+      unit.clear();
+      final hasLetter = s.runes.any((r) => r >= 0x05D0 && r <= 0x05EA);
+      var name = false;
+      if (hasLetter) {
+        if (wordIndex < names.length) {
+          name = names[wordIndex];
+          wordIndex++;
+        } else {
+          aligned = false;
+        }
+      }
+      spans.add(
+        TextSpan(text: s, style: name ? base.copyWith(color: nameColor) : base),
+      );
+    }
+
+    for (final r in text.runes) {
+      unit.write(String.fromCharCode(r));
+      if (r == 0x20 || r == 0x05BE) flush(); // space or maqaf ends a word
+    }
+    flush();
+    if (!aligned || wordIndex != words.length) {
+      return [TextSpan(text: text, style: base)];
+    }
+    return spans;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1797,16 +1853,21 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
                   child: CircularProgressIndicator(),
                 )
               else ...[
-                Text(
-                  stripCantillation(_text!),
+                Text.rich(
+                  TextSpan(
+                    children: _verseSpans(
+                      stripCantillation(_text!),
+                      const TextStyle(
+                        fontFamily: _hebrewFont,
+                        fontFamilyFallback: _hebrewFallback,
+                        fontSize: 32,
+                        height: 1.7,
+                      ),
+                      theme.colorScheme.tertiary,
+                    ),
+                  ),
                   textAlign: TextAlign.center,
                   textDirection: TextDirection.rtl,
-                  style: const TextStyle(
-                    fontFamily: _hebrewFont,
-                    fontFamilyFallback: _hebrewFallback,
-                    fontSize: 32,
-                    height: 1.7,
-                  ),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -1817,6 +1878,16 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                if (_onCardVerse && widget.card.names.contains(true)) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Coloured words are names',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.tertiary,
+                    ),
+                  ),
+                ],
               ],
               if (examples.isNotEmpty) ...[
                 const SizedBox(height: 28),
@@ -1885,10 +1956,13 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
                       FilterChip(
                         label: Text(
                           stripCantillation(w),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: _hebrewFont,
                             fontFamilyFallback: _hebrewFallback,
                             fontSize: 18,
+                            color: _isName(i)
+                                ? theme.colorScheme.tertiary
+                                : null,
                           ),
                         ),
                         selected: _misread.contains(i),
