@@ -49,12 +49,15 @@ String _vowelSyllable(String? host, String vowelGlyph) {
   return '$consonant$vowel';
 }
 
-/// A distractor syllable option from a core `"<consonant><vowel>"` string (two
-/// code points: a base consonant then a combining vowel point).
+/// A distractor syllable option from a core `"<consonant><vowel>"` string: a
+/// base consonant (possibly carrying a dagesh or sin/shin dot, e.g. בּ or שׂ)
+/// followed by a single combining vowel point.
 _Option _syllableOption(String syllable) {
   final runes = syllable.runes.toList();
-  final consonant = runes.isEmpty ? '' : String.fromCharCode(runes.first);
+  if (runes.isEmpty) return (label: '', sub: null);
   final vowel = runes.length > 1 ? String.fromCharCode(runes.last) : '';
+  final consonant = String.fromCharCodes(
+      runes.length > 1 ? runes.sublist(0, runes.length - 1) : runes);
   return (label: _vowelSyllable(consonant, vowel), sub: glyphInfo(vowel)?.sound);
 }
 

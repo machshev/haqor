@@ -128,17 +128,19 @@ bool _wordFinal(List<List<int>> clusters, int k) {
   return !_isBase(clusters[k + 1].first);
 }
 
-/// The onset sound of a single base consonant, for voicing a teaching syllable
+/// The onset sound of a single consonant glyph, for voicing a teaching syllable
 /// (e.g. building `הֶ` → "he"). Unlike [transliterateHebrew] this bypasses the
 /// word-level heuristics — most importantly the "silent final he" rule that
-/// drops a vowel-less he — so a lone host consonant is never swallowed. The
-/// consonant is read without dagesh (matching a bare, unpointed host), so a
-/// begadkefat letter takes its soft value (ב → "v").
+/// drops a vowel-less he — so a lone host consonant is never swallowed. A
+/// dagesh or sin dot carried in the glyph is honoured (בּ → "b", שׂ → "s");
+/// a bare begadkefat letter takes its soft value (ב → "v").
 String consonantOnset(String glyph) {
   if (glyph.isEmpty) return '';
-  final c = glyph.runes.first;
+  final runes = glyph.runes.toList();
+  final c = runes.first;
   if (!_isBase(c)) return '';
-  return _consonant(c, dagesh: false, sinDot: false);
+  return _consonant(c,
+      dagesh: runes.contains(0x05BC), sinDot: runes.contains(0x05C2));
 }
 
 /// Strip cantillation accents (te'amim, U+0591–U+05AF) and meteg (U+05BD) from

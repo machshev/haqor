@@ -47,6 +47,14 @@ void main() {
       expect(consonantOnset('ע'), "'"); // ayin
     });
 
+    test('honours dot marks carried by the glyph', () {
+      expect(consonantOnset('בּ'), 'b'); // dagesh hardens begadkefat
+      expect(consonantOnset('כּ'), 'k');
+      expect(consonantOnset('פּ'), 'p');
+      expect(consonantOnset('שׁ'), 'sh'); // shin dot
+      expect(consonantOnset('שׂ'), 's'); // sin dot
+    });
+
     test('non-consonants have no onset', () {
       expect(consonantOnset(''), '');
       expect(consonantOnset('ֶ'), ''); // a bare vowel point
