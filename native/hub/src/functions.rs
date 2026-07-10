@@ -490,7 +490,7 @@ fn to_signal_word(w: tutor::WordCard) -> WordCard {
         occurrences: w.occurrences,
         translit: w.translit,
         gloss: w.gloss,
-        inflected: w.inflected,
+        root_gloss: w.root_gloss,
         note: w.note,
         root: w.root,
         morph: w.morph,

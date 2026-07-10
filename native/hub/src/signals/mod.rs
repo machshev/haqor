@@ -317,11 +317,15 @@ pub struct WordCard {
     pub occurrences: i64,
     /// The surface's voiced reading ("bereshit"), shown under the Hebrew.
     pub translit: String,
+    /// The learner meaning of this surface — the quiz answer. Form-specific
+    /// where the parse supports it ("and to the house"), the lexeme's base
+    /// sense otherwise.
     pub gloss: String,
-    /// The specific inflected form in English ("and he said", "his word") for
-    /// the answer side; empty when a curated gloss already gives the meaning or
-    /// for a function word / proper noun.
-    pub inflected: String,
+    /// The lexeme's base sense ("house") when it differs from the
+    /// form-specific `gloss` — shown as a secondary "root meaning" line;
+    /// empty when `gloss` is already the base sense or for a curated word /
+    /// function word / proper noun.
+    pub root_gloss: String,
     /// Composition/teaching note for a curated word ("לְ (to) + ־וֹ (him)"),
     /// empty otherwise.
     pub note: String,

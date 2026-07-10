@@ -1169,7 +1169,7 @@ class _WordCard extends StatelessWidget {
     // its glyphs are known), so its pronunciation is shown alongside.
     final translit = word.translit;
     // The core already applies curated overrides and inflection; the app just
-    // presents word.gloss / word.inflected / word.note.
+    // presents word.gloss / word.rootGloss / word.note.
     final gloss = word.gloss.isEmpty ? '—' : word.gloss;
 
     final prompt = isForm
@@ -1231,13 +1231,10 @@ class _WordCard extends StatelessWidget {
 
   Widget _meanAnswer(BuildContext context, String gloss) {
     final theme = Theme.of(context);
-    // The core supplies the inflected form ("and he said") only when it adds
-    // something over the base gloss (empty for curated / function words).
-    final inflected =
-        (word.inflected.isNotEmpty &&
-            word.inflected.toLowerCase() != word.gloss.toLowerCase())
-        ? word.inflected
-        : null;
+    // `gloss` is the meaning of this surface (form-specific where the parse
+    // supports it); the core supplies the lexeme's base sense separately only
+    // when it adds something (empty for curated / function words).
+    final rootGloss = word.rootGloss.isNotEmpty ? word.rootGloss : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1248,10 +1245,10 @@ class _WordCard extends StatelessWidget {
             fontWeight: FontWeight.bold,
           ),
         ),
-        if (inflected != null) ...[
+        if (rootGloss != null) ...[
           const SizedBox(height: 6),
           Text(
-            'this form: “$inflected”',
+            'root meaning: “$rootGloss”',
             textAlign: TextAlign.center,
             style: theme.textTheme.titleMedium?.copyWith(
               color: theme.colorScheme.primary,
@@ -1642,7 +1639,8 @@ class _GrammarInfoView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final w = card.example;
-    final exampleGloss = w.inflected.isNotEmpty ? w.inflected : w.gloss;
+    // `gloss` is already the form-specific learner meaning where one exists.
+    final exampleGloss = w.gloss;
     return _CardShell(
       children: [
         Text(
