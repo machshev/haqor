@@ -35,6 +35,7 @@ pub async fn get_verse_text(bible: SharedBible) {
                 book: verse_ref.book,
                 chapter: verse_ref.chapter,
                 verse: verse_ref.verse,
+                translit: haqor_core::romanize::romanize(&text),
                 text,
             }
             .send_signal_to_dart(),
@@ -476,7 +477,9 @@ fn to_signal_glyph(g: tutor::GlyphCard) -> GlyphCard {
         glyph: g.glyph,
         is_consonant: g.is_consonant,
         host: g.host,
+        voiced: g.voiced,
         distractors: g.distractors,
+        voiced_distractors: g.voiced_distractors,
     }
 }
 
@@ -485,6 +488,7 @@ fn to_signal_word(w: tutor::WordCard) -> WordCard {
         surface_id: w.surface_id,
         surface: w.surface,
         occurrences: w.occurrences,
+        translit: w.translit,
         gloss: w.gloss,
         inflected: w.inflected,
         note: w.note,
@@ -510,6 +514,7 @@ fn to_signal_suffix(s: tutor::SuffixCard) -> SuffixCard {
         key: s.key,
         meaning: s.meaning,
         surface: s.surface,
+        translit: s.translit,
         stem: s.stem,
         suffix: s.suffix,
         gloss: s.gloss,

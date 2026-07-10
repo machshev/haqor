@@ -23,6 +23,8 @@ pub struct VerseText {
     pub chapter: u8,
     pub verse: u8,
     pub text: String,
+    /// The verse's voiced reading (learner romanization, cantillation ignored).
+    pub translit: String,
 }
 
 #[derive(Debug, Deserialize, DartSignal)]
@@ -293,9 +295,16 @@ pub struct GlyphCard {
     pub is_consonant: bool,
     /// For a vowel, an already-learnt consonant to display it on; else null.
     pub host: Option<String>,
+    /// The voiced reading of the taught syllable (`host` + `glyph`, e.g.
+    /// "bah") when the card has a host; empty for consonants and reading
+    /// marks, which quiz by name.
+    pub voiced: String,
     /// Same-kind glyphs offered as wrong answers in a multiple-choice quiz;
     /// empty when too few peers exist (the app self-grades instead).
     pub distractors: Vec<String>,
+    /// Aligned with `distractors` on a vowel card: each syllable's voiced
+    /// reading ("re", "bᵉ"); empty for consonants and reading marks.
+    pub voiced_distractors: Vec<String>,
 }
 
 /// A word to learn or review. Words teach only meaning (vocalisation is learnt
@@ -306,6 +315,8 @@ pub struct WordCard {
     pub surface_id: i64,
     pub surface: String,
     pub occurrences: i64,
+    /// The surface's voiced reading ("bereshit"), shown under the Hebrew.
+    pub translit: String,
     pub gloss: String,
     /// The specific inflected form in English ("and he said", "his word") for
     /// the answer side; empty when a curated gloss already gives the meaning or
@@ -335,6 +346,8 @@ pub struct SuffixCard {
     /// The pronoun the ending stands for ("me", "him") — the quiz answer.
     pub meaning: String,
     pub surface: String,
+    /// The host word's voiced reading.
+    pub translit: String,
     pub stem: String,
     pub suffix: String,
     /// The host's learner gloss ("to me") for the answer side; may be empty.

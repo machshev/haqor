@@ -35,30 +35,13 @@ const List<String> _hebrewFallback = ['Noto Serif Hebrew'];
   return (label: 'Easy', color: Colors.green.shade700);
 }
 
-/// A learner-facing syllable for a vowel taught on [host]: the host consonant's
-/// sound plus the vowel's *distinguishing* respelling — a friendly digraph for
-/// a long vowel (qamats `ah` vs patah `a`, tsere `ey` vs segol `e`, holam `oh`),
-/// breve for a hataf (`ă/ĕ/ŏ`), `ə` for sheva. This is [HebrewLetter.vocalisation]
-/// where set, falling back to the scholarly [HebrewLetter.translit] (macron
-/// notation) otherwise. [transliterateHebrew] collapses all of this to one of
-/// a/e/i/o/u, so vocalisation quizzes build their options from here instead.
-String _vowelSyllable(String? host, String vowelGlyph) {
-  final consonant = (host == null || host.isEmpty) ? '' : consonantOnset(host);
-  final info = glyphInfo(vowelGlyph);
-  final vowel = info?.vocalisation ?? info?.translit ?? '';
-  return '$consonant$vowel';
-}
-
-/// A distractor syllable option from a core `"<consonant><vowel>"` string: a
-/// base consonant (possibly carrying a dagesh or sin/shin dot, e.g. בּ or שׂ)
-/// followed by a single combining vowel point.
-_Option _syllableOption(String syllable) {
+/// The vowel point of a core `"<consonant><vowel>"` syllable string (the
+/// consonant may carry a dagesh or sin/shin dot, e.g. בְּ or שֹׂ), for looking
+/// up the vowel's teaching info. The voicing itself comes from the core
+/// (`GlyphCard.voiced` / `voicedDistractors`).
+String _syllableVowel(String syllable) {
   final runes = syllable.runes.toList();
-  if (runes.isEmpty) return (label: '', sub: null);
-  final vowel = runes.length > 1 ? String.fromCharCode(runes.last) : '';
-  final consonant = String.fromCharCodes(
-      runes.length > 1 ? runes.sublist(0, runes.length - 1) : runes);
-  return (label: _vowelSyllable(consonant, vowel), sub: glyphInfo(vowel)?.sound);
+  return runes.length > 1 ? String.fromCharCode(runes.last) : '';
 }
 
 /// The SRS track for a word card. Words teach only meaning; reading is drilled
@@ -1070,13 +1053,22 @@ class _GlyphCard extends StatelessWidget {
         const SizedBox(height: 16),
         _Grader(
           isNew: isNew,
-          // Vowels are quizzed by syllable sound, consonants/marks by name;
-          // either way each option shows its "… as in …" pronunciation.
+          // Vowels are quizzed by syllable sound (voiced by the core, which
+          // built the syllables), consonants/marks by name; either way each
+          // option shows its "… as in …" pronunciation.
           correct: isVowel
-              ? (label: _vowelSyllable(host, glyph.glyph), sub: info?.sound)
+              ? (label: glyph.voiced, sub: info?.sound)
               : (info == null ? null : (label: info.name, sub: info.sound)),
           distractors: isVowel
-              ? [for (final d in glyph.distractors) _syllableOption(d)]
+              ? [
+                  for (final (i, d) in glyph.distractors.indexed)
+                    (
+                      label: i < glyph.voicedDistractors.length
+                          ? glyph.voicedDistractors[i]
+                          : d,
+                      sub: glyphInfo(_syllableVowel(d))?.sound,
+                    ),
+                ]
               : [
                   for (final d in glyph.distractors)
                     (label: glyphInfo(d)?.name ?? d, sub: glyphInfo(d)?.sound),
@@ -1101,7 +1093,7 @@ class _GlyphCard extends StatelessWidget {
         if (onHost) ...[
           // Sound out the (nonsense) syllable, keeping long/short/sheva distinct.
           Text(
-            '“${_vowelSyllable(host, glyph.glyph)}”',
+            '“${glyph.voiced}”',
             textAlign: TextAlign.center,
             style: theme.textTheme.titleMedium?.copyWith(
               fontStyle: FontStyle.italic,
@@ -1175,7 +1167,7 @@ class _WordCard extends StatelessWidget {
     final theme = Theme.of(context);
     // Words teach only meaning; by now the word can already be sounded out (all
     // its glyphs are known), so its pronunciation is shown alongside.
-    final translit = transliterateHebrew(word.surface);
+    final translit = word.translit;
     // The core already applies curated overrides and inflection; the app just
     // presents word.gloss / word.inflected / word.note.
     final gloss = word.gloss.isEmpty ? '—' : word.gloss;
@@ -1316,7 +1308,7 @@ class _SuffixCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final translit = transliterateHebrew(card.surface);
+    final translit = card.translit;
 
     return _CardShell(
       children: [
@@ -1748,6 +1740,7 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
   StreamSubscription<RustSignalPack<VerseText>>? _sub;
   int _book = 0, _chapter = 0, _verse = 0;
   String? _text;
+  String _translit = '';
   // Null while the learner hasn't answered "could you read this?" yet; once
   // set to false, the word picker is shown for flagging misread words.
   bool? _readOk;
@@ -1760,7 +1753,10 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
       final m = pack.message;
       if (!mounted) return;
       if (m.book == _book && m.chapter == _chapter && m.verse == _verse) {
-        setState(() => _text = m.text);
+        setState(() {
+          _text = m.text;
+          _translit = m.translit;
+        });
       }
     });
     _load(widget.card.book, widget.card.chapter, widget.card.verse);
@@ -1778,6 +1774,7 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
       _chapter = chapter;
       _verse = verse;
       _text = null;
+      _translit = '';
       _readOk = null;
       _misread.clear();
     });
@@ -1904,7 +1901,7 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  transliterateHebrew(_text!),
+                  _translit,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyLarge?.copyWith(
                     fontStyle: FontStyle.italic,
