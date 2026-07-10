@@ -236,6 +236,8 @@ pub struct TutorStats {
     pub words_seen: i64,
     pub words_learning: i64,
     pub words_mature: i64,
+    pub grammar_seen: i64,
+    pub grammar_total: i64,
     pub glyphs_due: i64,
     pub words_due: i64,
     pub reviews_today: i64,
@@ -366,7 +368,11 @@ pub struct VerseCard {
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct TutorProgress {
     pub letters_known: i64,
+    pub letters_total: i64,
     pub vowels_known: i64,
+    pub vowels_total: i64,
+    pub grammar_known: i64,
+    pub grammar_total: i64,
     pub words_known: i64,
     pub verses_readable: i64,
     pub total_verses: i64,

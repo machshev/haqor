@@ -299,7 +299,11 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   }
 }
 
-/// Headline progress: words/glyphs learned and the share of the OT now readable.
+/// Headline progress, as two independent bars: how much of the *curriculum*
+/// (letters, vowels and grammar rules) has been taught, and how much of the
+/// OT is now readable. The two move at very different paces — a bar showing
+/// their sum would make curriculum progress vanish next to the much larger
+/// verse count — so they're tracked and shown separately.
 class _ProgressStrip extends StatelessWidget {
   final TutorProgress progress;
   const _ProgressStrip({required this.progress});
@@ -307,8 +311,17 @@ class _ProgressStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final total = progress.totalVerses == 0 ? 1 : progress.totalVerses;
-    final frac = progress.versesReadable / total;
+    final labelStyle = theme.textTheme.labelMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final conceptsKnown =
+        progress.lettersKnown + progress.vowelsKnown + progress.grammarKnown;
+    final conceptsTotal =
+        progress.lettersTotal + progress.vowelsTotal + progress.grammarTotal;
+    final conceptsFrac =
+        conceptsTotal == 0 ? 0.0 : conceptsKnown / conceptsTotal;
+    final versesTotal = progress.totalVerses == 0 ? 1 : progress.totalVerses;
+    final versesFrac = progress.versesReadable / versesTotal;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Column(
@@ -318,23 +331,34 @@ class _ProgressStrip extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '${progress.wordsKnown} words · ${progress.lettersKnown} letters · ${progress.vowelsKnown} vowels',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                '${progress.lettersKnown}/${progress.lettersTotal} letters · '
+                '${progress.vowelsKnown}/${progress.vowelsTotal} vowels · '
+                '${progress.grammarKnown}/${progress.grammarTotal} grammar',
+                style: labelStyle,
               ),
+              Text('${progress.wordsKnown} words', style: labelStyle),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(value: conceptsFrac, minHeight: 6),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Reading', style: labelStyle),
               Text(
                 '${progress.versesReadable} / ${progress.totalVerses} verses',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                style: labelStyle,
               ),
             ],
           ),
           const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(value: frac, minHeight: 6),
+            child: LinearProgressIndicator(value: versesFrac, minHeight: 6),
           ),
         ],
       ),
@@ -436,6 +460,12 @@ class _StatsSheetState extends State<_StatsSheet> {
                     known: s.vowelsMature,
                     total: s.vowelsSeen,
                     learning: s.vowelsLearning,
+                  ),
+                  const SizedBox(height: 12),
+                  _StatRow(
+                    label: 'Grammar rules',
+                    known: s.grammarSeen,
+                    total: s.grammarTotal,
                   ),
                   const SizedBox(height: 12),
                   _StatRow(

@@ -523,7 +523,11 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
     let p = bible.tutor_progress().unwrap_or_default();
     let progress = TutorProgress {
         letters_known: p.letters_known,
+        letters_total: p.letters_total,
         vowels_known: p.vowels_known,
+        vowels_total: p.vowels_total,
+        grammar_known: p.grammar_known,
+        grammar_total: p.grammar_total,
         words_known: p.words_known,
         verses_readable: p.verses_readable,
         total_verses: p.total_verses,
@@ -715,6 +719,8 @@ pub async fn get_tutor_stats(bible: SharedBible) {
                 words_seen: s.words_seen,
                 words_learning: s.words_learning,
                 words_mature: s.words_mature,
+                grammar_seen: s.grammar_seen,
+                grammar_total: s.grammar_total,
                 glyphs_due: s.glyphs_due,
                 words_due: s.words_due,
                 reviews_today: s.reviews_today,
