@@ -78,11 +78,11 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
   }
 
   void _knowsAlphabet(bool known) {
+    if (known) SetAlphabetKnown(known: true).sendSignalToRust();
     if (!known || _tierCount == 0) {
       setState(() => _step = _OnboardStep.done);
       return;
     }
-    SetAlphabetKnown(known: true).sendSignalToRust();
     _lo = 0;
     _hi = _tierCount - 1;
     _cutoff = 0;
