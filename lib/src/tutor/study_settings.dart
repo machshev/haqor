@@ -81,6 +81,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     ).sendSignalToRust();
   }
 
+  int get _wordsPerGrammarRule => 3 + (_vocabRatio * 27 ~/ 100);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -227,8 +229,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'How much vocabulary to learn before each new grammar '
-                          'rule unlocks.',
+                          'At this pace, at least $_wordsPerGrammarRule learnt '
+                          'words separate each new grammar rule. Rules are '
+                          'introduced only when needed for the next verses.',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
