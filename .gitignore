@@ -1,6 +1,9 @@
 # direnv
 .direnv/
 
+# Local agent guidance may contain machine-specific paths.
+/AGENTS.md
+
 # Rust related
 /.cargo/
 /target/

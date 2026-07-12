@@ -391,6 +391,7 @@ pub struct TutorProgress {
     pub grammar_known: i64,
     pub grammar_total: i64,
     pub words_known: i64,
+    pub verses_grammar_unlocked: i64,
     pub verses_readable: i64,
     pub total_verses: i64,
 }

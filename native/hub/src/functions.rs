@@ -534,6 +534,7 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
         grammar_known: p.grammar_known,
         grammar_total: p.grammar_total,
         words_known: p.words_known,
+        verses_grammar_unlocked: p.verses_grammar_unlocked,
         verses_readable: p.verses_readable,
         total_verses: p.total_verses,
     };
