@@ -762,7 +762,9 @@ pub async fn set_tutor_settings(bible: SharedBible) {
             letters_per_batch: req.letters_per_batch,
             words_per_batch: req.words_per_batch,
             grammar_gating: req.grammar_gating,
-            vocab_ratio: req.vocab_ratio,
+            vocab_priority: req.vocab_priority,
+            grammar_priority: req.grammar_priority,
+            verse_priority: req.verse_priority,
             letters_ratio: req.letters_ratio,
         };
         match bible
@@ -780,7 +782,9 @@ fn to_signal_settings(s: tutor::TutorSettings) -> TutorSettings {
         letters_per_batch: s.letters_per_batch,
         words_per_batch: s.words_per_batch,
         grammar_gating: s.grammar_gating,
-        vocab_ratio: s.vocab_ratio,
+        vocab_priority: s.vocab_priority,
+        grammar_priority: s.grammar_priority,
+        verse_priority: s.verse_priority,
         letters_ratio: s.letters_ratio,
     }
 }

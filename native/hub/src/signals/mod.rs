@@ -263,7 +263,9 @@ pub struct SetTutorSettings {
     pub letters_per_batch: u8,
     pub words_per_batch: u8,
     pub grammar_gating: bool,
-    pub vocab_ratio: u8,
+    pub vocab_priority: u8,
+    pub grammar_priority: u8,
+    pub verse_priority: u8,
     /// Letters↔words balance (0..=100): the share of new-material introductions
     /// spent on new letters vs. reading a word already spelt with known letters.
     /// Lower is more word-forward.
@@ -273,14 +275,16 @@ pub struct SetTutorSettings {
 /// How fast the curriculum progresses in each dimension, configured by the
 /// learner: `letters_per_batch`/`words_per_batch` cap how many new letters /
 /// word meanings are in flight at once (gentler = smaller), `grammar_gating`
-/// introduces grammar rules one at a time, and `vocab_ratio` (0..=100) balances
-/// vocabulary growth against grammar expansion (higher = more vocabulary).
+/// introduces grammar rules one at a time, while the three priorities control
+/// useful vocabulary, grammar expansion, and completing readable verses.
 #[derive(Debug, Serialize, RustSignal)]
 pub struct TutorSettings {
     pub letters_per_batch: u8,
     pub words_per_batch: u8,
     pub grammar_gating: bool,
-    pub vocab_ratio: u8,
+    pub vocab_priority: u8,
+    pub grammar_priority: u8,
+    pub verse_priority: u8,
     /// Letters↔words balance (0..=100): the share of new-material introductions
     /// spent on new letters vs. reading a word already spelt with known letters.
     /// Lower is more word-forward.

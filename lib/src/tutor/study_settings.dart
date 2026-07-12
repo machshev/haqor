@@ -30,7 +30,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   int _lettersPerBatch = 3;
   int _wordsPerBatch = 8;
   bool _grammarGating = true;
-  int _vocabRatio = 75;
+  int _vocabPriority = 75;
+  int _grammarPriority = 25;
+  int _versePriority = 25;
   int _lettersRatio = 30;
   bool _loaded = false;
 
@@ -61,7 +63,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     _lettersPerBatch = s.lettersPerBatch;
     _wordsPerBatch = s.wordsPerBatch;
     _grammarGating = s.grammarGating;
-    _vocabRatio = s.vocabRatio;
+    _vocabPriority = s.vocabPriority;
+    _grammarPriority = s.grammarPriority;
+    _versePriority = s.versePriority;
     _lettersRatio = s.lettersRatio;
   }
 
@@ -76,12 +80,14 @@ class _SettingsSheetState extends State<_SettingsSheet> {
       lettersPerBatch: _lettersPerBatch,
       wordsPerBatch: _wordsPerBatch,
       grammarGating: _grammarGating,
-      vocabRatio: _vocabRatio,
+      vocabPriority: _vocabPriority,
+      grammarPriority: _grammarPriority,
+      versePriority: _versePriority,
       lettersRatio: _lettersRatio,
     ).sendSignalToRust();
   }
 
-  int get _wordsPerGrammarRule => 3 + (_vocabRatio * 27 ~/ 100);
+  int get _wordsPerGrammarRule => 30 - (_grammarPriority * 27 ~/ 100);
 
   @override
   Widget build(BuildContext context) {
@@ -188,62 +194,83 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                     },
                   ),
                   const SizedBox(height: 8),
-                  Opacity(
-                    opacity: _grammarGating ? 1 : 0.4,
-                    child: Column(
+                  Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text(
-                          'Balance',
-                          style: theme.textTheme.labelLarge,
+                        _PrioritySlider(
+                          label: 'Vocabulary',
+                          value: _vocabPriority,
+                          enabled: true,
+                          onChanged: (v) =>
+                              setState(() => _vocabPriority = v),
+                          onChangeEnd: _send,
                         ),
-                        Slider(
-                          value: _vocabRatio.toDouble(),
-                          min: 0,
-                          max: 100,
-                          divisions: 20,
-                          label: _vocabRatio >= 50
-                              ? 'Vocabulary +${_vocabRatio - 50}'
-                              : 'Grammar +${50 - _vocabRatio}',
-                          onChanged: _grammarGating
-                              ? (v) => setState(() => _vocabRatio = v.round())
-                              : null,
-                          onChangeEnd: _grammarGating ? (_) => _send() : null,
+                        _PrioritySlider(
+                          label: 'Grammar',
+                          value: _grammarPriority,
+                          enabled: _grammarGating,
+                          onChanged: (v) =>
+                              setState(() => _grammarPriority = v),
+                          onChangeEnd: _send,
                         ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'More grammar',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            Text(
-                              'More vocabulary',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
+                        _PrioritySlider(
+                          label: 'Verses',
+                          value: _versePriority,
+                          enabled: true,
+                          onChanged: (v) =>
+                              setState(() => _versePriority = v),
+                          onChangeEnd: _send,
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'At this pace, at least $_wordsPerGrammarRule learnt '
-                          'words separate each new grammar rule. Rules are '
-                          'introduced only when needed for the next verses.',
+                          'Vocabulary favours common words; Verses favours passages '
+                          'closest to readable. ${_grammarGating ? 'At this Grammar pace, $_wordsPerGrammarRule learnt words separate new rules.' : 'Grammar pacing is off.'}',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
-                    ),
                   ),
                 ],
               ),
       ),
     );
   }
+}
+
+class _PrioritySlider extends StatelessWidget {
+  final String label;
+  final int value;
+  final bool enabled;
+  final ValueChanged<int> onChanged;
+  final VoidCallback onChangeEnd;
+
+  const _PrioritySlider({
+    required this.label,
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+    required this.onChangeEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      SizedBox(width: 88, child: Text(label)),
+      Expanded(
+        child: Slider(
+          value: value.toDouble(),
+          min: 0,
+          max: 100,
+          divisions: 20,
+          label: '$value',
+          onChanged: enabled ? (v) => onChanged(v.round()) : null,
+          onChangeEnd: enabled ? (_) => onChangeEnd() : null,
+        ),
+      ),
+      SizedBox(width: 28, child: Text('$value', textAlign: TextAlign.end)),
+    ],
+  );
 }
 
 class _SectionLabel extends StatelessWidget {
