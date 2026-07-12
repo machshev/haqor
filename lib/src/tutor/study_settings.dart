@@ -6,12 +6,13 @@ import 'package:rinf/rinf.dart';
 import '../bindings/bindings.dart';
 
 /// Open the study-pacing settings as a modal bottom sheet.
-Future<void> showStudySettings(BuildContext context) => showModalBottomSheet<void>(
-  context: context,
-  showDragHandle: true,
-  isScrollControlled: true,
-  builder: (_) => const _SettingsSheet(),
-);
+Future<void> showStudySettings(BuildContext context) =>
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => const _SettingsSheet(),
+    );
 
 /// Configure how fast the tutor progresses: how many new letters and words are
 /// introduced at once, and whether grammar rules expand one at a time. Fetches
@@ -100,109 +101,111 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                 padding: EdgeInsets.all(32),
                 child: Center(child: CircularProgressIndicator()),
               )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Study pace',
-                    style: theme.textTheme.titleLarge,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-
-                  _SectionLabel('New material'),
-                  _SliderTile(
-                    label: 'New letters at once',
-                    value: _lettersPerBatch.toDouble(),
-                    min: 1,
-                    max: 8,
-                    valueLabel: '$_lettersPerBatch',
-                    onChanged: (v) =>
-                        setState(() => _lettersPerBatch = v.round()),
-                    onChangeEnd: (_) => _send(),
-                  ),
-                  _SliderTile(
-                    label: 'New words at once',
-                    value: _wordsPerBatch.toDouble(),
-                    min: 2,
-                    max: 20,
-                    valueLabel: '$_wordsPerBatch',
-                    onChanged: (v) => setState(() => _wordsPerBatch = v.round()),
-                    onChangeEnd: (_) => _send(),
-                  ),
-                  Text(
-                    'Fewer at once means each is drilled to memory before the '
-                    'next arrives — a gentler ramp.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Study pace',
+                      style: theme.textTheme.titleLarge,
+                      textAlign: TextAlign.center,
                     ),
-                  ),
+                    const SizedBox(height: 20),
 
-                  const SizedBox(height: 16),
-                  Text('Focus', style: theme.textTheme.labelLarge),
-                  Slider(
-                    value: _lettersRatio.toDouble(),
-                    min: 0,
-                    max: 100,
-                    divisions: 20,
-                    label: _lettersRatio <= 50
-                        ? 'Words +${50 - _lettersRatio}'
-                        : 'Letters +${_lettersRatio - 50}',
-                    onChanged: (v) => setState(() => _lettersRatio = v.round()),
-                    onChangeEnd: (_) => _send(),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Read words sooner',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
+                    _SectionLabel('New material'),
+                    _SliderTile(
+                      label: 'New letters at once',
+                      value: _lettersPerBatch.toDouble(),
+                      min: 1,
+                      max: 8,
+                      valueLabel: '$_lettersPerBatch',
+                      onChanged: (v) =>
+                          setState(() => _lettersPerBatch = v.round()),
+                      onChangeEnd: (_) => _send(),
+                    ),
+                    _SliderTile(
+                      label: 'New words at once',
+                      value: _wordsPerBatch.toDouble(),
+                      min: 2,
+                      max: 20,
+                      valueLabel: '$_wordsPerBatch',
+                      onChanged: (v) =>
+                          setState(() => _wordsPerBatch = v.round()),
+                      onChangeEnd: (_) => _send(),
+                    ),
+                    Text(
+                      'Fewer at once means each is drilled to memory before the '
+                      'next arrives — a gentler ramp.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
-                      Text(
-                        'Learn letters faster',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Toward words, the tutor teaches a word as soon as you know '
-                    'its letters instead of pressing on with new ones.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
                     ),
-                  ),
 
-                  const SizedBox(height: 20),
-                  _SectionLabel('Grammar'),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Introduce grammar gradually'),
-                    subtitle: const Text(
-                      'Stay on simple Qal verbs, nouns and names until the '
-                      'alphabet is known, then add one grammar rule at a time.',
+                    const SizedBox(height: 16),
+                    Text('Focus', style: theme.textTheme.labelLarge),
+                    Slider(
+                      value: _lettersRatio.toDouble(),
+                      min: 0,
+                      max: 100,
+                      divisions: 20,
+                      label: _lettersRatio <= 50
+                          ? 'Words +${50 - _lettersRatio}'
+                          : 'Letters +${_lettersRatio - 50}',
+                      onChanged: (v) =>
+                          setState(() => _lettersRatio = v.round()),
+                      onChangeEnd: (_) => _send(),
                     ),
-                    value: _grammarGating,
-                    onChanged: (v) {
-                      setState(() => _grammarGating = v);
-                      _send();
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  Column(
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Read words sooner',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Text(
+                          'Learn letters faster',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Toward words, the tutor teaches a word as soon as you know '
+                      'its letters instead of pressing on with new ones.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+                    _SectionLabel('Grammar'),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Introduce grammar gradually'),
+                      subtitle: const Text(
+                        'Stay on simple Qal verbs, nouns and names until the '
+                        'alphabet is known, then add one grammar rule at a time.',
+                      ),
+                      value: _grammarGating,
+                      onChanged: (v) {
+                        setState(() => _grammarGating = v);
+                        _send();
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _PrioritySlider(
                           label: 'Vocabulary',
                           value: _vocabPriority,
                           enabled: true,
-                          onChanged: (v) =>
-                              setState(() => _vocabPriority = v),
+                          onChanged: (v) => setState(() => _vocabPriority = v),
                           onChangeEnd: _send,
                         ),
                         _PrioritySlider(
@@ -217,8 +220,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                           label: 'Verses',
                           value: _versePriority,
                           enabled: true,
-                          onChanged: (v) =>
-                              setState(() => _versePriority = v),
+                          onChanged: (v) => setState(() => _versePriority = v),
                           onChangeEnd: _send,
                         ),
                         const SizedBox(height: 4),
@@ -230,8 +232,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                           ),
                         ),
                       ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
       ),
     );
