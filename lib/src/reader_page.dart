@@ -560,28 +560,34 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            GestureDetector(
-              onTap: _showBookSelector,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    book.hebrew,
-                    style: const TextStyle(
-                      fontFamily: 'Cardo',
-                      fontFamilyFallback: ['Noto Serif Hebrew'],
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+            Flexible(
+              child: GestureDetector(
+                onTap: _showBookSelector,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      book.hebrew,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Cardo',
+                        fontFamilyFallback: ['Noto Serif Hebrew'],
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  Text(
-                    book.transliteration,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    Text(
+                      book.transliteration,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(width: 8),
