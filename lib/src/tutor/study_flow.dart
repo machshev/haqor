@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
@@ -308,7 +307,7 @@ class _ProgressStrip extends StatelessWidget {
         conceptsTotal == 0 ? 0.0 : conceptsKnown / conceptsTotal;
     final versesTotal = progress.totalVerses == 0 ? 1 : progress.totalVerses;
     final versesReadFrac = progress.versesReadable / versesTotal;
-    final versesGrammarFrac = progress.versesGrammarUnlocked / versesTotal;
+    final versesReadPct = (versesReadFrac * 100).toStringAsFixed(1);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Column(
@@ -337,7 +336,8 @@ class _ProgressStrip extends StatelessWidget {
             children: [
               Text('Reading', style: labelStyle),
               Text(
-                '${progress.versesReadable} / ${progress.totalVerses} verses',
+                '$versesReadPct% · ${progress.versesReadable} / '
+                '${progress.totalVerses} verses',
                 style: labelStyle,
               ),
             ],
@@ -347,7 +347,6 @@ class _ProgressStrip extends StatelessWidget {
             borderRadius: BorderRadius.circular(4),
             child: _ReadingProgressBar(
               readFraction: versesReadFrac,
-              grammarFraction: versesGrammarFrac,
             ),
           ),
         ],
@@ -358,18 +357,15 @@ class _ProgressStrip extends StatelessWidget {
 
 class _ReadingProgressBar extends StatelessWidget {
   final double readFraction;
-  final double grammarFraction;
 
   const _ReadingProgressBar({
     required this.readFraction,
-    required this.grammarFraction,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final read = readFraction.clamp(0.0, 1.0);
-    final grammar = grammarFraction.clamp(read, 1.0);
     return LayoutBuilder(
       builder: (context, constraints) => SizedBox(
         height: 6,
@@ -377,14 +373,6 @@ class _ReadingProgressBar extends StatelessWidget {
           children: [
             Positioned.fill(
               child: ColoredBox(color: colors.surfaceContainerHighest),
-            ),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: SizedBox(
-                width: constraints.maxWidth * grammar,
-                height: 6,
-                child: ColoredBox(color: colors.tertiary),
-              ),
             ),
             Align(
               alignment: AlignmentDirectional.centerStart,
