@@ -49,11 +49,18 @@ pub async fn get_chapter_text(bible: SharedBible) {
     while let Some(signal_pack) = receiver.recv().await {
         let req = signal_pack.message;
         debug_print!("{:?}", req);
-        match lock(&bible).get_chapter(req.book, req.chapter, req.syriac) {
+        let bible_guard = lock(&bible);
+        match bible_guard.get_chapter(req.book, req.chapter, req.syriac) {
             Ok(raw) => {
                 let verses = raw
                     .into_iter()
-                    .map(|(verse, text)| VerseEntry { verse, text })
+                    .map(|(verse, text)| VerseEntry {
+                        verse,
+                        text,
+                        glosses: bible_guard
+                            .verse_glosses(req.book, req.chapter, verse)
+                            .unwrap_or_default(),
+                    })
                     .collect();
                 ChapterText {
                     book: req.book,

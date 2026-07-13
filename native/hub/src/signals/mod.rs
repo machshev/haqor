@@ -38,6 +38,7 @@ pub struct GetChapter {
 pub struct VerseEntry {
     pub verse: u8,
     pub text: String,
+    pub glosses: Vec<String>,
 }
 
 #[derive(Debug, Serialize, RustSignal)]

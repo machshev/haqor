@@ -67,6 +67,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   static const _kHebrewNumerals = 'hebrew_numerals';
   static const _kFontSize = 'font_size';
   static const _kFontFamily = 'font_family';
+  static const _kGlossInterlinear = 'gloss_interlinear';
 
   static const _fontFamilies = ['Cardo', 'David Libre', 'Frank Ruhl Libre'];
 
@@ -98,6 +99,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   bool _hebrewNumerals = true;
   double _fontSize = 20.0;
   String _fontFamily = 'Cardo';
+  bool _glossInterlinear = false;
 
   StreamSubscription<RustSignalPack<ChapterText>>? _sub;
   final ScrollController _scrollController = ScrollController();
@@ -255,6 +257,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _fontSize = (prefs.getDouble(_kFontSize) ?? 20.0).clamp(16.0, 28.0);
       final savedFamily = prefs.getString(_kFontFamily) ?? 'Cardo';
       _fontFamily = _fontFamilies.contains(savedFamily) ? savedFamily : 'Cardo';
+      _glossInterlinear = prefs.getBool(_kGlossInterlinear) ?? false;
     });
     final rawHistory = prefs.getStringList(_kHistory) ?? [];
     final savedIndex = prefs.getInt(_kHistoryIndex) ?? -1;
@@ -304,6 +307,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       prefs.setBool(_kHebrewNumerals, _hebrewNumerals),
       prefs.setDouble(_kFontSize, _fontSize),
       prefs.setString(_kFontFamily, _fontFamily),
+      prefs.setBool(_kGlossInterlinear, _glossInterlinear),
     ]);
   }
 
@@ -650,6 +654,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               } else if (value.startsWith('font_')) {
                 setState(() => _fontFamily = value.substring(5));
                 _savePrefs();
+              } else if (value == 'gloss_interlinear') {
+                setState(() => _glossInterlinear = !_glossInterlinear);
+                _savePrefs();
               }
             },
             itemBuilder: (ctx) => [
@@ -678,6 +685,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 value: 'numeral_english',
                 checked: !_hebrewNumerals,
                 child: const Text('English (1 2 3)'),
+              ),
+              const PopupMenuDivider(),
+              CheckedPopupMenuItem(
+                value: 'gloss_interlinear',
+                checked: _glossInterlinear,
+                child: const Text('Gloss interlinear'),
               ),
               const PopupMenuDivider(),
               const PopupMenuItem(enabled: false, child: Text('Font Size')),
@@ -783,6 +796,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                   onWordTap: (word) => _showWordInfo(word, section.bookIndex),
                   fontSize: _fontSize,
                   fontFamily: _fontFamily,
+                  glossInterlinear: _glossInterlinear,
                 );
               },
             ),
