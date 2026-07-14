@@ -28,4 +28,4 @@ tokio_with_wasm = { version = "0.8.5", features = ["rt", "macros", "time"] }
 wasm-bindgen = "0.2.100"
 # Never enable haqor-core's `embedded` feature here: the app ships the
 # databases as Flutter assets and opens them file-backed via `Bible::open`.
-haqor-core = { path = "../../../haqor-core", default-features = false }
+haqor-core = { path = "../../../haqor-core/crates/haqor-core", default-features = false }
