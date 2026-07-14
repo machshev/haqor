@@ -2,14 +2,19 @@ use crate::signals::{
     BdbSummary, CalibrationProbe, ChapterText, FinishCalibration, GetCalibrationProbe, GetChapter,
     GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts, GetTutorSettings, GetTutorStats,
     GetVerseText, GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard,
-    HebrewOccurrence, OnboardingStatus, ResetTutor, SedraOccurrence, SedraSummary, SeenConcept,
-    SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, SuffixCard,
-    TutorProgress,
-    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry, VocabList,
-    WordCard, WordInfo, WordOccurrence, WordOccurrences,
+    HebrewOccurrence, OnboardingStatus, ProgressSyncStatus, ResetTutor, SedraOccurrence,
+    SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem,
+    SubmitReview, SuffixCard, SyncProgress, TutorProgress, TutorSettings, TutorStats, VerseCard,
+    VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence,
+    WordOccurrences,
 };
 
+use std::fs;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use haqor_core::bible::Bible;
@@ -23,6 +28,164 @@ pub type SharedBible = Arc<Mutex<Bible>>;
 
 fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
     bible.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+const MAX_SYNC_SNAPSHOT_BYTES: usize = 64 * 1024 * 1024;
+
+struct SyncEndpoint {
+    host: String,
+    port: u16,
+    path: String,
+}
+
+fn parse_sync_endpoint(input: &str) -> Result<SyncEndpoint, String> {
+    let rest = input.trim().strip_prefix("http://").ok_or_else(|| {
+        "Sync server must start with http:// (LAN sync does not use HTTPS directly).".to_string()
+    })?;
+    let (authority, path) = match rest.find('/') {
+        Some(index) => (&rest[..index], &rest[index..]),
+        None => (rest, "/v1/progress"),
+    };
+    if authority.is_empty() || authority.contains('@') {
+        return Err("Sync server address is invalid.".to_string());
+    }
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((host, port)) if !host.is_empty() => (
+            host.to_string(),
+            port.parse::<u16>()
+                .map_err(|_| "Sync server port is invalid.".to_string())?,
+        ),
+        _ => (authority.to_string(), 80),
+    };
+    Ok(SyncEndpoint {
+        host,
+        port,
+        path: path.to_string(),
+    })
+}
+
+fn post_snapshot(endpoint: &SyncEndpoint, token: &str, body: &[u8]) -> Result<Vec<u8>, String> {
+    if body.len() > MAX_SYNC_SNAPSHOT_BYTES {
+        return Err("Local progress snapshot is unexpectedly large.".to_string());
+    }
+    let address = format!("{}:{}", endpoint.host, endpoint.port);
+    let socket = address
+        .to_socket_addrs()
+        .map_err(|e| format!("Could not resolve sync server: {e}"))?
+        .next()
+        .ok_or_else(|| "Could not resolve sync server.".to_string())?;
+    let mut stream = TcpStream::connect_timeout(&socket, Duration::from_secs(10))
+        .map_err(|e| format!("Could not reach sync server: {e}"))?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(30)));
+    write!(
+        stream,
+        "POST {} HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer {}\r\nContent-Type: application/vnd.sqlite3\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        endpoint.path,
+        endpoint.host,
+        token,
+        body.len(),
+    )
+    .map_err(|e| format!("Could not send sync request: {e}"))?;
+    stream
+        .write_all(body)
+        .map_err(|e| format!("Could not send progress snapshot: {e}"))?;
+
+    let mut reader = BufReader::new(stream);
+    let mut status = String::new();
+    reader
+        .read_line(&mut status)
+        .map_err(|e| format!("Could not read sync response: {e}"))?;
+    if !status.starts_with("HTTP/1.1 200") && !status.starts_with("HTTP/1.0 200") {
+        return Err(format!("Sync server returned {}", status.trim()));
+    }
+    let mut content_length = None;
+    loop {
+        let mut line = String::new();
+        reader
+            .read_line(&mut line)
+            .map_err(|e| format!("Could not read sync response: {e}"))?;
+        if line == "\r\n" {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':')
+            && name.eq_ignore_ascii_case("content-length")
+        {
+            content_length = value.trim().parse::<usize>().ok();
+        }
+    }
+    let length =
+        content_length.ok_or_else(|| "Sync server omitted its response length.".to_string())?;
+    if length > MAX_SYNC_SNAPSHOT_BYTES {
+        return Err("Sync server returned an unexpectedly large snapshot.".to_string());
+    }
+    let mut snapshot = vec![0; length];
+    reader
+        .read_exact(&mut snapshot)
+        .map_err(|e| format!("Could not read progress snapshot: {e}"))?;
+    if !haqor_core::progress_sync::is_sqlite_snapshot(&snapshot) {
+        return Err("Sync server returned an invalid progress snapshot.".to_string());
+    }
+    Ok(snapshot)
+}
+
+fn sync_progress_blocking(
+    bible: &SharedBible,
+    data_dir: &Path,
+    server_url: &str,
+    token: &str,
+) -> Result<(), String> {
+    let endpoint = parse_sync_endpoint(server_url)?;
+    if token.trim().is_empty() {
+        return Err("Enter the sync token shown when starting the server.".to_string());
+    }
+    let upload = data_dir.join(".progress-sync-upload.db");
+    let download = data_dir.join(".progress-sync-download.db");
+    let _ = fs::remove_file(&upload);
+    let _ = fs::remove_file(&download);
+    let result = (|| {
+        lock(bible)
+            .export_progress_snapshot(&upload)
+            .map_err(|e| format!("Could not prepare progress for sync: {e}"))?;
+        let body =
+            fs::read(&upload).map_err(|e| format!("Could not read progress snapshot: {e}"))?;
+        let merged = post_snapshot(&endpoint, token, &body)?;
+        fs::write(&download, merged).map_err(|e| format!("Could not save synced progress: {e}"))?;
+        lock(bible)
+            .merge_progress_snapshot(&download)
+            .map_err(|e| format!("Could not merge synced progress: {e}"))
+    })();
+    let _ = fs::remove_file(&upload);
+    let _ = fs::remove_file(&download);
+    result
+}
+
+/// Synchronise on startup and shortly after each answer. Requests are handled
+/// serially so a burst of answers cannot copy a half-updated SQLite file.
+pub async fn sync_progress(bible: SharedBible, data_dir: PathBuf) {
+    let receiver = SyncProgress::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let request = signal_pack.message;
+        let bible = bible.clone();
+        let data_dir = data_dir.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            sync_progress_blocking(&bible, &data_dir, &request.server_url, &request.token)
+        })
+        .await
+        .unwrap_or_else(|e| Err(format!("Sync task stopped unexpectedly: {e}")));
+        match result {
+            Ok(()) => ProgressSyncStatus {
+                success: true,
+                message: "Progress synced.".to_string(),
+            }
+            .send_signal_to_dart(),
+            Err(message) => ProgressSyncStatus {
+                success: false,
+                message,
+            }
+            .send_signal_to_dart(),
+        }
+    }
 }
 
 pub async fn get_verse_text(bible: SharedBible) {

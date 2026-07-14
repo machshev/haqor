@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:rinf/rinf.dart';
@@ -5,6 +7,7 @@ import 'package:rinf/rinf.dart';
 import 'src/bindings/bindings.dart';
 import 'src/db_installer.dart';
 import 'src/reader_page.dart';
+import 'src/tutor/progress_sync.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,6 +17,7 @@ Future<void> main() async {
   // opened them, so this must precede runApp (the reader queries in initState).
   final dbDir = await installDatabases();
   SetDataDir(path: dbDir).sendSignalToRust();
+  unawaited(syncProgressNow());
   runApp(const Haqor());
 }
 

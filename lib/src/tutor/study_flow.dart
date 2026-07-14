@@ -9,6 +9,7 @@ import 'alphabet_data.dart';
 import 'concept_reference.dart';
 import 'intro_content.dart';
 import 'loading_message.dart';
+import 'progress_sync.dart';
 import 'study_settings.dart';
 import 'transliterate.dart';
 
@@ -101,13 +102,15 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   /// Report an answer: `confidence` (0..100) is the slider self-rating; `correct`
   /// is the multiple-choice outcome (see the `_quiz*` codes). The response is the
   /// next card.
-  void _grade(String track, String key, int confidence, int correct) =>
-      SubmitReview(
-        track: track,
-        key: key,
-        confidence: confidence,
-        correct: correct,
-      ).sendSignalToRust();
+  void _grade(String track, String key, int confidence, int correct) {
+    SubmitReview(
+      track: track,
+      key: key,
+      confidence: confidence,
+      correct: correct,
+    ).sendSignalToRust();
+    scheduleProgressSync();
+  }
 
   void _next() => GetNextStudyItem().sendSignalToRust();
 

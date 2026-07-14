@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
+import 'progress_sync.dart';
 
 /// Open the study-pacing settings as a modal bottom sheet.
 Future<void> showStudySettings(BuildContext context) =>
@@ -232,6 +233,18 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 20),
+                    _SectionLabel('Progress sync'),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.sync),
+                      title: const Text('Sync over your LAN'),
+                      subtitle: const Text(
+                        'Keep this progress in sync automatically with your personal server.',
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => showProgressSyncSettings(context),
                     ),
                   ],
                 ),

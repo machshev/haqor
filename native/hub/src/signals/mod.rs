@@ -10,6 +10,23 @@ pub struct SetDataDir {
     pub path: String,
 }
 
+/// Ask the native layer to merge this device's progress with the trusted LAN
+/// sync server. The token is deliberately never persisted by Rust; Dart keeps
+/// it in the platform preference store and sends it only for this request.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SyncProgress {
+    pub server_url: String,
+    pub token: String,
+}
+
+/// Result of a requested background sync. The app normally keeps this quiet
+/// after automatic runs, but settings can surface the message on demand.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct ProgressSyncStatus {
+    pub success: bool,
+    pub message: String,
+}
+
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetVerseText {
     pub book: u8,
