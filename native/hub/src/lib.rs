@@ -12,7 +12,10 @@ use rinf::{DartSignal, dart_shutdown, debug_print, write_interface};
 use tokio::spawn;
 
 use functions::{
-    SharedBible, get_chapter_text, get_verse_text, get_vocab, get_word_info, get_word_occurrences,
+    SharedBible, finish_calibration, get_calibration_probe, get_chapter_text, get_next_study_item,
+    get_onboarding_status, get_seen_concepts, get_tutor_settings, get_tutor_stats, get_verse_text,
+    get_vocab, get_word_info, get_word_occurrences, reset_tutor, set_alphabet_known,
+    set_tutor_settings, submit_review,
 };
 use signals::SetDataDir;
 
@@ -29,7 +32,15 @@ async fn open_bible() -> Option<SharedBible> {
     while let Some(signal_pack) = receiver.recv().await {
         let path = signal_pack.message.path;
         match Bible::open(Path::new(&path)) {
-            Ok(bible) => return Some(Arc::new(Mutex::new(bible))),
+            Ok(bible) => {
+                // Attach the writable tutor progress DB (created on first run)
+                // alongside the read-only corpus DBs in the same app-data dir.
+                let progress = Path::new(&path).join("progress.db");
+                if let Err(e) = bible.attach_progress(&progress) {
+                    debug_print!("failed to attach progress db at {progress:?}: {e}");
+                }
+                return Some(Arc::new(Mutex::new(bible)));
+            }
             Err(e) => debug_print!("failed to open databases at {path}: {e}"),
         }
     }
@@ -50,7 +61,18 @@ async fn main() {
     spawn(get_chapter_text(bible.clone()));
     spawn(get_vocab(bible.clone()));
     spawn(get_word_info(bible.clone()));
-    spawn(get_word_occurrences(bible));
+    spawn(get_word_occurrences(bible.clone()));
+    spawn(get_next_study_item(bible.clone()));
+    spawn(submit_review(bible.clone()));
+    spawn(reset_tutor(bible.clone()));
+    spawn(get_tutor_stats(bible.clone()));
+    spawn(get_seen_concepts(bible.clone()));
+    spawn(get_tutor_settings(bible.clone()));
+    spawn(set_tutor_settings(bible.clone()));
+    spawn(get_onboarding_status(bible.clone()));
+    spawn(set_alphabet_known(bible.clone()));
+    spawn(get_calibration_probe(bible.clone()));
+    spawn(finish_calibration(bible));
 
     // Keep the main function running until Dart shutdown.
     dart_shutdown().await;

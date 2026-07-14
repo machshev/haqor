@@ -1,0 +1,6 @@
+card shown: StudyItem(kind: review_word, glyph: null, word: WordCard(surfaceId: 9226, surface: הָרֹאשׁ, occurrences: 37, gloss: n.m. chief, choicest, best, of spices, inflected: the n.m. chief, note: , root: ראש, morph: Masculine Irregular (head), aspect: mean, distractors: [Pe-nehasi; the negro, my father is rescue; is opulence, Aaron]), suffix: null, grammar: null, intro: null, verse: null, progress: TutorProgress(lettersKnown: 27, vowelsKnown: 11, wordsKnown: 37, versesReadable: 0, totalVerses: 23213))
+Gloss uses "negro" from BDB entry... it might be worth having the ability to
+override certain entries? Perhaps a CSV file that could be used as an overlay to
+BDB? I'd like to be able to extend entries in the future based on new study. So
+maybe this is the same mechanism.
+

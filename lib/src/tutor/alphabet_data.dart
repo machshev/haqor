@@ -8,7 +8,7 @@ class HebrewLetter {
   final String? finalForm; // sofit form, if any
   final String name; // English name
   final String hebrewName; // pointed Hebrew name
-  final String translit; // romanization of the consonant
+  final String translit; // scholarly romanization (macron for long vowels: ā ē ō)
   final String sound; // pronunciation guide
   final int value; // numeric (gematria) value
   final String example; // pointed example word
@@ -43,6 +43,281 @@ final Map<String, int> kLetterIndex = {
   },
 };
 
+/// The niqqud (vowel points and reading dots). Like consonants these are taught
+/// lazily by the SRS tutor as words introduce them. They are combining marks,
+/// so [HebrewLetter.letter] holds the bare mark; render it on a dotted circle
+/// (U+25CC) to show it in isolation. `value` is 0 (points have no gematria).
+const List<HebrewLetter> kNiqqud = [
+  HebrewLetter(
+    letter: 'ַ', // PATAH
+    name: 'Patah',
+    hebrewName: 'פַּתַח',
+    translit: 'a',
+    sound: 'a as in father — a short “ah”',
+    value: 0,
+    example: 'יַד',
+    exampleTranslit: 'yad',
+    exampleMeaning: 'hand',
+    tip: 'A single horizontal stroke under the letter.',
+  ),
+  HebrewLetter(
+    letter: 'ָ', // QAMATS
+    name: 'Qamats',
+    hebrewName: 'קָמַץ',
+    translit: 'ā',
+    sound: 'a as in father (classically a longer “ah”)',
+    value: 0,
+    example: 'יָד',
+    exampleTranslit: 'yad',
+    exampleMeaning: 'hand',
+    tip: 'Like Patah but with a small tail hanging down from the middle.',
+  ),
+  HebrewLetter(
+    letter: 'ֶ', // SEGOL
+    name: 'Segol',
+    hebrewName: 'סֶגוֹל',
+    translit: 'e',
+    sound: 'e as in bed',
+    value: 0,
+    example: 'אֶרֶץ',
+    exampleTranslit: 'erets',
+    exampleMeaning: 'land',
+    tip: 'Three dots in a downward triangle.',
+  ),
+  HebrewLetter(
+    letter: 'ֵ', // TSERE
+    name: 'Tsere',
+    hebrewName: 'צֵירֵי',
+    translit: 'ē',
+    sound: 'e as in they',
+    value: 0,
+    example: 'שֵׁם',
+    exampleTranslit: 'shem',
+    exampleMeaning: 'name',
+    tip: 'Two dots side by side under the letter.',
+  ),
+  HebrewLetter(
+    letter: 'ִ', // HIRIQ
+    name: 'Hiriq',
+    hebrewName: 'חִירִיק',
+    translit: 'i',
+    sound: 'i as in machine',
+    value: 0,
+    example: 'מִן',
+    exampleTranslit: 'min',
+    exampleMeaning: 'from',
+    tip: 'A single dot under the letter.',
+  ),
+  HebrewLetter(
+    letter: 'ֹ', // HOLAM
+    name: 'Holam',
+    hebrewName: 'חוֹלָם',
+    translit: 'ō',
+    sound: 'o as in bone',
+    value: 0,
+    example: 'לֹא',
+    exampleTranslit: 'lo',
+    exampleMeaning: 'not',
+    tip: 'A single dot above and to the left of the letter.',
+  ),
+  HebrewLetter(
+    letter: 'ֻ', // QUBUTS
+    name: 'Qubuts',
+    hebrewName: 'קֻבּוּץ',
+    translit: 'u',
+    sound: 'u as in flute',
+    value: 0,
+    example: 'שֻׁלְחָן',
+    exampleTranslit: 'shulchan',
+    exampleMeaning: 'table',
+    tip: 'Three diagonal dots under the letter.',
+  ),
+  HebrewLetter(
+    // Not a combining mark: a vav carrying a dagesh with no vowel of its own is
+    // the shureq vowel. The engine teaches it as its own atomic glyph (like בּ),
+    // so it renders standalone — [isNiqqud] is false for it, no carrier circle.
+    letter: 'וּ', // VAV + DAGESH (shureq)
+    name: 'Shureq',
+    hebrewName: 'שׁוּרֶק',
+    translit: 'û',
+    sound: 'u as in flute — a vav with a dot in its middle, read as a vowel',
+    value: 0,
+    example: 'סוּס',
+    exampleTranslit: 'sus',
+    exampleMeaning: 'horse',
+    tip:
+        'Not the consonant Vav: the dot makes the letter itself the vowel '
+        '“oo”. Compare Qubuts (three dots under a letter), the same sound.',
+  ),
+  HebrewLetter(
+    letter: 'ְ', // SHEVA
+    name: 'Sheva',
+    hebrewName: 'שְׁוָא',
+    translit: 'ᵉ', // vocal sheva, shown as a superscript e (bᵉ)
+    sound: 'a faint “uh”, or silent (closing a syllable)',
+    value: 0,
+    example: 'שְׁמַע',
+    exampleTranslit: 'shma',
+    exampleMeaning: 'hear!',
+    tip: 'Two vertical dots under the letter.',
+  ),
+  HebrewLetter(
+    letter: 'ֱ', // HATAF SEGOL
+    name: 'Hataf Segol',
+    hebrewName: 'חֲטַף סֶגוֹל',
+    translit: 'ᵉ', // hataf segol — reduced e (superscript)
+    sound: 'a very short “e” — Segol hurried under a throaty letter',
+    value: 0,
+    example: 'אֱמֶת',
+    exampleTranslit: 'emet',
+    exampleMeaning: 'truth',
+    tip: 'Segol joined to a Sheva — found under א ה ח ע.',
+  ),
+  HebrewLetter(
+    letter: 'ֲ', // HATAF PATAH
+    name: 'Hataf Patah',
+    hebrewName: 'חֲטַף פַּתַח',
+    translit: 'ᵃ', // hataf patah — reduced a (superscript)
+    sound: 'a very short “a” — Patah hurried under a throaty letter',
+    value: 0,
+    example: 'אֲנִי',
+    exampleTranslit: 'ani',
+    exampleMeaning: 'I',
+    tip: 'Patah joined to a Sheva — found under א ה ח ע.',
+  ),
+  HebrewLetter(
+    letter: 'ֳ', // HATAF QAMATS
+    name: 'Hataf Qamats',
+    hebrewName: 'חֲטַף קָמַץ',
+    translit: 'ᵒ', // hataf qamats — reduced o (superscript)
+    sound: 'a very short “o” — Qamats hurried under a throaty letter',
+    value: 0,
+    example: 'אֳנִי',
+    exampleTranslit: 'oni',
+    exampleMeaning: 'fleet, ships',
+    tip: 'Qamats joined to a Sheva — found under א ה ח ע.',
+  ),
+  HebrewLetter(
+    letter: 'ׇ', // QAMATS QATAN
+    name: 'Qamats Qatan',
+    hebrewName: 'קָמַץ קָטָן',
+    translit: 'o',
+    sound: 'o as in soft — looks like Qamats but read as a short “o”',
+    value: 0,
+    example: 'כָּל',
+    exampleTranslit: 'kol',
+    exampleMeaning: 'all, every',
+    tip: 'Identical in shape to Qamats; context tells you it is “o”.',
+  ),
+];
+
+/// The reading marks that punctuate verses (taught lazily as the learner first
+/// reaches a verse containing them): the sof pasuq (verse-ending full stop) and
+/// the maqaf (joins short words). Unlike niqqud these are spacing characters, so
+/// they render on their own without a carrier circle.
+const List<HebrewLetter> kReadingMarks = [
+  HebrewLetter(
+    letter: '׃', // SOF PASUQ
+    name: 'Sof Pasuq',
+    hebrewName: 'סוֹף פָּסוּק',
+    translit: ':',
+    sound: 'two stacked dots that mark the end of a verse — a full stop',
+    value: 0,
+    example: 'הָאָרֶץ׃',
+    exampleTranslit: '…ha’arets ׃',
+    exampleMeaning: '“…the earth.” — the verse ends here',
+    tip: 'Every verse in the Bible closes with this mark.',
+  ),
+  HebrewLetter(
+    letter: '־', // MAQAF
+    name: 'Maqaf',
+    hebrewName: 'מַקָּף',
+    translit: '-',
+    sound: 'a high hyphen joining short words into a single reading unit',
+    value: 0,
+    example: 'כָּל־הָאָרֶץ',
+    exampleTranslit: 'kol-ha’arets',
+    exampleMeaning: 'all the earth',
+    tip: 'The joined words share one accent and are read together.',
+  ),
+];
+
+/// Teaching content for any single tutor glyph — a consonant (keyed by its
+/// medial form or, for the five sofit letters, its final form, since the
+/// engine now teaches final forms as their own distinct glyphs; for
+/// bet/pe/shin, keyed by the letter plus its dagesh/shin-sin-dot, since that
+/// mark changes the letter's sound: 'בּ', 'פּ', 'שׁ', 'שׂ'), a niqqud point, or a
+/// verse reading mark. A final form gets its own derived entry ("Final Mem",
+/// an end-of-word example) so its cards never masquerade as the medial
+/// letter. Returns null for an unrecognised glyph.
+HebrewLetter? glyphInfo(String glyph) {
+  for (final l in kAlphabet) {
+    if (l.letter == glyph) return l;
+    if (l.finalForm == glyph) return _finalInfo(l);
+  }
+  for (final n in kNiqqud) {
+    if (n.letter == glyph) return n;
+  }
+  for (final m in kReadingMarks) {
+    if (m.letter == glyph) return m;
+  }
+  return null;
+}
+
+/// The medial (mid-word) base of a final-form glyph (ך→כ … ץ→צ), or null when
+/// [glyph] is not one of the five finals. Used to show the familiar shape
+/// alongside when a final form is taught.
+String? medialForm(String glyph) {
+  for (final l in kAlphabet) {
+    if (l.finalForm == glyph) return l.letter;
+  }
+  return null;
+}
+
+/// Example words for the five final forms — each *ends* in its final form, so
+/// the new shape is shown in its natural end-of-word position.
+const Map<String, (String, String, String)> _finalExamples = {
+  'ך': ('מֶלֶךְ', 'melekh', 'king'),
+  'ם': ('יוֹם', 'yom', 'day'),
+  'ן': ('בֵּן', 'ben', 'son'),
+  'ף': ('כֶּסֶף', 'kesef', 'silver'),
+  'ץ': ('אֶרֶץ', 'erets', 'earth, land'),
+};
+
+/// The derived entry for [l]'s final form: same sound and value, its own name
+/// ("Final Mem" / "מֵם סוֹפִית") and an end-of-word example.
+HebrewLetter _finalInfo(HebrewLetter l) {
+  final ex = _finalExamples[l.finalForm];
+  return HebrewLetter(
+    letter: l.finalForm!,
+    name: 'Final ${l.name}',
+    hebrewName: '${l.hebrewName} סוֹפִית',
+    translit: l.translit,
+    sound: l.sound,
+    value: l.value,
+    example: ex?.$1 ?? l.example,
+    exampleTranslit: ex?.$2 ?? l.exampleTranslit,
+    exampleMeaning: ex?.$3 ?? l.exampleMeaning,
+    tip:
+        'The shape ${l.name} (${l.letter}) takes at the end of a word — '
+        'same sound, different shape.',
+  );
+}
+
+/// True if [glyph] is a combining niqqud point (vowels, dagesh, shin/sin dot,
+/// accents), so the UI renders it on a dotted circle. Spacing punctuation —
+/// maqaf (U+05BE), paseq (U+05C0), sof pasuq (U+05C3), nun hafukha (U+05C6) — is
+/// excluded; those display on their own.
+bool isNiqqud(String glyph) {
+  if (glyph.isEmpty) return false;
+  final c = glyph.codeUnitAt(0);
+  return (c >= 0x0591 && c <= 0x05BD) || // accents, vowels, meteg
+      c == 0x05BF || // rafe
+      (c >= 0x05C1 && c <= 0x05C2) || // shin / sin dot
+      (c >= 0x05C4 && c <= 0x05C5) || // upper / lower dot
+      c == 0x05C7; // qamats qatan
+}
+
 const List<HebrewLetter> kAlphabet = [
   HebrewLetter(
     letter: 'א',
@@ -60,17 +335,29 @@ const List<HebrewLetter> kAlphabet = [
   ),
   HebrewLetter(
     letter: 'ב',
+    name: 'Vet',
+    hebrewName: 'בֵית',
+    translit: 'v',
+    sound: 'v as in vine',
+    value: 2,
+    example: 'אָב',
+    exampleTranslit: 'av',
+    exampleMeaning: 'father',
+    tip:
+        'Don’t confuse with Kaf (כ): Bet has a square corner and a small '
+        'heel at the bottom right. With a dagesh (בּ) it becomes Bet.',
+  ),
+  HebrewLetter(
+    letter: 'בּ', // BET + DAGESH
     name: 'Bet',
     hebrewName: 'בֵּית',
-    translit: 'b / v',
-    sound: 'b as in boy (בּ with dagesh); v as in vine (ב without)',
+    translit: 'b',
+    sound: 'b as in boy',
     value: 2,
     example: 'בַּיִת',
     exampleTranslit: 'bayit',
     exampleMeaning: 'house',
-    tip:
-        'Don’t confuse with Kaf (כ): Bet has a square corner and a small '
-        'heel at the bottom right.',
+    tip: 'The dot (dagesh) inside hardens Vet (ב) into Bet.',
   ),
   HebrewLetter(
     letter: 'ג',
@@ -257,14 +544,27 @@ const List<HebrewLetter> kAlphabet = [
   HebrewLetter(
     letter: 'פ',
     finalForm: 'ף',
+    name: 'Fe',
+    hebrewName: 'פֵא',
+    translit: 'f',
+    sound: 'f as in fish',
+    value: 80,
+    example: 'אֶלֶף',
+    exampleTranslit: 'elef',
+    exampleMeaning: 'thousand, ox',
+    tip: 'With a dagesh (פּ) it becomes Pe. Its final form ף drops below the line.',
+  ),
+  HebrewLetter(
+    letter: 'פּ', // PE + DAGESH
     name: 'Pe',
     hebrewName: 'פֵּא',
-    translit: 'p / f',
-    sound: 'p as in pay (פּ with dagesh); f as in fish (פ without)',
+    translit: 'p',
+    sound: 'p as in pay',
     value: 80,
     example: 'פֶּה',
     exampleTranslit: 'peh',
     exampleMeaning: 'mouth',
+    tip: 'The dot (dagesh) inside hardens Fe (פ) into Pe.',
   ),
   HebrewLetter(
     letter: 'צ',
@@ -303,17 +603,28 @@ const List<HebrewLetter> kAlphabet = [
     tip: 'Rounded corner — compare Dalet (ד), which is sharp.',
   ),
   HebrewLetter(
-    letter: 'ש',
+    letter: 'שׁ', // SHIN + SHIN DOT
     name: 'Shin',
     hebrewName: 'שִׁין',
-    translit: 'sh / ś',
-    sound:
-        'sh as in ship (שׁ, dot on the right); s as in sun (שׂ, dot on '
-        'the left)',
+    translit: 'sh',
+    sound: 'sh as in ship — dot on the upper right',
     value: 300,
     example: 'שָׁלוֹם',
     exampleTranslit: 'shalom',
     exampleMeaning: 'peace',
+    tip: 'The dot on the right makes it “sh”; on the left (שׂ) it is Sin, “s”.',
+  ),
+  HebrewLetter(
+    letter: 'שׂ', // SHIN + SIN DOT
+    name: 'Sin',
+    hebrewName: 'שִׂין',
+    translit: 's',
+    sound: 's as in sun — dot on the upper left',
+    value: 300,
+    example: 'יִשְׂרָאֵל',
+    exampleTranslit: 'yisra’el',
+    exampleMeaning: 'Israel',
+    tip: 'The dot on the left makes it “s”; on the right (שׁ) it is Shin, “sh”.',
   ),
   HebrewLetter(
     letter: 'ת',

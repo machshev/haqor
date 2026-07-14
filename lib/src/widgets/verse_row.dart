@@ -12,6 +12,7 @@ class VerseRow extends StatefulWidget {
     required this.onWordTap,
     this.fontSize = 20.0,
     this.fontFamily = 'Cardo',
+    this.glossInterlinear = false,
   });
 
   final VerseEntry entry;
@@ -21,6 +22,7 @@ class VerseRow extends StatefulWidget {
   final void Function(String word) onWordTap;
   final double fontSize;
   final String fontFamily;
+  final bool glossInterlinear;
 
   @override
   State<VerseRow> createState() => _VerseRowState();
@@ -83,13 +85,58 @@ class _VerseRowState extends State<VerseRow> {
     final spans = <InlineSpan>[];
     for (var i = 0; i < _words.length; i++) {
       if (i > 0) spans.add(const TextSpan(text: ' '));
-      spans.add(TextSpan(
-        text: _words[i],
-        style: wordStyle,
-        recognizer: _recognizers[i],
-      ));
+      spans.add(
+        TextSpan(
+          text: _words[i],
+          style: wordStyle,
+          recognizer: _recognizers[i],
+        ),
+      );
     }
 
+    final content = widget.glossInterlinear && widget.entry.glosses.isNotEmpty
+        ? Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              textDirection: TextDirection.rtl,
+              children: [
+                for (var i = 0; i < _words.length; i++)
+                  GestureDetector(
+                    onTap: () => widget.onWordTap(
+                      _words[i].replaceAll(
+                        RegExp(
+                          r'[\u0591-\u05AF\u05BD\u05BE\u05C0\u05C3\u05C4-\u05C6]',
+                        ),
+                        '',
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 3,
+                        vertical: 2,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(_words[i], style: wordStyle),
+                          if (i < widget.entry.glosses.length &&
+                              widget.entry.glosses[i].isNotEmpty)
+                            Text(
+                              widget.entry.glosses[i],
+                              style: theme.textTheme.labelSmall,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          )
+        : SelectableText.rich(
+            TextSpan(children: spans),
+            textDirection: TextDirection.rtl,
+          );
     return GestureDetector(
       onTap: widget.onTap,
       child: AnimatedContainer(
@@ -105,12 +152,7 @@ class _VerseRowState extends State<VerseRow> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: SelectableText.rich(
-                TextSpan(children: spans),
-                textDirection: TextDirection.rtl,
-              ),
-            ),
+            Expanded(child: content),
             const SizedBox(width: 8),
             Padding(
               padding: const EdgeInsets.only(top: 4),
