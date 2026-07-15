@@ -155,9 +155,20 @@ fn sync_progress_blocking(
         let merged = post_snapshot(&endpoint, token, &body)?;
         debug_print!("progress sync: received {} merged bytes", merged.len());
         fs::write(&download, merged).map_err(|e| format!("Could not save synced progress: {e}"))?;
+        let unmerged_issue_reports =
+            haqor_core::progress_sync::unmerged_issue_report_count(&upload, &download)
+                .map_err(|e| format!("Could not verify synced issue reports: {e}"))?;
         lock(bible)
             .merge_progress_snapshot(&download)
-            .map_err(|e| format!("Could not merge synced progress: {e}"))
+            .map_err(|e| format!("Could not merge synced progress: {e}"))?;
+        if unmerged_issue_reports > 0 {
+            return Err(format!(
+                "Progress synced, but the server did not store {unmerged_issue_reports} issue \
+                 report(s). Update and restart haqor-sync-server; the reports remain saved on \
+                 this device."
+            ));
+        }
+        Ok(())
     })();
     let _ = fs::remove_file(&upload);
     let _ = fs::remove_file(&download);
