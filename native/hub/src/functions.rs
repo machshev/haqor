@@ -149,7 +149,9 @@ fn sync_progress_blocking(
             .map_err(|e| format!("Could not prepare progress for sync: {e}"))?;
         let body =
             fs::read(&upload).map_err(|e| format!("Could not read progress snapshot: {e}"))?;
+        debug_print!("progress sync: uploading {} bytes", body.len());
         let merged = post_snapshot(&endpoint, token, &body)?;
+        debug_print!("progress sync: received {} merged bytes", merged.len());
         fs::write(&download, merged).map_err(|e| format!("Could not save synced progress: {e}"))?;
         lock(bible)
             .merge_progress_snapshot(&download)
@@ -166,6 +168,7 @@ pub async fn sync_progress(bible: SharedBible, data_dir: PathBuf) {
     let receiver = SyncProgress::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let request = signal_pack.message;
+        debug_print!("progress sync: requested");
         let bible = bible.clone();
         let data_dir = data_dir.clone();
         let result = tokio::task::spawn_blocking(move || {
@@ -174,16 +177,22 @@ pub async fn sync_progress(bible: SharedBible, data_dir: PathBuf) {
         .await
         .unwrap_or_else(|e| Err(format!("Sync task stopped unexpectedly: {e}")));
         match result {
-            Ok(()) => ProgressSyncStatus {
-                success: true,
-                message: "Progress synced.".to_string(),
+            Ok(()) => {
+                debug_print!("progress sync: completed successfully");
+                ProgressSyncStatus {
+                    success: true,
+                    message: "Progress synced.".to_string(),
+                }
+                .send_signal_to_dart();
             }
-            .send_signal_to_dart(),
-            Err(message) => ProgressSyncStatus {
-                success: false,
-                message,
+            Err(message) => {
+                debug_print!("progress sync: failed: {message}");
+                ProgressSyncStatus {
+                    success: false,
+                    message,
+                }
+                .send_signal_to_dart();
             }
-            .send_signal_to_dart(),
         }
     }
 }
