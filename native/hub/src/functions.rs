@@ -2,12 +2,12 @@ use crate::signals::{
     BdbSummary, CalibrationProbe, ChapterText, FinishCalibration, GetCalibrationProbe, GetChapter,
     GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts, GetTutorGlossOverrideStats,
     GetTutorSettings, GetTutorStats, GetVerseText, GetVocab, GetWordInfo, GetWordOccurrences,
-    GlyphCard, GrammarCard, HebrewOccurrence, OnboardingStatus, OptimizeTutorGlossOverrides,
-    ProgressSyncStatus, ResetTutor, SaveTutorGloss, SedraOccurrence, SedraSummary, SeenConcept,
-    SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, SuffixCard,
-    SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard,
-    VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence,
-    WordOccurrences,
+    GlyphCard, GrammarCard, HebrewOccurrence, IssueReportStatus, OnboardingStatus,
+    OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, SaveIssueReport, SaveTutorGloss,
+    SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings,
+    StudyItem, SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress,
+    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry, VocabList,
+    WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -212,6 +212,43 @@ pub async fn save_tutor_gloss(bible: SharedBible) {
             now_epoch(),
         ) {
             debug_print!("save_tutor_gloss error: {error:?}");
+        }
+    }
+}
+
+/// Persist an admin bug report or idea and acknowledge the local write. Dart
+/// schedules the ordinary snapshot sync only after this succeeds.
+pub async fn save_issue_report(bible: SharedBible) {
+    let receiver = SaveIssueReport::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let report = signal_pack.message;
+        let now = now_epoch();
+        match lock(&bible).save_issue_report(
+            &report.id,
+            &report.report_type,
+            &report.note,
+            &report.context_json,
+            now,
+            now,
+        ) {
+            Ok(()) => {
+                debug_print!("issue report saved: {}", report.id);
+                IssueReportStatus {
+                    report_id: report.id,
+                    success: true,
+                    message: "Report saved and queued for sync.".to_string(),
+                }
+                .send_signal_to_dart();
+            }
+            Err(error) => {
+                debug_print!("save_issue_report error: {error:?}");
+                IssueReportStatus {
+                    report_id: report.id,
+                    success: false,
+                    message: "Could not save report.".to_string(),
+                }
+                .send_signal_to_dart();
+            }
         }
     }
 }

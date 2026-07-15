@@ -5,6 +5,7 @@ import 'package:rinf/rinf.dart';
 
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
+import '../issue_reporting.dart';
 import 'alphabet_data.dart';
 import 'concept_reference.dart';
 import 'intro_content.dart';
@@ -24,6 +25,91 @@ const int _gotItConfidence = 70;
 
 const String _hebrewFont = 'Cardo';
 const List<String> _hebrewFallback = ['Noto Serif Hebrew'];
+
+Map<String, Object?> _wordCardReportContext(WordCard word) => {
+  'surfaceId': word.surfaceId,
+  'surface': word.surface,
+  'occurrences': word.occurrences,
+  'translit': word.translit,
+  'gloss': word.gloss,
+  'rootGloss': word.rootGloss,
+  'note': word.note,
+  'root': word.root,
+  'morph': word.morph,
+  'aspect': word.aspect,
+  'distractors': word.distractors,
+};
+
+Map<String, Object?> _studyItemReportContext(StudyItem item) {
+  final glyph = item.glyph;
+  final word = item.word;
+  final suffix = item.suffix;
+  final grammar = item.grammar;
+  final verse = item.verse;
+  final progress = item.progress;
+  return {
+    'kind': item.kind,
+    if (glyph != null)
+      'glyph': {
+        'glyph': glyph.glyph,
+        'isConsonant': glyph.isConsonant,
+        'host': glyph.host,
+        'voiced': glyph.voiced,
+        'distractors': glyph.distractors,
+        'voicedDistractors': glyph.voicedDistractors,
+      },
+    if (word != null) 'word': _wordCardReportContext(word),
+    if (suffix != null)
+      'suffix': {
+        'key': suffix.key,
+        'meaning': suffix.meaning,
+        'surface': suffix.surface,
+        'translit': suffix.translit,
+        'stem': suffix.stem,
+        'suffix': suffix.suffix,
+        'gloss': suffix.gloss,
+        'distractors': suffix.distractors,
+      },
+    if (grammar != null)
+      'grammar': {
+        'concept': grammar.concept,
+        'title': grammar.title,
+        'explanation': grammar.explanation,
+        'formula': grammar.formula,
+        'examples': grammar.examples,
+        'example': _wordCardReportContext(grammar.example),
+      },
+    if (item.intro != null) 'intro': item.intro,
+    if (verse != null)
+      'verse': {
+        'book': verse.book,
+        'chapter': verse.chapter,
+        'verse': verse.verse,
+        'examples': [
+          for (final example in verse.examples)
+            {
+              'book': example.book,
+              'chapter': example.chapter,
+              'verse': example.verse,
+            },
+        ],
+        'words': verse.words,
+        'names': verse.names,
+      },
+    'progress': {
+      'lettersKnown': progress.lettersKnown,
+      'lettersTotal': progress.lettersTotal,
+      'vowelsKnown': progress.vowelsKnown,
+      'vowelsTotal': progress.vowelsTotal,
+      'grammarKnown': progress.grammarKnown,
+      'grammarTotal': progress.grammarTotal,
+      'wordsKnown': progress.wordsKnown,
+      'versesGrammarUnlocked': progress.versesGrammarUnlocked,
+      'versesReadable': progress.versesReadable,
+      'totalVerses': progress.totalVerses,
+    },
+  };
+}
 
 /// The SM-2 grade a confidence value (0..100) lands in, mirroring the Rust
 /// `Grade::from_confidence` buckets (<25 Again, <55 Hard, <85 Good, else Easy).
@@ -194,6 +280,12 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         backgroundColor: theme.colorScheme.surface,
         title: const Text('Learn to read'),
         actions: [
+          if (_adminMode && item != null && !_waitingForNext)
+            IssueReportButton(
+              source: 'tutor_card',
+              contextData: _studyItemReportContext(item),
+              tooltip: 'Log an issue or idea about this card',
+            ),
           IconButton(
             icon: const Icon(Icons.menu_book_outlined),
             tooltip: 'Reference',

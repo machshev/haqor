@@ -6,6 +6,7 @@ import 'package:rinf/rinf.dart';
 
 import 'src/bindings/bindings.dart';
 import 'src/db_installer.dart';
+import 'src/issue_reporting.dart';
 import 'src/reader_page.dart';
 import 'src/tutor/progress_sync.dart';
 
@@ -17,6 +18,7 @@ Future<void> main() async {
   // opened them, so this must precede runApp (the reader queries in initState).
   final dbDir = await installDatabases();
   SetDataDir(path: dbDir).sendSignalToRust();
+  unawaited(migrateLegacyFlaggedWords());
   unawaited(syncProgressNow());
   runApp(const Haqor());
 }

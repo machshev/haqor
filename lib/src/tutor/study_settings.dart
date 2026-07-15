@@ -350,10 +350,10 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                       secondary: const Icon(
                         Icons.admin_panel_settings_outlined,
                       ),
-                      title: const Text('Tutor gloss editor'),
+                      title: const Text('Admin tools'),
                       subtitle: const Text(
-                        'Show an edit control on meaning cards. Corrections stay '
-                        'local until your normal LAN sync sends them for review.',
+                        'Show tutor gloss editing and issue/idea flags. Reports '
+                        'stay local until normal LAN sync sends them for review.',
                       ),
                       value: _adminMode,
                       onChanged: _setAdminMode,

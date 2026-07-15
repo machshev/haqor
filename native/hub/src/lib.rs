@@ -15,8 +15,8 @@ use functions::{
     SharedBible, finish_calibration, get_calibration_probe, get_chapter_text, get_next_study_item,
     get_onboarding_status, get_seen_concepts, get_tutor_gloss_override_stats, get_tutor_settings,
     get_tutor_stats, get_verse_text, get_vocab, get_word_info, get_word_occurrences,
-    optimize_tutor_gloss_overrides, reset_tutor, save_tutor_gloss, set_alphabet_known,
-    set_tutor_settings, submit_review, sync_progress,
+    optimize_tutor_gloss_overrides, reset_tutor, save_issue_report, save_tutor_gloss,
+    set_alphabet_known, set_tutor_settings, submit_review, sync_progress,
 };
 use signals::SetDataDir;
 
@@ -74,6 +74,7 @@ async fn main() {
     spawn(set_alphabet_known(bible.clone()));
     spawn(get_calibration_probe(bible.clone()));
     spawn(finish_calibration(bible.clone()));
+    spawn(save_issue_report(bible.clone()));
     spawn(save_tutor_gloss(bible.clone()));
     spawn(get_tutor_gloss_override_stats(bible.clone()));
     spawn(optimize_tutor_gloss_overrides(bible.clone()));

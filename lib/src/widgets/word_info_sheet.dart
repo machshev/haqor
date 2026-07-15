@@ -3,14 +3,12 @@ import 'dart:convert';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:rinf/rinf.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../bindings/bindings.dart';
 import '../bible_data.dart';
-
-const _kFlaggedWordsKey = 'debug_flagged_words';
+import '../issue_reporting.dart';
+import '../tutor/study_settings.dart';
 
 const Map<String, int> _kBdbBookToIndex = {
   'Genesis': 0,
@@ -72,6 +70,7 @@ class WordInfoSheet extends StatefulWidget {
     required this.syriac,
     this.bdbId,
     this.onNavigateToPassage,
+    this.reportContext,
   });
 
   final String word;
@@ -81,6 +80,7 @@ class WordInfoSheet extends StatefulWidget {
   /// [word] is then just the target headword for the title.
   final String? bdbId;
   final void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage;
+  final Map<String, Object?>? reportContext;
 
   @override
   State<WordInfoSheet> createState() => _WordInfoSheetState();
@@ -92,7 +92,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   WordInfo? _info;
   final Set<int> _expandedBdb = {};
   late final TabController _tabController;
-  bool _isFlagged = false;
+  bool _adminMode = false;
   // OT-only: which surface forms of the root are shown in the occurrences list.
   // Null until first built, then defaults to the looked-up word's form. Empty
   // set means "show all forms".
@@ -127,7 +127,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     });
     GetWordInfo(word: widget.word, syriac: widget.syriac, bdbId: widget.bdbId)
         .sendSignalToRust();
-    _loadFlagState();
+    _loadAdminMode();
   }
 
   // Fetch the occurrence lists (full-text root scans). Idempotent via
@@ -145,67 +145,23 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         .sendSignalToRust();
   }
 
-  Future<void> _loadFlagState() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getStringList(_kFlaggedWordsKey) ?? [];
-    final flagged = raw.any((e) {
-      try {
-        final map = jsonDecode(e) as Map<String, dynamic>;
-        return map['word'] == widget.word;
-      } catch (_) {
-        return false;
-      }
-    });
-    if (mounted) setState(() => _isFlagged = flagged);
+  Future<void> _loadAdminMode() async {
+    final enabled = await tutorAdminModeEnabled();
+    if (mounted) setState(() => _adminMode = enabled);
   }
 
-  Future<void> _openFlagDialog(BuildContext context, WordInfo info) async {
-    String existingNote = '';
-    if (_isFlagged) {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getStringList(_kFlaggedWordsKey) ?? [];
-      for (final e in raw) {
-        try {
-          final map = jsonDecode(e) as Map<String, dynamic>;
-          if (map['word'] == widget.word) {
-            existingNote = map['note'] as String? ?? '';
-            break;
-          }
-        } catch (_) {}
-      }
-    }
-    if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      builder: (_) => _FlagNoteDialog(
-        word: info.word,
-        isFlagged: _isFlagged,
-        existingNote: existingNote,
-        onSave: (note) => _saveFlag(info, note),
-        onRemove: _removeFlag,
-      ),
-    );
-  }
-
-  Future<void> _saveFlag(WordInfo info, String note) async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getStringList(_kFlaggedWordsKey) ?? [];
-    final filtered = raw.where((e) {
-      try {
-        final map = jsonDecode(e) as Map<String, dynamic>;
-        return map['word'] != widget.word;
-      } catch (_) {
-        return true;
-      }
-    }).toList();
-    final entry = {
+  Map<String, Object?> _issueContext(WordInfo info) => {
+    if (widget.reportContext != null) 'reader': widget.reportContext,
+    'lookup': {
       'word': widget.word,
-      'displayWord': info.word,
-      'gloss': info.gloss,
-      'root': info.root,
       'syriac': widget.syriac,
-      'note': note,
-      'flaggedAt': DateTime.now().toIso8601String(),
+      if (widget.bdbId != null) 'bdbId': widget.bdbId,
+    },
+    'result': {
+      'found': info.found,
+      'word': info.word,
+      'root': info.root,
+      'gloss': info.gloss,
       'morphology': {
         if (info.gender != null) 'gender': info.gender,
         if (info.person != null) 'person': info.person,
@@ -219,49 +175,24 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         'article': info.article,
         'vavCon': info.vavCon,
       },
-    };
-    filtered.add(jsonEncode(entry));
-    await prefs.setStringList(_kFlaggedWordsKey, filtered);
-    if (mounted) setState(() => _isFlagged = true);
-  }
-
-  Future<void> _removeFlag() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getStringList(_kFlaggedWordsKey) ?? [];
-    final updated = raw.where((e) {
-      try {
-        final map = jsonDecode(e) as Map<String, dynamic>;
-        return map['word'] != widget.word;
-      } catch (_) {
-        return true;
-      }
-    }).toList();
-    await prefs.setStringList(_kFlaggedWordsKey, updated);
-    if (mounted) setState(() => _isFlagged = false);
-  }
-
-  Future<void> _showFlaggedExport(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getStringList(_kFlaggedWordsKey) ?? [];
-    final entries = raw
-        .map((e) {
-          try {
-            return jsonDecode(e) as Map<String, dynamic>;
-          } catch (_) {
-            return null;
-          }
-        })
-        .whereType<Map<String, dynamic>>()
-        .toList();
-
-    if (!mounted) return;
-    final exportJson =
-        const JsonEncoder.withIndent('  ').convert({'flaggedWords': entries});
-    showDialog<void>(
-      context: context,
-      builder: (_) => _FlaggedWordsExportDialog(json: exportJson),
-    );
-  }
+      'bdbEntries': [
+        for (final entry in info.bdbEntries)
+          {
+            'headword': entry.headword,
+            'gloss': entry.gloss,
+            'posCategory': entry.posCategory,
+          },
+      ],
+      'sedraEntries': [
+        for (final entry in info.sedraEntries)
+          {
+            'lexeme': entry.lexeme,
+            'meaning': entry.meaning,
+            'isCurrent': entry.isCurrent,
+          },
+      ],
+    },
+  };
 
   @override
   void dispose() {
@@ -305,6 +236,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         word: headword,
         syriac: false,
         bdbId: bdbId,
+        reportContext: {
+          ...?widget.reportContext,
+          'crossReference': {'bdbId': bdbId, 'headword': headword},
+        },
         onNavigateToPassage: widget.onNavigateToPassage == null
             ? null
             : (bi, chapter, verse) {
@@ -405,26 +340,18 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  GestureDetector(
-                    onLongPress: () => _showFlaggedExport(context),
-                    child: IconButton(
+                  if (_adminMode) ...[
+                    IssueReportButton(
+                      source: 'word_info',
+                      contextData: _issueContext(info),
+                      tooltip: 'Log an issue or idea about this word',
                       iconSize: 20,
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
-                      tooltip: _isFlagged
-                          ? 'Flagged — long-press to export all'
-                          : 'Flag word as having issues',
-                      icon: Icon(
-                        _isFlagged ? Icons.flag : Icons.flag_outlined,
-                        color: _isFlagged
-                            ? theme.colorScheme.error
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
-                      onPressed: () => _openFlagDialog(context, info),
                     ),
-                  ),
-                  const SizedBox(width: 4),
+                    const SizedBox(width: 4),
+                  ],
                   if (info.gloss.isNotEmpty)
                     Expanded(
                       child: Text(
@@ -1673,143 +1600,6 @@ String _surfaceKey(String word) {
     }
   }
   return String.fromCharCodes(out);
-}
-
-class _FlagNoteDialog extends StatefulWidget {
-  const _FlagNoteDialog({
-    required this.word,
-    required this.isFlagged,
-    required this.existingNote,
-    required this.onSave,
-    required this.onRemove,
-  });
-
-  final String word;
-  final bool isFlagged;
-  final String existingNote;
-  final void Function(String note) onSave;
-  final VoidCallback onRemove;
-
-  @override
-  State<_FlagNoteDialog> createState() => _FlagNoteDialogState();
-}
-
-class _FlagNoteDialogState extends State<_FlagNoteDialog> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.existingNote);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return AlertDialog(
-      title: Text(
-        widget.word,
-        style: const TextStyle(
-          fontFamily: 'Cardo',
-          fontFamilyFallback: ['Noto Serif Hebrew'],
-          fontSize: 24,
-        ),
-        textDirection: TextDirection.rtl,
-      ),
-      content: TextField(
-        controller: _controller,
-        maxLines: 4,
-        autofocus: true,
-        decoration: const InputDecoration(
-          hintText: 'Describe the issue…',
-          border: OutlineInputBorder(),
-        ),
-      ),
-      actions: [
-        if (widget.isFlagged)
-          TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: theme.colorScheme.error,
-            ),
-            onPressed: () {
-              Navigator.pop(context);
-              widget.onRemove();
-            },
-            child: const Text('Remove flag'),
-          ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () {
-            Navigator.pop(context);
-            widget.onSave(_controller.text.trim());
-          },
-          child: const Text('Save'),
-        ),
-      ],
-    );
-  }
-}
-
-class _FlaggedWordsExportDialog extends StatelessWidget {
-  const _FlaggedWordsExportDialog({required this.json});
-
-  final String json;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final count = (jsonDecode(json)['flaggedWords'] as List).length;
-    return AlertDialog(
-      title: Text('Flagged words ($count)'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: count == 0
-            ? Text(
-                'No words flagged yet.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              )
-            : SingleChildScrollView(
-                child: SelectableText(
-                  json,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontFamily: 'monospace',
-                    color: theme.colorScheme.onSurface,
-                  ),
-                ),
-              ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
-        ),
-        if (count > 0)
-          FilledButton.tonal(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: json));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Copied to clipboard'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
-            child: const Text('Copy JSON'),
-          ),
-      ],
-    );
-  }
 }
 
 class _BibleRefPreviewDialog extends StatefulWidget {
