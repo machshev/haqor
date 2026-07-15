@@ -1,4 +1,4 @@
-package com.example.haqor
+package org.haqor
 
 import io.flutter.embedding.android.FlutterActivity
 

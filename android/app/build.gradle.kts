@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.haqor"
+    namespace = "org.haqor"
     compileSdk = flutter.compileSdkVersion
     // Use ANDROID_NDK_ROOT if set (e.g. from Nix devshell) to avoid SDK manager trying to install into read-only store
     val ndkHome = System.getenv("ANDROID_NDK_ROOT")
@@ -27,8 +27,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.haqor"
+        applicationId = "org.haqor"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
