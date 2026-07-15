@@ -628,11 +628,7 @@ pub async fn get_word_info(bible: SharedBible) {
             // glossed root trees. `hebrew_word_info` normalises the lookup
             // itself, so the raw word is passed through.
             match bible.hebrew_word_info(&req.word) {
-                Some(mut info) => {
-                    if let Ok(Some((root, gloss))) = bible.lexicon_entry_override(&info.word) {
-                        info.root = root;
-                        info.gloss = gloss;
-                    }
+                Some(info) => {
                     // Function words / particles bridge through the lexicon with
                     // no triliteral root, so their definition can't be fetched by
                     // root; look the lexeme up by its surface form instead.

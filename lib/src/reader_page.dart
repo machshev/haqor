@@ -41,7 +41,7 @@ class _PassageRef {
 class _Section {
   final int bookIndex; // 0-based
   final int chapter; // 1-based
-  final List<VerseEntry> verses;
+  List<VerseEntry> verses;
   final GlobalKey key;
 
   _Section({
@@ -102,6 +102,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   bool _glossInterlinear = false;
 
   StreamSubscription<RustSignalPack<ChapterText>>? _sub;
+  StreamSubscription<RustSignalPack<LexiconEntryOverrideStatus>>?
+  _lexiconOverrideSub;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -116,10 +118,14 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _pendingFetches.remove(fetchKey);
 
       final bookIdx = msg.book - 1;
-      // Ignore stale duplicate responses for chapters already loaded.
-      if (_sections.any(
+      // A successful in-app lexicon edit re-requests the loaded OT chapters so
+      // their interlinear glosses update behind the word-info sheet. Preserve
+      // the existing section/key to avoid disturbing the scroll position.
+      final loadedIndex = _sections.indexWhere(
         (s) => s.bookIndex == bookIdx && s.chapter == msg.chapter,
-      )) {
+      );
+      if (loadedIndex >= 0) {
+        setState(() => _sections[loadedIndex].verses = msg.verses);
         return;
       }
       final goesOnTop =
@@ -155,6 +161,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       if (targetVerse != null) {
         _scheduleScrollToVerse(section, targetVerse);
       }
+    });
+    _lexiconOverrideSub = LexiconEntryOverrideStatus.rustSignalStream.listen((
+      pack,
+    ) {
+      if (mounted && pack.message.success) _refreshLoadedOtChapters();
     });
     _loadPrefs();
   }
@@ -381,6 +392,19 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     ).sendSignalToRust();
   }
 
+  void _refreshLoadedOtChapters() {
+    for (final section in List<_Section>.of(_sections)) {
+      if (section.bookIndex >= 39) continue;
+      final key = (section.bookIndex + 1, section.chapter);
+      if (!_pendingFetches.add(key)) continue;
+      GetChapter(
+        book: section.bookIndex + 1,
+        chapter: section.chapter,
+        syriac: false,
+      ).sendSignalToRust();
+    }
+  }
+
   void _scheduleScrollToVerse(_Section section, int verse) {
     final verseIdx = section.verses.indexWhere((v) => v.verse == verse);
     if (verseIdx <= 0) {
@@ -494,6 +518,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   void dispose() {
     _scrollController.dispose();
     _sub?.cancel();
+    _lexiconOverrideSub?.cancel();
     super.dispose();
   }
 
