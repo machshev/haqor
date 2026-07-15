@@ -193,6 +193,7 @@ class _IssueReportDialogState extends State<_IssueReportDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+    scrollable: true,
     title: const Text('Log an app issue'),
     content: SizedBox(
       width: 420,
