@@ -14,8 +14,8 @@ use tokio::spawn;
 use functions::{
     SharedBible, finish_calibration, get_calibration_probe, get_chapter_text, get_next_study_item,
     get_onboarding_status, get_seen_concepts, get_tutor_settings, get_tutor_stats, get_verse_text,
-    get_vocab, get_word_info, get_word_occurrences, reset_tutor, set_alphabet_known,
-    set_tutor_settings, submit_review, sync_progress,
+    get_vocab, get_word_info, get_word_occurrences, reset_tutor, save_tutor_gloss,
+    set_alphabet_known, set_tutor_settings, submit_review, sync_progress,
 };
 use signals::SetDataDir;
 
@@ -73,6 +73,7 @@ async fn main() {
     spawn(set_alphabet_known(bible.clone()));
     spawn(get_calibration_probe(bible.clone()));
     spawn(finish_calibration(bible.clone()));
+    spawn(save_tutor_gloss(bible.clone()));
     spawn(sync_progress(bible, data_dir));
 
     // Keep the main function running until Dart shutdown.

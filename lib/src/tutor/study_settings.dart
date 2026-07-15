@@ -2,25 +2,42 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../bindings/bindings.dart';
 import 'progress_sync.dart';
 
 /// Open the study-pacing settings as a modal bottom sheet.
-Future<void> showStudySettings(BuildContext context) =>
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => const _SettingsSheet(),
+const _tutorAdminModeKey = 'tutor_admin_mode';
+
+Future<bool> tutorAdminModeEnabled() async =>
+    (await SharedPreferences.getInstance()).getBool(_tutorAdminModeKey) ??
+    false;
+
+Future<void> setTutorAdminModeEnabled(bool enabled) async =>
+    (await SharedPreferences.getInstance()).setBool(
+      _tutorAdminModeKey,
+      enabled,
     );
+
+Future<void> showStudySettings(
+  BuildContext context, {
+  ValueChanged<bool>? onAdminModeChanged,
+}) => showModalBottomSheet<void>(
+  context: context,
+  showDragHandle: true,
+  isScrollControlled: true,
+  builder: (_) => _SettingsSheet(onAdminModeChanged: onAdminModeChanged),
+);
 
 /// Configure how fast the tutor progresses: how many new letters and words are
 /// introduced at once, and whether grammar rules expand one at a time. Fetches
 /// the current [TutorSettings] on open and writes changes back with
 /// [SetTutorSettings]; the engine picks them up on the next card.
 class _SettingsSheet extends StatefulWidget {
-  const _SettingsSheet();
+  const _SettingsSheet({this.onAdminModeChanged});
+
+  final ValueChanged<bool>? onAdminModeChanged;
 
   @override
   State<_SettingsSheet> createState() => _SettingsSheetState();
@@ -36,6 +53,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   int _grammarPriority = 25;
   int _versePriority = 25;
   int _lettersRatio = 30;
+  bool _adminMode = false;
   bool _loaded = false;
 
   @override
@@ -59,6 +77,18 @@ class _SettingsSheetState extends State<_SettingsSheet> {
       });
     });
     GetTutorSettings().sendSignalToRust();
+    _loadAdminMode();
+  }
+
+  Future<void> _loadAdminMode() async {
+    final enabled = await tutorAdminModeEnabled();
+    if (mounted) setState(() => _adminMode = enabled);
+  }
+
+  Future<void> _setAdminMode(bool enabled) async {
+    setState(() => _adminMode = enabled);
+    await setTutorAdminModeEnabled(enabled);
+    widget.onAdminModeChanged?.call(enabled);
   }
 
   void _adopt(TutorSettings s) {
@@ -245,6 +275,21 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                       ),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => showProgressSyncSettings(context),
+                    ),
+                    const SizedBox(height: 12),
+                    _SectionLabel('Admin'),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: const Icon(
+                        Icons.admin_panel_settings_outlined,
+                      ),
+                      title: const Text('Tutor gloss editor'),
+                      subtitle: const Text(
+                        'Show an edit control on meaning cards. Corrections stay '
+                        'local until your normal LAN sync sends them for review.',
+                      ),
+                      value: _adminMode,
+                      onChanged: _setAdminMode,
                     ),
                   ],
                 ),

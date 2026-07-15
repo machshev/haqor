@@ -78,6 +78,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   // the answer-and-grade State, leaving a just-committed quiz frozen. Keying the
   // card subtree by this counter guarantees a fresh grader for every card.
   int _seq = 0;
+  bool _adminMode = false;
 
   @override
   void initState() {
@@ -90,7 +91,13 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         _seq++;
       });
     });
+    _loadAdminMode();
     GetNextStudyItem().sendSignalToRust();
+  }
+
+  Future<void> _loadAdminMode() async {
+    final enabled = await tutorAdminModeEnabled();
+    if (mounted) setState(() => _adminMode = enabled);
   }
 
   @override
@@ -183,7 +190,11 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
           IconButton(
             icon: const Icon(Icons.tune),
             tooltip: 'Study pace',
-            onPressed: () => showStudySettings(context),
+            onPressed: () => showStudySettings(
+              context,
+              onAdminModeChanged: (enabled) =>
+                  setState(() => _adminMode = enabled),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.restart_alt),
@@ -222,7 +233,9 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         // grade the syllable — the core credits every glyph in it, not just the
         // vowel. Consonants and marks grade their single glyph.
         final host = g.host;
-        final key = (host != null && host.isNotEmpty) ? '$host${g.glyph}' : g.glyph;
+        final key = (host != null && host.isNotEmpty)
+            ? '$host${g.glyph}'
+            : g.glyph;
         return _GlyphCard(
           key: ValueKey('glyph:${g.glyph}:${item.kind}'),
           glyph: g,
@@ -239,6 +252,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
           isNew: item.kind == 'new_word',
           onGrade: (confidence, correct) =>
               _grade(_wordTrack, w.surface, confidence, correct),
+          onEditGloss: _adminMode ? () => _showGlossEditor(w) : null,
         );
       case 'new_form':
       case 'review_form':
@@ -285,6 +299,13 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         return const Center(child: CircularProgressIndicator());
     }
   }
+
+  Future<void> _showGlossEditor(WordCard word) => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (_) => _TutorGlossEditor(word: word),
+  );
 }
 
 /// Headline progress, as two independent bars: how much of the *curriculum*
@@ -306,8 +327,9 @@ class _ProgressStrip extends StatelessWidget {
         progress.lettersKnown + progress.vowelsKnown + progress.grammarKnown;
     final conceptsTotal =
         progress.lettersTotal + progress.vowelsTotal + progress.grammarTotal;
-    final conceptsFrac =
-        conceptsTotal == 0 ? 0.0 : conceptsKnown / conceptsTotal;
+    final conceptsFrac = conceptsTotal == 0
+        ? 0.0
+        : conceptsKnown / conceptsTotal;
     final versesTotal = progress.totalVerses == 0 ? 1 : progress.totalVerses;
     final versesReadFrac = progress.versesReadable / versesTotal;
     final versesReadPct = (versesReadFrac * 100).toStringAsFixed(1);
@@ -348,9 +370,7 @@ class _ProgressStrip extends StatelessWidget {
           const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
-            child: _ReadingProgressBar(
-              readFraction: versesReadFrac,
-            ),
+            child: _ReadingProgressBar(readFraction: versesReadFrac),
           ),
         ],
       ),
@@ -361,9 +381,7 @@ class _ProgressStrip extends StatelessWidget {
 class _ReadingProgressBar extends StatelessWidget {
   final double readFraction;
 
-  const _ReadingProgressBar({
-    required this.readFraction,
-  });
+  const _ReadingProgressBar({required this.readFraction});
 
   @override
   Widget build(BuildContext context) {
@@ -675,10 +693,12 @@ class _CardShell extends StatelessWidget {
 /// grade is committed on release. No separate slider or confirm tap.
 class _DragRateButton extends StatefulWidget {
   final String label;
+
   /// An optional second line under the label (e.g. a vowel's "a as in father").
   final String? subtitle;
   final bool enabled;
   final void Function(int confidence) onCommit;
+
   /// Fixed colours for a settled, non-interactive state (post-answer feedback).
   final Color? settledColor;
   final Color? settledFg;
@@ -810,6 +830,7 @@ class _Grader extends StatefulWidget {
   final bool isNew;
   final String revealLabel;
   final Widget answer;
+
   /// The right-answer option; null disables the quiz (self-grade only).
   final _Option? correct;
   final List<_Option> distractors;
@@ -834,6 +855,7 @@ class _GraderState extends State<_Grader> {
   int _correctIndex = 0;
   bool _revealed = false;
   bool _committed = false;
+
   /// A wrong pick, once released — switches the quiz to its feedback state.
   int? _answeredWrongPick;
 
@@ -1035,7 +1057,9 @@ class _GlyphCard extends StatelessWidget {
     // vowel's name); the distinguishing romanization keeps long/short/sheva
     // apart. Consonants and marks quiz by name (their sounds collide).
     final isVowel = combining && onHost;
-    final reviewPrompt = isVowel ? 'How do you say this?' : 'Which $kind is this?';
+    final reviewPrompt = isVowel
+        ? 'How do you say this?'
+        : 'Which $kind is this?';
     // Highlight the mark in red only when *teaching* it (a new card); on a vowel
     // review the whole syllable is being tested, so show it in one colour.
     final highlightMark = combining && !(isVowel && !isNew);
@@ -1188,11 +1212,13 @@ class _GlyphCard extends StatelessWidget {
 class _WordCard extends StatelessWidget {
   final WordCard word;
   final bool isNew;
+
   /// A "which grammatical form is this?" drill rather than a meaning card. The
   /// answer (`word.gloss`) is the inflected form and the distractors are other
   /// inflections of the same word.
   final bool isForm;
   final void Function(int confidence, int correct) onGrade;
+  final VoidCallback? onEditGloss;
 
   const _WordCard({
     super.key,
@@ -1200,6 +1226,7 @@ class _WordCard extends StatelessWidget {
     required this.isNew,
     this.isForm = false,
     required this.onGrade,
+    this.onEditGloss,
   });
 
   @override
@@ -1255,13 +1282,23 @@ class _WordCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+        if (onEditGloss != null) ...[
+          OutlinedButton.icon(
+            onPressed: onEditGloss,
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('Edit tutor gloss'),
+          ),
+          const SizedBox(height: 12),
+        ],
         _Grader(
           isNew: isNew,
           revealLabel: isForm ? 'Reveal form' : 'Reveal meaning',
           // The quiz picks the answer from other plausible options, falling back
           // to reveal-and-self-grade when too few options exist.
           correct: (label: gloss, sub: null),
-          distractors: [for (final d in word.distractors) (label: d, sub: null)],
+          distractors: [
+            for (final d in word.distractors) (label: d, sub: null),
+          ],
           onGrade: onGrade,
           answer: _meanAnswer(context, gloss),
         ),
@@ -1324,6 +1361,116 @@ class _WordCard extends StatelessWidget {
       ],
     );
   }
+}
+
+class _TutorGlossEditor extends StatefulWidget {
+  const _TutorGlossEditor({required this.word});
+
+  final WordCard word;
+
+  @override
+  State<_TutorGlossEditor> createState() => _TutorGlossEditorState();
+}
+
+class _TutorGlossEditorState extends State<_TutorGlossEditor> {
+  late final TextEditingController _gloss = TextEditingController(
+    text: widget.word.gloss,
+  );
+  late final TextEditingController _note = TextEditingController(
+    text: widget.word.note,
+  );
+  String? _error;
+
+  @override
+  void dispose() {
+    _gloss.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final gloss = _gloss.text.trim();
+    if (gloss.isEmpty) {
+      setState(() => _error = 'A gloss is required.');
+      return;
+    }
+    SaveTutorGloss(
+      surface: widget.word.surface,
+      gloss: gloss,
+      note: _note.text.trim(),
+    ).sendSignalToRust();
+    scheduleProgressSync();
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Tutor gloss saved and queued for sync.')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        4,
+        20,
+        24 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Edit tutor gloss',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              widget.word.surface,
+              textAlign: TextAlign.center,
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(
+                fontFamily: _hebrewFont,
+                fontFamilyFallback: _hebrewFallback,
+                fontSize: 36,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _gloss,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(labelText: 'Learner gloss'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _note,
+              minLines: 2,
+              maxLines: 5,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Teaching note (optional)',
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _save,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('Save correction'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 /// Teach or review a pronominal ending, shown in red on a host word the
@@ -1673,7 +1820,11 @@ class _ExplainFinalFormsView extends StatelessWidget {
 class _GrammarInfoView extends StatelessWidget {
   final GrammarCard card;
   final VoidCallback onContinue;
-  const _GrammarInfoView({super.key, required this.card, required this.onContinue});
+  const _GrammarInfoView({
+    super.key,
+    required this.card,
+    required this.onContinue,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1760,6 +1911,7 @@ class _GrammarInfoView extends StatelessWidget {
 class _ReadVerseView extends StatefulWidget {
   final VerseCard card;
   final VoidCallback onContinue;
+
   /// Called with the surfaces (word-track keys) the learner flagged as
   /// misread, so the app can demote just those instead of gating the whole
   /// verse on one blanket grade.
@@ -1843,7 +1995,9 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
   List<TextSpan> _verseSpans(String text, TextStyle base, Color nameColor) {
     final words = widget.card.words;
     final names = widget.card.names;
-    if (!_onCardVerse || names.length != words.length || !names.contains(true)) {
+    if (!_onCardVerse ||
+        names.length != words.length ||
+        !names.contains(true)) {
       return [TextSpan(text: text, style: base)];
     }
     final spans = <TextSpan>[];
@@ -1865,7 +2019,10 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
         }
       }
       spans.add(
-        TextSpan(text: s, style: name ? base.copyWith(color: nameColor) : base),
+        TextSpan(
+          text: s,
+          style: name ? base.copyWith(color: nameColor) : base,
+        ),
       );
     }
 

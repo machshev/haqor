@@ -19,6 +19,15 @@ pub struct SyncProgress {
     pub token: String,
 }
 
+/// Save a learner-facing gloss correction from tutor admin mode. It is stored
+/// in the writable progress database and therefore travels with LAN sync.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SaveTutorGloss {
+    pub surface: String,
+    pub gloss: String,
+    pub note: String,
+}
+
 /// Result of a requested background sync. The app normally keeps this quiet
 /// after automatic runs, but settings can surface the message on demand.
 #[derive(Debug, Serialize, RustSignal)]

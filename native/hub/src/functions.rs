@@ -2,11 +2,11 @@ use crate::signals::{
     BdbSummary, CalibrationProbe, ChapterText, FinishCalibration, GetCalibrationProbe, GetChapter,
     GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts, GetTutorSettings, GetTutorStats,
     GetVerseText, GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard,
-    HebrewOccurrence, OnboardingStatus, ProgressSyncStatus, ResetTutor, SedraOccurrence,
-    SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem,
-    SubmitReview, SuffixCard, SyncProgress, TutorProgress, TutorSettings, TutorStats, VerseCard,
-    VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence,
-    WordOccurrences,
+    HebrewOccurrence, OnboardingStatus, ProgressSyncStatus, ResetTutor, SaveTutorGloss,
+    SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings,
+    StudyItem, SubmitReview, SuffixCard, SyncProgress, TutorProgress, TutorSettings, TutorStats,
+    VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo,
+    WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -184,6 +184,24 @@ pub async fn sync_progress(bible: SharedBible, data_dir: PathBuf) {
                 message,
             }
             .send_signal_to_dart(),
+        }
+    }
+}
+
+/// Persist a mobile tutor correction. Dart schedules the normal snapshot sync
+/// immediately afterwards; keeping this separate from the static overlay lets
+/// corrections be reviewed before they reach the generated lexicon.
+pub async fn save_tutor_gloss(bible: SharedBible) {
+    let receiver = SaveTutorGloss::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let correction = signal_pack.message;
+        if let Err(error) = lock(&bible).set_tutor_gloss_override(
+            &correction.surface,
+            &correction.gloss,
+            &correction.note,
+            now_epoch(),
+        ) {
+            debug_print!("save_tutor_gloss error: {error:?}");
         }
     }
 }
