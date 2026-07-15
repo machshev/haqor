@@ -1,12 +1,13 @@
 use crate::signals::{
     BdbSummary, CalibrationProbe, ChapterText, FinishCalibration, GetCalibrationProbe, GetChapter,
-    GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts, GetTutorSettings, GetTutorStats,
-    GetVerseText, GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard,
-    HebrewOccurrence, OnboardingStatus, ProgressSyncStatus, ResetTutor, SaveTutorGloss,
-    SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings,
-    StudyItem, SubmitReview, SuffixCard, SyncProgress, TutorProgress, TutorSettings, TutorStats,
-    VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo,
-    WordOccurrence, WordOccurrences,
+    GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts, GetTutorGlossOverrideStats,
+    GetTutorSettings, GetTutorStats, GetVerseText, GetVocab, GetWordInfo, GetWordOccurrences,
+    GlyphCard, GrammarCard, HebrewOccurrence, OnboardingStatus, OptimizeTutorGlossOverrides,
+    ProgressSyncStatus, ResetTutor, SaveTutorGloss, SedraOccurrence, SedraSummary, SeenConcept,
+    SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, SuffixCard,
+    SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard,
+    VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence,
+    WordOccurrences,
 };
 
 use std::fs;
@@ -211,6 +212,55 @@ pub async fn save_tutor_gloss(bible: SharedBible) {
             now_epoch(),
         ) {
             debug_print!("save_tutor_gloss error: {error:?}");
+        }
+    }
+}
+
+fn send_tutor_gloss_override_stats(stats: tutor::GlossOverrideStats, removed: i64) {
+    TutorGlossOverrideStats {
+        total: stats.total,
+        redundant: stats.redundant,
+        removed,
+        error: String::new(),
+    }
+    .send_signal_to_dart();
+}
+
+fn send_tutor_gloss_override_error(message: &str) {
+    TutorGlossOverrideStats {
+        total: 0,
+        redundant: 0,
+        removed: 0,
+        error: message.to_string(),
+    }
+    .send_signal_to_dart();
+}
+
+pub async fn get_tutor_gloss_override_stats(bible: SharedBible) {
+    let receiver = GetTutorGlossOverrideStats::get_dart_signal_receiver();
+    while let Some(_pack) = receiver.recv().await {
+        match lock(&bible).tutor_gloss_override_stats() {
+            Ok(stats) => send_tutor_gloss_override_stats(stats, 0),
+            Err(error) => {
+                debug_print!("tutor_gloss_override_stats error: {error:?}");
+                send_tutor_gloss_override_error("Could not inspect local overrides.");
+            }
+        }
+    }
+}
+
+pub async fn optimize_tutor_gloss_overrides(bible: SharedBible) {
+    let receiver = OptimizeTutorGlossOverrides::get_dart_signal_receiver();
+    while let Some(_pack) = receiver.recv().await {
+        let result = lock(&bible).optimize_tutor_gloss_overrides(now_epoch());
+        match result {
+            Ok(optimization) => {
+                send_tutor_gloss_override_stats(optimization.stats, optimization.removed)
+            }
+            Err(error) => {
+                debug_print!("optimize_tutor_gloss_overrides error: {error:?}");
+                send_tutor_gloss_override_error("Could not optimise local overrides.");
+            }
         }
     }
 }

@@ -45,6 +45,7 @@ class _SettingsSheet extends StatefulWidget {
 
 class _SettingsSheetState extends State<_SettingsSheet> {
   StreamSubscription<RustSignalPack<TutorSettings>>? _sub;
+  StreamSubscription<RustSignalPack<TutorGlossOverrideStats>>? _overrideSub;
 
   int _lettersPerBatch = 3;
   int _wordsPerBatch = 8;
@@ -55,6 +56,10 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   int _lettersRatio = 30;
   bool _adminMode = false;
   bool _loaded = false;
+  TutorGlossOverrideStats? _overrideStats;
+  bool _optimizingOverrides = false;
+  String? _overrideStatus;
+  bool _overrideStatusIsError = false;
 
   @override
   void initState() {
@@ -77,6 +82,31 @@ class _SettingsSheetState extends State<_SettingsSheet> {
       });
     });
     GetTutorSettings().sendSignalToRust();
+    _overrideStats = TutorGlossOverrideStats.latestRustSignal?.message;
+    _overrideSub = TutorGlossOverrideStats.rustSignalStream.listen((pack) {
+      if (!mounted) return;
+      final wasOptimizing = _optimizingOverrides;
+      final stats = pack.message;
+      setState(() {
+        _optimizingOverrides = false;
+        if (stats.error.isNotEmpty) {
+          _overrideStatus = stats.error;
+          _overrideStatusIsError = true;
+          return;
+        }
+        _overrideStats = stats;
+        _overrideStatusIsError = false;
+        if (wasOptimizing) {
+          _overrideStatus = stats.removed == 0
+              ? 'All local overrides are still required.'
+              : 'Removed ${stats.removed} no-op ${stats.removed == 1 ? 'override' : 'overrides'}.';
+        }
+      });
+      if (wasOptimizing && stats.error.isEmpty && stats.removed > 0) {
+        scheduleProgressSync();
+      }
+    });
+    GetTutorGlossOverrideStats().sendSignalToRust();
     _loadAdminMode();
   }
 
@@ -104,7 +134,44 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   @override
   void dispose() {
     _sub?.cancel();
+    _overrideSub?.cancel();
     super.dispose();
+  }
+
+  void _optimizeOverrides() {
+    setState(() {
+      _optimizingOverrides = true;
+      _overrideStatus = 'Checking against the current core data…';
+      _overrideStatusIsError = false;
+    });
+    OptimizeTutorGlossOverrides().sendSignalToRust();
+  }
+
+  Future<void> _confirmReset() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset progress?'),
+        content: const Text(
+          'This clears every learned letter, word and verse. You will start '
+          'again from the first verse.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      Navigator.of(context).pop();
+      ResetTutor().sendSignalToRust();
+    }
   }
 
   void _send() {
@@ -290,6 +357,82 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                       ),
                       value: _adminMode,
                       onChanged: _setAdminMode,
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.edit_note_outlined),
+                      title: const Text('Local gloss overrides'),
+                      subtitle: Text(
+                        _overrideStats == null
+                            ? 'Counting local corrections…'
+                            : _overrideStats!.total == 0
+                            ? 'No local tutor corrections.'
+                            : '${_overrideStats!.total} ${_overrideStats!.total == 1 ? 'override' : 'overrides'} on this device'
+                                  '${_overrideStats!.redundant == 0 ? '; all still differ from core.' : '; ${_overrideStats!.redundant} now ${_overrideStats!.redundant == 1 ? 'matches' : 'match'} core.'}',
+                      ),
+                      trailing: _overrideStats == null
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(
+                              '${_overrideStats!.total}',
+                              style: theme.textTheme.titleMedium,
+                            ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed:
+                            _overrideStats == null ||
+                                _overrideStats!.total == 0 ||
+                                _optimizingOverrides
+                            ? null
+                            : _optimizeOverrides,
+                        icon: _optimizingOverrides
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.auto_fix_high_outlined),
+                        label: Text(
+                          _optimizingOverrides
+                              ? 'Checking…'
+                              : 'Optimise overrides',
+                        ),
+                      ),
+                    ),
+                    if (_overrideStatus != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _overrideStatus!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: _overrideStatusIsError
+                              ? theme.colorScheme.error
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    _SectionLabel('Data'),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        Icons.restart_alt,
+                        color: theme.colorScheme.error,
+                      ),
+                      title: Text(
+                        'Reset progress',
+                        style: TextStyle(color: theme.colorScheme.error),
+                      ),
+                      subtitle: const Text(
+                        'Erase all tutor learning history and start again.',
+                      ),
+                      onTap: _confirmReset,
                     ),
                   ],
                 ),

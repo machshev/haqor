@@ -15,17 +15,23 @@ Timer? _scheduledSync;
 /// in a verse creates one LAN request rather than one per tap.
 void scheduleProgressSync() {
   _scheduledSync?.cancel();
-  _scheduledSync = Timer(const Duration(seconds: 2), syncProgressNow);
+  _scheduledSync = Timer(const Duration(seconds: 2), () {
+    syncProgressNow();
+  });
 }
 
 /// Request one merge when a server has been configured. It is harmless offline:
 /// the native layer reports the error and the next answer/launch retries.
-Future<void> syncProgressNow() async {
+/// Returns false when sync has not been configured, otherwise true once the
+/// request has been handed to Rust.
+Future<bool> syncProgressNow({VoidCallback? onRequest}) async {
   final prefs = await SharedPreferences.getInstance();
   final serverUrl = prefs.getString(_serverUrlKey)?.trim() ?? '';
   final token = prefs.getString(_tokenKey)?.trim() ?? '';
-  if (serverUrl.isEmpty || token.isEmpty) return;
+  if (serverUrl.isEmpty || token.isEmpty) return false;
+  onRequest?.call();
   SyncProgress(serverUrl: serverUrl, token: token).sendSignalToRust();
+  return true;
 }
 
 Future<void> showProgressSyncSettings(BuildContext context) =>

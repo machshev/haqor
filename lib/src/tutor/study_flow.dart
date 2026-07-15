@@ -71,6 +71,7 @@ class StudyFlowPage extends StatefulWidget {
 
 class _StudyFlowPageState extends State<StudyFlowPage> {
   StreamSubscription<RustSignalPack<StudyItem>>? _sub;
+  StreamSubscription<RustSignalPack<ProgressSyncStatus>>? _syncSub;
   StudyItem? _item;
   // Bumped on every delivered card. The engine legitimately re-serves the same
   // card back-to-back (it pulls an in-learning card forward to keep drilling),
@@ -80,6 +81,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   int _seq = 0;
   bool _waitingForNext = false;
   bool _adminMode = false;
+  bool _manualSyncPending = false;
 
   @override
   void initState() {
@@ -93,6 +95,19 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         _waitingForNext = false;
       });
     });
+    _syncSub = ProgressSyncStatus.rustSignalStream.listen((pack) {
+      if (!mounted || !_manualSyncPending) return;
+      setState(() => _manualSyncPending = false);
+      final status = pack.message;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(status.message),
+          backgroundColor: status.success
+              ? null
+              : Theme.of(context).colorScheme.error,
+        ),
+      );
+    });
     _loadAdminMode();
     GetNextStudyItem().sendSignalToRust();
   }
@@ -105,7 +120,29 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   @override
   void dispose() {
     _sub?.cancel();
+    _syncSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _syncNow() async {
+    if (_manualSyncPending) return;
+    final started = await syncProgressNow(
+      onRequest: () {
+        if (mounted) setState(() => _manualSyncPending = true);
+      },
+    );
+    if (!mounted) return;
+    if (!started) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Configure LAN sync in Study pace settings first.'),
+        ),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Syncing progress…')));
   }
 
   /// Report an answer: `confidence` (0..100) is the slider self-rating; `correct`
@@ -148,30 +185,6 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
     builder: (_) => const _StatsSheet(),
   );
 
-  Future<void> _confirmReset() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reset progress?'),
-        content: const Text(
-          'This clears every learned letter, word and verse. You will start '
-          'again from the first verse.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Reset'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) ResetTutor().sendSignalToRust();
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -204,8 +217,8 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
           ),
           IconButton(
             icon: const Icon(Icons.restart_alt),
-            tooltip: 'Reset progress',
-            onPressed: _confirmReset,
+            tooltip: 'Sync progress now',
+            onPressed: _manualSyncPending ? null : _syncNow,
           ),
         ],
       ),
