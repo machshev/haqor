@@ -78,6 +78,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   // the answer-and-grade State, leaving a just-committed quiz frozen. Keying the
   // card subtree by this counter guarantees a fresh grader for every card.
   int _seq = 0;
+  bool _waitingForNext = false;
   bool _adminMode = false;
 
   @override
@@ -89,6 +90,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
       setState(() {
         _item = pack.message;
         _seq++;
+        _waitingForNext = false;
       });
     });
     _loadAdminMode();
@@ -110,6 +112,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   /// is the multiple-choice outcome (see the `_quiz*` codes). The response is the
   /// next card.
   void _grade(String track, String key, int confidence, int correct) {
+    setState(() => _waitingForNext = true);
     SubmitReview(
       track: track,
       key: key,
@@ -119,7 +122,10 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
     scheduleProgressSync();
   }
 
-  void _next() => GetNextStudyItem().sendSignalToRust();
+  void _next() {
+    setState(() => _waitingForNext = true);
+    GetNextStudyItem().sendSignalToRust();
+  }
 
   /// Demote each misread word (an "Again" grade lapses it back into review)
   /// instead of gating the whole verse on one blanket grade — flagging a
@@ -214,9 +220,19 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
                 // content matches the previous card — gets a fresh subtree, and
                 // the grader never inherits a stale (committed) quiz State.
                 Expanded(
-                  child: KeyedSubtree(
-                    key: ValueKey(_seq),
-                    child: _buildItem(context, item),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 150),
+                    child: _waitingForNext
+                        ? const Center(
+                            key: ValueKey('next-card-loading'),
+                            child: LoadingMessage(
+                              text: 'Choosing your next card…',
+                            ),
+                          )
+                        : KeyedSubtree(
+                            key: ValueKey(_seq),
+                            child: _buildItem(context, item),
+                          ),
                   ),
                 ),
               ],
