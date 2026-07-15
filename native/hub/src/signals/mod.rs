@@ -28,6 +28,23 @@ pub struct SaveTutorGloss {
     pub note: String,
 }
 
+/// Save a word-info root/header correction for later promotion into the
+/// checked-in `lexicon_entries` overlay.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SaveLexiconEntryOverride {
+    pub surface: String,
+    pub root: String,
+    pub gloss: String,
+}
+
+/// Confirms whether one word-info lexicon correction was stored locally.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct LexiconEntryOverrideStatus {
+    pub surface: String,
+    pub success: bool,
+    pub message: String,
+}
+
 /// Save an admin bug report or idea with an opaque structured context object.
 /// It is stored in the writable progress database and travels with LAN sync.
 #[derive(Debug, Deserialize, DartSignal)]

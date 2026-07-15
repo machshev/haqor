@@ -352,8 +352,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                       ),
                       title: const Text('Admin tools'),
                       subtitle: const Text(
-                        'Show tutor gloss editing and issue/idea flags. Reports '
-                        'stay local until normal LAN sync sends them for review.',
+                        'Show tutor and word-info lexicon editing plus issue/idea '
+                        'flags. Changes sync over the normal LAN connection.',
                       ),
                       value: _adminMode,
                       onChanged: _setAdminMode,

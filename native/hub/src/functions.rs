@@ -2,12 +2,13 @@ use crate::signals::{
     BdbSummary, CalibrationProbe, ChapterText, FinishCalibration, GetCalibrationProbe, GetChapter,
     GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts, GetTutorGlossOverrideStats,
     GetTutorSettings, GetTutorStats, GetVerseText, GetVocab, GetWordInfo, GetWordOccurrences,
-    GlyphCard, GrammarCard, HebrewOccurrence, IssueReportStatus, OnboardingStatus,
-    OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, SaveIssueReport, SaveTutorGloss,
-    SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings,
-    StudyItem, SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress,
-    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry, VocabList,
-    WordCard, WordInfo, WordOccurrence, WordOccurrences,
+    GlyphCard, GrammarCard, HebrewOccurrence, IssueReportStatus, LexiconEntryOverrideStatus,
+    OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, SaveIssueReport,
+    SaveLexiconEntryOverride, SaveTutorGloss, SedraOccurrence, SedraSummary, SeenConcept,
+    SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, SuffixCard,
+    SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard,
+    VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence,
+    WordOccurrences,
 };
 
 use std::fs;
@@ -212,6 +213,39 @@ pub async fn save_tutor_gloss(bible: SharedBible) {
             now_epoch(),
         ) {
             debug_print!("save_tutor_gloss error: {error:?}");
+        }
+    }
+}
+
+/// Persist a mobile root/header correction for the word-info Lexicon panel.
+pub async fn save_lexicon_entry_override(bible: SharedBible) {
+    let receiver = SaveLexiconEntryOverride::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let correction = signal_pack.message;
+        match lock(&bible).set_lexicon_entry_override(
+            &correction.surface,
+            &correction.root,
+            &correction.gloss,
+            now_epoch(),
+        ) {
+            Ok(()) => {
+                debug_print!("lexicon entry override saved: {}", correction.surface);
+                LexiconEntryOverrideStatus {
+                    surface: correction.surface,
+                    success: true,
+                    message: "Lexicon correction saved and queued for sync.".to_string(),
+                }
+                .send_signal_to_dart();
+            }
+            Err(error) => {
+                debug_print!("save_lexicon_entry_override error: {error:?}");
+                LexiconEntryOverrideStatus {
+                    surface: correction.surface,
+                    success: false,
+                    message: "Could not save lexicon correction.".to_string(),
+                }
+                .send_signal_to_dart();
+            }
         }
     }
 }
@@ -594,7 +628,11 @@ pub async fn get_word_info(bible: SharedBible) {
             // glossed root trees. `hebrew_word_info` normalises the lookup
             // itself, so the raw word is passed through.
             match bible.hebrew_word_info(&req.word) {
-                Some(info) => {
+                Some(mut info) => {
+                    if let Ok(Some((root, gloss))) = bible.lexicon_entry_override(&info.word) {
+                        info.root = root;
+                        info.gloss = gloss;
+                    }
                     // Function words / particles bridge through the lexicon with
                     // no triliteral root, so their definition can't be fetched by
                     // root; look the lexeme up by its surface form instead.

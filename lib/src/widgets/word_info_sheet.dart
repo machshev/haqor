@@ -8,6 +8,7 @@ import 'package:rinf/rinf.dart';
 import '../bindings/bindings.dart';
 import '../bible_data.dart';
 import '../issue_reporting.dart';
+import '../tutor/progress_sync.dart';
 import '../tutor/study_settings.dart';
 
 const Map<String, int> _kBdbBookToIndex = {
@@ -115,6 +116,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _requestInfo();
+    _loadAdminMode();
+  }
+
+  void _requestInfo() {
+    _sub?.cancel();
     _sub = WordInfo.rustSignalStream.listen((pack) {
       if (mounted) {
         setState(() => _info = pack.message);
@@ -127,7 +134,6 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     });
     GetWordInfo(word: widget.word, syriac: widget.syriac, bdbId: widget.bdbId)
         .sendSignalToRust();
-    _loadAdminMode();
   }
 
   // Fetch the occurrence lists (full-text root scans). Idempotent via
@@ -148,6 +154,24 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   Future<void> _loadAdminMode() async {
     final enabled = await tutorAdminModeEnabled();
     if (mounted) setState(() => _adminMode = enabled);
+  }
+
+  Future<void> _openLexiconEditor(WordInfo info) async {
+    final message = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => _LexiconEntryOverrideEditor(
+        surface: info.word,
+        root: info.root,
+        gloss: info.gloss,
+      ),
+    );
+    if (!mounted || message == null) return;
+    _requestInfo();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Map<String, Object?> _issueContext(WordInfo info) => {
@@ -341,6 +365,18 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                 textBaseline: TextBaseline.alphabetic,
                 children: [
                   if (_adminMode) ...[
+                    if (!widget.syriac && widget.bdbId == null) ...[
+                      IconButton(
+                        onPressed: () => _openLexiconEditor(info),
+                        icon: const Icon(Icons.edit_outlined),
+                        tooltip: 'Edit this lexicon override',
+                        iconSize: 20,
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
                     IssueReportButton(
                       source: 'word_info',
                       contextData: _issueContext(info),
@@ -1600,6 +1636,153 @@ String _surfaceKey(String word) {
     }
   }
   return String.fromCharCodes(out);
+}
+
+class _LexiconEntryOverrideEditor extends StatefulWidget {
+  const _LexiconEntryOverrideEditor({
+    required this.surface,
+    required this.root,
+    required this.gloss,
+  });
+
+  final String surface;
+  final String root;
+  final String gloss;
+
+  @override
+  State<_LexiconEntryOverrideEditor> createState() =>
+      _LexiconEntryOverrideEditorState();
+}
+
+class _LexiconEntryOverrideEditorState
+    extends State<_LexiconEntryOverrideEditor> {
+  late final TextEditingController _root = TextEditingController(
+    text: widget.root,
+  );
+  late final TextEditingController _gloss = TextEditingController(
+    text: widget.gloss,
+  );
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _root.dispose();
+    _gloss.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final gloss = _gloss.text.trim();
+    if (gloss.isEmpty) {
+      setState(() => _error = 'A lexicon gloss is required.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final statusFuture = LexiconEntryOverrideStatus.rustSignalStream
+        .firstWhere((pack) => pack.message.surface == widget.surface)
+        .timeout(const Duration(seconds: 8));
+    SaveLexiconEntryOverride(
+      surface: widget.surface,
+      root: _root.text.trim(),
+      gloss: gloss,
+    ).sendSignalToRust();
+    try {
+      final status = (await statusFuture).message;
+      if (!mounted) return;
+      if (!status.success) {
+        setState(() {
+          _saving = false;
+          _error = status.message;
+        });
+        return;
+      }
+      scheduleProgressSync();
+      Navigator.pop(context, status.message);
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = 'The app did not confirm that the correction was saved.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        4,
+        20,
+        24 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Edit lexicon override',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              widget.surface,
+              textAlign: TextAlign.center,
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(
+                fontFamily: 'Cardo',
+                fontFamilyFallback: ['Noto Serif Hebrew'],
+                fontSize: 36,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _root,
+              textDirection: TextDirection.rtl,
+              decoration: const InputDecoration(
+                labelText: 'Root (optional)',
+                helperText: 'Leave blank for particles and rootless entries.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _gloss,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Lexicon header gloss',
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _saving ? null : _save,
+              icon: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save_outlined),
+              label: Text(_saving ? 'Saving…' : 'Save correction'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _BibleRefPreviewDialog extends StatefulWidget {
