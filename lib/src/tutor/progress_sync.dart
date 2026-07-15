@@ -48,6 +48,7 @@ class _ProgressSyncSheetState extends State<_ProgressSyncSheet> {
   final _token = TextEditingController();
   StreamSubscription<RustSignalPack<ProgressSyncStatus>>? _statusSub;
   String? _status;
+  bool? _syncSucceeded;
   bool _saving = false;
 
   @override
@@ -56,7 +57,11 @@ class _ProgressSyncSheetState extends State<_ProgressSyncSheet> {
     _load();
     _statusSub = ProgressSyncStatus.rustSignalStream.listen((pack) {
       if (!mounted) return;
-      setState(() => _status = pack.message.message);
+      setState(() {
+        _status = pack.message.message;
+        _syncSucceeded = pack.message.success;
+        _saving = false;
+      });
     });
   }
 
@@ -73,11 +78,17 @@ class _ProgressSyncSheetState extends State<_ProgressSyncSheet> {
     final serverUrl = _server.text.trim();
     final token = _token.text.trim();
     if ((serverUrl.isEmpty) != (token.isEmpty)) {
-      setState(() => _status = 'Enter both the server address and token.');
+      setState(() {
+        _status = 'Enter both the server address and token.';
+        _syncSucceeded = false;
+      });
       return;
     }
     if (serverUrl.isNotEmpty && !serverUrl.startsWith('http://')) {
-      setState(() => _status = 'Use a LAN address starting with http://');
+      setState(() {
+        _status = 'Use a LAN address starting with http://';
+        _syncSucceeded = false;
+      });
       return;
     }
     setState(() => _saving = true);
@@ -85,17 +96,31 @@ class _ProgressSyncSheetState extends State<_ProgressSyncSheet> {
     if (serverUrl.isEmpty) {
       await prefs.remove(_serverUrlKey);
       await prefs.remove(_tokenKey);
-      if (mounted) setState(() => _status = 'Automatic progress sync is off.');
+      if (mounted) {
+        setState(() {
+          _status = 'Automatic progress sync is off.';
+          _syncSucceeded = true;
+        });
+      }
     } else {
       await prefs.setString(_serverUrlKey, serverUrl);
       await prefs.setString(_tokenKey, token);
       if (sync) {
+        if (mounted) {
+          setState(() {
+            _status = 'Syncing progress…';
+            _syncSucceeded = null;
+          });
+        }
         SyncProgress(serverUrl: serverUrl, token: token).sendSignalToRust();
       } else if (mounted) {
-        setState(() => _status = 'Automatic progress sync is on.');
+        setState(() {
+          _status = 'Automatic progress sync is on.';
+          _syncSucceeded = true;
+        });
       }
     }
-    if (mounted) setState(() => _saving = false);
+    if (mounted && !sync) setState(() => _saving = false);
   }
 
   @override
@@ -148,13 +173,29 @@ class _ProgressSyncSheetState extends State<_ProgressSyncSheet> {
             ),
             if (_status != null) ...[
               const SizedBox(height: 12),
-              Text(
-                _status!,
-                style: TextStyle(
-                  color: _status == 'Progress synced.'
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              Row(
+                children: [
+                  if (_syncSucceeded == null) ...[
+                    const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: Text(
+                      _status!,
+                      style: TextStyle(
+                        color: _syncSucceeded == true
+                            ? Theme.of(context).colorScheme.primary
+                            : _syncSucceeded == false
+                            ? Theme.of(context).colorScheme.error
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
             const SizedBox(height: 16),
