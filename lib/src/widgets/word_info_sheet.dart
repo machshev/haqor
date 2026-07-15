@@ -5,11 +5,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
+import '../app_settings.dart';
 import '../bindings/bindings.dart';
 import '../bible_data.dart';
 import '../issue_reporting.dart';
 import '../tutor/progress_sync.dart';
-import '../tutor/study_settings.dart';
 
 const Map<String, int> _kBdbBookToIndex = {
   'Genesis': 0,
@@ -152,7 +152,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   }
 
   Future<void> _loadAdminMode() async {
-    final enabled = await tutorAdminModeEnabled();
+    final enabled = await adminModeEnabled();
     if (mounted) setState(() => _adminMode = enabled);
   }
 

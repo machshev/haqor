@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_settings.dart';
 import 'bible_data.dart';
 import 'bindings/bindings.dart';
 import 'tutor/onboarding.dart';
@@ -321,6 +322,34 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       prefs.setBool(_kGlossInterlinear, _glossInterlinear),
     ]);
   }
+
+  void _applyReadingSettings(AppReadingSettings settings) {
+    final reloadChapter = settings.ntSyriac != _ntSyriac && _bookIndex >= 39;
+    setState(() {
+      _ntSyriac = settings.ntSyriac;
+      _hebrewNumerals = settings.hebrewNumerals;
+      _glossInterlinear = settings.glossInterlinear;
+      _fontSize = settings.fontSize;
+      _fontFamily = settings.fontFamily;
+    });
+    if (reloadChapter) {
+      _startAt(_bookIndex, _chapter);
+    } else {
+      _savePrefs();
+    }
+  }
+
+  void _showAppSettings() => showAppSettings(
+    context,
+    readingSettings: AppReadingSettings(
+      ntSyriac: _ntSyriac,
+      hebrewNumerals: _hebrewNumerals,
+      glossInterlinear: _glossInterlinear,
+      fontSize: _fontSize,
+      fontFamily: _fontFamily,
+    ),
+    onReadingSettingsChanged: _applyReadingSettings,
+  );
 
   void _navigateTo(int bookIndex, int chapter, {int? verse}) {
     if (!_navigatingHistory) {
@@ -658,111 +687,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               context,
             ).push(MaterialPageRoute(builder: (_) => const TutorEntryPage())),
           ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
             tooltip: 'Settings',
-            onSelected: (value) {
-              if (value == 'hebrew' || value == 'syriac') {
-                final useSyriac = value == 'syriac';
-                if (useSyriac != _ntSyriac) {
-                  setState(() => _ntSyriac = useSyriac);
-                  if (_bookIndex >= 39) {
-                    _startAt(_bookIndex, _chapter);
-                  } else {
-                    _savePrefs();
-                  }
-                }
-              } else if (value == 'numeral_hebrew' ||
-                  value == 'numeral_english') {
-                setState(() => _hebrewNumerals = value == 'numeral_hebrew');
-                _savePrefs();
-              } else if (value.startsWith('size_')) {
-                final size = double.tryParse(value.substring(5));
-                if (size != null) {
-                  setState(() => _fontSize = size);
-                  _savePrefs();
-                }
-              } else if (value.startsWith('font_')) {
-                setState(() => _fontFamily = value.substring(5));
-                _savePrefs();
-              } else if (value == 'gloss_interlinear') {
-                setState(() => _glossInterlinear = !_glossInterlinear);
-                _savePrefs();
-              }
-            },
-            itemBuilder: (ctx) => [
-              const PopupMenuItem(
-                enabled: false,
-                child: Text('NT Text Source'),
-              ),
-              CheckedPopupMenuItem(
-                value: 'hebrew',
-                checked: !_ntSyriac,
-                child: const Text('Hebrew (Peshitta)'),
-              ),
-              CheckedPopupMenuItem(
-                value: 'syriac',
-                checked: _ntSyriac,
-                child: const Text('Syriac (Peshitta)'),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(enabled: false, child: Text('Verse Numbers')),
-              CheckedPopupMenuItem(
-                value: 'numeral_hebrew',
-                checked: _hebrewNumerals,
-                child: const Text('Hebrew (א׳ ב׳ ג׳)'),
-              ),
-              CheckedPopupMenuItem(
-                value: 'numeral_english',
-                checked: !_hebrewNumerals,
-                child: const Text('English (1 2 3)'),
-              ),
-              const PopupMenuDivider(),
-              CheckedPopupMenuItem(
-                value: 'gloss_interlinear',
-                checked: _glossInterlinear,
-                child: const Text('Gloss interlinear'),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(enabled: false, child: Text('Font Size')),
-              CheckedPopupMenuItem(
-                value: 'size_16.0',
-                checked: _fontSize == 16.0,
-                child: const Text('Small'),
-              ),
-              CheckedPopupMenuItem(
-                value: 'size_20.0',
-                checked: _fontSize == 20.0,
-                child: const Text('Medium'),
-              ),
-              CheckedPopupMenuItem(
-                value: 'size_24.0',
-                checked: _fontSize == 24.0,
-                child: const Text('Large'),
-              ),
-              CheckedPopupMenuItem(
-                value: 'size_28.0',
-                checked: _fontSize == 28.0,
-                child: const Text('Extra Large'),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(enabled: false, child: Text('Font')),
-              CheckedPopupMenuItem(
-                value: 'font_Cardo',
-                checked: _fontFamily == 'Cardo',
-                child: const Text('Cardo'),
-              ),
-              CheckedPopupMenuItem(
-                value: 'font_David Libre',
-                checked: _fontFamily == 'David Libre',
-                child: const Text('David Libre'),
-              ),
-              CheckedPopupMenuItem(
-                value: 'font_Frank Ruhl Libre',
-                checked: _fontFamily == 'Frank Ruhl Libre',
-                child: const Text('Frank Ruhl Libre'),
-              ),
-            ],
+            onPressed: _showAppSettings,
           ),
         ],
       ),

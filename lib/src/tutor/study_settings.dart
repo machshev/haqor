@@ -2,42 +2,24 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../bindings/bindings.dart';
-import 'progress_sync.dart';
 
 /// Open the study-pacing settings as a modal bottom sheet.
-const _tutorAdminModeKey = 'tutor_admin_mode';
-
-Future<bool> tutorAdminModeEnabled() async =>
-    (await SharedPreferences.getInstance()).getBool(_tutorAdminModeKey) ??
-    false;
-
-Future<void> setTutorAdminModeEnabled(bool enabled) async =>
-    (await SharedPreferences.getInstance()).setBool(
-      _tutorAdminModeKey,
-      enabled,
+Future<void> showStudySettings(BuildContext context) =>
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => const _SettingsSheet(),
     );
-
-Future<void> showStudySettings(
-  BuildContext context, {
-  ValueChanged<bool>? onAdminModeChanged,
-}) => showModalBottomSheet<void>(
-  context: context,
-  showDragHandle: true,
-  isScrollControlled: true,
-  builder: (_) => _SettingsSheet(onAdminModeChanged: onAdminModeChanged),
-);
 
 /// Configure how fast the tutor progresses: how many new letters and words are
 /// introduced at once, and whether grammar rules expand one at a time. Fetches
 /// the current [TutorSettings] on open and writes changes back with
 /// [SetTutorSettings]; the engine picks them up on the next card.
 class _SettingsSheet extends StatefulWidget {
-  const _SettingsSheet({this.onAdminModeChanged});
-
-  final ValueChanged<bool>? onAdminModeChanged;
+  const _SettingsSheet();
 
   @override
   State<_SettingsSheet> createState() => _SettingsSheetState();
@@ -45,7 +27,6 @@ class _SettingsSheet extends StatefulWidget {
 
 class _SettingsSheetState extends State<_SettingsSheet> {
   StreamSubscription<RustSignalPack<TutorSettings>>? _sub;
-  StreamSubscription<RustSignalPack<TutorGlossOverrideStats>>? _overrideSub;
 
   int _lettersPerBatch = 3;
   int _wordsPerBatch = 8;
@@ -54,12 +35,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   int _grammarPriority = 25;
   int _versePriority = 25;
   int _lettersRatio = 30;
-  bool _adminMode = false;
   bool _loaded = false;
-  TutorGlossOverrideStats? _overrideStats;
-  bool _optimizingOverrides = false;
-  String? _overrideStatus;
-  bool _overrideStatusIsError = false;
 
   @override
   void initState() {
@@ -82,43 +58,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
       });
     });
     GetTutorSettings().sendSignalToRust();
-    _overrideStats = TutorGlossOverrideStats.latestRustSignal?.message;
-    _overrideSub = TutorGlossOverrideStats.rustSignalStream.listen((pack) {
-      if (!mounted) return;
-      final wasOptimizing = _optimizingOverrides;
-      final stats = pack.message;
-      setState(() {
-        _optimizingOverrides = false;
-        if (stats.error.isNotEmpty) {
-          _overrideStatus = stats.error;
-          _overrideStatusIsError = true;
-          return;
-        }
-        _overrideStats = stats;
-        _overrideStatusIsError = false;
-        if (wasOptimizing) {
-          _overrideStatus = stats.removed == 0
-              ? 'All local overrides are still required.'
-              : 'Removed ${stats.removed} no-op ${stats.removed == 1 ? 'override' : 'overrides'}.';
-        }
-      });
-      if (wasOptimizing && stats.error.isEmpty && stats.removed > 0) {
-        scheduleProgressSync();
-      }
-    });
-    GetTutorGlossOverrideStats().sendSignalToRust();
-    _loadAdminMode();
-  }
-
-  Future<void> _loadAdminMode() async {
-    final enabled = await tutorAdminModeEnabled();
-    if (mounted) setState(() => _adminMode = enabled);
-  }
-
-  Future<void> _setAdminMode(bool enabled) async {
-    setState(() => _adminMode = enabled);
-    await setTutorAdminModeEnabled(enabled);
-    widget.onAdminModeChanged?.call(enabled);
   }
 
   void _adopt(TutorSettings s) {
@@ -134,17 +73,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   @override
   void dispose() {
     _sub?.cancel();
-    _overrideSub?.cancel();
     super.dispose();
-  }
-
-  void _optimizeOverrides() {
-    setState(() {
-      _optimizingOverrides = true;
-      _overrideStatus = 'Checking against the current core data…';
-      _overrideStatusIsError = false;
-    });
-    OptimizeTutorGlossOverrides().sendSignalToRust();
   }
 
   Future<void> _confirmReset() async {
@@ -331,92 +260,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 20),
-                    _SectionLabel('Progress sync'),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.sync),
-                      title: const Text('Sync over your LAN'),
-                      subtitle: const Text(
-                        'Keep this progress in sync automatically with your personal server.',
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => showProgressSyncSettings(context),
-                    ),
-                    const SizedBox(height: 12),
-                    _SectionLabel('Admin'),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      secondary: const Icon(
-                        Icons.admin_panel_settings_outlined,
-                      ),
-                      title: const Text('Admin tools'),
-                      subtitle: const Text(
-                        'Show tutor and word-info lexicon editing plus issue/idea '
-                        'flags. Changes sync over the normal LAN connection.',
-                      ),
-                      value: _adminMode,
-                      onChanged: _setAdminMode,
-                    ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.edit_note_outlined),
-                      title: const Text('Local gloss overrides'),
-                      subtitle: Text(
-                        _overrideStats == null
-                            ? 'Counting local corrections…'
-                            : _overrideStats!.total == 0
-                            ? 'No local tutor corrections.'
-                            : '${_overrideStats!.total} ${_overrideStats!.total == 1 ? 'override' : 'overrides'} on this device'
-                                  '${_overrideStats!.redundant == 0 ? '; all still differ from core.' : '; ${_overrideStats!.redundant} now ${_overrideStats!.redundant == 1 ? 'matches' : 'match'} core.'}',
-                      ),
-                      trailing: _overrideStats == null
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(
-                              '${_overrideStats!.total}',
-                              style: theme.textTheme.titleMedium,
-                            ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        onPressed:
-                            _overrideStats == null ||
-                                _overrideStats!.total == 0 ||
-                                _optimizingOverrides
-                            ? null
-                            : _optimizeOverrides,
-                        icon: _optimizingOverrides
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.auto_fix_high_outlined),
-                        label: Text(
-                          _optimizingOverrides
-                              ? 'Checking…'
-                              : 'Optimise overrides',
-                        ),
-                      ),
-                    ),
-                    if (_overrideStatus != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        _overrideStatus!,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: _overrideStatusIsError
-                              ? theme.colorScheme.error
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 20),
                     _SectionLabel('Data'),
                     ListTile(

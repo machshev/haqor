@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
+import '../app_settings.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../issue_reporting.dart';
@@ -199,7 +200,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   }
 
   Future<void> _loadAdminMode() async {
-    final enabled = await tutorAdminModeEnabled();
+    final enabled = await adminModeEnabled();
     if (mounted) setState(() => _adminMode = enabled);
   }
 
@@ -221,7 +222,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
     if (!started) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Configure LAN sync in Study pace settings first.'),
+          content: Text('Configure LAN sync in App settings first.'),
         ),
       );
       return;
@@ -301,11 +302,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
           IconButton(
             icon: const Icon(Icons.tune),
             tooltip: 'Study pace',
-            onPressed: () => showStudySettings(
-              context,
-              onAdminModeChanged: (enabled) =>
-                  setState(() => _adminMode = enabled),
-            ),
+            onPressed: () => showStudySettings(context),
           ),
           IconButton(
             icon: const Icon(Icons.restart_alt),
