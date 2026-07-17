@@ -146,7 +146,9 @@ class _VerseRowState extends State<VerseRow> {
         ? Align(
             alignment: Alignment.centerRight,
             child: Wrap(
-              alignment: WrapAlignment.end,
+              // In an RTL wrap, `start` is the visual right edge.  Using
+              // `end` puts a partially filled final run on the left.
+              alignment: WrapAlignment.start,
               textDirection: TextDirection.rtl,
               children: [
                 for (final (i, glossPosition) in verseGlossPositions(
