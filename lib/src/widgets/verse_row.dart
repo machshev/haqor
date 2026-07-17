@@ -4,6 +4,24 @@ import '../bindings/bindings.dart';
 import '../tutor/transliterate.dart';
 
 final RegExp _hebrewLetter = RegExp(r'[\u05D0-\u05EA]');
+const _maqaf = '\u05BE';
+
+/// Splits a maqaf from its neighbouring word for interlinear display.
+///
+/// The Bible text preserves the printed convention of a trailing maqaf followed
+/// by a space (`עַל־ פְּנֵי`). Interlinear mode gives the mark its own column so
+/// that both joined words keep their own aligned glosses.
+List<String> interlinearVerseWords(List<String> words) {
+  final parts = <String>[];
+  for (final word in words) {
+    final wordParts = word.split(_maqaf);
+    for (var i = 0; i < wordParts.length; i++) {
+      if (wordParts[i].isNotEmpty) parts.add(wordParts[i]);
+      if (i < wordParts.length - 1) parts.add(_maqaf);
+    }
+  }
+  return parts;
+}
 
 /// Maps displayed verse tokens to their lexical gloss positions.
 ///
@@ -70,7 +88,8 @@ class _VerseRowState extends State<VerseRow> {
     _words = widget.entry.text.split(' ').where((w) => w.isNotEmpty).toList();
     _recognizers = _words
         .map(
-          (w) => TapGestureRecognizer()..onTap = () => widget.onWordTap(w, null),
+          (w) =>
+              TapGestureRecognizer()..onTap = () => widget.onWordTap(w, null),
         )
         .toList();
   }
@@ -107,7 +126,9 @@ class _VerseRowState extends State<VerseRow> {
 
     final spans = <InlineSpan>[];
     for (var i = 0; i < _words.length; i++) {
-      if (i > 0) spans.add(const TextSpan(text: ' '));
+      if (i > 0 && !_words[i - 1].endsWith(_maqaf)) {
+        spans.add(const TextSpan(text: ' '));
+      }
       spans.add(
         TextSpan(
           text: displayWords[i],
@@ -117,6 +138,10 @@ class _VerseRowState extends State<VerseRow> {
       );
     }
 
+    final interlinearWords = interlinearVerseWords(_words);
+    final interlinearDisplayWords = widget.showCantillation
+        ? interlinearWords
+        : interlinearWords.map(stripCantillation).toList();
     final content = widget.glossInterlinear && widget.entry.glosses.isNotEmpty
         ? Align(
             alignment: Alignment.centerRight,
@@ -125,21 +150,22 @@ class _VerseRowState extends State<VerseRow> {
               textDirection: TextDirection.rtl,
               children: [
                 for (final (i, glossPosition) in verseGlossPositions(
-                  _words,
+                  interlinearWords,
                 ).indexed)
                   GestureDetector(
-                    onTap: () => widget.onWordTap(
-                      _words[i].replaceAll(
-                        RegExp(
-                          r'[\u0591-\u05AF\u05BD\u05BE\u05C0\u05C3\u05C4-\u05C6]',
-                        ),
-                        '',
-                      ),
-                      glossPosition != null &&
-                              glossPosition < widget.entry.glosses.length
-                          ? widget.entry.glosses[glossPosition]
-                          : null,
-                    ),
+                    onTap: glossPosition == null
+                        ? null
+                        : () => widget.onWordTap(
+                            interlinearWords[i].replaceAll(
+                              RegExp(
+                                r'[\u0591-\u05AF\u05BD\u05BE\u05C0\u05C3\u05C4-\u05C6]',
+                              ),
+                              '',
+                            ),
+                            glossPosition < widget.entry.glosses.length
+                                ? widget.entry.glosses[glossPosition]
+                                : null,
+                          ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 3,
@@ -148,7 +174,7 @@ class _VerseRowState extends State<VerseRow> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(displayWords[i], style: wordStyle),
+                          Text(interlinearDisplayWords[i], style: wordStyle),
                           if (glossPosition != null &&
                               glossPosition < widget.entry.glosses.length &&
                               widget.entry.glosses[glossPosition].isNotEmpty)

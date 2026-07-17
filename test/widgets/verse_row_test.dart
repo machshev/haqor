@@ -10,6 +10,13 @@ void main() {
     expect(verseGlossPositions(words), [0, 1, null, 2, 3]);
   });
 
+  test('maqaf is its own interlinear item', () {
+    final words = 'עַל־ פְּנֵי'.split(' ');
+
+    expect(interlinearVerseWords(words), ['עַל', '־', 'פְּנֵי']);
+    expect(verseGlossPositions(interlinearVerseWords(words)), [0, null, 1]);
+  });
+
   testWidgets('cantillation can be hidden while vowel points remain', (
     tester,
   ) async {
