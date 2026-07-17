@@ -141,14 +141,14 @@ class _VerseRowState extends State<VerseRow> {
       color: const Color(0xFFB8860B),
       fontWeight: FontWeight.w800,
     );
-    TextStyle styleForWord(int wordIndex) {
+    TextStyle styleForWord(String word, int lexicalPosition) {
       if (!widget.highlightProperNames) return wordStyle;
       // The corpus's traditional pointing `יַהְוֶה` currently has a verb
       // analysis, so its special reader treatment must not depend on the
       // general proper-name flag.
-      if (isYahweh(_words[wordIndex])) return yahwehStyle;
-      return wordIndex < widget.entry.names.length &&
-              widget.entry.names[wordIndex]
+      if (isYahweh(word)) return yahwehStyle;
+      return lexicalPosition < widget.entry.names.length &&
+              widget.entry.names[lexicalPosition]
           ? properNameStyle
           : wordStyle;
     }
@@ -166,7 +166,7 @@ class _VerseRowState extends State<VerseRow> {
           // must not shift name styling for the words that follow.
           style: displayNamePositions[i] == null
               ? wordStyle
-              : styleForWord(displayNamePositions[i]!),
+              : styleForWord(_words[i], displayNamePositions[i]!),
           recognizer: _recognizers[i],
         ),
       );
@@ -214,7 +214,10 @@ class _VerseRowState extends State<VerseRow> {
                             interlinearDisplayWords[i],
                             style: glossPosition == null
                                 ? wordStyle
-                                : styleForWord(glossPosition),
+                                : styleForWord(
+                                    interlinearWords[i],
+                                    glossPosition,
+                                  ),
                           ),
                           if (glossPosition != null &&
                               glossPosition < widget.entry.glosses.length &&

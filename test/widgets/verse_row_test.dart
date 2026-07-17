@@ -25,6 +25,40 @@ void main() {
     expect(isYahweh('וַיהוָה'), isTrue);
     expect(isYahweh('לַיהוָה'), isTrue);
     expect(isYahweh('אַבְרָהָם'), isFalse);
+    expect(isYahweh('חָכְמָה'), isFalse);
+  });
+
+  testWidgets('standalone punctuation cannot shift Yahweh highlighting', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VerseRow(
+            entry: const VerseEntry(
+              verse: 1,
+              text: 'דָבָר ׀ יְהוָה חָכְמָה',
+              glosses: [],
+              names: [],
+            ),
+            isSelected: false,
+            hebrewNumerals: true,
+            highlightProperNames: true,
+            onTap: () {},
+            onWordTap: (_, _) {},
+          ),
+        ),
+      ),
+    );
+
+    final text = tester
+        .widget<SelectableText>(find.byType(SelectableText))
+        .textSpan!;
+    final wisdom = text.children!.whereType<TextSpan>().firstWhere(
+      (span) => span.text == 'חָכְמָה',
+    );
+
+    expect(wisdom.style!.color, isNot(const Color(0xFFB8860B)));
   });
 
   testWidgets('cantillation can be hidden while vowel points remain', (
