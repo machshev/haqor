@@ -61,6 +61,9 @@ Future<void> showAppSettings(
   context: context,
   showDragHandle: true,
   isScrollControlled: true,
+  constraints: BoxConstraints(
+    maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+  ),
   builder: (_) => _AppSettingsSheet(
     readingSettings: readingSettings,
     onReadingSettingsChanged: onReadingSettingsChanged,
@@ -163,10 +166,21 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'App settings',
-                style: theme.textTheme.titleLarge,
-                textAlign: TextAlign.center,
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'App settings',
+                      style: theme.textTheme.titleLarge,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Close settings',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
               const _SectionLabel('Reading'),
