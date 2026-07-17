@@ -26,7 +26,7 @@ void main() {
             hebrewNumerals: true,
             showCantillation: false,
             onTap: () {},
-            onWordTap: (_) {},
+            onWordTap: (_, _) {},
           ),
         ),
       ),

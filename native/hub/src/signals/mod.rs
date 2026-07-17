@@ -28,13 +28,14 @@ pub struct SaveTutorGloss {
     pub note: String,
 }
 
-/// Save a word-info root/header correction for later promotion into the
-/// checked-in `lexicon_entries` overlay.
+/// Save a word-info root/header and interlinear correction for later promotion
+/// into the checked-in lexical overlay.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct SaveLexiconEntryOverride {
     pub surface: String,
     pub root: String,
     pub gloss: String,
+    pub reader_gloss: String,
 }
 
 /// Confirms whether one word-info lexicon correction was stored locally.

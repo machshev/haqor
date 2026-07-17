@@ -70,6 +70,7 @@ class WordInfoSheet extends StatefulWidget {
     required this.word,
     required this.syriac,
     this.bdbId,
+    this.readerGloss,
     this.onNavigateToPassage,
     this.reportContext,
   });
@@ -80,6 +81,9 @@ class WordInfoSheet extends StatefulWidget {
   /// cross-reference target) rather than parsing [word] as a surface form;
   /// [word] is then just the target headword for the title.
   final String? bdbId;
+  /// The exact gloss currently rendered underneath this token in the reader.
+  /// It can intentionally differ from the descriptive Lexicon header.
+  final String? readerGloss;
   final void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage;
   final Map<String, Object?>? reportContext;
 
@@ -165,6 +169,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         surface: info.word,
         root: info.root,
         gloss: info.gloss,
+        readerGloss: widget.readerGloss,
       ),
     );
     if (!mounted || message == null) return;
@@ -1643,11 +1648,13 @@ class _LexiconEntryOverrideEditor extends StatefulWidget {
     required this.surface,
     required this.root,
     required this.gloss,
+    this.readerGloss,
   });
 
   final String surface;
   final String root;
   final String gloss;
+  final String? readerGloss;
 
   @override
   State<_LexiconEntryOverrideEditor> createState() =>
@@ -1662,6 +1669,9 @@ class _LexiconEntryOverrideEditorState
   late final TextEditingController _gloss = TextEditingController(
     text: widget.gloss,
   );
+  late final TextEditingController _readerGloss = TextEditingController(
+    text: widget.readerGloss ?? widget.gloss,
+  );
   bool _saving = false;
   String? _error;
 
@@ -1669,11 +1679,13 @@ class _LexiconEntryOverrideEditorState
   void dispose() {
     _root.dispose();
     _gloss.dispose();
+    _readerGloss.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     final gloss = _gloss.text.trim();
+    final readerGloss = _readerGloss.text.trim();
     if (gloss.isEmpty) {
       setState(() => _error = 'A lexicon gloss is required.');
       return;
@@ -1689,6 +1701,7 @@ class _LexiconEntryOverrideEditorState
       surface: widget.surface,
       root: _root.text.trim(),
       gloss: gloss,
+      readerGloss: readerGloss,
     ).sendSignalToRust();
     try {
       final status = (await statusFuture).message;
@@ -1726,7 +1739,7 @@ class _LexiconEntryOverrideEditorState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Edit lexicon override',
+              'Edit word glosses',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleLarge,
             ),
@@ -1757,6 +1770,16 @@ class _LexiconEntryOverrideEditorState
               textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(
                 labelText: 'Lexicon header gloss',
+                helperText: 'The descriptive gloss shown in word information.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _readerGloss,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Interlinear gloss',
+                helperText: 'The compact gloss shown below this word in the reader.',
               ),
             ),
             if (_error != null) ...[

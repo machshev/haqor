@@ -36,7 +36,7 @@ class VerseRow extends StatefulWidget {
   final bool isSelected;
   final bool hebrewNumerals;
   final VoidCallback onTap;
-  final void Function(String word) onWordTap;
+  final void Function(String word, String? readerGloss) onWordTap;
   final double fontSize;
   final String fontFamily;
   final bool showCantillation;
@@ -69,7 +69,9 @@ class _VerseRowState extends State<VerseRow> {
   void _rebuild() {
     _words = widget.entry.text.split(' ').where((w) => w.isNotEmpty).toList();
     _recognizers = _words
-        .map((w) => TapGestureRecognizer()..onTap = () => widget.onWordTap(w))
+        .map(
+          (w) => TapGestureRecognizer()..onTap = () => widget.onWordTap(w, null),
+        )
         .toList();
   }
 
@@ -133,6 +135,10 @@ class _VerseRowState extends State<VerseRow> {
                         ),
                         '',
                       ),
+                      glossPosition != null &&
+                              glossPosition < widget.entry.glosses.length
+                          ? widget.entry.glosses[glossPosition]
+                          : null,
                     ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(

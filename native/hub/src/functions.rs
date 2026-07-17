@@ -237,6 +237,7 @@ pub async fn save_lexicon_entry_override(bible: SharedBible) {
             &correction.surface,
             &correction.root,
             &correction.gloss,
+            &correction.reader_gloss,
             now_epoch(),
         ) {
             Ok(()) => {
