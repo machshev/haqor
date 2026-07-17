@@ -136,7 +136,9 @@ class _VerseRowState extends State<VerseRow> {
       fontWeight: FontWeight.w700,
     );
     final yahwehStyle = wordStyle.copyWith(
-      color: theme.colorScheme.primary,
+      // A warm, legible gold that remains distinct from the ordinary
+      // proper-name colour in both light and dark themes.
+      color: const Color(0xFFB8860B),
       fontWeight: FontWeight.w800,
     );
     TextStyle styleForWord(int wordIndex) {
@@ -152,6 +154,7 @@ class _VerseRowState extends State<VerseRow> {
     }
 
     final spans = <InlineSpan>[];
+    final displayNamePositions = verseGlossPositions(_words);
     for (var i = 0; i < _words.length; i++) {
       if (i > 0 && !_words[i - 1].endsWith(_maqaf)) {
         spans.add(const TextSpan(text: ' '));
@@ -159,7 +162,11 @@ class _VerseRowState extends State<VerseRow> {
       spans.add(
         TextSpan(
           text: displayWords[i],
-          style: styleForWord(i),
+          // A standalone paseq is visible text but has no lexical row, so it
+          // must not shift name styling for the words that follow.
+          style: displayNamePositions[i] == null
+              ? wordStyle
+              : styleForWord(displayNamePositions[i]!),
           recognizer: _recognizers[i],
         ),
       );
