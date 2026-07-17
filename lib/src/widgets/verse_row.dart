@@ -139,14 +139,17 @@ class _VerseRowState extends State<VerseRow> {
       color: theme.colorScheme.primary,
       fontWeight: FontWeight.w800,
     );
-    TextStyle styleForWord(int wordIndex) =>
-        widget.highlightProperNames &&
-            wordIndex < widget.entry.names.length &&
-            widget.entry.names[wordIndex]
-        ? isYahweh(_words[wordIndex])
-              ? yahwehStyle
-              : properNameStyle
-        : wordStyle;
+    TextStyle styleForWord(int wordIndex) {
+      if (!widget.highlightProperNames) return wordStyle;
+      // The corpus's traditional pointing `יַהְוֶה` currently has a verb
+      // analysis, so its special reader treatment must not depend on the
+      // general proper-name flag.
+      if (isYahweh(_words[wordIndex])) return yahwehStyle;
+      return wordIndex < widget.entry.names.length &&
+              widget.entry.names[wordIndex]
+          ? properNameStyle
+          : wordStyle;
+    }
 
     final spans = <InlineSpan>[];
     for (var i = 0; i < _words.length; i++) {

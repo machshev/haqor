@@ -21,6 +21,7 @@ void main() {
 
   test('recognises Yahweh with or without an attached particle', () {
     expect(isYahweh('יְהוָה'), isTrue);
+    expect(isYahweh('יַהְוֶה'), isTrue);
     expect(isYahweh('וַיהוָה'), isTrue);
     expect(isYahweh('לַיהוָה'), isTrue);
     expect(isYahweh('אַבְרָהָם'), isFalse);
