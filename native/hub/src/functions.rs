@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use haqor_core::bible::Bible;
+use haqor_core::bible::{Bible, inflected_gloss};
 use haqor_core::tutor::{self, Grade, Track};
 use rinf::{DartSignal, RustSignal, debug_print};
 
@@ -661,11 +661,16 @@ pub async fn get_word_info(bible: SharedBible) {
                         content_json: e.content_json,
                     })
                     .collect();
+                    // The headline describes this occurrence, not merely its
+                    // dictionary lemma. Keep the BDB entries below as lexeme
+                    // definitions, while rendering proclitics and noun/verb
+                    // morphology here (לָמַיִם → "to the water").
+                    let gloss = inflected_gloss(&info);
                     WordInfo {
                         found: true,
                         word: info.word,
                         root: info.root,
-                        gloss: info.gloss,
+                        gloss,
                         gender: info.gender,
                         number: info.number,
                         prefix: info.prefix,
