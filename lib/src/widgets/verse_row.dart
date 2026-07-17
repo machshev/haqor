@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../bindings/bindings.dart';
+import '../tutor/transliterate.dart';
 
 final RegExp _hebrewLetter = RegExp(r'[\u05D0-\u05EA]');
 
@@ -27,6 +28,7 @@ class VerseRow extends StatefulWidget {
     required this.onWordTap,
     this.fontSize = 20.0,
     this.fontFamily = 'Cardo',
+    this.showCantillation = true,
     this.glossInterlinear = false,
   });
 
@@ -37,6 +39,7 @@ class VerseRow extends StatefulWidget {
   final void Function(String word) onWordTap;
   final double fontSize;
   final String fontFamily;
+  final bool showCantillation;
   final bool glossInterlinear;
 
   @override
@@ -86,6 +89,9 @@ class _VerseRowState extends State<VerseRow> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final displayWords = widget.showCantillation
+        ? _words
+        : _words.map(stripCantillation).toList();
     final wordStyle = TextStyle(
       fontFamily: widget.fontFamily,
       fontFamilyFallback: const ['Noto Serif Hebrew'],
@@ -102,7 +108,7 @@ class _VerseRowState extends State<VerseRow> {
       if (i > 0) spans.add(const TextSpan(text: ' '));
       spans.add(
         TextSpan(
-          text: _words[i],
+          text: displayWords[i],
           style: wordStyle,
           recognizer: _recognizers[i],
         ),
@@ -136,7 +142,7 @@ class _VerseRowState extends State<VerseRow> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(_words[i], style: wordStyle),
+                          Text(displayWords[i], style: wordStyle),
                           if (glossPosition != null &&
                               glossPosition < widget.entry.glosses.length &&
                               widget.entry.glosses[glossPosition].isNotEmpty)

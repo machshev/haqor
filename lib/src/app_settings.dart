@@ -19,6 +19,7 @@ class AppReadingSettings {
   const AppReadingSettings({
     required this.ntSyriac,
     required this.hebrewNumerals,
+    required this.showCantillation,
     required this.glossInterlinear,
     required this.fontSize,
     required this.fontFamily,
@@ -26,6 +27,7 @@ class AppReadingSettings {
 
   final bool ntSyriac;
   final bool hebrewNumerals;
+  final bool showCantillation;
   final bool glossInterlinear;
   final double fontSize;
   final String fontFamily;
@@ -33,12 +35,14 @@ class AppReadingSettings {
   AppReadingSettings copyWith({
     bool? ntSyriac,
     bool? hebrewNumerals,
+    bool? showCantillation,
     bool? glossInterlinear,
     double? fontSize,
     String? fontFamily,
   }) => AppReadingSettings(
     ntSyriac: ntSyriac ?? this.ntSyriac,
     hebrewNumerals: hebrewNumerals ?? this.hebrewNumerals,
+    showCantillation: showCantillation ?? this.showCantillation,
     glossInterlinear: glossInterlinear ?? this.glossInterlinear,
     fontSize: fontSize ?? this.fontSize,
     fontFamily: fontFamily ?? this.fontFamily,
@@ -185,6 +189,17 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
                 selected: {_readingSettings.hebrewNumerals},
                 onSelectionChanged: (selection) => _updateReadingSettings(
                   _readingSettings.copyWith(hebrewNumerals: selection.single),
+                ),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Cantillation marks'),
+                subtitle: const Text(
+                  'Show the chanting marks in the main Hebrew text.',
+                ),
+                value: _readingSettings.showCantillation,
+                onChanged: (value) => _updateReadingSettings(
+                  _readingSettings.copyWith(showCantillation: value),
                 ),
               ),
               SwitchListTile(

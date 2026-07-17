@@ -68,6 +68,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   static const _kHebrewNumerals = 'hebrew_numerals';
   static const _kFontSize = 'font_size';
   static const _kFontFamily = 'font_family';
+  static const _kShowCantillation = 'show_cantillation';
   static const _kGlossInterlinear = 'gloss_interlinear';
 
   static const _fontFamilies = ['Cardo', 'David Libre', 'Frank Ruhl Libre'];
@@ -100,6 +101,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   bool _hebrewNumerals = true;
   double _fontSize = 20.0;
   String _fontFamily = 'Cardo';
+  bool _showCantillation = true;
   bool _glossInterlinear = false;
 
   StreamSubscription<RustSignalPack<ChapterText>>? _sub;
@@ -269,6 +271,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _fontSize = (prefs.getDouble(_kFontSize) ?? 20.0).clamp(16.0, 28.0);
       final savedFamily = prefs.getString(_kFontFamily) ?? 'Cardo';
       _fontFamily = _fontFamilies.contains(savedFamily) ? savedFamily : 'Cardo';
+      _showCantillation = prefs.getBool(_kShowCantillation) ?? true;
       _glossInterlinear = prefs.getBool(_kGlossInterlinear) ?? false;
     });
     final rawHistory = prefs.getStringList(_kHistory) ?? [];
@@ -319,6 +322,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       prefs.setBool(_kHebrewNumerals, _hebrewNumerals),
       prefs.setDouble(_kFontSize, _fontSize),
       prefs.setString(_kFontFamily, _fontFamily),
+      prefs.setBool(_kShowCantillation, _showCantillation),
       prefs.setBool(_kGlossInterlinear, _glossInterlinear),
     ]);
   }
@@ -328,6 +332,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     setState(() {
       _ntSyriac = settings.ntSyriac;
       _hebrewNumerals = settings.hebrewNumerals;
+      _showCantillation = settings.showCantillation;
       _glossInterlinear = settings.glossInterlinear;
       _fontSize = settings.fontSize;
       _fontFamily = settings.fontFamily;
@@ -344,6 +349,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     readingSettings: AppReadingSettings(
       ntSyriac: _ntSyriac,
       hebrewNumerals: _hebrewNumerals,
+      showCantillation: _showCantillation,
       glossInterlinear: _glossInterlinear,
       fontSize: _fontSize,
       fontFamily: _fontFamily,
@@ -760,6 +766,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                   ),
                   fontSize: _fontSize,
                   fontFamily: _fontFamily,
+                  showCantillation: _showCantillation,
                   glossInterlinear: _glossInterlinear,
                 );
               },
