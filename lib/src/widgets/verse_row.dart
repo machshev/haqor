@@ -4,7 +4,13 @@ import '../bindings/bindings.dart';
 import '../tutor/transliterate.dart';
 
 final RegExp _hebrewLetter = RegExp(r'[\u05D0-\u05EA]');
+final RegExp _hebrewMarks = RegExp(r'[^\u05D0-\u05EA]');
+final RegExp _yahwehWithPrefixes = RegExp(r'^[ובלכמשה]*יהוה$');
 const _maqaf = '\u05BE';
+
+/// Whether [word] is the tetragrammaton, allowing common attached particles.
+bool isYahweh(String word) =>
+    _yahwehWithPrefixes.hasMatch(word.replaceAll(_hebrewMarks, ''));
 
 /// Splits a maqaf from its neighbouring word for interlinear display.
 ///
@@ -48,6 +54,7 @@ class VerseRow extends StatefulWidget {
     this.fontFamily = 'Cardo',
     this.showCantillation = true,
     this.glossInterlinear = false,
+    this.highlightProperNames = false,
   });
 
   final VerseEntry entry;
@@ -59,6 +66,7 @@ class VerseRow extends StatefulWidget {
   final String fontFamily;
   final bool showCantillation;
   final bool glossInterlinear;
+  final bool highlightProperNames;
 
   @override
   State<VerseRow> createState() => _VerseRowState();
@@ -123,6 +131,22 @@ class _VerseRowState extends State<VerseRow> {
           ? theme.colorScheme.onPrimaryContainer
           : theme.colorScheme.onSurface,
     );
+    final properNameStyle = wordStyle.copyWith(
+      color: theme.colorScheme.tertiary,
+      fontWeight: FontWeight.w700,
+    );
+    final yahwehStyle = wordStyle.copyWith(
+      color: theme.colorScheme.primary,
+      fontWeight: FontWeight.w800,
+    );
+    TextStyle styleForWord(int wordIndex) =>
+        widget.highlightProperNames &&
+            wordIndex < widget.entry.names.length &&
+            widget.entry.names[wordIndex]
+        ? isYahweh(_words[wordIndex])
+              ? yahwehStyle
+              : properNameStyle
+        : wordStyle;
 
     final spans = <InlineSpan>[];
     for (var i = 0; i < _words.length; i++) {
@@ -132,7 +156,7 @@ class _VerseRowState extends State<VerseRow> {
       spans.add(
         TextSpan(
           text: displayWords[i],
-          style: wordStyle,
+          style: styleForWord(i),
           recognizer: _recognizers[i],
         ),
       );
@@ -176,7 +200,12 @@ class _VerseRowState extends State<VerseRow> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(interlinearDisplayWords[i], style: wordStyle),
+                          Text(
+                            interlinearDisplayWords[i],
+                            style: glossPosition == null
+                                ? wordStyle
+                                : styleForWord(glossPosition),
+                          ),
                           if (glossPosition != null &&
                               glossPosition < widget.entry.glosses.length &&
                               widget.entry.glosses[glossPosition].isNotEmpty)

@@ -121,6 +121,8 @@ pub struct VerseEntry {
     pub verse: u8,
     pub text: String,
     pub glosses: Vec<String>,
+    /// Aligned with the lexical words: true where the word is a proper name.
+    pub names: Vec<bool>,
 }
 
 #[derive(Debug, Serialize, RustSignal)]

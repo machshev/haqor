@@ -70,6 +70,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   static const _kFontFamily = 'font_family';
   static const _kShowCantillation = 'show_cantillation';
   static const _kGlossInterlinear = 'gloss_interlinear';
+  static const _kHighlightProperNames = 'highlight_proper_names';
 
   static const _fontFamilies = ['Cardo', 'David Libre', 'Frank Ruhl Libre'];
 
@@ -103,6 +104,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   String _fontFamily = 'Cardo';
   bool _showCantillation = true;
   bool _glossInterlinear = false;
+  bool _highlightProperNames = false;
 
   StreamSubscription<RustSignalPack<ChapterText>>? _sub;
   StreamSubscription<RustSignalPack<LexiconEntryOverrideStatus>>?
@@ -273,6 +275,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _fontFamily = _fontFamilies.contains(savedFamily) ? savedFamily : 'Cardo';
       _showCantillation = prefs.getBool(_kShowCantillation) ?? true;
       _glossInterlinear = prefs.getBool(_kGlossInterlinear) ?? false;
+      _highlightProperNames = prefs.getBool(_kHighlightProperNames) ?? false;
     });
     final rawHistory = prefs.getStringList(_kHistory) ?? [];
     final savedIndex = prefs.getInt(_kHistoryIndex) ?? -1;
@@ -324,6 +327,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       prefs.setString(_kFontFamily, _fontFamily),
       prefs.setBool(_kShowCantillation, _showCantillation),
       prefs.setBool(_kGlossInterlinear, _glossInterlinear),
+      prefs.setBool(_kHighlightProperNames, _highlightProperNames),
     ]);
   }
 
@@ -334,6 +338,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _hebrewNumerals = settings.hebrewNumerals;
       _showCantillation = settings.showCantillation;
       _glossInterlinear = settings.glossInterlinear;
+      _highlightProperNames = settings.highlightProperNames;
       _fontSize = settings.fontSize;
       _fontFamily = settings.fontFamily;
     });
@@ -351,6 +356,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       hebrewNumerals: _hebrewNumerals,
       showCantillation: _showCantillation,
       glossInterlinear: _glossInterlinear,
+      highlightProperNames: _highlightProperNames,
       fontSize: _fontSize,
       fontFamily: _fontFamily,
     ),
@@ -776,6 +782,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                   fontFamily: _fontFamily,
                   showCantillation: _showCantillation,
                   glossInterlinear: _glossInterlinear,
+                  highlightProperNames: _highlightProperNames,
                 );
               },
             ),

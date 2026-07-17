@@ -21,6 +21,7 @@ class AppReadingSettings {
     required this.hebrewNumerals,
     required this.showCantillation,
     required this.glossInterlinear,
+    required this.highlightProperNames,
     required this.fontSize,
     required this.fontFamily,
   });
@@ -29,6 +30,7 @@ class AppReadingSettings {
   final bool hebrewNumerals;
   final bool showCantillation;
   final bool glossInterlinear;
+  final bool highlightProperNames;
   final double fontSize;
   final String fontFamily;
 
@@ -37,6 +39,7 @@ class AppReadingSettings {
     bool? hebrewNumerals,
     bool? showCantillation,
     bool? glossInterlinear,
+    bool? highlightProperNames,
     double? fontSize,
     String? fontFamily,
   }) => AppReadingSettings(
@@ -44,6 +47,7 @@ class AppReadingSettings {
     hebrewNumerals: hebrewNumerals ?? this.hebrewNumerals,
     showCantillation: showCantillation ?? this.showCantillation,
     glossInterlinear: glossInterlinear ?? this.glossInterlinear,
+    highlightProperNames: highlightProperNames ?? this.highlightProperNames,
     fontSize: fontSize ?? this.fontSize,
     fontFamily: fontFamily ?? this.fontFamily,
   );
@@ -209,6 +213,17 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
                 value: _readingSettings.glossInterlinear,
                 onChanged: (value) => _updateReadingSettings(
                   _readingSettings.copyWith(glossInterlinear: value),
+                ),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Highlight proper names'),
+                subtitle: const Text(
+                  'Use colour to distinguish personal and place names.',
+                ),
+                value: _readingSettings.highlightProperNames,
+                onChanged: (value) => _updateReadingSettings(
+                  _readingSettings.copyWith(highlightProperNames: value),
                 ),
               ),
               const SizedBox(height: 8),

@@ -19,6 +19,13 @@ void main() {
     expect(verseGlossPositions(interlinearVerseWords(words)), [0, null, 1]);
   });
 
+  test('recognises Yahweh with or without an attached particle', () {
+    expect(isYahweh('יְהוָה'), isTrue);
+    expect(isYahweh('וַיהוָה'), isTrue);
+    expect(isYahweh('לַיהוָה'), isTrue);
+    expect(isYahweh('אַבְרָהָם'), isFalse);
+  });
+
   testWidgets('cantillation can be hidden while vowel points remain', (
     tester,
   ) async {
@@ -30,6 +37,7 @@ void main() {
               verse: 1,
               text: 'בְּרֵאשִׁ֖ית',
               glosses: [],
+              names: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -78,6 +86,7 @@ void main() {
                 verse: 1,
                 text: words.join(' '),
                 glosses: glosses,
+                names: const [],
               ),
               isSelected: false,
               hebrewNumerals: true,

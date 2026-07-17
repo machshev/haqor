@@ -383,6 +383,9 @@ pub async fn get_chapter_text(bible: SharedBible) {
                         glosses: bible_guard
                             .verse_glosses(req.book, req.chapter, verse)
                             .unwrap_or_default(),
+                        names: bible_guard
+                            .verse_name_flags(req.book, req.chapter, verse)
+                            .unwrap_or_default(),
                     })
                     .collect();
                 ChapterText {
