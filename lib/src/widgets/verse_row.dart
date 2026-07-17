@@ -2,6 +2,21 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../bindings/bindings.dart';
 
+final RegExp _hebrewLetter = RegExp(r'[\u05D0-\u05EA]');
+
+/// Maps displayed verse tokens to their lexical gloss positions.
+///
+/// The Bible text includes standalone punctuation such as the paseq (`׀`).
+/// Those tokens remain visible, but the core deliberately does not emit a
+/// gloss for them.
+List<int?> verseGlossPositions(List<String> words) {
+  var glossPosition = 0;
+  return [
+    for (final word in words)
+      if (_hebrewLetter.hasMatch(word)) glossPosition++ else null,
+  ];
+}
+
 class VerseRow extends StatefulWidget {
   const VerseRow({
     super.key,
@@ -101,7 +116,9 @@ class _VerseRowState extends State<VerseRow> {
               alignment: WrapAlignment.end,
               textDirection: TextDirection.rtl,
               children: [
-                for (var i = 0; i < _words.length; i++)
+                for (final (i, glossPosition) in verseGlossPositions(
+                  _words,
+                ).indexed)
                   GestureDetector(
                     onTap: () => widget.onWordTap(
                       _words[i].replaceAll(
@@ -120,10 +137,11 @@ class _VerseRowState extends State<VerseRow> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(_words[i], style: wordStyle),
-                          if (i < widget.entry.glosses.length &&
-                              widget.entry.glosses[i].isNotEmpty)
+                          if (glossPosition != null &&
+                              glossPosition < widget.entry.glosses.length &&
+                              widget.entry.glosses[glossPosition].isNotEmpty)
                             Text(
-                              widget.entry.glosses[i],
+                              widget.entry.glosses[glossPosition],
                               style: theme.textTheme.labelSmall,
                             ),
                         ],
