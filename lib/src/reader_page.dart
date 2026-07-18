@@ -39,6 +39,47 @@ class _PassageRef {
   }
 }
 
+class _ReadingPlan {
+  _ReadingPlan({required this.bookIndex, Set<int>? completedChapters})
+    : completedChapters = completedChapters ?? {};
+
+  final int bookIndex;
+  final Set<int> completedChapters;
+
+  int? get nextChapter {
+    for (var chapter = 1; chapter <= kBooks[bookIndex].chapters; chapter++) {
+      if (!completedChapters.contains(chapter)) return chapter;
+    }
+    return null;
+  }
+
+  String toStorageString() {
+    final chapters = completedChapters.toList()..sort();
+    return '$bookIndex|${chapters.join(',')}';
+  }
+
+  static _ReadingPlan? fromStorageString(String value) {
+    final parts = value.split('|');
+    if (parts.length != 2) return null;
+    final bookIndex = int.tryParse(parts[0]);
+    if (bookIndex == null || bookIndex < 0 || bookIndex >= kBooks.length) {
+      return null;
+    }
+    final completedChapters = parts[1]
+        .split(',')
+        .map(int.tryParse)
+        .whereType<int>()
+        .where(
+          (chapter) => chapter >= 1 && chapter <= kBooks[bookIndex].chapters,
+        )
+        .toSet();
+    return _ReadingPlan(
+      bookIndex: bookIndex,
+      completedChapters: completedChapters,
+    );
+  }
+}
+
 class _Section {
   final int bookIndex; // 0-based
   final int chapter; // 1-based
@@ -73,6 +114,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   static const _kHighlightProperNames = 'highlight_proper_names';
   static const _kReadingPlanBook = 'reading_plan_book';
   static const _kReadingPlanCompleted = 'reading_plan_completed';
+  static const _kReadingPlans = 'reading_plans';
 
   static const _fontFamilies = ['Cardo', 'David Libre', 'Frank Ruhl Libre'];
 
@@ -107,20 +149,16 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   bool _showCantillation = true;
   bool _glossInterlinear = false;
   bool _highlightProperNames = false;
-  int? _readingPlanBookIndex;
-  Set<int> _readingPlanCompleted = {};
+  List<_ReadingPlan> _readingPlans = [];
 
-  int? get _nextPlanChapter {
-    final bookIndex = _readingPlanBookIndex;
-    if (bookIndex == null) return null;
-    for (var chapter = 1; chapter <= kBooks[bookIndex].chapters; chapter++) {
-      if (!_readingPlanCompleted.contains(chapter)) return chapter;
+  _ReadingPlan? _planForChapter(int bookIndex, int chapter) {
+    for (final plan in _readingPlans) {
+      if (plan.bookIndex == bookIndex && plan.nextChapter == chapter) {
+        return plan;
+      }
     }
     return null;
   }
-
-  bool get _isOnPlanChapter =>
-      _readingPlanBookIndex == _bookIndex && _nextPlanChapter == _chapter;
 
   StreamSubscription<RustSignalPack<ChapterText>>? _sub;
   StreamSubscription<RustSignalPack<LexiconEntryOverrideStatus>>?
@@ -292,32 +330,33 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _showCantillation = prefs.getBool(_kShowCantillation) ?? true;
       _glossInterlinear = prefs.getBool(_kGlossInterlinear) ?? false;
       _highlightProperNames = prefs.getBool(_kHighlightProperNames) ?? false;
-      final planBook = prefs.getInt(_kReadingPlanBook);
-      if (planBook != null && planBook >= 0 && planBook < kBooks.length) {
-        _readingPlanBookIndex = planBook;
-        _readingPlanCompleted =
-            (prefs.getStringList(_kReadingPlanCompleted) ?? [])
-                .map(int.tryParse)
-                .whereType<int>()
-                .where(
-                  (chapter) =>
-                      chapter >= 1 && chapter <= kBooks[planBook].chapters,
-                )
-                .toSet();
+      final savedPlans = prefs.getStringList(_kReadingPlans);
+      if (savedPlans != null) {
+        _readingPlans = savedPlans
+            .map(_ReadingPlan.fromStorageString)
+            .whereType<_ReadingPlan>()
+            .toList();
+      } else {
+        final planBook = prefs.getInt(_kReadingPlanBook);
+        if (planBook != null && planBook >= 0 && planBook < kBooks.length) {
+          _readingPlans = [
+            _ReadingPlan(
+              bookIndex: planBook,
+              completedChapters:
+                  (prefs.getStringList(_kReadingPlanCompleted) ?? [])
+                      .map(int.tryParse)
+                      .whereType<int>()
+                      .where(
+                        (chapter) =>
+                            chapter >= 1 &&
+                            chapter <= kBooks[planBook].chapters,
+                      )
+                      .toSet(),
+            ),
+          ];
+        }
       }
     });
-    final planChapter = _nextPlanChapter;
-    if (_readingPlanBookIndex != null && planChapter != null) {
-      _history
-        ..clear()
-        ..add(
-          _PassageRef(bookIndex: _readingPlanBookIndex!, chapter: planChapter),
-        );
-      _historyIndex = 0;
-      _startAt(_readingPlanBookIndex!, planChapter);
-      _saveHistory();
-      return;
-    }
     final rawHistory = prefs.getStringList(_kHistory) ?? [];
     final savedIndex = prefs.getInt(_kHistoryIndex) ?? -1;
     if (rawHistory.isNotEmpty &&
@@ -374,20 +413,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   Future<void> _saveReadingPlan() async {
     final prefs = await SharedPreferences.getInstance();
-    final bookIndex = _readingPlanBookIndex;
-    if (bookIndex == null) {
-      await Future.wait([
-        prefs.remove(_kReadingPlanBook),
-        prefs.remove(_kReadingPlanCompleted),
-      ]);
-      return;
-    }
     await Future.wait([
-      prefs.setInt(_kReadingPlanBook, bookIndex),
       prefs.setStringList(
-        _kReadingPlanCompleted,
-        _readingPlanCompleted.map((chapter) => '$chapter').toList(),
+        _kReadingPlans,
+        _readingPlans.map((plan) => plan.toStorageString()).toList(),
       ),
+      prefs.remove(_kReadingPlanBook),
+      prefs.remove(_kReadingPlanCompleted),
     ]);
   }
 
@@ -428,28 +460,21 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       context: context,
       useSafeArea: true,
       builder: (ctx) => _ReadingPlanSheet(
-        bookIndex: _readingPlanBookIndex,
-        completedChapters: _readingPlanCompleted,
+        plans: _readingPlans,
         onChooseBook: () {
           Navigator.pop(ctx);
           _choosePlanBook();
         },
-        onOpenNext: _nextPlanChapter == null
-            ? null
-            : () {
-                Navigator.pop(ctx);
-                _navigateTo(_readingPlanBookIndex!, _nextPlanChapter!);
-              },
-        onClear: _readingPlanBookIndex == null
-            ? null
-            : () {
-                Navigator.pop(ctx);
-                setState(() {
-                  _readingPlanBookIndex = null;
-                  _readingPlanCompleted = {};
-                });
-                _saveReadingPlan();
-              },
+        onOpenNext: (plan) {
+          Navigator.pop(ctx);
+          final chapter = plan.nextChapter;
+          if (chapter != null) _navigateTo(plan.bookIndex, chapter);
+        },
+        onClear: (plan) {
+          Navigator.pop(ctx);
+          setState(() => _readingPlans.remove(plan));
+          _saveReadingPlan();
+        },
       ),
     );
   }
@@ -459,36 +484,39 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
-      builder: (ctx) =>
-          BookSelectorSheet(currentIndex: _readingPlanBookIndex ?? _bookIndex),
+      builder: (ctx) => BookSelectorSheet(currentIndex: _bookIndex),
     );
     if (result == null) return;
+    if (_readingPlans.any((plan) => plan.bookIndex == result)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${kBooks[result].transliteration} is already in your plan.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
     setState(() {
-      _readingPlanBookIndex = result;
-      _readingPlanCompleted = {};
-      _history
-        ..clear()
-        ..add(_PassageRef(bookIndex: result, chapter: 1));
-      _historyIndex = 0;
+      _readingPlans.add(_ReadingPlan(bookIndex: result));
     });
     _saveReadingPlan();
-    _saveHistory();
-    _startAt(result, 1);
   }
 
-  void _completePlanChapter() {
-    final bookIndex = _readingPlanBookIndex;
-    final chapter = _nextPlanChapter;
-    if (bookIndex == null || chapter == null || !_isOnPlanChapter) return;
-    setState(() => _readingPlanCompleted.add(chapter));
+  void _completePlanChapter(_ReadingPlan plan) {
+    final chapter = plan.nextChapter;
+    if (chapter == null) return;
+    setState(() => plan.completedChapters.add(chapter));
     _saveReadingPlan();
-    final nextChapter = _nextPlanChapter;
+    final nextChapter = plan.nextChapter;
     if (nextChapter != null) {
-      _navigateTo(bookIndex, nextChapter);
+      _navigateTo(plan.bookIndex, nextChapter);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${kBooks[bookIndex].transliteration} complete!'),
+          content: Text('${kBooks[plan.bookIndex].transliteration} complete!'),
         ),
       );
     }
@@ -854,13 +882,21 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           : _sections.isEmpty
           ? const Center(child: Text('No text found'))
           : _buildScrollView(),
-      floatingActionButton: _isOnPlanChapter
-          ? FloatingActionButton.extended(
-              onPressed: _completePlanChapter,
-              icon: const Icon(Icons.check),
-              label: Text('Complete chapter $_chapter'),
-            )
-          : null,
+    );
+  }
+
+  Widget _completePlanChapterControl(int bookIndex, int chapter) {
+    final plan = _planForChapter(bookIndex, chapter);
+    if (plan == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+      child: Center(
+        child: FilledButton.icon(
+          onPressed: () => _completePlanChapter(plan),
+          icon: const Icon(Icons.check),
+          label: Text('Complete chapter $chapter'),
+        ),
+      ),
     );
   }
 
@@ -878,6 +914,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           ),
         const SliverToBoxAdapter(child: SizedBox(height: 8)),
         for (int i = 0; i < _sections.length; i++) ...[
+          if (i > 0)
+            SliverToBoxAdapter(
+              child: _completePlanChapterControl(
+                _sections[i - 1].bookIndex,
+                _sections[i - 1].chapter,
+              ),
+            ),
           SliverToBoxAdapter(
             child: i == 0
                 ? SizedBox(key: _sections[0].key)
@@ -946,31 +989,23 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
 class _ReadingPlanSheet extends StatelessWidget {
   const _ReadingPlanSheet({
-    required this.bookIndex,
-    required this.completedChapters,
+    required this.plans,
     required this.onChooseBook,
     required this.onOpenNext,
     required this.onClear,
   });
 
-  final int? bookIndex;
-  final Set<int> completedChapters;
+  final List<_ReadingPlan> plans;
   final VoidCallback onChooseBook;
-  final VoidCallback? onOpenNext;
-  final VoidCallback? onClear;
+  final ValueChanged<_ReadingPlan> onOpenNext;
+  final ValueChanged<_ReadingPlan> onClear;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final book = bookIndex == null ? null : kBooks[bookIndex!];
-    final nextChapter = book == null
-        ? null
-        : List<int>.generate(book.chapters, (i) => i + 1)
-              .where((chapter) => !completedChapters.contains(chapter))
-              .firstOrNull;
     return ConstrainedBox(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        maxHeight: MediaQuery.sizeOf(context).height * 0.7,
       ),
       child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(
@@ -995,69 +1030,85 @@ class _ReadingPlanSheet extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             Text('Passage reading plan', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 6),
-            Text(
-              book == null
-                  ? 'Choose a book, then complete one chapter at a time.'
-                  : '${book.transliteration}: ${completedChapters.length} of ${book.chapters} chapters complete',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
             const SizedBox(height: 16),
-            if (book != null) ...[
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (var chapter = 1; chapter <= book.chapters; chapter++)
-                    Chip(
-                      avatar: completedChapters.contains(chapter)
-                          ? Icon(
-                              Icons.check,
-                              size: 16,
-                              color: theme.colorScheme.onPrimary,
-                            )
-                          : null,
-                      label: Text('$chapter'),
-                      backgroundColor: completedChapters.contains(chapter)
-                          ? theme.colorScheme.primary
-                          : chapter == nextChapter
-                          ? theme.colorScheme.primaryContainer
-                          : theme.colorScheme.surfaceContainerHighest,
-                      labelStyle: TextStyle(
-                        color: completedChapters.contains(chapter)
-                            ? theme.colorScheme.onPrimary
-                            : theme.colorScheme.onSurface,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 16),
-            ],
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  onPressed: onChooseBook,
-                  icon: const Icon(Icons.menu_book_outlined),
-                  label: Text(book == null ? 'Choose book' : 'Change book'),
+            if (plans.isEmpty)
+              Text(
+                'Add a book to start a reading plan.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-                const Spacer(),
-                if (onClear != null)
-                  IconButton(
-                    onPressed: onClear,
-                    icon: const Icon(Icons.delete_outline),
-                    tooltip: 'Clear plan',
-                  ),
-                if (onOpenNext != null)
-                  FilledButton(
-                    onPressed: onOpenNext,
-                    child: Text('Chapter $nextChapter'),
-                  ),
-              ],
+              )
+            else
+              for (final plan in plans)
+                _PlanProgressRow(
+                  plan: plan,
+                  onOpenNext: () => onOpenNext(plan),
+                  onClear: () => onClear(plan),
+                ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onChooseBook,
+              icon: const Icon(Icons.add),
+              label: const Text('Add book'),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _PlanProgressRow extends StatelessWidget {
+  const _PlanProgressRow({
+    required this.plan,
+    required this.onOpenNext,
+    required this.onClear,
+  });
+
+  final _ReadingPlan plan;
+  final VoidCallback onOpenNext;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final book = kBooks[plan.bookIndex];
+    final nextChapter = plan.nextChapter;
+    final progress = plan.completedChapters.length / book.chapters;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  book.transliteration,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 6),
+                LinearProgressIndicator(value: progress),
+                const SizedBox(height: 4),
+                Text(
+                  '${plan.completedChapters.length}/${book.chapters} chapters',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: onClear,
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Remove plan',
+          ),
+          IconButton(
+            onPressed: nextChapter == null ? null : onOpenNext,
+            icon: const Icon(Icons.play_arrow),
+            tooltip: nextChapter == null
+                ? 'Plan complete'
+                : 'Open chapter $nextChapter',
+          ),
+        ],
       ),
     );
   }
