@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:collection';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
@@ -93,6 +95,8 @@ class _Section {
   }) : key = GlobalKey();
 }
 
+typedef _ChapterRequest = (int, int, bool, bool, bool);
+
 enum _ReaderMenuAction { readingPlan, tutor, settings }
 
 class BibleReaderPage extends StatefulWidget {
@@ -138,8 +142,15 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   bool get _canGoBack => _historyIndex > 0;
   bool get _canGoForward => _historyIndex < _history.length - 1;
 
+  static const _chapterCacheLimit = 6;
+
   final List<_Section> _sections = [];
-  final Set<(int, int)> _pendingFetches = {}; // (1-based book, chapter)
+  // (1-based book, chapter, Syriac, include glosses, include name flags)
+  final Set<_ChapterRequest> _pendingFetches = {};
+  final Set<_ChapterRequest> _prefetches = {};
+  final Map<_ChapterRequest, Timer> _fetchTimeouts = {};
+  final LinkedHashMap<_ChapterRequest, List<VerseEntry>> _chapterCache =
+      LinkedHashMap();
   bool _initialLoading = true;
   bool _loadingNext = false;
   bool _loadingPrev = false;
@@ -173,55 +184,20 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _scrollController.addListener(_onScroll);
     _sub = ChapterText.rustSignalStream.listen((pack) {
       final msg = pack.message;
-      final fetchKey = (msg.book, msg.chapter);
+      final fetchKey = (
+        msg.book,
+        msg.chapter,
+        msg.syriac,
+        msg.includeGlosses,
+        msg.includeNames,
+      );
       if (!_pendingFetches.contains(fetchKey)) return;
-      if (msg.syriac != _isSyriac(msg.book - 1)) return;
       _pendingFetches.remove(fetchKey);
+      _fetchTimeouts.remove(fetchKey)?.cancel();
+      _cacheChapter(fetchKey, msg.verses);
+      if (_prefetches.remove(fetchKey)) return;
 
-      final bookIdx = msg.book - 1;
-      // A successful in-app lexicon edit re-requests the loaded OT chapters so
-      // their interlinear glosses update behind the word-info sheet. Preserve
-      // the existing section/key to avoid disturbing the scroll position.
-      final loadedIndex = _sections.indexWhere(
-        (s) => s.bookIndex == bookIdx && s.chapter == msg.chapter,
-      );
-      if (loadedIndex >= 0) {
-        setState(() => _sections[loadedIndex].verses = msg.verses);
-        return;
-      }
-      final goesOnTop =
-          _sections.isNotEmpty &&
-          (bookIdx < _sections.first.bookIndex ||
-              (bookIdx == _sections.first.bookIndex &&
-                  msg.chapter < _sections.first.chapter));
-
-      final section = _Section(
-        bookIndex: bookIdx,
-        chapter: msg.chapter,
-        verses: msg.verses,
-      );
-
-      int? targetVerse;
-      if (_pendingVerse != null &&
-          bookIdx == _bookIndex &&
-          msg.chapter == _chapter) {
-        targetVerse = _pendingVerse;
-        _selectedBook = bookIdx;
-        _selectedChapter = msg.chapter;
-        _selectedVerse = targetVerse;
-        _targetVerseKey = GlobalKey();
-        _pendingVerse = null;
-      }
-
-      if (goesOnTop) {
-        _prependSection(section);
-      } else {
-        _appendSection(section);
-      }
-
-      if (targetVerse != null) {
-        _scheduleScrollToVerse(section, targetVerse);
-      }
+      _acceptChapter(msg.book - 1, msg.chapter, msg.verses);
     });
     _lexiconOverrideSub = LexiconEntryOverrideStatus.rustSignalStream.listen((
       pack,
@@ -231,37 +207,90 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _loadPrefs();
   }
 
+  void _acceptChapter(int bookIdx, int chapter, List<VerseEntry> verses) {
+    // A successful in-app lexicon edit re-requests the loaded OT chapters so
+    // their interlinear glosses update behind the word-info sheet. Preserve
+    // the existing section/key to avoid disturbing the scroll position.
+    final loadedIndex = _sections.indexWhere(
+      (s) => s.bookIndex == bookIdx && s.chapter == chapter,
+    );
+    if (loadedIndex >= 0) {
+      setState(() => _sections[loadedIndex].verses = verses);
+      return;
+    }
+    final goesOnTop =
+        _sections.isNotEmpty &&
+        (bookIdx < _sections.first.bookIndex ||
+            (bookIdx == _sections.first.bookIndex &&
+                chapter < _sections.first.chapter));
+
+    final section = _Section(
+      bookIndex: bookIdx,
+      chapter: chapter,
+      verses: verses,
+    );
+
+    int? targetVerse;
+    if (_pendingVerse != null && bookIdx == _bookIndex && chapter == _chapter) {
+      targetVerse = _pendingVerse;
+      _selectedBook = bookIdx;
+      _selectedChapter = chapter;
+      _selectedVerse = targetVerse;
+      _targetVerseKey = GlobalKey();
+      _pendingVerse = null;
+    }
+
+    if (goesOnTop) {
+      _prependSection(section);
+    } else {
+      _appendSection(section);
+    }
+    _prefetchAdjacentChapters(bookIdx, chapter);
+
+    if (targetVerse != null) {
+      _scheduleScrollToVerse(section, targetVerse);
+    }
+  }
+
   bool _isSyriac(int bookIndex) => bookIndex >= 39 && _ntSyriac;
+
+  double? _viewportY(GlobalKey key) {
+    final box = key.currentContext?.findRenderObject() as RenderBox?;
+    return box != null && box.attached
+        ? box.localToGlobal(Offset.zero).dy
+        : null;
+  }
+
+  void _preserveAnchor(GlobalKey? key, void Function() update) {
+    final beforeY = key == null ? null : _viewportY(key);
+    setState(update);
+    if (beforeY == null || key == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final afterY = _viewportY(key);
+      if (afterY == null) return;
+      final correction = afterY - beforeY;
+      if (correction.abs() < 0.5) return;
+      final position = _scrollController.position;
+      // Use the live offset rather than a pre-layout value.  This preserves
+      // the user's movement during a fast upward fling instead of jumping them
+      // forward when a chapter lands above the viewport.
+      _scrollController.jumpTo(
+        (position.pixels + correction).clamp(0.0, position.maxScrollExtent),
+      );
+    });
+  }
 
   // Appends a section at the bottom; evicts the top section first if over limit.
   void _appendSection(_Section section) {
     if (_sections.length >= 3) {
-      // Evict top section (content above viewport shrinks → compensate scroll).
-      final oldOffset = _scrollController.hasClients
-          ? _scrollController.offset
-          : 0.0;
-      final oldExtent = _scrollController.hasClients
-          ? _scrollController.position.maxScrollExtent
-          : 0.0;
-      setState(() {
+      // Keep the first surviving section anchored while removing content above.
+      final anchor = _sections[1].key;
+      _preserveAnchor(anchor, () {
         _sections.removeAt(0);
+        _sections.add(section);
         _initialLoading = false;
-        // Keep _loadingNext = true until the section actually lands.
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_scrollController.hasClients) return;
-        final removedHeight =
-            oldExtent - _scrollController.position.maxScrollExtent;
-        _scrollController.jumpTo(
-          (oldOffset - removedHeight).clamp(
-            0.0,
-            _scrollController.position.maxScrollExtent,
-          ),
-        );
-        setState(() {
-          _sections.add(section);
-          _loadingNext = false;
-        });
+        _loadingNext = false;
       });
     } else {
       setState(() {
@@ -272,48 +301,25 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     }
   }
 
-  // Prepends a section at the top; evicts the bottom section first if over
-  // limit (no scroll compensation needed for bottom eviction), then compensates
-  // for the content inserted above the current viewport position.
+  // Prepends a section at the top while keeping the prior first section at its
+  // exact viewport position.  The old max-extent calculation was only an
+  // estimate for lazily laid-out slivers and used a stale scroll offset.
   void _prependSection(_Section section) {
+    final anchor = _sections.isEmpty ? null : _sections.first.key;
     if (_sections.length >= 3) {
-      // Evict bottom first (scroll unaffected).
-      // Keep _loadingPrev = true until _doPrepend adds the section.
-      setState(() {
+      _preserveAnchor(anchor, () {
         _sections.removeLast();
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _doPrepend(section);
+        _sections.insert(0, section);
+        _initialLoading = false;
+        _loadingPrev = false;
       });
     } else {
-      _doPrepend(section);
+      _preserveAnchor(anchor, () {
+        _sections.insert(0, section);
+        _initialLoading = false;
+        _loadingPrev = false;
+      });
     }
-  }
-
-  void _doPrepend(_Section section) {
-    final oldOffset = _scrollController.hasClients
-        ? _scrollController.offset
-        : 0.0;
-    final oldExtent = _scrollController.hasClients
-        ? _scrollController.position.maxScrollExtent
-        : 0.0;
-    setState(() {
-      _sections.insert(0, section);
-      _initialLoading = false;
-      _loadingPrev = false;
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      final addedHeight =
-          _scrollController.position.maxScrollExtent - oldExtent;
-      _scrollController.jumpTo(
-        (oldOffset + addedHeight).clamp(
-          0.0,
-          _scrollController.position.maxScrollExtent,
-        ),
-      );
-    });
   }
 
   Future<void> _loadPrefs() async {
@@ -426,7 +432,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   }
 
   void _applyReadingSettings(AppReadingSettings settings) {
-    final reloadChapter = settings.ntSyriac != _ntSyriac && _bookIndex >= 39;
+    final reloadChapter =
+        (settings.ntSyriac != _ntSyriac && _bookIndex >= 39) ||
+        settings.glossInterlinear != _glossInterlinear ||
+        settings.highlightProperNames != _highlightProperNames;
     setState(() {
       _ntSyriac = settings.ntSyriac;
       _hebrewNumerals = settings.hebrewNumerals;
@@ -562,6 +571,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     setState(() {
       _sections.clear();
       _pendingFetches.clear();
+      _prefetches.clear();
+      for (final timeout in _fetchTimeouts.values) {
+        timeout.cancel();
+      }
+      _fetchTimeouts.clear();
       _bookIndex = bookIndex;
       _chapter = chapter;
       _initialLoading = true;
@@ -578,32 +592,92 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _fetchChapter(bookIndex, chapter);
   }
 
-  void _fetchChapter(int bookIndex, int chapter) {
-    final key = (bookIndex + 1, chapter);
-    if (_pendingFetches.contains(key)) return;
-    if (_sections.any(
-      (s) => s.bookIndex == bookIndex && s.chapter == chapter,
-    )) {
+  _ChapterRequest _chapterRequest(int bookIndex, int chapter) => (
+    bookIndex + 1,
+    chapter,
+    _isSyriac(bookIndex),
+    _glossInterlinear,
+    _highlightProperNames,
+  );
+
+  void _cacheChapter(_ChapterRequest key, List<VerseEntry> verses) {
+    _chapterCache.remove(key);
+    _chapterCache[key] = List<VerseEntry>.of(verses);
+    while (_chapterCache.length > _chapterCacheLimit) {
+      _chapterCache.remove(_chapterCache.keys.first);
+    }
+  }
+
+  List<VerseEntry>? _cachedChapter(_ChapterRequest key) {
+    final verses = _chapterCache.remove(key);
+    if (verses != null) _chapterCache[key] = verses;
+    return verses;
+  }
+
+  void _dropCachedChapter(int bookIndex, int chapter) {
+    _chapterCache.removeWhere(
+      (key, _) => key.$1 == bookIndex + 1 && key.$2 == chapter,
+    );
+  }
+
+  void _fetchChapter(
+    int bookIndex,
+    int chapter, {
+    bool prefetch = false,
+    bool force = false,
+  }) {
+    final key = _chapterRequest(bookIndex, chapter);
+    if (_pendingFetches.contains(key)) {
+      if (!prefetch) _prefetches.remove(key);
+      return;
+    }
+    if (!force &&
+        _sections.any(
+          (s) => s.bookIndex == bookIndex && s.chapter == chapter,
+        )) {
+      return;
+    }
+    final cached = _cachedChapter(key);
+    if (cached != null) {
+      if (!prefetch) _acceptChapter(bookIndex, chapter, cached);
       return;
     }
     _pendingFetches.add(key);
+    if (prefetch) _prefetches.add(key);
+    _fetchTimeouts[key] = Timer(const Duration(seconds: 10), () {
+      _fetchTimeouts.remove(key);
+      if (!_pendingFetches.remove(key)) return;
+      final wasPrefetch = _prefetches.remove(key);
+      if (!mounted || wasPrefetch) return;
+      setState(() {
+        _initialLoading = false;
+        _loadingPrev = false;
+        _loadingNext = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Could not load this chapter.'),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () => _fetchChapter(bookIndex, chapter),
+          ),
+        ),
+      );
+    });
     GetChapter(
       book: bookIndex + 1,
       chapter: chapter,
       syriac: _isSyriac(bookIndex),
+      includeGlosses: _glossInterlinear,
+      includeNames: _highlightProperNames,
     ).sendSignalToRust();
   }
 
   void _refreshLoadedOtChapters() {
     for (final section in List<_Section>.of(_sections)) {
       if (section.bookIndex >= 39) continue;
-      final key = (section.bookIndex + 1, section.chapter);
-      if (!_pendingFetches.add(key)) continue;
-      GetChapter(
-        book: section.bookIndex + 1,
-        chapter: section.chapter,
-        syriac: false,
-      ).sendSignalToRust();
+      _dropCachedChapter(section.bookIndex, section.chapter);
+      _fetchChapter(section.bookIndex, section.chapter, force: true);
     }
   }
 
@@ -656,40 +730,64 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     if (!_scrollController.hasClients || _sections.isEmpty) return;
     final pixels = _scrollController.position.pixels;
     final maxExtent = _scrollController.position.maxScrollExtent;
-    if (!_loadingPrev && pixels <= 800) {
+    final triggerDistance = math.max(
+      800.0,
+      _scrollController.position.viewportDimension * 2,
+    );
+    if (!_loadingPrev && pixels <= triggerDistance) {
       _maybeLoadPrev();
     }
-    if (!_loadingNext && pixels >= maxExtent - 800) {
+    if (!_loadingNext && pixels >= maxExtent - triggerDistance) {
       _maybeLoadNext();
     }
+  }
+
+  (int, int)? _nextChapterAfter(int bookIndex, int chapter) {
+    var nextBook = bookIndex;
+    var nextChapter = chapter + 1;
+    if (nextChapter > kBooks[nextBook].chapters) {
+      nextBook++;
+      nextChapter = 1;
+    }
+    return nextBook < kBooks.length ? (nextBook, nextChapter) : null;
+  }
+
+  (int, int)? _previousChapterBefore(int bookIndex, int chapter) {
+    var previousBook = bookIndex;
+    var previousChapter = chapter - 1;
+    if (previousChapter < 1) {
+      previousBook--;
+      if (previousBook < 0) return null;
+      previousChapter = kBooks[previousBook].chapters;
+    }
+    return (previousBook, previousChapter);
+  }
+
+  void _prefetchAdjacentChapters(int bookIndex, int chapter) {
+    final previous = _previousChapterBefore(bookIndex, chapter);
+    if (previous != null) {
+      _fetchChapter(previous.$1, previous.$2, prefetch: true);
+    }
+    final next = _nextChapterAfter(bookIndex, chapter);
+    if (next != null) _fetchChapter(next.$1, next.$2, prefetch: true);
   }
 
   void _maybeLoadNext() {
     if (_sections.isEmpty) return;
     final last = _sections.last;
-    var nextBook = last.bookIndex;
-    var nextChapter = last.chapter + 1;
-    if (nextChapter > kBooks[nextBook].chapters) {
-      nextBook++;
-      nextChapter = 1;
-    }
-    if (nextBook >= kBooks.length) return;
+    final next = _nextChapterAfter(last.bookIndex, last.chapter);
+    if (next == null) return;
     setState(() => _loadingNext = true);
-    _fetchChapter(nextBook, nextChapter);
+    _fetchChapter(next.$1, next.$2);
   }
 
   void _maybeLoadPrev() {
     if (_sections.isEmpty) return;
     final first = _sections.first;
-    var prevBook = first.bookIndex;
-    var prevChapter = first.chapter - 1;
-    if (prevChapter < 1) {
-      prevBook--;
-      if (prevBook < 0) return; // already at Genesis 1
-      prevChapter = kBooks[prevBook].chapters;
-    }
+    final previous = _previousChapterBefore(first.bookIndex, first.chapter);
+    if (previous == null) return;
     setState(() => _loadingPrev = true);
-    _fetchChapter(prevBook, prevChapter);
+    _fetchChapter(previous.$1, previous.$2);
   }
 
   void _updateCurrentChapter() {
@@ -721,6 +819,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _scrollController.dispose();
     _sub?.cancel();
     _lexiconOverrideSub?.cancel();
+    for (final timeout in _fetchTimeouts.values) {
+      timeout.cancel();
+    }
     super.dispose();
   }
 
@@ -904,7 +1005,25 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           ? const Center(child: CircularProgressIndicator())
           : _sections.isEmpty
           ? const Center(child: Text('No text found'))
-          : _buildScrollView(),
+          : Stack(
+              children: [
+                _buildScrollView(),
+                if (_loadingPrev)
+                  const Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(child: LinearProgressIndicator()),
+                  ),
+                if (_loadingNext)
+                  const Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(child: LinearProgressIndicator()),
+                  ),
+              ],
+            ),
     );
   }
 
@@ -928,13 +1047,6 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     return CustomScrollView(
       controller: _scrollController,
       slivers: [
-        if (_loadingPrev)
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-          ),
         const SliverToBoxAdapter(child: SizedBox(height: 8)),
         for (int i = 0; i < _sections.length; i++) ...[
           if (i > 0)
@@ -997,13 +1109,6 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
             ),
           ),
         ],
-        if (_loadingNext)
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-          ),
         SliverToBoxAdapter(child: SizedBox(height: 88 + bottomPadding)),
       ],
     );

@@ -6,6 +6,9 @@ import '../tutor/transliterate.dart';
 final RegExp _hebrewLetter = RegExp(r'[\u05D0-\u05EA]');
 final RegExp _hebrewMarks = RegExp(r'[^\u05D0-\u05EA]');
 final RegExp _yahwehWithPrefixes = RegExp(r'^[ובלכמשה]*יהוה$');
+final RegExp _readerWordMarks = RegExp(
+  r'[\u0591-\u05AF\u05BD\u05BE\u05C0\u05C3\u05C4-\u05C6]',
+);
 const _maqaf = '\u05BE';
 
 /// Whether [word] is the tetragrammaton, allowing common attached particles.
@@ -85,8 +88,7 @@ class _VerseRowState extends State<VerseRow> {
   @override
   void didUpdateWidget(VerseRow old) {
     super.didUpdateWidget(old);
-    if (old.entry.text != widget.entry.text ||
-        old.onWordTap != widget.onWordTap) {
+    if (old.entry.text != widget.entry.text) {
       _disposeRecognizers();
       _rebuild();
     }
@@ -153,90 +155,84 @@ class _VerseRowState extends State<VerseRow> {
           : wordStyle;
     }
 
-    final spans = <InlineSpan>[];
-    final displayNamePositions = verseGlossPositions(_words);
-    for (var i = 0; i < _words.length; i++) {
-      if (i > 0 && !_words[i - 1].endsWith(_maqaf)) {
-        spans.add(const TextSpan(text: ' '));
-      }
-      spans.add(
-        TextSpan(
-          text: displayWords[i],
-          // A standalone paseq is visible text but has no lexical row, so it
-          // must not shift name styling for the words that follow.
-          style: displayNamePositions[i] == null
-              ? wordStyle
-              : styleForWord(_words[i], displayNamePositions[i]!),
-          recognizer: _recognizers[i],
+    final Widget content;
+    if (widget.glossInterlinear && widget.entry.glosses.isNotEmpty) {
+      final interlinearWords = interlinearVerseWords(_words);
+      final interlinearDisplayWords = widget.showCantillation
+          ? interlinearWords
+          : interlinearWords.map(stripCantillation).toList();
+      content = Align(
+        alignment: Alignment.centerRight,
+        child: Wrap(
+          // In an RTL wrap, `start` is the visual right edge.  Using
+          // `end` puts a partially filled final run on the left.
+          alignment: WrapAlignment.start,
+          textDirection: TextDirection.rtl,
+          children: [
+            for (final (i, glossPosition) in verseGlossPositions(
+              interlinearWords,
+            ).indexed)
+              GestureDetector(
+                onTap: glossPosition == null
+                    ? null
+                    : () => widget.onWordTap(
+                        interlinearWords[i].replaceAll(_readerWordMarks, ''),
+                        glossPosition < widget.entry.glosses.length
+                            ? widget.entry.glosses[glossPosition]
+                            : null,
+                      ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 3,
+                    vertical: 2,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        interlinearDisplayWords[i],
+                        style: glossPosition == null
+                            ? wordStyle
+                            : styleForWord(interlinearWords[i], glossPosition),
+                      ),
+                      if (glossPosition != null &&
+                          glossPosition < widget.entry.glosses.length &&
+                          widget.entry.glosses[glossPosition].isNotEmpty)
+                        Text(
+                          widget.entry.glosses[glossPosition],
+                          style: theme.textTheme.labelSmall,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       );
+    } else {
+      final spans = <InlineSpan>[];
+      final displayNamePositions = verseGlossPositions(_words);
+      for (var i = 0; i < _words.length; i++) {
+        if (i > 0 && !_words[i - 1].endsWith(_maqaf)) {
+          spans.add(const TextSpan(text: ' '));
+        }
+        spans.add(
+          TextSpan(
+            text: displayWords[i],
+            // A standalone paseq is visible text but has no lexical row, so it
+            // must not shift name styling for the words that follow.
+            style: displayNamePositions[i] == null
+                ? wordStyle
+                : styleForWord(_words[i], displayNamePositions[i]!),
+            recognizer: _recognizers[i],
+          ),
+        );
+      }
+      content = SelectableText.rich(
+        TextSpan(children: spans),
+        textDirection: TextDirection.rtl,
+      );
     }
-
-    final interlinearWords = interlinearVerseWords(_words);
-    final interlinearDisplayWords = widget.showCantillation
-        ? interlinearWords
-        : interlinearWords.map(stripCantillation).toList();
-    final content = widget.glossInterlinear && widget.entry.glosses.isNotEmpty
-        ? Align(
-            alignment: Alignment.centerRight,
-            child: Wrap(
-              // In an RTL wrap, `start` is the visual right edge.  Using
-              // `end` puts a partially filled final run on the left.
-              alignment: WrapAlignment.start,
-              textDirection: TextDirection.rtl,
-              children: [
-                for (final (i, glossPosition) in verseGlossPositions(
-                  interlinearWords,
-                ).indexed)
-                  GestureDetector(
-                    onTap: glossPosition == null
-                        ? null
-                        : () => widget.onWordTap(
-                            interlinearWords[i].replaceAll(
-                              RegExp(
-                                r'[\u0591-\u05AF\u05BD\u05BE\u05C0\u05C3\u05C4-\u05C6]',
-                              ),
-                              '',
-                            ),
-                            glossPosition < widget.entry.glosses.length
-                                ? widget.entry.glosses[glossPosition]
-                                : null,
-                          ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 3,
-                        vertical: 2,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            interlinearDisplayWords[i],
-                            style: glossPosition == null
-                                ? wordStyle
-                                : styleForWord(
-                                    interlinearWords[i],
-                                    glossPosition,
-                                  ),
-                          ),
-                          if (glossPosition != null &&
-                              glossPosition < widget.entry.glosses.length &&
-                              widget.entry.glosses[glossPosition].isNotEmpty)
-                            Text(
-                              widget.entry.glosses[glossPosition],
-                              style: theme.textTheme.labelSmall,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          )
-        : SelectableText.rich(
-            TextSpan(children: spans),
-            textDirection: TextDirection.rtl,
-          );
     return GestureDetector(
       onTap: widget.onTap,
       child: AnimatedContainer(

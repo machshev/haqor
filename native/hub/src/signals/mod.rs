@@ -114,6 +114,10 @@ pub struct GetChapter {
     pub book: u8,
     pub chapter: u8,
     pub syriac: bool,
+    /// Include compact interlinear glosses in the payload.
+    pub include_glosses: bool,
+    /// Include proper-name flags in the payload.
+    pub include_names: bool,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]
@@ -130,6 +134,8 @@ pub struct ChapterText {
     pub book: u8,
     pub chapter: u8,
     pub syriac: bool,
+    pub include_glosses: bool,
+    pub include_names: bool,
     pub verses: Vec<VerseEntry>,
 }
 

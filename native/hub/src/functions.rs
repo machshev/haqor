@@ -375,23 +375,36 @@ pub async fn get_chapter_text(bible: SharedBible) {
         let bible_guard = lock(&bible);
         match bible_guard.get_chapter(req.book, req.chapter, req.syriac) {
             Ok(raw) => {
+                let metadata = bible_guard
+                    .chapter_reader_metadata(
+                        req.book,
+                        req.chapter,
+                        req.include_glosses,
+                        req.include_names,
+                    )
+                    .unwrap_or_default();
                 let verses = raw
                     .into_iter()
-                    .map(|(verse, text)| VerseEntry {
-                        verse,
-                        text,
-                        glosses: bible_guard
-                            .verse_glosses(req.book, req.chapter, verse)
-                            .unwrap_or_default(),
-                        names: bible_guard
-                            .verse_name_flags(req.book, req.chapter, verse)
-                            .unwrap_or_default(),
+                    .map(|(verse, text)| {
+                        let metadata = metadata.get(&verse);
+                        VerseEntry {
+                            verse,
+                            text,
+                            glosses: metadata
+                                .map(|metadata| metadata.glosses.clone())
+                                .unwrap_or_default(),
+                            names: metadata
+                                .map(|metadata| metadata.names.clone())
+                                .unwrap_or_default(),
+                        }
                     })
                     .collect();
                 ChapterText {
                     book: req.book,
                     chapter: req.chapter,
                     syriac: req.syriac,
+                    include_glosses: req.include_glosses,
+                    include_names: req.include_names,
                     verses,
                 }
                 .send_signal_to_dart();
