@@ -93,6 +93,8 @@ class _Section {
   }) : key = GlobalKey();
 }
 
+enum _ReaderMenuAction { readingPlan, tutor, settings }
+
 class BibleReaderPage extends StatefulWidget {
   const BibleReaderPage({super.key});
 
@@ -800,7 +802,6 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         backgroundColor: theme.colorScheme.surface,
         automaticallyImplyLeading: false,
         title: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Flexible(
               child: GestureDetector(
@@ -858,22 +859,44 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
             onPressed: _canGoForward ? _goForward : null,
             tooltip: 'Forward',
           ),
-          IconButton(
-            icon: const Icon(Icons.auto_stories_outlined),
-            tooltip: 'Reading plan',
-            onPressed: _showReadingPlan,
-          ),
-          IconButton(
-            icon: const Icon(Icons.school_outlined),
-            tooltip: 'Tutor',
-            onPressed: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const TutorEntryPage())),
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Settings',
-            onPressed: _showAppSettings,
+          PopupMenuButton<_ReaderMenuAction>(
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'More reader options',
+            onSelected: (action) {
+              switch (action) {
+                case _ReaderMenuAction.readingPlan:
+                  _showReadingPlan();
+                case _ReaderMenuAction.tutor:
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const TutorEntryPage()),
+                  );
+                case _ReaderMenuAction.settings:
+                  _showAppSettings();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: _ReaderMenuAction.readingPlan,
+                child: ListTile(
+                  leading: Icon(Icons.auto_stories_outlined),
+                  title: Text('Reading plan'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _ReaderMenuAction.tutor,
+                child: ListTile(
+                  leading: Icon(Icons.school_outlined),
+                  title: Text('Tutor'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _ReaderMenuAction.settings,
+                child: ListTile(
+                  leading: Icon(Icons.settings_outlined),
+                  title: Text('Settings'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
