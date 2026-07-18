@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:rinf/rinf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -97,6 +98,39 @@ class _Section {
 
 typedef _ChapterRequest = (int, int, bool, bool, bool);
 
+/// Runs [onLayout] after its child has been laid out, but before the frame is
+/// painted. This is the point at which a scroll offset can be corrected without
+/// turning the correction into a visible jump or cancelling a fling.
+class _LayoutCallback extends SingleChildRenderObjectWidget {
+  const _LayoutCallback({required this.onLayout, required super.child});
+
+  final VoidCallback onLayout;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderLayoutCallback(onLayout);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderLayoutCallback renderObject,
+  ) {
+    renderObject.onLayout = onLayout;
+  }
+}
+
+class _RenderLayoutCallback extends RenderProxyBox {
+  _RenderLayoutCallback(this.onLayout);
+
+  VoidCallback onLayout;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    onLayout();
+  }
+}
+
 enum _ReaderMenuAction { readingPlan, tutor, settings }
 
 class BibleReaderPage extends StatefulWidget {
@@ -177,6 +211,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   StreamSubscription<RustSignalPack<LexiconEntryOverrideStatus>>?
   _lexiconOverrideSub;
   final ScrollController _scrollController = ScrollController();
+  GlobalKey? _pendingAnchor;
+  double? _pendingAnchorY;
 
   @override
   void initState() {
@@ -262,23 +298,25 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   }
 
   void _preserveAnchor(GlobalKey? key, void Function() update) {
-    final beforeY = key == null ? null : _viewportY(key);
+    _pendingAnchor = key;
+    _pendingAnchorY = key == null ? null : _viewportY(key);
     setState(update);
-    if (beforeY == null || key == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      final afterY = _viewportY(key);
-      if (afterY == null) return;
-      final correction = afterY - beforeY;
-      if (correction.abs() < 0.5) return;
-      final position = _scrollController.position;
-      // Use the live offset rather than a pre-layout value.  This preserves
-      // the user's movement during a fast upward fling instead of jumping them
-      // forward when a chapter lands above the viewport.
-      _scrollController.jumpTo(
-        (position.pixels + correction).clamp(0.0, position.maxScrollExtent),
-      );
-    });
+  }
+
+  void _correctAnchorDuringLayout(GlobalKey key) {
+    if (!identical(_pendingAnchor, key)) return;
+    final beforeY = _pendingAnchorY;
+    _pendingAnchor = null;
+    _pendingAnchorY = null;
+    if (beforeY == null || !_scrollController.hasClients) return;
+    final afterY = _viewportY(key);
+    if (afterY == null) return;
+    final correction = afterY - beforeY;
+    if (correction.abs() < 0.5) return;
+    // `correctBy` is a layout-time geometry correction. Unlike `jumpTo`, it
+    // keeps the current drag/fling active and does not emit a second visible
+    // scroll transition after the new chapter has entered the sliver tree.
+    _scrollController.position.correctBy(correction);
   }
 
   // Appends a section at the bottom; evicts the top section first if over limit.
@@ -1057,13 +1095,16 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               ),
             ),
           SliverToBoxAdapter(
-            child: i == 0
-                ? SizedBox(key: _sections[0].key)
-                : _ChapterDivider(
-                    key: _sections[i].key,
-                    bookIndex: _sections[i].bookIndex,
-                    chapter: _sections[i].chapter,
-                  ),
+            child: _LayoutCallback(
+              onLayout: () => _correctAnchorDuringLayout(_sections[i].key),
+              child: i == 0
+                  ? SizedBox(key: _sections[0].key)
+                  : _ChapterDivider(
+                      key: _sections[i].key,
+                      bookIndex: _sections[i].bookIndex,
+                      chapter: _sections[i].chapter,
+                    ),
+            ),
           ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
