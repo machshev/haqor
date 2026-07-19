@@ -77,14 +77,17 @@ class WordInfoSheet extends StatefulWidget {
 
   final String word;
   final bool syriac;
+
   /// When set, the sheet shows the BDB entry with this id (a Lexicon
   /// cross-reference target) rather than parsing [word] as a surface form;
   /// [word] is then just the target headword for the title.
   final String? bdbId;
+
   /// The exact gloss currently rendered underneath this token in the reader.
   /// It can intentionally differ from the descriptive Lexicon header.
   final String? readerGloss;
-  final void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage;
+  final void Function(int bookIndex, int chapter, int verse)?
+  onNavigateToPassage;
   final Map<String, Object?>? reportContext;
 
   @override
@@ -138,8 +141,11 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         _fetchOccurrences();
       }
     });
-    GetWordInfo(word: widget.word, syriac: widget.syriac, bdbId: widget.bdbId)
-        .sendSignalToRust();
+    GetWordInfo(
+      word: widget.word,
+      syriac: widget.syriac,
+      bdbId: widget.bdbId,
+    ).sendSignalToRust();
   }
 
   // Fetch the occurrence lists (full-text root scans). Idempotent via
@@ -153,8 +159,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         _occSub?.cancel();
       }
     });
-    GetWordOccurrences(word: widget.word, syriac: widget.syriac)
-        .sendSignalToRust();
+    GetWordOccurrences(
+      word: widget.word,
+      syriac: widget.syriac,
+    ).sendSignalToRust();
   }
 
   Future<void> _loadAdminMode() async {
@@ -304,7 +312,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurfaceVariant.withOpacity(0.3),
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.3,
+                  ),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -565,10 +575,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   if (e.gloss.isNotEmpty) ...[
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        e.gloss,
-                        style: theme.textTheme.bodyMedium,
-                      ),
+                      child: Text(e.gloss, style: theme.textTheme.bodyMedium),
                     ),
                   ] else
                     const Spacer(),
@@ -681,7 +688,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+              color: theme.colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.5,
+              ),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(
@@ -695,8 +704,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   ),
                   decoration: e.isCurrent
                       ? BoxDecoration(
-                          color: theme.colorScheme.primaryContainer
-                              .withOpacity(0.6),
+                          color: theme.colorScheme.primaryContainer.withValues(
+                            alpha: 0.6,
+                          ),
                           borderRadius: BorderRadius.circular(6),
                         )
                       : null,
@@ -782,9 +792,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     // per-form tagging — fall back to a flat root list highlighting the word.
     if (occ.hebrewOccurrences.isEmpty) {
       final flat = [
-        for (final o in (occ.rootOccurrences.isNotEmpty
-            ? occ.rootOccurrences
-            : occ.occurrences))
+        for (final o
+            in (occ.rootOccurrences.isNotEmpty
+                ? occ.rootOccurrences
+                : occ.occurrences))
           _VerseOccurrence(
             book: o.book,
             chapter: o.chapter,
@@ -864,7 +875,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
             color: theme.colorScheme.surface,
             border: Border(
               bottom: BorderSide(
-                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
               ),
             ),
           ),
@@ -1020,8 +1031,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
 
     // Apply the filter, then merge rows that fall on the same verse so a verse
     // appears once with all matched word forms highlighted.
-    final filtered = occ.sedraOccurrences
-        .where((o) => showAll || selected.contains(o.lexemeIndex));
+    final filtered = occ.sedraOccurrences.where(
+      (o) => showAll || selected.contains(o.lexemeIndex),
+    );
     final byVerse = <String, _VerseOccurrence>{};
     for (final o in filtered) {
       final key = '${o.book}:${o.chapter}:${o.verse}';
@@ -1087,7 +1099,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
             color: theme.colorScheme.surface,
             border: Border(
               bottom: BorderSide(
-                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
               ),
             ),
           ),
@@ -1416,8 +1428,7 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
       fontSize: 12,
       color: theme.colorScheme.primary,
     );
-    final strippedTargets =
-        widget.highlightWords.map(_stripTrope).toSet();
+    final strippedTargets = widget.highlightWords.map(_stripTrope).toSet();
     final keyTargets = widget.highlightWords.map(_surfaceKey).toSet();
     final tokens = text.split(' ');
     final spans = <InlineSpan>[];
@@ -1426,13 +1437,15 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
       final token = tokens[i];
       if (strippedTargets.contains(_stripTrope(token)) ||
           keyTargets.contains(_surfaceKey(token))) {
-        spans.add(TextSpan(
-          text: token,
-          style: baseStyle.copyWith(
-            backgroundColor: theme.colorScheme.primaryContainer,
-            color: theme.colorScheme.onPrimaryContainer,
+        spans.add(
+          TextSpan(
+            text: token,
+            style: baseStyle.copyWith(
+              backgroundColor: theme.colorScheme.primaryContainer,
+              color: theme.colorScheme.onPrimaryContainer,
+            ),
           ),
-        ));
+        );
       } else {
         spans.add(TextSpan(text: token, style: baseStyle));
       }
@@ -1472,7 +1485,7 @@ class _BdbContent extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -1498,10 +1511,7 @@ class _BdbContent extends StatelessWidget {
     final subSenses = sense['senses'] as List<dynamic>?;
 
     return Padding(
-      padding: EdgeInsets.only(
-        left: depth * 12.0,
-        bottom: 4,
-      ),
+      padding: EdgeInsets.only(left: depth * 12.0, bottom: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1534,11 +1544,7 @@ class _BdbContent extends StatelessWidget {
             ),
           if (subSenses != null)
             ...subSenses.map<Widget>(
-              (s) => _buildSense(
-                context,
-                s as Map<String, dynamic>,
-                depth + 1,
-              ),
+              (s) => _buildSense(context, s as Map<String, dynamic>, depth + 1),
             ),
         ],
       ),
@@ -1594,7 +1600,6 @@ class _BdbContent extends StatelessWidget {
     }).toList();
   }
 }
-
 
 /// BDB headwords are stored in Unicode NFC canonical order (vowel CCC=17 before
 /// dagesh/shin-dot CCC=21-24), but Cardo expects the traditional Hebrew encoding
@@ -1697,8 +1702,10 @@ String _surfaceKey(String word) {
       while (i < kept.length && _hebCombiningClass(kept[i]) != 0) {
         i++;
       }
-      final run = kept.sublist(start, i)
-        ..sort((a, b) => _hebCombiningClass(a).compareTo(_hebCombiningClass(b)));
+      final run = kept.sublist(
+        start,
+        i,
+      )..sort((a, b) => _hebCombiningClass(a).compareTo(_hebCombiningClass(b)));
       out.addAll(run);
     }
   }
@@ -1841,7 +1848,8 @@ class _LexiconEntryOverrideEditorState
               textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(
                 labelText: 'Interlinear gloss',
-                helperText: 'The compact gloss shown below this word in the reader.',
+                helperText:
+                    'The compact gloss shown below this word in the reader.',
               ),
             ),
             if (_error != null) ...[
@@ -1886,8 +1894,7 @@ class _BibleRefPreviewDialog extends StatefulWidget {
   final VoidCallback? onNavigate;
 
   @override
-  State<_BibleRefPreviewDialog> createState() =>
-      _BibleRefPreviewDialogState();
+  State<_BibleRefPreviewDialog> createState() => _BibleRefPreviewDialogState();
 }
 
 class _BibleRefPreviewDialogState extends State<_BibleRefPreviewDialog> {
@@ -1930,10 +1937,7 @@ class _BibleRefPreviewDialogState extends State<_BibleRefPreviewDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            widget.displayRef,
-            style: theme.textTheme.titleMedium,
-          ),
+          Text(widget.displayRef, style: theme.textTheme.titleMedium),
           Text(
             '${book.transliteration} ${widget.chapter}:${widget.verse}',
             style: theme.textTheme.bodySmall?.copyWith(

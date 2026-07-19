@@ -72,11 +72,7 @@ class _RtlBody extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.arrow_back,
-              size: 18,
-              color: theme.colorScheme.primary,
-            ),
+            Icon(Icons.arrow_back, size: 18, color: theme.colorScheme.primary),
             const SizedBox(width: 6),
             Text(
               'read this way',

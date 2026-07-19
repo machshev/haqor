@@ -7,12 +7,7 @@ import 'package:path_provider/path_provider.dart';
 /// copies on devices are replaced on the next app start.
 const _dbVersion = 19;
 
-const _dbFiles = [
-  'bible.db',
-  'sedra.db',
-  'hebrew.db',
-  'lexicon.db',
-];
+const _dbFiles = ['bible.db', 'sedra.db', 'hebrew.db', 'lexicon.db'];
 
 /// Copy the SQLite databases from the asset bundle into app-local storage,
 /// where Rust opens them file-backed, and return the directory holding them.
@@ -23,16 +18,18 @@ Future<String> installDatabases() async {
   final dbDir = Directory('${support.path}${Platform.pathSeparator}db');
   final marker = File('${dbDir.path}${Platform.pathSeparator}.version');
 
-  final installed =
-      await marker.exists() ? await marker.readAsString() : null;
+  final installed = await marker.exists() ? await marker.readAsString() : null;
   if (installed != '$_dbVersion') {
     await dbDir.create(recursive: true);
     for (final name in _dbFiles) {
       final data = await rootBundle.load('assets/db/$name');
-      final bytes =
-          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-      await File('${dbDir.path}${Platform.pathSeparator}$name')
-          .writeAsBytes(bytes, flush: true);
+      final bytes = data.buffer.asUint8List(
+        data.offsetInBytes,
+        data.lengthInBytes,
+      );
+      await File(
+        '${dbDir.path}${Platform.pathSeparator}$name',
+      ).writeAsBytes(bytes, flush: true);
     }
     // Written last: a copy interrupted part-way is retried next launch.
     await marker.writeAsString('$_dbVersion', flush: true);
