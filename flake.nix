@@ -112,11 +112,11 @@
             export __EGL_VENDOR_LIBRARY_DIRS="/run/opengl-driver/share/glvnd/egl_vendor.d"
             export GDK_BACKEND=x11
 
-            # Write SDK/NDK paths into local.properties so Gradle finds them without trying to install
+            # Write the SDK path so Gradle finds it without trying to install.
+            # NDK is configured directly from ANDROID_NDK_ROOT in android/app/build.gradle.kts.
             {
               echo "sdk.dir=${androidSdk}/libexec/android-sdk"
-              echo "ndk.dir=${androidSdk}/libexec/android-sdk/ndk/${ndkVersion}"
-            } > "${toString ./.}/android/local.properties"
+            } > "$PWD/android/local.properties"
 
             # rinf_cli is not in nixpkgs — install via cargo if missing
             # The CLI version should match the rinf pub package (currently ^8.6.0)

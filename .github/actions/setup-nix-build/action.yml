@@ -3,8 +3,7 @@ description: >
   Toolchain for Linux-hosted app builds, provided by this repo's Nix flake so
   CI matches the dev environment exactly (Flutter, JDK, Android SDK/NDK,
   rustup, GTK libs — all pinned by flake.lock). Expects this repo checked out
-  at ./haqor and haqor-core at ./haqor-core (native/hub depends on it by
-  relative path), and an `assets-db` artifact uploaded earlier in the run.
+  at ./haqor and an `assets-db` artifact uploaded earlier in the run.
 
 inputs:
   rust-targets:

@@ -7,7 +7,9 @@ Windows) are free.
 
 ## Cutting a release
 
-1. Update `version:` in `pubspec.yaml`.
+1. Update `version:` in `pubspec.yaml`. The tag must exactly match that
+   version with a leading `v` (for example `version: 1.2.3+4` requires
+   `v1.2.3`).
 2. If the databases changed since the last release, bump the installed-DB
    version so existing installs refresh their local copy on next launch:
    `tool/sync-dbs.sh --bump` (commits a `_dbVersion` increment in
@@ -24,13 +26,14 @@ Windows) are free.
 
 The workflow can also be run without a tag via *Actions → Release → Run
 workflow* to check that all platforms still build (no release is published in
-that case). It also runs automatically on PRs that modify the workflow file.
+that case). It also runs automatically on PRs that modify a release-critical
+workflow, setup action, native hub, Android signing configuration, lockfile,
+or package manifest.
 
 ## One-time setup: Android release keystore
 
-Without this, release APKs are signed with debug keys (installable, but users
-cannot upgrade in place across differently-keyed builds, and the Play Store
-would reject them). Generate a keystore once:
+Tagged releases fail without these secrets. Non-publishing validation builds
+use debug keys; such APKs must never be distributed. Generate a keystore once:
 
 ```sh
 keytool -genkey -v -keystore haqor-release.jks -keyalg RSA -keysize 2048 \
@@ -50,6 +53,14 @@ Actions*):
 | `ANDROID_KEYSTORE_PASSWORD` | the keystore password |
 | `ANDROID_KEY_ALIAS` | `haqor` |
 | `ANDROID_KEY_PASSWORD` | the key password |
+
+## One-time release protection
+
+Protect the `v*` tag namespace so only trusted maintainers can create release
+tags. Also configure the GitHub `release` environment with a required reviewer
+before the first publication. Build jobs only receive read access; the publish
+job pauses at that environment approval boundary before it receives permission
+to create a GitHub Release.
 
 ## Platform signing caveats (no paid developer accounts)
 
@@ -81,11 +92,8 @@ Actions*):
   needs the runner's Xcode, and Linux binaries linked inside the devshell
   would carry `/nix/store` paths and only run on Nix systems. The pinned
   `flutter-version` there must be kept in lockstep with the flake's Flutter.
-- `haqor-core` is checked out as a sibling directory in every job because
-  `native/hub/Cargo.toml` depends on it by relative path.
-- CI builds against haqor-core `main` by default. When local development
-  tracks a haqor-core branch instead, set the repository variable
-  `HAQOR_CORE_REF` (*Settings → Secrets and variables → Actions → Variables*)
-  to that branch name, and delete the variable once the branch is merged.
-  A `workflow_dispatch` run of Release can also override the ref one-off via
-  its `core-ref` input.
+- `native/hub` uses the exact published `haqor-core` version declared in its
+  `Cargo.toml`. Database generation checks out the matching `v0.7.1` core tag,
+  so the released code and bundled databases come from the same core release.
+  See `doc/LOCAL_CORE_DEVELOPMENT.md` when developing against a local core
+  checkout.
