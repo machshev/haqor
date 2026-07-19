@@ -5,8 +5,8 @@ description: >
   Xcode), and the portable Linux release (binaries linked inside the Nix
   devshell carry /nix/store interpreter paths and only run on Nix systems).
   Keep `flutter-version` in lockstep with the flake's nixpkgs Flutter.
-  Expects this repo checked out at ./haqor and haqor-core at ./haqor-core,
-  and an `assets-db` artifact uploaded earlier in the run.
+  Expects this repo checked out at ./haqor and an `assets-db` artifact uploaded
+  earlier in the run.
 
 inputs:
   flutter-version:

@@ -2,9 +2,9 @@
 # Release when a v* tag is pushed.
 #
 # Signing status without paid developer accounts:
-#   Android — signed with the release keystore when the ANDROID_KEYSTORE_*
-#             secrets are set (see doc/RELEASING.md); otherwise debug-signed
-#             with a warning.
+#   Android — signed with the required release keystore secrets (see
+#             doc/RELEASING.md). A tagged release fails when they are absent;
+#             non-publishing validation runs use debug signing.
 #   Windows — unsigned: SmartScreen warns on first run.
 #   macOS   — ad-hoc signed, not notarized: right-click -> Open on first run.
 #   iOS     — unsigned IPA for sideloading (AltStore/Sideloadly). TestFlight /
@@ -19,51 +19,65 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  # Exercise this workflow on PRs that modify it, so breakage surfaces before
-  # a real tag. The publish job below only runs for tags.
+  # Exercise every release-critical path on PRs, so a real tag is not the
+  # first time a platform packaging or database change is tested.
   pull_request:
-    paths: [".github/workflows/release.yml"]
+    paths:
+      - ".github/workflows/release.yml"
+      - ".github/workflows/databases.yml"
+      - ".github/actions/**"
+      - "android/app/build.gradle.kts"
+      - "native/hub/**"
+      - "Cargo.lock"
+      - "pubspec.yaml"
   workflow_dispatch:
-    inputs:
-      core-ref:
-        description: machshev/haqor-core ref for the databases and Rust core
-        default: main
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
-# The haqor-core ref precedence is: workflow_dispatch input, then the
-# HAQOR_CORE_REF repository variable (for temporarily tracking a haqor-core
-# branch — delete the variable once merged), then main.
 jobs:
+  preflight:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        name: Check tag and app version agree
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_version="$(sed -nE 's/^version: ([^+[:space:]]+).*/\1/p' pubspec.yaml)"
+          test -n "$app_version"
+          if [[ "$GITHUB_REF" == refs/tags/* ]] && [[ "$GITHUB_REF_NAME" != "v$app_version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME must match pubspec.yaml version v$app_version"
+            exit 1
+          fi
+          echo "version=$app_version" >> "$GITHUB_OUTPUT"
+
   databases:
+    needs: preflight
     uses: ./.github/workflows/databases.yml
-    with:
-      core-ref: ${{ github.event.inputs.core-ref || vars.HAQOR_CORE_REF || 'main' }}
 
   android:
     name: Android
-    needs: databases
+    needs: [preflight, databases]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout haqor
         uses: actions/checkout@v4
         with:
           path: haqor
-      - name: Checkout haqor-core (Rust path dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: machshev/haqor-core
-          ref: ${{ github.event.inputs.core-ref || vars.HAQOR_CORE_REF || 'main' }}
-          path: haqor-core
       - uses: ./haqor/.github/actions/setup-nix-build
         with:
           rust-targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
       - name: Configure release signing
+        if: startsWith(github.ref, 'refs/tags/v')
         working-directory: haqor
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -71,10 +85,10 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::warning::ANDROID_KEYSTORE_BASE64 secret not set — APKs will be signed with DEBUG keys"
-            exit 0
-          fi
+          test -n "$KEYSTORE_BASE64" || { echo "::error::ANDROID_KEYSTORE_BASE64 is required for tagged releases"; exit 1; }
+          test -n "$KEYSTORE_PASSWORD" || { echo "::error::ANDROID_KEYSTORE_PASSWORD is required for tagged releases"; exit 1; }
+          test -n "$KEY_ALIAS" || { echo "::error::ANDROID_KEY_ALIAS is required for tagged releases"; exit 1; }
+          test -n "$KEY_PASSWORD" || { echo "::error::ANDROID_KEY_PASSWORD is required for tagged releases"; exit 1; }
           echo "$KEYSTORE_BASE64" | base64 -d > android/keystore.jks
           {
             echo "storeFile=keystore.jks"
@@ -103,7 +117,7 @@ jobs:
 
   linux:
     name: Linux
-    needs: databases
+    needs: [preflight, databases]
     # Deliberately built OUTSIDE the Nix devshell: binaries linked in the
     # devshell carry /nix/store interpreter/rpath entries and only run on Nix
     # systems. The oldest supported runner gives the widest glibc
@@ -114,12 +128,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: haqor
-      - name: Checkout haqor-core (Rust path dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: machshev/haqor-core
-          ref: ${{ github.event.inputs.core-ref || vars.HAQOR_CORE_REF || 'main' }}
-          path: haqor-core
       - name: Install Linux desktop build dependencies
         run: |
           sudo apt-get update
@@ -141,19 +149,13 @@ jobs:
 
   windows:
     name: Windows
-    needs: databases
+    needs: [preflight, databases]
     runs-on: windows-latest
     steps:
       - name: Checkout haqor
         uses: actions/checkout@v4
         with:
           path: haqor
-      - name: Checkout haqor-core (Rust path dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: machshev/haqor-core
-          ref: ${{ github.event.inputs.core-ref || vars.HAQOR_CORE_REF || 'main' }}
-          path: haqor-core
       - uses: ./haqor/.github/actions/setup-build
       - name: Build Windows bundle
         working-directory: haqor
@@ -172,19 +174,13 @@ jobs:
 
   macos:
     name: macOS
-    needs: databases
+    needs: [preflight, databases]
     runs-on: macos-latest
     steps:
       - name: Checkout haqor
         uses: actions/checkout@v4
         with:
           path: haqor
-      - name: Checkout haqor-core (Rust path dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: machshev/haqor-core
-          ref: ${{ github.event.inputs.core-ref || vars.HAQOR_CORE_REF || 'main' }}
-          path: haqor-core
       - uses: ./haqor/.github/actions/setup-build
         with:
           rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
@@ -207,19 +203,13 @@ jobs:
 
   ios:
     name: iOS (unsigned)
-    needs: databases
+    needs: [preflight, databases]
     runs-on: macos-latest
     steps:
       - name: Checkout haqor
         uses: actions/checkout@v4
         with:
           path: haqor
-      - name: Checkout haqor-core (Rust path dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: machshev/haqor-core
-          ref: ${{ github.event.inputs.core-ref || vars.HAQOR_CORE_REF || 'main' }}
-          path: haqor-core
       - uses: ./haqor/.github/actions/setup-build
         with:
           rust-targets: aarch64-apple-ios
@@ -241,8 +231,13 @@ jobs:
   publish:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [android, linux, windows, macos, ios]
+    needs: [preflight, android, linux, windows, macos, ios]
     runs-on: ubuntu-latest
+    # Configure this environment in GitHub with a required reviewer before
+    # cutting the first release; it is the approval boundary for publication.
+    environment: release
+    permissions:
+      contents: write
     steps:
       - name: Download all binaries
         uses: actions/download-artifact@v4
@@ -253,7 +248,7 @@ jobs:
       - name: Stamp version and generate checksums
         working-directory: dist
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${{ needs.preflight.outputs.version }}"
           for f in haqor-*; do
             mv "$f" "${f/haqor-/haqor-$version-}"
           done

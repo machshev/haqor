@@ -16,7 +16,7 @@ on:
         description: machshev/haqor-core ref to generate the databases from
         type: string
         required: false
-        default: main
+        default: v0.7.1
 
 jobs:
   generate:

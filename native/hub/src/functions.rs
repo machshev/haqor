@@ -657,26 +657,26 @@ pub async fn get_word_info(bible: SharedBible) {
             // itself, so the raw word is passed through.
             match bible.hebrew_word_info(&req.word) {
                 Some(info) => {
-                    // Function words / particles bridge through the lexicon with
-                    // no triliteral root, so their definition can't be fetched by
-                    // root; look the lexeme up by its surface form instead.
-                    let bdb_entries = if info.root.is_empty() {
+                    // Match core's lexicon-coverage lookup: rooted words use
+                    // the root tree, while rootless function words are looked
+                    // up by their surface form and prefix.
+                    let bdb_entries = (if info.root.is_empty() {
                         bible.hebrew_bdb_for_surface(
                             &info.word,
                             info.prefix.as_deref().unwrap_or(""),
                         )
                     } else {
                         bible.hebrew_bdb_by_root(&info.root)
-                    }
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|e| BdbSummary {
-                        pos_category: e.pos_category().to_string(),
-                        headword: e.headword,
-                        gloss: e.gloss,
-                        content_json: e.content_json,
                     })
-                    .collect();
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|e| BdbSummary {
+                            pos_category: e.pos_category().to_string(),
+                            headword: e.headword,
+                            gloss: e.gloss,
+                            content_json: e.content_json,
+                        })
+                        .collect();
                     // The headline describes this occurrence, not merely its
                     // dictionary lemma. Keep the BDB entries below as lexeme
                     // definitions, while rendering proclitics and noun/verb
