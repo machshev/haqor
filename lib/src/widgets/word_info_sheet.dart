@@ -132,8 +132,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         _sub?.cancel();
         // Preload the occurrence scans in the background as soon as the lexicon
         // data lands, so the Occurrences tab is already populated (or at least
-        // loading) by the time the user switches to it.
-        if (pack.message.found) _fetchOccurrences();
+        // loading) by the time the user switches to it. Fetched even when the
+        // lexicon lookup failed: an unparsed word is still a surface form of
+        // the text, and its occurrences are the one thing we can always show.
+        _fetchOccurrences();
       }
     });
     GetWordInfo(word: widget.word, syriac: widget.syriac, bdbId: widget.bdbId)
@@ -329,29 +331,72 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     final theme = Theme.of(context);
 
     if (!info.found) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              widget.word,
-              style: TextStyle(
-                fontFamily: 'Cardo',
-                fontFamilyFallback: const ['Noto Serif Hebrew'],
-                fontSize: 28,
-                color: theme.colorScheme.onSurface,
-              ),
-              textDirection: TextDirection.rtl,
+      // No lexicon data, but the word is still a surface form of the text —
+      // show its occurrences so the sheet stays useful (and the reader can
+      // study the word in its other contexts).
+      final occ = _occ;
+      final occurrences = [
+        for (final o in occ?.occurrences ?? const <WordOccurrence>[])
+          _VerseOccurrence(
+            book: o.book,
+            chapter: o.chapter,
+            verse: o.verse,
+            words: [widget.word],
+          ),
+      ];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Column(
+              children: [
+                Text(
+                  widget.word,
+                  style: TextStyle(
+                    fontFamily: 'Cardo',
+                    fontFamilyFallback: const ['Noto Serif Hebrew'],
+                    fontSize: 28,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                  textDirection: TextDirection.rtl,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Not found in lexicon',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            Text(
-              'Not found in database',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: occ == null
+                ? const Center(child: CircularProgressIndicator())
+                : occurrences.isEmpty
+                ? const SizedBox.shrink()
+                : ListView(
+                    controller: scrollController,
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      8,
+                      20,
+                      8 + MediaQuery.viewPaddingOf(context).bottom,
+                    ),
+                    children: [
+                      Text(
+                        'Occurrences',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      ..._occurrenceVerseRows(occurrences),
+                    ],
+                  ),
+          ),
+        ],
       );
     }
 
@@ -587,6 +632,23 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       rows.add(sectionHeading(label));
       rows.add(const SizedBox(height: 4));
       rows.addAll(entries.map((p) => buildBdbRow(p.$1, p.$2)));
+    }
+
+    // A resolved word with no dictionary entry (curated function words such
+    // as בָּהּ bridge to no BDB lexeme) would otherwise render a blank tab.
+    if (rows.isEmpty && info.sedraEntries.isEmpty) {
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Text(
+            'No dictionary entry for this form.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
     }
 
     return ListView(

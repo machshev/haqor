@@ -795,7 +795,25 @@ pub async fn get_word_occurrences(bible: SharedBible) {
                     ),
                 }
                 .send_signal_to_dart(),
-                None => empty_word_occurrences().send_signal_to_dart(),
+                // Even a word the parse engine can't analyse is still a
+                // surface form of the text — return its own occurrences so
+                // the word-info sheet has something useful to show.
+                None => {
+                    let occurrences = to_signal_occurrences(
+                        bible
+                            .hebrew_surface_occurrences(&req.word)
+                            .unwrap_or_default(),
+                    );
+                    WordOccurrences {
+                        found: !occurrences.is_empty(),
+                        occurrences,
+                        root_occurrences: Vec::new(),
+                        sedra_occurrences: Vec::new(),
+                        ot_occurrences: Vec::new(),
+                        hebrew_occurrences: Vec::new(),
+                    }
+                    .send_signal_to_dart()
+                }
             }
         }
     }
