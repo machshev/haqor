@@ -76,10 +76,7 @@ void main() {
         .millisecondsSinceEpoch;
     await _openPlanSheet(tester, plans: ['0|1,2,3@$yesterday']);
     expect(find.text('3/50 chapters'), findsOneWidget);
-    expect(
-      find.text('Next: chapter 4 · read yesterday'),
-      findsOneWidget,
-    );
+    expect(find.text('Next: chapter 4 · read yesterday'), findsOneWidget);
   });
 
   testWidgets('deleting a plan asks for confirmation first', (tester) async {
@@ -114,10 +111,7 @@ void main() {
     );
 
     await tester.tap(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.text('11'),
-      ),
+      find.descendant(of: find.byType(AlertDialog), matching: find.text('11')),
     );
     await tester.pumpAndSettle();
     expect(find.text('10/50 chapters'), findsOneWidget);
@@ -143,10 +137,7 @@ void main() {
     await tester.tap(find.byTooltip('Edit position'));
     await tester.pumpAndSettle();
     await tester.tap(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.text('2'),
-      ),
+      find.descendant(of: find.byType(AlertDialog), matching: find.text('2')),
     );
     await tester.pumpAndSettle();
     expect(await _savedPlans(), ['0|1@1700000000000']);

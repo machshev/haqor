@@ -3,7 +3,11 @@ import 'dart:math' show min;
 import 'package:flutter/material.dart';
 
 class ChapterSelectorSheet extends StatelessWidget {
-  const ChapterSelectorSheet({super.key, required this.total, required this.current});
+  const ChapterSelectorSheet({
+    super.key,
+    required this.total,
+    required this.current,
+  });
   final int total;
   final int current;
 
@@ -18,12 +22,12 @@ class ChapterSelectorSheet extends StatelessWidget {
     // Usable width: screen minus 12px padding each side
     final availW = mq.size.width - 24.0;
     // Usable height: ~92% of screen, minus safe areas, minus handle+padding overhead
-    final availH = mq.size.height * 0.92 - mq.padding.top - mq.padding.bottom - 60;
+    final availH =
+        mq.size.height * 0.92 - mq.padding.top - mq.padding.bottom - 60;
 
     // Find the column count that maximises tile size while fitting all chapters.
     // As columns increase: tileW shrinks, rows shrink so tileH grows.
     // The optimum is at the crossing point of tileW and tileH.
-    int bestCols = 6;
     double bestTile = 0;
     for (int c = 1; c <= total; c++) {
       final tW = (availW + gap) / c - gap;
@@ -33,14 +37,18 @@ class ChapterSelectorSheet extends StatelessWidget {
       final t = min(tW, tH);
       if (t > bestTile) {
         bestTile = t;
-        bestCols = c;
       }
     }
     final tileSize = bestTile.clamp(minTile, maxTile);
     final fontSize = (tileSize * 0.38).clamp(9.0, 16.0);
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(12, 8, 12, 16 + MediaQuery.viewPaddingOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        8,
+        12,
+        16 + MediaQuery.viewPaddingOf(context).bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

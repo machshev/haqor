@@ -645,9 +645,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                     spacing: 6,
                     runSpacing: 6,
                     children: [
-                      for (var chapter = 1;
-                          chapter <= book.chapters;
-                          chapter++)
+                      for (var chapter = 1; chapter <= book.chapters; chapter++)
                         _PlanChapterChip(
                           chapter: chapter,
                           isNext: plan.nextChapter == chapter,
@@ -1256,10 +1254,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       slivers: [
         for (int i = 0; i < _sections.length; i++) ...[
           if (i == _centerIndex)
-            SliverToBoxAdapter(
-              key: _centerKey,
-              child: const SizedBox.shrink(),
-            ),
+            SliverToBoxAdapter(key: _centerKey, child: const SizedBox.shrink()),
           ..._sectionSlivers(_sections[i]),
         ],
         SliverToBoxAdapter(
@@ -1305,8 +1300,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                   _selectedVerse = entry.verse;
                 }
               }),
-              onWordTap: (word, readerGloss) =>
-                  _showWordInfo(word, b, c, entry.verse, readerGloss: readerGloss),
+              onWordTap: (word, readerGloss) => _showWordInfo(
+                word,
+                b,
+                c,
+                entry.verse,
+                readerGloss: readerGloss,
+              ),
               fontSize: _fontSize,
               fontFamily: _fontFamily,
               showCantillation: _showCantillation,
@@ -1420,8 +1420,18 @@ class _PlanProgressRow extends StatelessWidget {
     if (days == 1) return 'yesterday';
     if (days < 7) return '$days days ago';
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     final year = time.year == now.year ? '' : ' ${time.year}';
     return '${time.day} ${months[time.month - 1]}$year';
@@ -1433,8 +1443,7 @@ class _PlanProgressRow extends StatelessWidget {
     if (remaining <= 0) return null;
     final times = plan.completionTimes;
     if (times.length < 2) return null;
-    final spanDays =
-        times.last.difference(times.first).inMinutes / (60 * 24);
+    final spanDays = times.last.difference(times.first).inMinutes / (60 * 24);
     if (spanDays <= 0) return null;
     final perDay = (times.length - 1) / spanDays;
     final daysLeft = (remaining / perDay).ceil();
@@ -1450,10 +1459,7 @@ class _PlanProgressRow extends StatelessWidget {
     final remaining = book.chapters - plan.completedCount;
     final lastRead = plan.completionTimes.lastOrNull;
     final stats = [
-      if (nextChapter == null)
-        'Complete'
-      else
-        'Next: chapter $nextChapter',
+      if (nextChapter == null) 'Complete' else 'Next: chapter $nextChapter',
       if (lastRead != null) 'read ${_relativeDate(lastRead)}',
       ?_estimate(remaining),
     ].join(' · ');

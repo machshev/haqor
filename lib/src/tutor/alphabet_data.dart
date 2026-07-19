@@ -8,7 +8,8 @@ class HebrewLetter {
   final String? finalForm; // sofit form, if any
   final String name; // English name
   final String hebrewName; // pointed Hebrew name
-  final String translit; // scholarly romanization (macron for long vowels: ā ē ō)
+  final String
+  translit; // scholarly romanization (macron for long vowels: ā ē ō)
   final String sound; // pronunciation guide
   final int value; // numeric (gematria) value
   final String example; // pointed example word
@@ -552,7 +553,8 @@ const List<HebrewLetter> kAlphabet = [
     example: 'אֶלֶף',
     exampleTranslit: 'elef',
     exampleMeaning: 'thousand, ox',
-    tip: 'With a dagesh (פּ) it becomes Pe. Its final form ף drops below the line.',
+    tip:
+        'With a dagesh (פּ) it becomes Pe. Its final form ף drops below the line.',
   ),
   HebrewLetter(
     letter: 'פּ', // PE + DAGESH
@@ -624,7 +626,8 @@ const List<HebrewLetter> kAlphabet = [
     example: 'יִשְׂרָאֵל',
     exampleTranslit: 'yisra’el',
     exampleMeaning: 'Israel',
-    tip: 'The dot on the left makes it “s”; on the right (שׁ) it is Shin, “sh”.',
+    tip:
+        'The dot on the left makes it “s”; on the right (שׁ) it is Shin, “sh”.',
   ),
   HebrewLetter(
     letter: 'ת',

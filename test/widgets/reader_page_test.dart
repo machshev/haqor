@@ -32,7 +32,8 @@ class _FakeRust {
           for (var v = 1; v <= 20; v++)
             VerseEntry(
               verse: v,
-              text: 'ספר${request.book} פרק${request.chapter} פסוק$v '
+              text:
+                  'ספר${request.book} פרק${request.chapter} פסוק$v '
                   'מלה מלה מלה מלה מלה מלה מלה מלה',
               glosses: const [],
               names: const [],
@@ -49,7 +50,8 @@ class _FakeRust {
 
 Finder _verse(int book, int chapter, int verse) => find.byWidgetPredicate(
   (w) =>
-      w is VerseRow && w.entry.text.startsWith('ספר$book פרק$chapter פסוק$verse '),
+      w is VerseRow &&
+      w.entry.text.startsWith('ספר$book פרק$chapter פסוק$verse '),
 );
 
 Finder _anyVisibleVerse(WidgetTester tester) => find.byType(VerseRow).first;

@@ -22,7 +22,12 @@ class BookSelectorSheet extends StatelessWidget {
       theme.colorScheme.surfaceContainerHighest,
     ];
     return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(12, 8, 12, 16 + MediaQuery.viewPaddingOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        8,
+        12,
+        16 + MediaQuery.viewPaddingOf(context).bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
