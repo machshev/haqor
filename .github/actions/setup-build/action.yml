@@ -1,0 +1,53 @@
+name: Set up build environment (no Nix)
+description: >
+  Rust + Flutter + rinf toolchain for the platforms where the Nix devshell
+  cannot be used: Windows (no native Nix), macOS/iOS (need the runner's
+  Xcode), and the portable Linux release (binaries linked inside the Nix
+  devshell carry /nix/store interpreter paths and only run on Nix systems).
+  Keep `flutter-version` in lockstep with the flake's nixpkgs Flutter.
+  Expects this repo checked out at ./haqor and haqor-core at ./haqor-core,
+  and an `assets-db` artifact uploaded earlier in the run.
+
+inputs:
+  flutter-version:
+    description: Flutter SDK version (match the Nix devshell's Flutter)
+    default: "3.38.3"
+  rust-targets:
+    description: Extra Rust targets to install (comma separated)
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ inputs.rust-targets }}
+
+    - name: Install Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        channel: stable
+        flutter-version: ${{ inputs.flutter-version }}
+        cache: true
+
+    - name: Install cargo-binstall
+      uses: cargo-bins/cargo-binstall@main
+
+    - name: Install rinf_cli
+      shell: bash
+      # Version requirement mirrors the rinf constraint in pubspec.yaml.
+      run: cargo binstall --no-confirm rinf_cli --version '^8.6'
+
+    - name: Install bundled databases
+      uses: actions/download-artifact@v4
+      with:
+        name: assets-db
+        path: haqor/assets/db
+
+    - name: Fetch Dart dependencies and generate bindings
+      shell: bash
+      working-directory: haqor
+      run: |
+        flutter pub get
+        rinf gen

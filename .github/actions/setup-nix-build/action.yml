@@ -1,0 +1,64 @@
+name: Set up Nix build environment
+description: >
+  Toolchain for Linux-hosted app builds, provided by this repo's Nix flake so
+  CI matches the dev environment exactly (Flutter, JDK, Android SDK/NDK,
+  rustup, GTK libs — all pinned by flake.lock). Expects this repo checked out
+  at ./haqor and haqor-core at ./haqor-core (native/hub depends on it by
+  relative path), and an `assets-db` artifact uploaded earlier in the run.
+
+inputs:
+  rust-targets:
+    description: Extra Rust targets to install (space separated)
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31
+      with:
+        github_access_token: ${{ github.token }}
+
+    - name: Cache Nix store
+      uses: nix-community/cache-nix-action@v6
+      with:
+        primary-key: nix-app-${{ runner.os }}-${{ hashFiles('haqor/flake.lock') }}
+        restore-prefixes-first-match: nix-app-${{ runner.os }}-
+
+    - name: Cache rustup and cargo homes
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.rustup
+          ~/.cargo
+        key: rust-home-${{ runner.os }}-${{ hashFiles('haqor/rust-toolchain.toml', 'haqor/pubspec.yaml') }}
+
+    - name: Bootstrap Rust toolchain and rinf_cli
+      shell: bash
+      working-directory: haqor
+      # The devshell provides rustup (the rinf plugin requires it) but the
+      # toolchain itself lives in ~/.rustup. On the very first `nix develop`
+      # the flake shellHook runs before any toolchain exists, so its
+      # rinf_cli/rinf-gen steps fail noisily but harmlessly — the command
+      # below then installs everything they needed.
+      run: |
+        nix develop --command bash -c '
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          targets="${{ inputs.rust-targets }}"
+          if [ -n "$targets" ]; then
+            rustup target add $targets
+          fi
+          command -v rinf >/dev/null || cargo install rinf_cli --locked
+        '
+
+    - name: Install bundled databases
+      uses: actions/download-artifact@v4
+      with:
+        name: assets-db
+        path: haqor/assets/db
+
+    - name: Fetch Dart dependencies and generate bindings
+      shell: bash
+      working-directory: haqor
+      run: nix develop --command bash -c 'flutter pub get && rinf gen'

@@ -20,6 +20,21 @@
 Original language study first Bible software that can be used on all devices - mobile, tablet, and
 desktop.
 
+# Installing
+
+Prebuilt binaries for every release are on the
+[releases page](https://github.com/machshev/haqor/releases).
+
+| Platform | File | Notes |
+|---|---|---|
+| Android | `…-android-arm64-v8a.apk` | Most devices. Enable "install unknown apps", then open the APK. Use the universal `…-android.apk` if unsure. |
+| Windows | `…-windows-x64.zip` | Unzip and run `haqor.exe`. Unsigned: SmartScreen will warn — "More info" → "Run anyway". |
+| macOS | `…-macos-universal.dmg` | Not notarized: right-click the app → Open the first time (or `xattr -dr com.apple.quarantine /Applications/haqor.app`). |
+| Linux | `…-linux-x64.tar.gz` | Unpack and run `./haqor`. Requires GTK 3. |
+| iOS | `…-ios-unsigned.ipa` | Unsigned: sideload with [AltStore](https://altstore.io/) or Sideloadly using a free Apple ID (re-signs every 7 days). |
+
+See [doc/RELEASING.md](doc/RELEASING.md) for how releases are built and signed.
+
 # Why the name Haqor?
 
 The name is taken from the word חֲקֹר ("search out") from proverbs 25, where it says:

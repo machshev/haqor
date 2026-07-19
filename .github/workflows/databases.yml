@@ -1,0 +1,83 @@
+# Generates the bundled SQLite databases (bible/lexicon/hebrew/sedra) from
+# haqor-core's committed source texts. The .db files (~56 MB) are gitignored
+# in both repos, so every CI/release build regenerates them here — cached per
+# haqor-core commit — and ships them to the platform build jobs as the
+# `assets-db` artifact.
+#
+# Reusable workflow: called by ci.yml and release.yml. Uses haqor-core's Nix
+# flake (packages.haqor-cli) so the generator toolchain is pinned by that
+# repo's flake.lock + Cargo.lock.
+name: Databases
+
+on:
+  workflow_call:
+    inputs:
+      core-ref:
+        description: machshev/haqor-core ref to generate the databases from
+        type: string
+        required: false
+        default: main
+
+jobs:
+  generate:
+    name: Generate SQLite databases
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout haqor-core
+        uses: actions/checkout@v4
+        with:
+          repository: machshev/haqor-core
+          ref: ${{ inputs.core-ref }}
+          path: haqor-core
+          submodules: recursive
+
+      - name: Resolve haqor-core commit
+        id: core
+        run: echo "sha=$(git -C haqor-core rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache generated databases
+        id: db-cache
+        uses: actions/cache@v4
+        with:
+          path: haqor-core/data/*.db
+          key: assets-db-v1-${{ steps.core.outputs.sha }}
+
+      - name: Install Nix
+        if: steps.db-cache.outputs.cache-hit != 'true'
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ github.token }}
+
+      - name: Cache Nix store
+        if: steps.db-cache.outputs.cache-hit != 'true'
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-dbgen-${{ runner.os }}-${{ hashFiles('haqor-core/flake.lock', 'haqor-core/Cargo.lock') }}
+          restore-prefixes-first-match: nix-dbgen-${{ runner.os }}-
+
+      - name: Build haqor-cli
+        if: steps.db-cache.outputs.cache-hit != 'true'
+        working-directory: haqor-core
+        run: nix build .#haqor-cli
+
+      - name: Generate databases
+        if: steps.db-cache.outputs.cache-hit != 'true'
+        working-directory: haqor-core
+        env:
+          RUST_LOG: info
+        # Order matters: gen-hebrew reads bible.db and lexicon.db. --force
+        # wipes any stale hebrew.db so the shipped DB is a clean full build of
+        # the current parser (the curated lexicon_overrides.json is committed
+        # in haqor-core and baked in by gen-lexicon).
+        run: |
+          ./result/bin/haqor db gen-bible
+          ./result/bin/haqor db gen-lexicon
+          ./result/bin/haqor db gen-hebrew --force
+          ./result/bin/haqor db gen-sedra
+
+      - name: Upload databases artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: assets-db
+          path: haqor-core/data/*.db
+          if-no-files-found: error

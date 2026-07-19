@@ -1,51 +1,58 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-name: Dart
+# PR/main checks: format, analyze, test, and a full Android release build to
+# prove the whole Rust/rinf/database chain. Builds inside the Nix devshell so
+# CI uses exactly the toolchain pinned by flake.lock.
+name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
-  build:
+  databases:
+    uses: ./.github/workflows/databases.yml
+
+  checks:
+    name: Analyze, test, build
+    needs: databases
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
-    
-      # Setup the flutter environment.
-      - uses: subosito/flutter-action@v1
+      - name: Checkout haqor
+        uses: actions/checkout@v4
         with:
-          channel: 'stable' # 'dev', 'alpha', default to: 'stable'
-          # flutter-version: '1.12.x' # you can also specify exact version of flutter
-
-      # Note: This workflow uses the latest stable version of the Dart SDK.
-      # You can specify other versions if desired, see documentation here:
-      # https://github.com/dart-lang/setup-dart/blob/main/README.md
-      # - uses: dart-lang/setup-dart@v1
-      - uses: dart-lang/setup-dart@9a04e6d73cca37bd455e0608d7e5092f881fd603
-
-      - name: Install dependencies
-        run: flutter pub get
+          path: haqor
+      - name: Checkout haqor-core (Rust path dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: machshev/haqor-core
+          path: haqor-core
+      - uses: ./haqor/.github/actions/setup-nix-build
+        with:
+          rust-targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
 
       - name: Verify formatting
-        run: dart format --set-exit-if-changed .
+        working-directory: haqor
+        # lib/src/bindings is rinf-generated; only check hand-written code.
+        run: |
+          nix develop --command bash -c \
+            "find lib test -name '*.dart' -not -path 'lib/src/bindings/*' -print0 \
+             | xargs -0 dart format --set-exit-if-changed"
 
       - name: Analyze project source
-        run: flutter analyze
+        working-directory: haqor
+        run: nix develop --command flutter analyze
 
       - name: Run tests
-        run: flutter test
+        working-directory: haqor
+        run: nix develop --command flutter test
 
-      - name: Build android apk
-        run: flutter build apk
-        
-      - uses: actions/upload-artifact@v1
+      - name: Build Android APK
+        working-directory: haqor
+        run: nix develop --command flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
         with:
           name: release-apk
-          path: build/app/outputs/apk/release/app-release.apk
+          path: haqor/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
