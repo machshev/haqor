@@ -100,7 +100,12 @@ typedef _ChapterRequest = (int, int, bool, bool, bool);
 enum _ReaderMenuAction { readingPlan, tutor, settings }
 
 class BibleReaderPage extends StatefulWidget {
-  const BibleReaderPage({super.key});
+  const BibleReaderPage({super.key, this.sendChapterRequest});
+
+  /// Test seam: how a [GetChapter] request reaches the Rust side. Defaults to
+  /// the real rinf signal; widget tests substitute a stub that answers via
+  /// `assignRustSignal['ChapterText']`.
+  final void Function(GetChapter request)? sendChapterRequest;
 
   @override
   State<BibleReaderPage> createState() => _BibleReaderPageState();
@@ -144,7 +149,15 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   static const _chapterCacheLimit = 6;
 
+  // Loaded chapters in reading order. The scroll view is anchored on a
+  // zero-height `center` sliver placed just before _sections[_centerIndex]:
+  // chapters inserted above the center occupy negative scroll offsets, so
+  // prepending (and trimming the far ends) never moves on-screen content.
+  // No scroll-offset corrections exist anywhere in this page.
+  static const _chapterWindow = 8;
   final List<_Section> _sections = [];
+  int _centerIndex = 0;
+  final Key _centerKey = const ValueKey('reader-center');
   // (1-based book, chapter, Syriac, include glosses, include name flags)
   final Set<_ChapterRequest> _pendingFetches = {};
   final Set<_ChapterRequest> _prefetches = {};
@@ -218,11 +231,6 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       setState(() => _sections[loadedIndex].verses = verses);
       return;
     }
-    final goesOnTop =
-        _sections.isNotEmpty &&
-        (bookIdx < _sections.first.bookIndex ||
-            (bookIdx == _sections.first.bookIndex &&
-                chapter < _sections.first.chapter));
 
     final section = _Section(
       bookIndex: bookIdx,
@@ -230,95 +238,107 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       verses: verses,
     );
 
-    int? targetVerse;
-    if (_pendingVerse != null && bookIdx == _bookIndex && chapter == _chapter) {
-      targetVerse = _pendingVerse;
-      _selectedBook = bookIdx;
-      _selectedChapter = chapter;
-      _selectedVerse = targetVerse;
-      _targetVerseKey = GlobalKey();
-      _pendingVerse = null;
+    if (_sections.isEmpty) {
+      int? targetVerse;
+      if (_pendingVerse != null &&
+          bookIdx == _bookIndex &&
+          chapter == _chapter) {
+        targetVerse = _pendingVerse;
+        _selectedBook = bookIdx;
+        _selectedChapter = chapter;
+        _selectedVerse = targetVerse;
+        _targetVerseKey = GlobalKey();
+        _pendingVerse = null;
+      }
+      setState(() {
+        _sections.add(section);
+        _centerIndex = 0;
+        _initialLoading = false;
+        _loadingPrev = false;
+        _loadingNext = false;
+      });
+      _prefetchAdjacentChapters(bookIdx, chapter);
+      if (targetVerse != null) _scheduleScrollToVerse(section, targetVerse);
+      _scheduleEdgeCheck();
+      return;
     }
 
-    if (goesOnTop) {
-      _prependSection(section);
+    final first = _sections.first;
+    final last = _sections.last;
+    final prev = _previousChapterBefore(first.bookIndex, first.chapter);
+    final next = _nextChapterAfter(last.bookIndex, last.chapter);
+    if (prev != null && bookIdx == prev.$1 && chapter == prev.$2) {
+      setState(() {
+        _sections.insert(0, section);
+        _centerIndex++;
+        _loadingPrev = false;
+        _trimTail();
+      });
+    } else if (next != null && bookIdx == next.$1 && chapter == next.$2) {
+      setState(() {
+        _sections.add(section);
+        _loadingNext = false;
+        _trimHead();
+      });
     } else {
-      _appendSection(section);
+      // Stale response — e.g. delivered after the window moved elsewhere.
+      setState(() {
+        _loadingPrev = false;
+        _loadingNext = false;
+      });
+      return;
     }
     _prefetchAdjacentChapters(bookIdx, chapter);
+    _scheduleEdgeCheck();
+  }
 
-    if (targetVerse != null) {
-      _scheduleScrollToVerse(section, targetVerse);
-    }
+  // A fresh window starts with pixels == minScrollExtent, where clamping
+  // physics swallow upward drags without emitting scroll events, so relying
+  // on _onScroll alone would leave the reader unable to scroll up. Re-run the
+  // edge triggers once the new window has been laid out; this settles after
+  // at most one chapter per side because each accept pushes the extents past
+  // the trigger distance.
+  void _scheduleEdgeCheck() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _onScroll();
+    });
   }
 
   bool _isSyriac(int bookIndex) => bookIndex >= 39 && _ntSyriac;
 
-  double? _viewportY(GlobalKey key) {
-    final box = key.currentContext?.findRenderObject() as RenderBox?;
-    return box != null && box.attached
-        ? box.localToGlobal(Offset.zero).dy
-        : null;
+  int? _currentSectionIndex() {
+    final idx = _sections.indexWhere(
+      (s) => s.bookIndex == _bookIndex && s.chapter == _chapter,
+    );
+    return idx >= 0 ? idx : null;
   }
 
-  void _preserveAnchor(GlobalKey? key, void Function() update) {
-    final beforeY = key == null ? null : _viewportY(key);
-    setState(update);
-    if (beforeY == null || key == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      final afterY = _viewportY(key);
-      if (afterY == null) return;
-      final correction = afterY - beforeY;
-      if (correction.abs() < 0.5) return;
-      final position = _scrollController.position;
-      // Use the live offset rather than a pre-layout value.  This preserves
-      // the user's movement during a fast upward fling instead of jumping them
-      // forward when a chapter lands above the viewport.
-      _scrollController.jumpTo(
-        (position.pixels + correction).clamp(0.0, position.maxScrollExtent),
-      );
-    });
-  }
-
-  // Appends a section at the bottom; evicts the top section first if over limit.
-  void _appendSection(_Section section) {
-    if (_sections.length >= 3) {
-      // Keep the first surviving section anchored while removing content above.
-      final anchor = _sections[1].key;
-      _preserveAnchor(anchor, () {
-        _sections.removeAt(0);
-        _sections.add(section);
-        _initialLoading = false;
-        _loadingNext = false;
-      });
-    } else {
-      setState(() {
-        _sections.add(section);
-        _initialLoading = false;
-        _loadingNext = false;
-      });
+  // Trimming is only ever allowed at the far ends, on the side the reader is
+  // moving away from, and never at or past the center section. Both rules
+  // together guarantee that dropping a section changes only the scroll
+  // extents, never the position of laid-out content. Sections between the
+  // center and the viewport are intentionally kept: they are cheap (lazy
+  // slivers plus verse data) and removing them would require the scroll
+  // corrections this design exists to avoid.
+  void _trimHead() {
+    var currentIdx = _currentSectionIndex();
+    if (currentIdx == null) return;
+    while (_sections.length > _chapterWindow &&
+        _centerIndex > 0 &&
+        currentIdx! >= 3) {
+      _sections.removeAt(0);
+      _centerIndex--;
+      currentIdx--;
     }
   }
 
-  // Prepends a section at the top while keeping the prior first section at its
-  // exact viewport position.  The old max-extent calculation was only an
-  // estimate for lazily laid-out slivers and used a stale scroll offset.
-  void _prependSection(_Section section) {
-    final anchor = _sections.isEmpty ? null : _sections.first.key;
-    if (_sections.length >= 3) {
-      _preserveAnchor(anchor, () {
-        _sections.removeLast();
-        _sections.insert(0, section);
-        _initialLoading = false;
-        _loadingPrev = false;
-      });
-    } else {
-      _preserveAnchor(anchor, () {
-        _sections.insert(0, section);
-        _initialLoading = false;
-        _loadingPrev = false;
-      });
+  void _trimTail() {
+    final currentIdx = _currentSectionIndex();
+    if (currentIdx == null) return;
+    while (_sections.length > _chapterWindow &&
+        _sections.length - 1 > _centerIndex &&
+        _sections.length - 1 - currentIdx >= 3) {
+      _sections.removeLast();
     }
   }
 
@@ -576,6 +596,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         timeout.cancel();
       }
       _fetchTimeouts.clear();
+      _centerIndex = 0;
       _bookIndex = bookIndex;
       _chapter = chapter;
       _initialLoading = true;
@@ -664,13 +685,19 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         ),
       );
     });
-    GetChapter(
+    final request = GetChapter(
       book: bookIndex + 1,
       chapter: chapter,
       syriac: _isSyriac(bookIndex),
       includeGlosses: _glossInterlinear,
       includeNames: _highlightProperNames,
-    ).sendSignalToRust();
+    );
+    final send = widget.sendChapterRequest;
+    if (send != null) {
+      send(request);
+    } else {
+      request.sendSignalToRust();
+    }
   }
 
   void _refreshLoadedOtChapters() {
@@ -728,16 +755,16 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   void _onScroll() {
     _updateCurrentChapter();
     if (!_scrollController.hasClients || _sections.isEmpty) return;
-    final pixels = _scrollController.position.pixels;
-    final maxExtent = _scrollController.position.maxScrollExtent;
-    final triggerDistance = math.max(
-      800.0,
-      _scrollController.position.viewportDimension * 2,
-    );
-    if (!_loadingPrev && pixels <= triggerDistance) {
+    final position = _scrollController.position;
+    final triggerDistance = math.max(800.0, position.viewportDimension * 2);
+    // Content above the center sliver lives at negative offsets, so the top
+    // trigger is relative to minScrollExtent rather than zero.
+    if (!_loadingPrev &&
+        position.pixels <= position.minScrollExtent + triggerDistance) {
       _maybeLoadPrev();
     }
-    if (!_loadingNext && pixels >= maxExtent - triggerDistance) {
+    if (!_loadingNext &&
+        position.pixels >= position.maxScrollExtent - triggerDistance) {
       _maybeLoadNext();
     }
   }
@@ -1046,72 +1073,79 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     final bottomPadding = MediaQuery.viewPaddingOf(context).bottom;
     return CustomScrollView(
       controller: _scrollController,
+      // Anchoring on a zero-height center sliver lets sections above it grow
+      // into negative scroll offsets: prepending a chapter extends
+      // minScrollExtent instead of shifting the content the reader is looking
+      // at, so no scroll-offset correction is ever needed.
+      center: _centerKey,
       slivers: [
-        const SliverToBoxAdapter(child: SizedBox(height: 8)),
         for (int i = 0; i < _sections.length; i++) ...[
-          if (i > 0)
+          if (i == _centerIndex)
             SliverToBoxAdapter(
-              child: _completePlanChapterControl(
-                _sections[i - 1].bookIndex,
-                _sections[i - 1].chapter,
-              ),
+              key: _centerKey,
+              child: const SizedBox.shrink(),
             ),
-          SliverToBoxAdapter(
-            child: i == 0
-                ? SizedBox(key: _sections[0].key)
-                : _ChapterDivider(
-                    key: _sections[i].key,
-                    bookIndex: _sections[i].bookIndex,
-                    chapter: _sections[i].chapter,
-                  ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: SliverList.builder(
-              itemCount: _sections[i].verses.length,
-              itemBuilder: (context, j) {
-                final section = _sections[i];
-                final entry = section.verses[j];
-                final isSelected =
-                    entry.verse == _selectedVerse &&
-                    section.bookIndex == _selectedBook &&
-                    section.chapter == _selectedChapter;
-                return VerseRow(
-                  key: isSelected ? _targetVerseKey : null,
-                  entry: entry,
-                  isSelected: isSelected,
-                  hebrewNumerals: _hebrewNumerals,
-                  onTap: () => setState(() {
-                    if (isSelected) {
-                      _selectedBook = null;
-                      _selectedChapter = null;
-                      _selectedVerse = null;
-                    } else {
-                      _selectedBook = section.bookIndex;
-                      _selectedChapter = section.chapter;
-                      _selectedVerse = entry.verse;
-                    }
-                  }),
-                  onWordTap: (word, readerGloss) => _showWordInfo(
-                    word,
-                    section.bookIndex,
-                    section.chapter,
-                    entry.verse,
-                    readerGloss: readerGloss,
-                  ),
-                  fontSize: _fontSize,
-                  fontFamily: _fontFamily,
-                  showCantillation: _showCantillation,
-                  glossInterlinear: _glossInterlinear,
-                  highlightProperNames: _highlightProperNames,
-                );
-              },
-            ),
-          ),
+          ..._sectionSlivers(_sections[i]),
         ],
-        SliverToBoxAdapter(child: SizedBox(height: 88 + bottomPadding)),
+        SliverToBoxAdapter(
+          key: const ValueKey('reader-bottom-pad'),
+          child: SizedBox(height: 88 + bottomPadding),
+        ),
       ],
     );
+  }
+
+  List<Widget> _sectionSlivers(_Section section) {
+    final b = section.bookIndex;
+    final c = section.chapter;
+    return [
+      SliverToBoxAdapter(
+        key: ValueKey('divider-$b-$c'),
+        child: _ChapterDivider(key: section.key, bookIndex: b, chapter: c),
+      ),
+      SliverPadding(
+        key: ValueKey('verses-$b-$c'),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        sliver: SliverList.builder(
+          itemCount: section.verses.length,
+          itemBuilder: (context, j) {
+            final entry = section.verses[j];
+            final isSelected =
+                entry.verse == _selectedVerse &&
+                b == _selectedBook &&
+                c == _selectedChapter;
+            return VerseRow(
+              key: isSelected ? _targetVerseKey : null,
+              entry: entry,
+              isSelected: isSelected,
+              hebrewNumerals: _hebrewNumerals,
+              onTap: () => setState(() {
+                if (isSelected) {
+                  _selectedBook = null;
+                  _selectedChapter = null;
+                  _selectedVerse = null;
+                } else {
+                  _selectedBook = b;
+                  _selectedChapter = c;
+                  _selectedVerse = entry.verse;
+                }
+              }),
+              onWordTap: (word, readerGloss) =>
+                  _showWordInfo(word, b, c, entry.verse, readerGloss: readerGloss),
+              fontSize: _fontSize,
+              fontFamily: _fontFamily,
+              showCantillation: _showCantillation,
+              glossInterlinear: _glossInterlinear,
+              highlightProperNames: _highlightProperNames,
+            );
+          },
+        ),
+      ),
+      SliverToBoxAdapter(
+        key: ValueKey('plan-$b-$c'),
+        child: _completePlanChapterControl(b, c),
+      ),
+    ];
   }
 }
 
