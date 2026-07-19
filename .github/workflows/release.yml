@@ -32,11 +32,18 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+# The haqor-core ref precedence is: workflow_dispatch input, then the
+# HAQOR_CORE_REF repository variable (for temporarily tracking a haqor-core
+# branch — delete the variable once merged), then main.
 jobs:
   databases:
     uses: ./.github/workflows/databases.yml
     with:
-      core-ref: ${{ github.event.inputs.core-ref || 'main' }}
+      core-ref: ${{ github.event.inputs.core-ref || vars.HAQOR_CORE_REF || 'main' }}
 
   android:
     name: Android
@@ -51,7 +58,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: machshev/haqor-core
-          ref: ${{ github.event.inputs.core-ref || 'main' }}
+          ref: ${{ github.event.inputs.core-ref || vars.HAQOR_CORE_REF || 'main' }}
           path: haqor-core
       - uses: ./haqor/.github/actions/setup-nix-build
         with:
@@ -111,7 +118,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: machshev/haqor-core
-          ref: ${{ github.event.inputs.core-ref || 'main' }}
+          ref: ${{ github.event.inputs.core-ref || vars.HAQOR_CORE_REF || 'main' }}
           path: haqor-core
       - name: Install Linux desktop build dependencies
         run: |
@@ -145,7 +152,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: machshev/haqor-core
-          ref: ${{ github.event.inputs.core-ref || 'main' }}
+          ref: ${{ github.event.inputs.core-ref || vars.HAQOR_CORE_REF || 'main' }}
           path: haqor-core
       - uses: ./haqor/.github/actions/setup-build
       - name: Build Windows bundle
@@ -176,7 +183,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: machshev/haqor-core
-          ref: ${{ github.event.inputs.core-ref || 'main' }}
+          ref: ${{ github.event.inputs.core-ref || vars.HAQOR_CORE_REF || 'main' }}
           path: haqor-core
       - uses: ./haqor/.github/actions/setup-build
         with:
@@ -211,7 +218,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: machshev/haqor-core
-          ref: ${{ github.event.inputs.core-ref || 'main' }}
+          ref: ${{ github.event.inputs.core-ref || vars.HAQOR_CORE_REF || 'main' }}
           path: haqor-core
       - uses: ./haqor/.github/actions/setup-build
         with:
