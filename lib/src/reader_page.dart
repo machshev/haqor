@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app_settings.dart';
 import 'bible_data.dart';
 import 'bindings/bindings.dart';
+import 'issue_reporting.dart';
 import 'tutor/onboarding.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
@@ -131,7 +132,7 @@ class _Section {
 
 typedef _ChapterRequest = (int, int, bool, bool, bool);
 
-enum _ReaderMenuAction { readingPlan, tutor, settings }
+enum _ReaderMenuAction { readingPlan, tutor, reportIssue, settings }
 
 class BibleReaderPage extends StatefulWidget {
   const BibleReaderPage({super.key, this.sendChapterRequest});
@@ -166,6 +167,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   // Displayed in AppBar — tracks the chapter currently at the top of the viewport
   int _bookIndex = 0;
   int _chapter = 1;
+
+  // Gates the generic issue-report menu item, matching the word-info sheet's
+  // admin-only flag button.
+  bool _adminMode = false;
 
   // Selected verse (across any section)
   int? _selectedBook;
@@ -252,6 +257,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       if (mounted && pack.message.success) _refreshLoadedOtChapters();
     });
     _loadPrefs();
+    _loadAdminMode();
+  }
+
+  Future<void> _loadAdminMode() async {
+    final enabled = await adminModeEnabled();
+    if (mounted) setState(() => _adminMode = enabled);
   }
 
   void _acceptChapter(int bookIdx, int chapter, List<VerseEntry> verses) {
@@ -508,18 +519,37 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     }
   }
 
-  void _showAppSettings() => showAppSettings(
+  Future<void> _showAppSettings() async {
+    await showAppSettings(
+      context,
+      readingSettings: AppReadingSettings(
+        ntSyriac: _ntSyriac,
+        hebrewNumerals: _hebrewNumerals,
+        showCantillation: _showCantillation,
+        glossInterlinear: _glossInterlinear,
+        highlightProperNames: _highlightProperNames,
+        fontSize: _fontSize,
+        fontFamily: _fontFamily,
+      ),
+      onReadingSettingsChanged: _applyReadingSettings,
+    );
+    // Admin mode can be toggled inside the settings sheet; it gates the
+    // issue-report menu item.
+    _loadAdminMode();
+  }
+
+  /// Generic issue entry, not tied to a specific word or card — reachable from
+  /// the reader menu so an idea can be logged from anywhere in the app.
+  void _reportGeneralIssue() => showIssueReportDialog(
     context,
-    readingSettings: AppReadingSettings(
-      ntSyriac: _ntSyriac,
-      hebrewNumerals: _hebrewNumerals,
-      showCantillation: _showCantillation,
-      glossInterlinear: _glossInterlinear,
-      highlightProperNames: _highlightProperNames,
-      fontSize: _fontSize,
-      fontFamily: _fontFamily,
-    ),
-    onReadingSettingsChanged: _applyReadingSettings,
+    source: 'general',
+    contextData: {
+      'reader': {
+        'bookIndex': _bookIndex,
+        'book': kBooks[_bookIndex].transliteration,
+        'chapter': _chapter,
+      },
+    },
   );
 
   Future<void> _showReadingPlan() async {
@@ -1133,26 +1163,36 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const TutorEntryPage()),
                   );
+                case _ReaderMenuAction.reportIssue:
+                  _reportGeneralIssue();
                 case _ReaderMenuAction.settings:
                   _showAppSettings();
               }
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
+            itemBuilder: (context) => [
+              const PopupMenuItem(
                 value: _ReaderMenuAction.readingPlan,
                 child: ListTile(
                   leading: Icon(Icons.auto_stories_outlined),
                   title: Text('Reading plan'),
                 ),
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
                 value: _ReaderMenuAction.tutor,
                 child: ListTile(
                   leading: Icon(Icons.school_outlined),
                   title: Text('Tutor'),
                 ),
               ),
-              PopupMenuItem(
+              if (_adminMode)
+                const PopupMenuItem(
+                  value: _ReaderMenuAction.reportIssue,
+                  child: ListTile(
+                    leading: Icon(Icons.flag_outlined),
+                    title: Text('Report an issue'),
+                  ),
+                ),
+              const PopupMenuItem(
                 value: _ReaderMenuAction.settings,
                 child: ListTile(
                   leading: Icon(Icons.settings_outlined),
