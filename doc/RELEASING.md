@@ -7,17 +7,18 @@ Windows) are free.
 
 ## Cutting a release
 
-1. Update `version:` in `pubspec.yaml`. The tag must exactly match that
-   version with a leading `v` (for example `version: 1.2.3+4` requires
-   `v1.2.3`).
+1. Bump `pubspec.yaml` with `./tool/bump-version.sh patch` (or `minor`,
+   `major`, or an explicit `X.Y.Z`). It advances Flutter's build number for
+   Android/iOS and the release tag must match the semantic version with a
+   leading `v` (for example `version: 1.2.3+4` requires `v1.2.3`).
 2. If the databases changed since the last release, bump the installed-DB
    version so existing installs refresh their local copy on next launch:
    `tool/sync-dbs.sh --bump` (commits a `_dbVersion` increment in
    `lib/src/db_installer.dart`).
-3. Commit, then tag and push:
+3. Commit any other release changes, then create the version commit and tag:
 
    ```sh
-   git tag v1.2.3
+   ./tool/bump-version.sh patch --tag
    git push origin v1.2.3
    ```
 
