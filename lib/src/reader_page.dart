@@ -42,22 +42,53 @@ class _PassageRef {
 }
 
 class _ReadingPlan {
-  _ReadingPlan({required this.bookIndex, Set<int>? completedChapters})
-    : completedChapters = completedChapters ?? {};
+  _ReadingPlan({required this.bookIndex, Map<int, DateTime?>? completed})
+    : _completed = completed ?? {};
 
   final int bookIndex;
-  final Set<int> completedChapters;
+
+  /// Completed chapter -> completion time. Null timestamps come from entries
+  /// saved before completion times were recorded.
+  final Map<int, DateTime?> _completed;
+
+  int get completedCount => _completed.length;
+
+  bool isCompleted(int chapter) => _completed.containsKey(chapter);
 
   int? get nextChapter {
     for (var chapter = 1; chapter <= kBooks[bookIndex].chapters; chapter++) {
-      if (!completedChapters.contains(chapter)) return chapter;
+      if (!_completed.containsKey(chapter)) return chapter;
     }
     return null;
   }
 
+  void completeChapter(int chapter) => _completed[chapter] = DateTime.now();
+
+  /// Rewrites progress so [chapter] becomes the next chapter to read;
+  /// `kBooks[bookIndex].chapters + 1` marks the whole book read. Completion
+  /// times of chapters that stay completed are preserved.
+  void setNextChapter(int chapter) {
+    final kept = <int, DateTime?>{
+      for (var c = 1; c < chapter; c++) c: _completed[c],
+    };
+    _completed
+      ..clear()
+      ..addAll(kept);
+  }
+
+  /// Completion times of all timestamped chapters, oldest first.
+  List<DateTime> get completionTimes =>
+      _completed.values.whereType<DateTime>().toList()..sort();
+
   String toStorageString() {
-    final chapters = completedChapters.toList()..sort();
-    return '$bookIndex|${chapters.join(',')}';
+    final chapters = _completed.keys.toList()..sort();
+    final entries = chapters.map((chapter) {
+      final time = _completed[chapter];
+      return time == null
+          ? '$chapter'
+          : '$chapter@${time.millisecondsSinceEpoch}';
+    });
+    return '$bookIndex|${entries.join(',')}';
   }
 
   static _ReadingPlan? fromStorageString(String value) {
@@ -67,18 +98,21 @@ class _ReadingPlan {
     if (bookIndex == null || bookIndex < 0 || bookIndex >= kBooks.length) {
       return null;
     }
-    final completedChapters = parts[1]
-        .split(',')
-        .map(int.tryParse)
-        .whereType<int>()
-        .where(
-          (chapter) => chapter >= 1 && chapter <= kBooks[bookIndex].chapters,
-        )
-        .toSet();
-    return _ReadingPlan(
-      bookIndex: bookIndex,
-      completedChapters: completedChapters,
-    );
+    final completed = <int, DateTime?>{};
+    for (final entry in parts[1].split(',')) {
+      final pieces = entry.split('@');
+      final chapter = int.tryParse(pieces[0]);
+      if (chapter == null ||
+          chapter < 1 ||
+          chapter > kBooks[bookIndex].chapters) {
+        continue;
+      }
+      final millis = pieces.length == 2 ? int.tryParse(pieces[1]) : null;
+      completed[chapter] = millis == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(millis);
+    }
+    return _ReadingPlan(bookIndex: bookIndex, completed: completed);
   }
 }
 
@@ -370,16 +404,18 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           _readingPlans = [
             _ReadingPlan(
               bookIndex: planBook,
-              completedChapters:
-                  (prefs.getStringList(_kReadingPlanCompleted) ?? [])
-                      .map(int.tryParse)
-                      .whereType<int>()
-                      .where(
-                        (chapter) =>
-                            chapter >= 1 &&
-                            chapter <= kBooks[planBook].chapters,
-                      )
-                      .toSet(),
+              completed: {
+                for (final chapter
+                    in (prefs.getStringList(_kReadingPlanCompleted) ?? [])
+                        .map(int.tryParse)
+                        .whereType<int>()
+                        .where(
+                          (chapter) =>
+                              chapter >= 1 &&
+                              chapter <= kBooks[planBook].chapters,
+                        ))
+                  chapter: null,
+              },
             ),
           ];
         }
@@ -490,23 +526,122 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
-      builder: (ctx) => _ReadingPlanSheet(
-        plans: _readingPlans,
-        onChooseBook: () {
-          Navigator.pop(ctx);
-          _choosePlanBook();
-        },
-        onOpenNext: (plan) {
-          Navigator.pop(ctx);
-          final chapter = plan.nextChapter;
-          if (chapter != null) _navigateTo(plan.bookIndex, chapter);
-        },
-        onClear: (plan) {
-          Navigator.pop(ctx);
-          setState(() => _readingPlans.remove(plan));
-          _saveReadingPlan();
-        },
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => _ReadingPlanSheet(
+          plans: _readingPlans,
+          onChooseBook: () {
+            Navigator.pop(ctx);
+            _choosePlanBook();
+          },
+          onOpenNext: (plan) {
+            Navigator.pop(ctx);
+            final chapter = plan.nextChapter;
+            if (chapter != null) _navigateTo(plan.bookIndex, chapter);
+          },
+          onEdit: (plan) async {
+            final position = await _choosePlanPosition(ctx, plan);
+            if (position == null) return;
+            setState(() => plan.setNextChapter(position));
+            setSheetState(() {});
+            _saveReadingPlan();
+          },
+          onClear: (plan) async {
+            final confirmed = await _confirmRemovePlan(ctx, plan);
+            if (confirmed != true) return;
+            setState(() => _readingPlans.remove(plan));
+            setSheetState(() {});
+            _saveReadingPlan();
+          },
+        ),
       ),
+    );
+  }
+
+  Future<bool?> _confirmRemovePlan(BuildContext ctx, _ReadingPlan plan) {
+    final book = kBooks[plan.bookIndex];
+    return showDialog<bool>(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text('Remove ${book.transliteration}?'),
+        content: Text(
+          'Your progress (${plan.completedCount} of ${book.chapters} '
+          'chapters) will be lost.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogCtx).colorScheme.error,
+              foregroundColor: Theme.of(dialogCtx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Lets the user pick the plan's position: returns the chapter to read
+  /// next (1-based), `book.chapters + 1` for "mark all read", or null if
+  /// cancelled.
+  Future<int?> _choosePlanPosition(BuildContext ctx, _ReadingPlan plan) {
+    final book = kBooks[plan.bookIndex];
+    return showDialog<int>(
+      context: ctx,
+      builder: (dialogCtx) {
+        final theme = Theme.of(dialogCtx);
+        return AlertDialog(
+          title: Text(book.transliteration),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Tap the chapter you want to read next. Earlier chapters '
+                    'are marked as read.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (var chapter = 1;
+                          chapter <= book.chapters;
+                          chapter++)
+                        _PlanChapterChip(
+                          chapter: chapter,
+                          isNext: plan.nextChapter == chapter,
+                          isCompleted: plan.isCompleted(chapter),
+                          onTap: () => Navigator.pop(dialogCtx, chapter),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, book.chapters + 1),
+              child: const Text('Mark all read'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -539,7 +674,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   void _completePlanChapter(_ReadingPlan plan) {
     final chapter = plan.nextChapter;
     if (chapter == null) return;
-    setState(() => plan.completedChapters.add(chapter));
+    setState(() => plan.completeChapter(chapter));
     _saveReadingPlan();
     final nextChapter = plan.nextChapter;
     if (nextChapter != null) {
@@ -1154,12 +1289,14 @@ class _ReadingPlanSheet extends StatelessWidget {
     required this.plans,
     required this.onChooseBook,
     required this.onOpenNext,
+    required this.onEdit,
     required this.onClear,
   });
 
   final List<_ReadingPlan> plans;
   final VoidCallback onChooseBook;
   final ValueChanged<_ReadingPlan> onOpenNext;
+  final ValueChanged<_ReadingPlan> onEdit;
   final ValueChanged<_ReadingPlan> onClear;
 
   @override
@@ -1205,6 +1342,7 @@ class _ReadingPlanSheet extends StatelessWidget {
                 _PlanProgressRow(
                   plan: plan,
                   onOpenNext: () => onOpenNext(plan),
+                  onEdit: () => onEdit(plan),
                   onClear: () => onClear(plan),
                 ),
             const SizedBox(height: 12),
@@ -1224,18 +1362,61 @@ class _PlanProgressRow extends StatelessWidget {
   const _PlanProgressRow({
     required this.plan,
     required this.onOpenNext,
+    required this.onEdit,
     required this.onClear,
   });
 
   final _ReadingPlan plan;
   final VoidCallback onOpenNext;
+  final VoidCallback onEdit;
   final VoidCallback onClear;
+
+  String _relativeDate(DateTime time) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(time.year, time.month, time.day);
+    final days = today.difference(day).inDays;
+    if (days <= 0) return 'today';
+    if (days == 1) return 'yesterday';
+    if (days < 7) return '$days days ago';
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final year = time.year == now.year ? '' : ' ${time.year}';
+    return '${time.day} ${months[time.month - 1]}$year';
+  }
+
+  /// Rough finish estimate from the pace between the first and last
+  /// timestamped chapter completions; null when there is no usable pace.
+  String? _estimate(int remaining) {
+    if (remaining <= 0) return null;
+    final times = plan.completionTimes;
+    if (times.length < 2) return null;
+    final spanDays =
+        times.last.difference(times.first).inMinutes / (60 * 24);
+    if (spanDays <= 0) return null;
+    final perDay = (times.length - 1) / spanDays;
+    final daysLeft = (remaining / perDay).ceil();
+    if (daysLeft > 999) return null;
+    return daysLeft == 1 ? '~1 day left' : '~$daysLeft days left';
+  }
 
   @override
   Widget build(BuildContext context) {
     final book = kBooks[plan.bookIndex];
     final nextChapter = plan.nextChapter;
-    final progress = plan.completedChapters.length / book.chapters;
+    final progress = plan.completedCount / book.chapters;
+    final remaining = book.chapters - plan.completedCount;
+    final lastRead = plan.completionTimes.lastOrNull;
+    final stats = [
+      if (nextChapter == null)
+        'Complete'
+      else
+        'Next: chapter $nextChapter',
+      if (lastRead != null) 'read ${_relativeDate(lastRead)}',
+      ?_estimate(remaining),
+    ].join(' · ');
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -1252,11 +1433,22 @@ class _PlanProgressRow extends StatelessWidget {
                 LinearProgressIndicator(value: progress),
                 const SizedBox(height: 4),
                 Text(
-                  '${plan.completedChapters.length}/${book.chapters} chapters',
+                  '${plan.completedCount}/${book.chapters} chapters',
                   style: Theme.of(context).textTheme.bodySmall,
+                ),
+                Text(
+                  stats,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
+          ),
+          IconButton(
+            onPressed: onEdit,
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: 'Edit position',
           ),
           IconButton(
             onPressed: onClear,
@@ -1271,6 +1463,49 @@ class _PlanProgressRow extends StatelessWidget {
                 : 'Open chapter $nextChapter',
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PlanChapterChip extends StatelessWidget {
+  const _PlanChapterChip({
+    required this.chapter,
+    required this.isNext,
+    required this.isCompleted,
+    required this.onTap,
+  });
+
+  final int chapter;
+  final bool isNext;
+  final bool isCompleted;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final background = isNext
+        ? scheme.primary
+        : isCompleted
+        ? scheme.primaryContainer
+        : scheme.surfaceContainerHighest;
+    final foreground = isNext
+        ? scheme.onPrimary
+        : isCompleted
+        ? scheme.onPrimaryContainer
+        : scheme.onSurfaceVariant;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 36,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text('$chapter', style: TextStyle(color: foreground)),
       ),
     );
   }
