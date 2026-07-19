@@ -67,9 +67,12 @@ Actions*):
 ## How the build is wired
 
 - `.github/workflows/databases.yml` regenerates the four bundled SQLite
-  databases from `haqor-core` (cached per haqor-core commit) using
-  `nix build .#haqor-cli` from haqor-core's flake, and shares them with all
-  platform jobs as the `assets-db` artifact.
+  databases from `haqor-core` (cached per haqor-core commit) via `cargo run`
+  inside haqor-core's devshell, and shares them with all platform jobs as the
+  `assets-db` artifact. It uses `cargo run` rather than the nix-built binary
+  because gen-lexicon resolves `data/lexicon_overrides.json` through a
+  compile-time `CARGO_MANIFEST_DIR` path that a relocated binary cannot
+  satisfy.
 - Linux-hosted jobs (databases, Android, CI checks) build inside the Nix
   devshell (`.github/actions/setup-nix-build`) so the toolchain is pinned by
   `flake.lock`.
