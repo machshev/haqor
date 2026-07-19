@@ -83,3 +83,9 @@ Actions*):
   `flutter-version` there must be kept in lockstep with the flake's Flutter.
 - `haqor-core` is checked out as a sibling directory in every job because
   `native/hub/Cargo.toml` depends on it by relative path.
+- CI builds against haqor-core `main` by default. When local development
+  tracks a haqor-core branch instead, set the repository variable
+  `HAQOR_CORE_REF` (*Settings → Secrets and variables → Actions → Variables*)
+  to that branch name, and delete the variable once the branch is merged.
+  A `workflow_dispatch` run of Release can also override the ref one-off via
+  its `core-ref` input.

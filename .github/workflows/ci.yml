@@ -9,9 +9,19 @@ on:
   pull_request:
     branches: ["main"]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The haqor-core ref to build against defaults to main; set the repository
+# variable HAQOR_CORE_REF (Settings -> Secrets and variables -> Actions ->
+# Variables) to track a haqor-core branch temporarily, and delete the
+# variable once it is merged.
 jobs:
   databases:
     uses: ./.github/workflows/databases.yml
+    with:
+      core-ref: ${{ vars.HAQOR_CORE_REF || 'main' }}
 
   checks:
     name: Analyze, test, build
@@ -26,6 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: machshev/haqor-core
+          ref: ${{ vars.HAQOR_CORE_REF || 'main' }}
           path: haqor-core
       - uses: ./haqor/.github/actions/setup-nix-build
         with:
