@@ -55,25 +55,39 @@ jobs:
           primary-key: nix-dbgen-${{ runner.os }}-${{ hashFiles('haqor-core/flake.lock', 'haqor-core/Cargo.lock') }}
           restore-prefixes-first-match: nix-dbgen-${{ runner.os }}-
 
-      - name: Build haqor-cli
+      - name: Cache cargo build
         if: steps.db-cache.outputs.cache-hit != 'true'
-        working-directory: haqor-core
-        run: nix build .#haqor-cli
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            haqor-core/target
+          key: cargo-dbgen-${{ runner.os }}-${{ hashFiles('haqor-core/Cargo.lock') }}
 
       - name: Generate databases
         if: steps.db-cache.outputs.cache-hit != 'true'
         working-directory: haqor-core
         env:
           RUST_LOG: info
+        # Runs via `cargo run` in the devshell rather than the nix-built
+        # binary: gen-lexicon locates data/lexicon_overrides.json through a
+        # compile-time CARGO_MANIFEST_DIR path, which in a `nix build` binary
+        # points at the vanished build sandbox. `cargo run` from the checkout
+        # (as in local dev) resolves it correctly.
+        #
         # Order matters: gen-hebrew reads bible.db and lexicon.db. --force
         # wipes any stale hebrew.db so the shipped DB is a clean full build of
         # the current parser (the curated lexicon_overrides.json is committed
         # in haqor-core and baked in by gen-lexicon).
         run: |
-          ./result/bin/haqor db gen-bible
-          ./result/bin/haqor db gen-lexicon
-          ./result/bin/haqor db gen-hebrew --force
-          ./result/bin/haqor db gen-sedra
+          nix develop --command bash -c '
+            set -euo pipefail
+            cargo run --release -p haqor-cli -- db gen-bible
+            cargo run --release -p haqor-cli -- db gen-lexicon
+            cargo run --release -p haqor-cli -- db gen-hebrew --force
+            cargo run --release -p haqor-cli -- db gen-sedra
+          '
 
       - name: Upload databases artifact
         uses: actions/upload-artifact@v4
