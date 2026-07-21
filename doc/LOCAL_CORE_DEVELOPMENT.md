@@ -23,5 +23,5 @@ Remove that patch before validating the released dependency:
 
 ```sh
 rm .cargo/config.toml
-cargo update -p haqor-core --precise 0.7.1
+cargo update -p haqor-core --precise 0.7.2
 ```
