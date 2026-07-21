@@ -143,7 +143,7 @@ class _BookChip extends StatelessWidget {
           ),
           alignment: Alignment.center,
           child: Text(
-            bookDisplayName(bookIndex, useEnglish: useEnglishBookNames),
+            bookSelectorLabel(bookIndex, useEnglish: useEnglishBookNames),
             style: TextStyle(
               fontSize: 11,
               fontWeight: selected ? FontWeight.bold : FontWeight.normal,
