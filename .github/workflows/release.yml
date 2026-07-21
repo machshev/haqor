@@ -98,6 +98,11 @@ jobs:
           } > android/key.properties
       - name: Build APKs
         working-directory: haqor
+        # The Kotlin daemon intermittently loses its IPC path while compiling
+        # Flutter's included Gradle plugin on hosted Nix runners. Compile in
+        # the Gradle process for this release job to remove that boundary.
+        env:
+          ORG_GRADLE_PROJECT_kotlin.compiler.execution.strategy: in-process
         run: |
           nix develop --command flutter build apk --release
           nix develop --command flutter build apk --release --split-per-abi
