@@ -34,7 +34,14 @@
 </head>
 <body>
   <script>
-    if ('serviceWorker' in navigator && !crossOriginIsolated) {
+    // The worker reloads the page after taking control. That is necessary for
+    // the deployed threaded-WASM runtime, but it tears down Flutter's DWDS
+    // debug connection during `flutter run` on its localhost server.
+    const isLocalDevelopment =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === '[::1]';
+    if ('serviceWorker' in navigator && !crossOriginIsolated && !isLocalDevelopment) {
       window.addEventListener('load', async () => {
         await navigator.serviceWorker.register('coi-serviceworker.js');
         if (!navigator.serviceWorker.controller) {
