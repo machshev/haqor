@@ -222,6 +222,11 @@ class _IssueReportDialogState extends State<_IssueReportDialog> {
           TextField(
             controller: _controller,
             autofocus: true,
+            // Android's native selection overlay can remain active above this
+            // modal after a tap, preventing subsequent taps from reaching the
+            // dialog. Issue notes are short, so keep normal editing while
+            // disabling text-selection gestures here.
+            enableInteractiveSelection: false,
             minLines: 3,
             maxLines: 6,
             onChanged: (_) => setState(() {}),
