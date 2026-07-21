@@ -6,6 +6,7 @@
 #   tool/bump-version.sh <major|minor|patch>   bump that component
 #   tool/bump-version.sh <X.Y.Z>               set an explicit app version
 #   tool/bump-version.sh ... --tag             also commit + create vX.Y.Z
+#   tool/bump-version.sh ... --tag --force     replace an existing local vX.Y.Z tag
 #
 # Every bump advances Flutter's build number, which becomes Android's
 # versionCode and iOS/macOS's CFBundleVersion. `--tag` does not push.
@@ -13,7 +14,7 @@
 set -euo pipefail
 
 usage() {
-    echo "usage: tool/bump-version.sh <major|minor|patch|X.Y.Z> [--tag]" >&2
+    echo "usage: tool/bump-version.sh <major|minor|patch|X.Y.Z> [--tag] [--force]" >&2
     exit 2
 }
 
@@ -21,9 +22,11 @@ usage() {
 
 bump=""
 do_tag=0
+force_tag=0
 for arg in "$@"; do
     case "$arg" in
         --tag) do_tag=1 ;;
+        --force) force_tag=1 ;;
         -h | --help) usage ;;
         -*)
             echo "unknown flag: $arg" >&2
@@ -36,6 +39,10 @@ for arg in "$@"; do
     esac
 done
 [ -n "$bump" ] || usage
+if [ "$force_tag" -eq 1 ] && [ "$do_tag" -ne 1 ]; then
+    echo "--force requires --tag" >&2
+    usage
+fi
 
 root="$(git rev-parse --show-toplevel)"
 manifest="$root/pubspec.yaml"
@@ -70,7 +77,21 @@ case "$bump" in
         ;;
 esac
 
+create_tag() {
+    if [ "$force_tag" -eq 1 ]; then
+        git -C "$root" tag -f -a "v$next" -m "v$next"
+    else
+        git -C "$root" tag -a "v$next" -m "v$next"
+    fi
+}
+
 if [ "$next" = "${major}.${minor}.${patch}" ]; then
+    if [ "$do_tag" -eq 1 ]; then
+        create_tag
+        echo "version already ${major}.${minor}.${patch}; tagged v$next (not pushed)"
+        exit 0
+    fi
+
     echo "version already $next; choose a different version" >&2
     exit 1
 fi
@@ -78,7 +99,7 @@ fi
 new_build="$((build + 1))"
 new="${next}+${new_build}"
 
-if [ "$do_tag" -eq 1 ] && git -C "$root" rev-parse -q --verify "refs/tags/v$next" >/dev/null; then
+if [ "$do_tag" -eq 1 ] && [ "$force_tag" -ne 1 ] && git -C "$root" rev-parse -q --verify "refs/tags/v$next" >/dev/null; then
     echo "tag v$next already exists" >&2
     exit 1
 fi
@@ -89,6 +110,6 @@ echo "bumped $current -> $new"
 if [ "$do_tag" -eq 1 ]; then
     git -C "$root" add -- pubspec.yaml
     git -C "$root" commit -m "chore: release v$next"
-    git -C "$root" tag -a "v$next" -m "v$next"
+    create_tag
     echo "committed and tagged v$next (not pushed)"
 fi

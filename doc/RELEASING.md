@@ -22,6 +22,10 @@ attaches all of them to a GitHub Release. Both repos are public, so all runners
    git push origin v1.2.3
    ```
 
+   To recreate a local release tag after correcting it, append `--force` to
+   the bump command. It replaces only the local tag; force-pushing a remote
+   tag remains a deliberate separate action.
+
 4. The workflow creates the release with all binaries plus `SHA256SUMS`.
    The web bundle is published as `haqor-<version>-web-wasm.zip`, and that
    same version is deployed to GitHub Pages at
