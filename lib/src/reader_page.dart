@@ -135,6 +135,10 @@ typedef _ChapterRequest = (int, int, bool, bool, bool);
 
 enum _ReaderMenuAction { readingPlan, tutor, reportIssue, settings }
 
+/// Keep the reader title and chapter picker usable on compact layouts while
+/// exposing the most common reader actions directly on laptop-sized screens.
+const _readerInlineActionsMinWidth = 720.0;
+
 class BibleReaderPage extends StatefulWidget {
   const BibleReaderPage({super.key, this.sendChapterRequest});
 
@@ -1119,6 +1123,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   Widget build(BuildContext context) {
     final book = kBooks[_bookIndex];
     final theme = Theme.of(context);
+    final showInlineReaderActions =
+        MediaQuery.sizeOf(context).width >= _readerInlineActionsMinWidth;
 
     return Scaffold(
       appBar: AppBar(
@@ -1185,55 +1191,78 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
             onPressed: _canGoForward ? _goForward : null,
             tooltip: 'Forward',
           ),
-          PopupMenuButton<_ReaderMenuAction>(
-            icon: const Icon(Icons.more_vert),
-            tooltip: 'More reader options',
-            onSelected: (action) {
-              switch (action) {
-                case _ReaderMenuAction.readingPlan:
-                  _showReadingPlan();
-                case _ReaderMenuAction.tutor:
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const TutorEntryPage()),
-                  );
-                case _ReaderMenuAction.reportIssue:
-                  _reportGeneralIssue();
-                case _ReaderMenuAction.settings:
-                  _showAppSettings();
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: _ReaderMenuAction.readingPlan,
-                child: ListTile(
-                  leading: Icon(Icons.auto_stories_outlined),
-                  title: Text('Reading plan'),
-                ),
-              ),
-              const PopupMenuItem(
-                value: _ReaderMenuAction.tutor,
-                child: ListTile(
-                  leading: Icon(Icons.school_outlined),
-                  title: Text('Tutor'),
-                ),
-              ),
-              if (_adminMode)
-                const PopupMenuItem(
-                  value: _ReaderMenuAction.reportIssue,
-                  child: ListTile(
-                    leading: Icon(Icons.flag_outlined),
-                    title: Text('Report an issue'),
+          if (showInlineReaderActions) ...[
+            IconButton(
+              icon: const Icon(Icons.auto_stories_outlined),
+              onPressed: _showReadingPlan,
+              tooltip: 'Reading plan',
+            ),
+            IconButton(
+              icon: const Icon(Icons.school_outlined),
+              onPressed: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const TutorEntryPage())),
+              tooltip: 'Tutor',
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: _showAppSettings,
+              tooltip: 'Settings',
+            ),
+          ],
+          if (!showInlineReaderActions || _adminMode)
+            PopupMenuButton<_ReaderMenuAction>(
+              icon: const Icon(Icons.more_vert),
+              tooltip: 'More reader options',
+              onSelected: (action) {
+                switch (action) {
+                  case _ReaderMenuAction.readingPlan:
+                    _showReadingPlan();
+                  case _ReaderMenuAction.tutor:
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const TutorEntryPage()),
+                    );
+                  case _ReaderMenuAction.reportIssue:
+                    _reportGeneralIssue();
+                  case _ReaderMenuAction.settings:
+                    _showAppSettings();
+                }
+              },
+              itemBuilder: (context) => [
+                if (!showInlineReaderActions) ...[
+                  const PopupMenuItem(
+                    value: _ReaderMenuAction.readingPlan,
+                    child: ListTile(
+                      leading: Icon(Icons.auto_stories_outlined),
+                      title: Text('Reading plan'),
+                    ),
                   ),
-                ),
-              const PopupMenuItem(
-                value: _ReaderMenuAction.settings,
-                child: ListTile(
-                  leading: Icon(Icons.settings_outlined),
-                  title: Text('Settings'),
-                ),
-              ),
-            ],
-          ),
+                  const PopupMenuItem(
+                    value: _ReaderMenuAction.tutor,
+                    child: ListTile(
+                      leading: Icon(Icons.school_outlined),
+                      title: Text('Tutor'),
+                    ),
+                  ),
+                ],
+                if (_adminMode)
+                  const PopupMenuItem(
+                    value: _ReaderMenuAction.reportIssue,
+                    child: ListTile(
+                      leading: Icon(Icons.flag_outlined),
+                      title: Text('Report an issue'),
+                    ),
+                  ),
+                if (!showInlineReaderActions)
+                  const PopupMenuItem(
+                    value: _ReaderMenuAction.settings,
+                    child: ListTile(
+                      leading: Icon(Icons.settings_outlined),
+                      title: Text('Settings'),
+                    ),
+                  ),
+              ],
+            ),
         ],
       ),
       body: _initialLoading

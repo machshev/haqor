@@ -60,9 +60,14 @@ Future<void> _openPlanSheet(
   rust.deliverAll();
   await tester.pump();
 
-  await tester.tap(find.byTooltip('More reader options'));
-  await tester.pumpAndSettle();
-  await tester.tap(find.text('Reading plan'));
+  final moreOptions = find.byTooltip('More reader options');
+  if (moreOptions.evaluate().isNotEmpty) {
+    await tester.tap(moreOptions);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reading plan'));
+  } else {
+    await tester.tap(find.byTooltip('Reading plan'));
+  }
   await tester.pumpAndSettle();
 }
 
@@ -70,6 +75,30 @@ Future<List<String>?> _savedPlans() async =>
     (await SharedPreferences.getInstance()).getStringList('reading_plans');
 
 void main() {
+  testWidgets('reader actions collapse into the menu on compact screens', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    SharedPreferences.setMockInitialValues({'book': 0, 'chapter': 1});
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pump();
+
+    expect(find.byTooltip('Reading plan'), findsNothing);
+    expect(find.byTooltip('More reader options'), findsOneWidget);
+    await tester.tap(find.byTooltip('More reader options'));
+    await tester.pumpAndSettle();
+    expect(find.text('Reading plan'), findsOneWidget);
+  });
+
   testWidgets('plan row shows progress stats', (tester) async {
     final yesterday = DateTime.now()
         .subtract(const Duration(days: 1))
