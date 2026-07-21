@@ -1319,7 +1319,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         for (int i = 0; i < _sections.length; i++) ...[
           if (i == _centerIndex)
             SliverToBoxAdapter(key: _centerKey, child: const SizedBox.shrink()),
-          ..._sectionSlivers(_sections[i]),
+          ..._sectionSlivers(_sections[i], reverseVerseOrder: i < _centerIndex),
         ],
         SliverToBoxAdapter(
           key: const ValueKey('reader-bottom-pad'),
@@ -1329,7 +1329,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     );
   }
 
-  List<Widget> _sectionSlivers(_Section section) {
+  List<Widget> _sectionSlivers(
+    _Section section, {
+    required bool reverseVerseOrder,
+  }) {
     final b = section.bookIndex;
     final c = section.chapter;
     return [
@@ -1348,7 +1351,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         sliver: SliverList.builder(
           itemCount: section.verses.length,
           itemBuilder: (context, j) {
-            final entry = section.verses[j];
+            // Sliver children before CustomScrollView.center grow in reverse
+            // order. Feed those lists from the end so every chapter still
+            // reads from verse 1 through its final verse on screen.
+            final verseIndex = reverseVerseOrder
+                ? section.verses.length - 1 - j
+                : j;
+            final entry = section.verses[verseIndex];
             final isSelected =
                 entry.verse == _selectedVerse &&
                 b == _selectedBook &&

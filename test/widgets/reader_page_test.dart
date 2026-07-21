@@ -133,6 +133,11 @@ void main() {
       await tester.pump();
     }
     expect(_verse(1, 4, 20), findsOneWidget);
+    expect(
+      tester.getTopLeft(_verse(1, 4, 19)).dy,
+      lessThan(tester.getTopLeft(_verse(1, 4, 20)).dy),
+      reason: 'the previous chapter should still read from verse 1 onward',
+    );
   });
 
   testWidgets('scrolling forward across many chapters never shifts content', (
