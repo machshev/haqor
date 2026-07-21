@@ -11,6 +11,12 @@ if [[ -z "${WASM_CC:-}" ]]; then
   exit 1
 fi
 
+# Building Rust's standard library for a shared-memory WASM target requires
+# the nightly compiler sources as well as the target itself. Keep this setup
+# here so local builds and CI use the same complete toolchain.
+rustup toolchain install nightly --profile minimal --component rust-src
+rustup target add --toolchain nightly wasm32-unknown-unknown
+
 # Rinf's threaded wasm command omits __heap_base, which wasm-bindgen needs
 # while preparing the module. Build the same hub with that one additional
 # export, then run wasm-bindgen exactly as Rinf does.

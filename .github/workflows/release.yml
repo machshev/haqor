@@ -245,8 +245,6 @@ jobs:
         run: |
           nix develop --command bash -c '
             set -euo pipefail
-            rustup toolchain install nightly --profile minimal
-            rustup target add --toolchain nightly wasm32-unknown-unknown
             ./tool/build-web.sh --wasm --base-href /haqor/
           '
       - name: Package web bundle
