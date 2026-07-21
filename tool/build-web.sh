@@ -26,7 +26,10 @@ wasm_bindgen_version="$(awk '
 test -n "$wasm_bindgen_version"
 installed_wasm_bindgen_version="$(wasm-bindgen --version 2>/dev/null | awk '{ print $2 }' || true)"
 if [[ "$installed_wasm_bindgen_version" != "$wasm_bindgen_version" ]]; then
-  cargo install wasm-bindgen-cli --version "$wasm_bindgen_version" --locked
+  # This is a host build. Do not pass the WASM linker flags above to Cargo
+  # while compiling the CLI's build scripts and proc macros.
+  env -u RUSTFLAGS -u CARGO_ENCODED_RUSTFLAGS \
+    cargo install wasm-bindgen-cli --version "$wasm_bindgen_version" --locked
 fi
 
 cargo +nightly build --release --target wasm32-unknown-unknown \
