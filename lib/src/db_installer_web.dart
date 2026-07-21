@@ -39,7 +39,12 @@ Future<void> initializeDatabases() async {
 }
 
 void _append(BytesBuilder bundle, Uint8List bytes) {
-  final length = ByteData(8)..setUint64(0, bytes.length, Endian.little);
+  // dart2js does not implement ByteData's 64-bit accessors. The Rust framing
+  // protocol uses a little-endian u64; these bundled assets are well below
+  // 4 GiB, so writing its low and high u32 words is equivalent.
+  final length = ByteData(8)
+    ..setUint32(0, bytes.length, Endian.little)
+    ..setUint32(4, 0, Endian.little);
   bundle.add(length.buffer.asUint8List());
   bundle.add(bytes);
 }
