@@ -1090,6 +1090,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         word: word,
         syriac: bookIndex >= 39,
         readerGloss: readerGloss,
+        useEnglishBookNames: _englishBookNames,
         reportContext: {
           'bookIndex': bookIndex,
           'book': kBooks[bookIndex].transliteration,

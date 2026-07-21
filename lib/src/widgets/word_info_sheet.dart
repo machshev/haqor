@@ -71,6 +71,7 @@ class WordInfoSheet extends StatefulWidget {
     required this.syriac,
     this.bdbId,
     this.readerGloss,
+    this.useEnglishBookNames = false,
     this.onNavigateToPassage,
     this.reportContext,
   });
@@ -86,6 +87,9 @@ class WordInfoSheet extends StatefulWidget {
   /// The exact gloss currently rendered underneath this token in the reader.
   /// It can intentionally differ from the descriptive Lexicon header.
   final String? readerGloss;
+
+  /// Whether references in the Occurrences tab use standard English names.
+  final bool useEnglishBookNames;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
   final Map<String, Object?>? reportContext;
@@ -275,6 +279,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         word: headword,
         syriac: false,
         bdbId: bdbId,
+        useEnglishBookNames: widget.useEnglishBookNames,
         reportContext: {
           ...?widget.reportContext,
           'crossReference': {'bdbId': bdbId, 'headword': headword},
@@ -1250,7 +1255,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     return verses.map((v) {
       final bookIndex = v.book - 1;
       final bookName = bookIndex >= 0 && bookIndex < kBooks.length
-          ? kBooks[bookIndex].transliteration
+          ? bookDisplayName(bookIndex, useEnglish: widget.useEnglishBookNames)
           : 'Book ${v.book}';
       final ref = '$bookName ${v.chapter}:${v.verse}';
       return _OccurrenceRow(
@@ -1262,6 +1267,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         chapter: v.chapter,
         verse: v.verse,
         highlightWords: v.words,
+        useEnglishBookNames: widget.useEnglishBookNames,
         onTap: widget.onNavigateToPassage == null
             ? null
             : () => widget.onNavigateToPassage!(bookIndex, v.chapter, v.verse),
@@ -1311,6 +1317,7 @@ class _OccurrenceRow extends StatefulWidget {
     required this.chapter,
     required this.verse,
     required this.highlightWords,
+    required this.useEnglishBookNames,
     this.onTap,
   });
 
@@ -1319,6 +1326,7 @@ class _OccurrenceRow extends StatefulWidget {
   final int chapter;
   final int verse;
   final List<String> highlightWords;
+  final bool useEnglishBookNames;
   final VoidCallback? onTap;
 
   @override
@@ -1379,7 +1387,8 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
         ? kBooks[widget.bookIndex]
         : null;
     if (book == null) return widget.displayRef;
-    return '${book.hebrew} ${widget.chapter}:${widget.verse}';
+    return '${bookDisplayName(widget.bookIndex, useEnglish: widget.useEnglishBookNames)} '
+        '${widget.chapter}:${widget.verse}';
   }
 
   @override
