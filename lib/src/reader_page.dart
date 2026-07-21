@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_settings.dart';
 import 'bible_data.dart';
+import 'christadelphian_readings.dart';
 import 'bindings/bindings.dart';
 import 'issue_reporting.dart';
 import 'tutor/onboarding.dart';
@@ -565,6 +566,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => _ReadingPlanSheet(
           plans: _readingPlans,
+          christadelphianReadings: christadelphianReadingsFor(DateTime.now()),
           useEnglishBookNames: _englishBookNames,
           onChooseBook: () {
             Navigator.pop(ctx);
@@ -588,6 +590,14 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
             setState(() => _readingPlans.remove(plan));
             setSheetState(() {});
             _saveReadingPlan();
+          },
+          onOpenChristadelphianReading: (reading) {
+            Navigator.pop(ctx);
+            _navigateTo(
+              reading.bookIndex,
+              reading.chapter,
+              verse: reading.verse,
+            );
           },
         ),
       ),
@@ -1357,19 +1367,23 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 class _ReadingPlanSheet extends StatelessWidget {
   const _ReadingPlanSheet({
     required this.plans,
+    required this.christadelphianReadings,
     required this.useEnglishBookNames,
     required this.onChooseBook,
     required this.onOpenNext,
     required this.onEdit,
     required this.onClear,
+    required this.onOpenChristadelphianReading,
   });
 
   final List<_ReadingPlan> plans;
+  final List<ChristadelphianReading> christadelphianReadings;
   final bool useEnglishBookNames;
   final VoidCallback onChooseBook;
   final ValueChanged<_ReadingPlan> onOpenNext;
   final ValueChanged<_ReadingPlan> onEdit;
   final ValueChanged<_ReadingPlan> onClear;
+  final ValueChanged<ChristadelphianReading> onOpenChristadelphianReading;
 
   @override
   Widget build(BuildContext context) {
@@ -1424,6 +1438,27 @@ class _ReadingPlanSheet extends StatelessWidget {
               icon: const Icon(Icons.add),
               label: const Text('Add book'),
             ),
+            const SizedBox(height: 28),
+            Text(
+              'Christadelphian daily readings',
+              style: theme.textTheme.titleLarge,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Today’s Bible Companion readings',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final reading in christadelphianReadings)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.menu_book_outlined),
+                title: Text(reading.reference),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => onOpenChristadelphianReading(reading),
+              ),
           ],
         ),
       ),
