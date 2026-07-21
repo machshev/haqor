@@ -101,6 +101,9 @@
 
           # Rust config
           RUSTC_VERSION = overrides.toolchain.channel;
+          # sqlite-wasm-rs needs an unwrapped compiler when targeting the
+          # browser; the Nix clang wrapper injects host-only flags.
+          WASM_CC = "${pkgs.llvmPackages.clang-unwrapped}/bin/clang";
 
           # https://github.com/rust-lang/rust-bindgen#environment-variables
           LIBCLANG_PATH = pkgs.lib.makeLibraryPath [pkgs.llvmPackages_latest.libclang.lib];

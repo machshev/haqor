@@ -220,11 +220,10 @@ Now you can run and build this app just like any other Flutter projects.
 
 ## Web PWA
 
-The web build is installable and the reader works offline after its first
-load. Its approximately 54 MB corpus and browser-compatible SQLite engine are
-cached by the service worker; the databases are then persisted in IndexedDB.
-
-The native Rust tutor and lexicon workflows are not yet available on web.
+The web build is installable and runs the same Rust core as the native apps.
+Its approximately 54 MB corpus is cached by the service worker; the Rust
+WebAssembly module opens the bundled databases in memory and keeps learner
+progress in browser storage.
 
 Build a deployable bundle from the development shell:
 
