@@ -152,6 +152,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   static const _kHistory = 'nav_history';
   static const _kHistoryIndex = 'nav_history_index';
   static const _kNtSyriac = 'nt_syriac';
+  static const _kEnglishBookNames = 'english_book_names';
   static const _kHebrewNumerals = 'hebrew_numerals';
   static const _kFontSize = 'font_size';
   static const _kFontFamily = 'font_family';
@@ -208,6 +209,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   bool _loadingPrev = false;
 
   bool _ntSyriac = false;
+  bool _englishBookNames = false;
   bool _hebrewNumerals = true;
   double _fontSize = 20.0;
   String _fontFamily = 'Cardo';
@@ -396,6 +398,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         kBooks[_bookIndex].chapters,
       );
       _ntSyriac = prefs.getBool(_kNtSyriac) ?? false;
+      _englishBookNames = prefs.getBool(_kEnglishBookNames) ?? false;
       _hebrewNumerals = prefs.getBool(_kHebrewNumerals) ?? true;
       _fontSize = (prefs.getDouble(_kFontSize) ?? 20.0).clamp(16.0, 28.0);
       final savedFamily = prefs.getString(_kFontFamily) ?? 'Cardo';
@@ -477,6 +480,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       prefs.setInt(_kBook, _bookIndex),
       prefs.setInt(_kChapter, _chapter),
       prefs.setBool(_kNtSyriac, _ntSyriac),
+      prefs.setBool(_kEnglishBookNames, _englishBookNames),
       prefs.setBool(_kHebrewNumerals, _hebrewNumerals),
       prefs.setDouble(_kFontSize, _fontSize),
       prefs.setString(_kFontFamily, _fontFamily),
@@ -505,6 +509,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         settings.highlightProperNames != _highlightProperNames;
     setState(() {
       _ntSyriac = settings.ntSyriac;
+      _englishBookNames = settings.englishBookNames;
       _hebrewNumerals = settings.hebrewNumerals;
       _showCantillation = settings.showCantillation;
       _glossInterlinear = settings.glossInterlinear;
@@ -524,6 +529,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       context,
       readingSettings: AppReadingSettings(
         ntSyriac: _ntSyriac,
+        englishBookNames: _englishBookNames,
         hebrewNumerals: _hebrewNumerals,
         showCantillation: _showCantillation,
         glossInterlinear: _glossInterlinear,
@@ -559,6 +565,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => _ReadingPlanSheet(
           plans: _readingPlans,
+          useEnglishBookNames: _englishBookNames,
           onChooseBook: () {
             Navigator.pop(ctx);
             _choosePlanBook();
@@ -592,7 +599,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     return showDialog<bool>(
       context: ctx,
       builder: (dialogCtx) => AlertDialog(
-        title: Text('Remove ${book.transliteration}?'),
+        title: Text(
+          'Remove ${bookDisplayName(plan.bookIndex, useEnglish: _englishBookNames)}?',
+        ),
         content: Text(
           'Your progress (${plan.completedCount} of ${book.chapters} '
           'chapters) will be lost.',
@@ -625,7 +634,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       builder: (dialogCtx) {
         final theme = Theme.of(dialogCtx);
         return AlertDialog(
-          title: Text(book.transliteration),
+          title: Text(
+            bookDisplayName(plan.bookIndex, useEnglish: _englishBookNames),
+          ),
           content: SizedBox(
             width: double.maxFinite,
             child: SingleChildScrollView(
@@ -678,7 +689,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
-      builder: (ctx) => BookSelectorSheet(currentIndex: _bookIndex),
+      builder: (ctx) => BookSelectorSheet(
+        currentIndex: _bookIndex,
+        useEnglishBookNames: _englishBookNames,
+      ),
     );
     if (result == null) return;
     if (_readingPlans.any((plan) => plan.bookIndex == result)) {
@@ -686,7 +700,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${kBooks[result].transliteration} is already in your plan.',
+              '${bookDisplayName(result, useEnglish: _englishBookNames)} '
+              'is already in your plan.',
             ),
           ),
         );
@@ -710,7 +725,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${kBooks[plan.bookIndex].transliteration} complete!'),
+          content: Text(
+            '${bookDisplayName(plan.bookIndex, useEnglish: _englishBookNames)} '
+            'complete!',
+          ),
         ),
       );
     }
@@ -1020,7 +1038,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
-      builder: (ctx) => BookSelectorSheet(currentIndex: _bookIndex),
+      builder: (ctx) => BookSelectorSheet(
+        currentIndex: _bookIndex,
+        useEnglishBookNames: _englishBookNames,
+      ),
     );
     if (result == null || result == _bookIndex) return;
     int newChapter = 1;
@@ -1113,7 +1134,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                       ),
                     ),
                     Text(
-                      book.transliteration,
+                      bookDisplayName(
+                        _bookIndex,
+                        useEnglish: _englishBookNames,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.labelSmall?.copyWith(
@@ -1271,7 +1295,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     return [
       SliverToBoxAdapter(
         key: ValueKey('divider-$b-$c'),
-        child: _ChapterDivider(key: section.key, bookIndex: b, chapter: c),
+        child: _ChapterDivider(
+          key: section.key,
+          bookIndex: b,
+          chapter: c,
+          useEnglishBookNames: _englishBookNames,
+        ),
       ),
       SliverPadding(
         key: ValueKey('verses-$b-$c'),
@@ -1327,6 +1356,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 class _ReadingPlanSheet extends StatelessWidget {
   const _ReadingPlanSheet({
     required this.plans,
+    required this.useEnglishBookNames,
     required this.onChooseBook,
     required this.onOpenNext,
     required this.onEdit,
@@ -1334,6 +1364,7 @@ class _ReadingPlanSheet extends StatelessWidget {
   });
 
   final List<_ReadingPlan> plans;
+  final bool useEnglishBookNames;
   final VoidCallback onChooseBook;
   final ValueChanged<_ReadingPlan> onOpenNext;
   final ValueChanged<_ReadingPlan> onEdit;
@@ -1381,6 +1412,7 @@ class _ReadingPlanSheet extends StatelessWidget {
               for (final plan in plans)
                 _PlanProgressRow(
                   plan: plan,
+                  useEnglishBookNames: useEnglishBookNames,
                   onOpenNext: () => onOpenNext(plan),
                   onEdit: () => onEdit(plan),
                   onClear: () => onClear(plan),
@@ -1401,12 +1433,14 @@ class _ReadingPlanSheet extends StatelessWidget {
 class _PlanProgressRow extends StatelessWidget {
   const _PlanProgressRow({
     required this.plan,
+    required this.useEnglishBookNames,
     required this.onOpenNext,
     required this.onEdit,
     required this.onClear,
   });
 
   final _ReadingPlan plan;
+  final bool useEnglishBookNames;
   final VoidCallback onOpenNext;
   final VoidCallback onEdit;
   final VoidCallback onClear;
@@ -1472,7 +1506,10 @@ class _PlanProgressRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  book.transliteration,
+                  bookDisplayName(
+                    plan.bookIndex,
+                    useEnglish: useEnglishBookNames,
+                  ),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 6),
@@ -1560,11 +1597,13 @@ class _PlanChapterChip extends StatelessWidget {
 class _ChapterDivider extends StatelessWidget {
   final int bookIndex;
   final int chapter;
+  final bool useEnglishBookNames;
 
   const _ChapterDivider({
     super.key,
     required this.bookIndex,
     required this.chapter,
+    required this.useEnglishBookNames,
   });
 
   @override
@@ -1591,7 +1630,8 @@ class _ChapterDivider extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${book.transliteration} $chapter',
+                  '${bookDisplayName(bookIndex, useEnglish: useEnglishBookNames)} '
+                  '$chapter',
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

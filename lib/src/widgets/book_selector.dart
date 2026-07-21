@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import '../bible_data.dart';
 
 class BookSelectorSheet extends StatelessWidget {
-  const BookSelectorSheet({super.key, required this.currentIndex});
+  const BookSelectorSheet({
+    super.key,
+    required this.currentIndex,
+    required this.useEnglishBookNames,
+  });
   final int currentIndex;
+  final bool useEnglishBookNames;
 
   static const _sections = [
     (hebrew: 'תּוֹרָה', label: 'Torah', start: 0, end: 5),
@@ -58,6 +63,7 @@ class BookSelectorSheet extends StatelessWidget {
                   _BookChip(
                     bookIndex: i,
                     book: kBooks[i],
+                    useEnglishBookNames: useEnglishBookNames,
                     selected: i == currentIndex,
                     color: sectionColors[s],
                   ),
@@ -109,11 +115,13 @@ class _BookChip extends StatelessWidget {
   const _BookChip({
     required this.bookIndex,
     required this.book,
+    required this.useEnglishBookNames,
     required this.selected,
     required this.color,
   });
   final int bookIndex;
   final BookInfo book;
+  final bool useEnglishBookNames;
   final bool selected;
   final Color color;
 
@@ -121,20 +129,21 @@ class _BookChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Tooltip(
-      message: '${book.transliteration}  ${book.hebrew}',
+      message:
+          '${bookDisplayName(bookIndex, useEnglish: useEnglishBookNames)}  ${book.hebrew}',
       child: GestureDetector(
         onTap: () => Navigator.of(context).pop(bookIndex),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 100),
-          width: 44,
           height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
           decoration: BoxDecoration(
             color: selected ? theme.colorScheme.primary : color,
             borderRadius: BorderRadius.circular(5),
           ),
           alignment: Alignment.center,
           child: Text(
-            book.short,
+            bookDisplayName(bookIndex, useEnglish: useEnglishBookNames),
             style: TextStyle(
               fontSize: 11,
               fontWeight: selected ? FontWeight.bold : FontWeight.normal,

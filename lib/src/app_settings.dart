@@ -18,6 +18,7 @@ Future<void> setAdminModeEnabled(bool enabled) async =>
 class AppReadingSettings {
   const AppReadingSettings({
     required this.ntSyriac,
+    required this.englishBookNames,
     required this.hebrewNumerals,
     required this.showCantillation,
     required this.glossInterlinear,
@@ -27,6 +28,7 @@ class AppReadingSettings {
   });
 
   final bool ntSyriac;
+  final bool englishBookNames;
   final bool hebrewNumerals;
   final bool showCantillation;
   final bool glossInterlinear;
@@ -36,6 +38,7 @@ class AppReadingSettings {
 
   AppReadingSettings copyWith({
     bool? ntSyriac,
+    bool? englishBookNames,
     bool? hebrewNumerals,
     bool? showCantillation,
     bool? glossInterlinear,
@@ -44,6 +47,7 @@ class AppReadingSettings {
     String? fontFamily,
   }) => AppReadingSettings(
     ntSyriac: ntSyriac ?? this.ntSyriac,
+    englishBookNames: englishBookNames ?? this.englishBookNames,
     hebrewNumerals: hebrewNumerals ?? this.hebrewNumerals,
     showCantillation: showCantillation ?? this.showCantillation,
     glossInterlinear: glossInterlinear ?? this.glossInterlinear,
@@ -194,6 +198,19 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
                 selected: {_readingSettings.ntSyriac},
                 onSelectionChanged: (selection) => _updateReadingSettings(
                   _readingSettings.copyWith(ntSyriac: selection.single),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Book names', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 8),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('Hebrew')),
+                  ButtonSegment(value: true, label: Text('English')),
+                ],
+                selected: {_readingSettings.englishBookNames},
+                onSelectionChanged: (selection) => _updateReadingSettings(
+                  _readingSettings.copyWith(englishBookNames: selection.single),
                 ),
               ),
               const SizedBox(height: 16),

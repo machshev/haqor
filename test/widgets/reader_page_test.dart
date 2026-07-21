@@ -59,8 +59,13 @@ Finder _anyVisibleVerse(WidgetTester tester) => find.byType(VerseRow).first;
 Future<_FakeRust> _pumpReader(
   WidgetTester tester, {
   required int chapter,
+  bool englishBookNames = false,
 }) async {
-  SharedPreferences.setMockInitialValues({'book': 0, 'chapter': chapter});
+  SharedPreferences.setMockInitialValues({
+    'book': 0,
+    'chapter': chapter,
+    'english_book_names': englishBookNames,
+  });
   final rust = _FakeRust();
   await tester.pumpWidget(
     MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
@@ -96,6 +101,15 @@ void main() {
     final rust = await _pumpReader(tester, chapter: 5);
     expect(_verse(1, 5, 1), findsOneWidget);
     expect(find.text('Bereshit 5'), findsOneWidget);
+    rust.deliverAll(); // prefetched neighbours
+    await tester.pump();
+  });
+
+  testWidgets('uses saved English book names in reader labels', (tester) async {
+    final rust = await _pumpReader(tester, chapter: 5, englishBookNames: true);
+    expect(find.text('Genesis'), findsOneWidget);
+    expect(find.text('Genesis 5'), findsOneWidget);
+    expect(find.text('Bereshit 5'), findsNothing);
     rust.deliverAll(); // prefetched neighbours
     await tester.pump();
   });
