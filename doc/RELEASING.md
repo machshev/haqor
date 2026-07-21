@@ -1,9 +1,9 @@
 # Releasing
 
 Pushing a tag matching `v*` runs `.github/workflows/release.yml`, which builds
-binaries for Android, Windows, macOS, Linux, and iOS and attaches them to a
-GitHub Release. Both repos are public, so all runners (including macOS and
-Windows) are free.
+binaries for Android, Windows, macOS, Linux, iOS, and a WebAssembly PWA. It
+attaches all of them to a GitHub Release. Both repos are public, so all runners
+(including macOS and Windows) are free.
 
 ## Cutting a release
 
@@ -23,7 +23,10 @@ Windows) are free.
    ```
 
 4. The workflow creates the release with all binaries plus `SHA256SUMS`.
-   Review and edit the release notes on GitHub afterwards.
+   The web bundle is published as `haqor-<version>-web-wasm.zip`, and that
+   same version is deployed to GitHub Pages at
+   `https://machshev.github.io/haqor/`. Review and edit the release notes on
+   GitHub afterwards.
 
 The workflow can also be run without a tag via *Actions → Release → Run
 workflow* to check that all platforms still build (no release is published in
@@ -54,6 +57,14 @@ Actions*):
 | `ANDROID_KEYSTORE_PASSWORD` | the keystore password |
 | `ANDROID_KEY_ALIAS` | `haqor` |
 | `ANDROID_KEY_PASSWORD` | the key password |
+
+## One-time GitHub Pages setup
+
+In *Settings → Pages*, set **Source** to **GitHub Actions**. The release
+workflow deploys the tagged WebAssembly PWA to the repository's Pages URL.
+The first browser visit registers a service worker so GitHub Pages can serve
+the cross-origin-isolation headers needed by the threaded Rust WebAssembly
+runtime; it then reloads once automatically.
 
 ## One-time release protection
 
