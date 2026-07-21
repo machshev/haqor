@@ -135,8 +135,8 @@ class _BookChip extends StatelessWidget {
         onTap: () => Navigator.of(context).pop(bookIndex),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 100),
+          width: 44,
           height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 9),
           decoration: BoxDecoration(
             color: selected ? theme.colorScheme.primary : color,
             borderRadius: BorderRadius.circular(5),

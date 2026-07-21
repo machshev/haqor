@@ -18,5 +18,16 @@ void main() {
     expect(find.text('Gen'), findsOneWidget);
     expect(find.text('Genesis'), findsNothing);
     expect(find.text('1 Thess'), findsOneWidget);
+    expect(
+      tester
+          .getSize(
+            find.ancestor(
+              of: find.text('1 Thess'),
+              matching: find.byType(AnimatedContainer),
+            ),
+          )
+          .width,
+      44,
+    );
   });
 }
