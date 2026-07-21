@@ -78,7 +78,7 @@ void main() {
   testWidgets('reader actions collapse into the menu on compact screens', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(600, 800);
+    tester.view.physicalSize = const Size(449, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);

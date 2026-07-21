@@ -135,9 +135,9 @@ typedef _ChapterRequest = (int, int, bool, bool, bool);
 
 enum _ReaderMenuAction { readingPlan, tutor, reportIssue, settings }
 
-/// Keep the reader title and chapter picker usable on compact layouts while
-/// exposing the most common reader actions directly on laptop-sized screens.
-const _readerInlineActionsMinWidth = 720.0;
+/// Leave enough room for the longest book name and chapter picker after the
+/// five direct app-bar actions are laid out.
+const _readerInlineActionsMinWidth = 450.0;
 
 class BibleReaderPage extends StatefulWidget {
   const BibleReaderPage({super.key, this.sendChapterRequest});
