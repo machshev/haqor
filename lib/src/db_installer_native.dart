@@ -23,9 +23,13 @@ Future<void> initializeDatabases() async {
     await dbDir.create(recursive: true);
     for (final name in _dbFiles) {
       final data = await rootBundle.load('assets/db/$name');
-      final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-      await File('${dbDir.path}${Platform.pathSeparator}$name')
-          .writeAsBytes(bytes, flush: true);
+      final bytes = data.buffer.asUint8List(
+        data.offsetInBytes,
+        data.lengthInBytes,
+      );
+      await File(
+        '${dbDir.path}${Platform.pathSeparator}$name',
+      ).writeAsBytes(bytes, flush: true);
     }
     await marker.writeAsString('$_dbVersion', flush: true);
   }
