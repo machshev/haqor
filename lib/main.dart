@@ -1,29 +1,19 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:rinf/rinf.dart';
 
-import 'src/bindings/bindings.dart';
-import 'src/db_installer.dart';
-import 'src/issue_reporting.dart';
-import 'src/reader_page.dart';
-import 'src/tutor/progress_sync.dart';
+import 'src/app_runtime.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-  await initializeRust(assignRustSignal);
-  // Tell Rust where the databases live (or supply their bytes to WebAssembly)
-  // before the reader sends its first query.
-  await initializeDatabases();
-  unawaited(migrateLegacyFlaggedWords());
-  unawaited(syncProgressNow());
-  runApp(const Haqor());
+  final home = await initializeAppRuntime();
+  runApp(Haqor(home: home));
 }
 
 class Haqor extends StatelessWidget {
-  const Haqor({super.key});
+  const Haqor({required this.home, super.key});
+
+  final Widget home;
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +34,7 @@ class Haqor extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const BibleReaderPage(),
+      home: home,
     );
   }
 }

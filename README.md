@@ -220,10 +220,11 @@ Now you can run and build this app just like any other Flutter projects.
 
 ## Web PWA
 
-The web build is installable and works offline after its first load. It runs
-the same Rust/SQLite reader and tutor engine in WebAssembly; the approximately
-54 MB corpus download is cached by the browser, while tutor progress is stored
-locally in browser storage.
+The web build is installable and the reader works offline after its first
+load. Its approximately 54 MB corpus and browser-compatible SQLite engine are
+cached by the service worker; the databases are then persisted in IndexedDB.
+
+The native Rust tutor and lexicon workflows are not yet available on web.
 
 Build a deployable bundle from the development shell:
 
@@ -231,9 +232,9 @@ Build a deployable bundle from the development shell:
 nix develop -c bash tool/build-web.sh
 ```
 
-Deploy the contents of `build/web/` over HTTPS. The web build currently keeps
-progress on that browser; LAN snapshot sync remains available in the native
-apps.
+For development, run `flutter run -d chrome` from the development shell.
+
+Deploy the contents of `build/web/` over HTTPS.
 
 ```shell
 flutter run
