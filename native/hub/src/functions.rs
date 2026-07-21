@@ -1,3 +1,5 @@
+#[cfg(target_arch = "wasm32")]
+use crate::signals::ProgressSnapshot;
 use crate::signals::{
     BdbSummary, CalibrationProbe, ChapterText, FinishCalibration, GetCalibrationProbe, GetChapter,
     GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts, GetTutorGlossOverrideStats,
@@ -31,6 +33,21 @@ pub type SharedBible = Arc<Mutex<Bible>>;
 fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
     bible.lock().unwrap_or_else(PoisonError::into_inner)
 }
+
+/// Browser SQLite lives in the WASM heap.  Save it after every successful
+/// learner write so the Dart host can persist it between PWA launches.
+#[cfg(target_arch = "wasm32")]
+fn persist_browser_progress(bible: &Bible) {
+    use rinf::RustSignalBinary;
+
+    match bible.progress_snapshot_bytes() {
+        Ok(snapshot) => ProgressSnapshot {}.send_signal_to_dart(snapshot),
+        Err(error) => debug_print!("could not snapshot browser progress: {error}"),
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn persist_browser_progress(_: &Bible) {}
 
 const MAX_SYNC_SNAPSHOT_BYTES: usize = 64 * 1024 * 1024;
 
@@ -217,13 +234,16 @@ pub async fn save_tutor_gloss(bible: SharedBible) {
     let receiver = SaveTutorGloss::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let correction = signal_pack.message;
-        if let Err(error) = lock(&bible).set_tutor_gloss_override(
+        let bible_guard = lock(&bible);
+        if let Err(error) = bible_guard.set_tutor_gloss_override(
             &correction.surface,
             &correction.gloss,
             &correction.note,
             now_epoch(),
         ) {
             debug_print!("save_tutor_gloss error: {error:?}");
+        } else {
+            persist_browser_progress(&bible_guard);
         }
     }
 }
@@ -241,6 +261,7 @@ pub async fn save_lexicon_entry_override(bible: SharedBible) {
             now_epoch(),
         ) {
             Ok(()) => {
+                persist_browser_progress(&lock(&bible));
                 debug_print!("lexicon entry override saved: {}", correction.surface);
                 LexiconEntryOverrideStatus {
                     surface: correction.surface,
@@ -278,6 +299,7 @@ pub async fn save_issue_report(bible: SharedBible) {
             now,
         ) {
             Ok(()) => {
+                persist_browser_progress(&lock(&bible));
                 debug_print!("issue report saved: {}", report.id);
                 IssueReportStatus {
                     report_id: report.id,
@@ -338,6 +360,7 @@ pub async fn optimize_tutor_gloss_overrides(bible: SharedBible) {
         let result = lock(&bible).optimize_tutor_gloss_overrides(now_epoch());
         match result {
             Ok(optimization) => {
+                persist_browser_progress(&lock(&bible));
                 send_tutor_gloss_override_stats(optimization.stats, optimization.removed)
             }
             Err(error) => {
@@ -668,15 +691,15 @@ pub async fn get_word_info(bible: SharedBible) {
                     } else {
                         bible.hebrew_bdb_by_root(&info.root)
                     })
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|e| BdbSummary {
-                            pos_category: e.pos_category().to_string(),
-                            headword: e.headword,
-                            gloss: e.gloss,
-                            content_json: e.content_json,
-                        })
-                        .collect();
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|e| BdbSummary {
+                        pos_category: e.pos_category().to_string(),
+                        headword: e.headword,
+                        gloss: e.gloss,
+                        content_json: e.content_json,
+                    })
+                    .collect();
                     // The headline describes this occurrence, not merely its
                     // dictionary lemma. Keep the BDB entries below as lexeme
                     // definitions, while rendering proclitics and noun/verb
@@ -1002,7 +1025,10 @@ pub async fn get_next_study_item(bible: SharedBible) {
     while let Some(_pack) = receiver.recv().await {
         let bible = lock(&bible);
         match bible.next_study_item(now_epoch()) {
-            Ok(item) => to_signal_study_item(&bible, item).send_signal_to_dart(),
+            Ok(item) => {
+                persist_browser_progress(&bible);
+                to_signal_study_item(&bible, item).send_signal_to_dart()
+            }
             Err(e) => debug_print!("get_next_study_item error: {:?}", e),
         }
     }
@@ -1043,6 +1069,7 @@ pub async fn reset_tutor(bible: SharedBible) {
             // it (TutorEntryPage is already subscribed) instead of resuming the
             // study flow with a new-but-still-post-onboarding card.
             Ok(()) => {
+                persist_browser_progress(&bible);
                 let tier_count = bible.calibration_tier_count().unwrap_or(0);
                 OnboardingStatus {
                     needed: true,
@@ -1140,7 +1167,10 @@ pub async fn set_tutor_settings(bible: SharedBible) {
             .set_tutor_settings(&s)
             .and_then(|()| bible.tutor_settings())
         {
-            Ok(stored) => to_signal_settings(stored).send_signal_to_dart(),
+            Ok(stored) => {
+                persist_browser_progress(&bible);
+                to_signal_settings(stored).send_signal_to_dart()
+            }
             Err(e) => debug_print!("set_tutor_settings error: {:?}", e),
         }
     }
@@ -1176,8 +1206,11 @@ pub async fn set_alphabet_known(bible: SharedBible) {
     while let Some(signal_pack) = receiver.recv().await {
         let req = signal_pack.message;
         if req.known {
-            if let Err(e) = lock(&bible).seed_known_alphabet(now_epoch()) {
+            let bible_guard = lock(&bible);
+            if let Err(e) = bible_guard.seed_known_alphabet(now_epoch()) {
                 debug_print!("set_alphabet_known error: {:?}", e);
+            } else {
+                persist_browser_progress(&bible_guard);
             }
         }
     }
@@ -1217,8 +1250,11 @@ pub async fn finish_calibration(bible: SharedBible) {
     let receiver = FinishCalibration::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let req = signal_pack.message;
-        if let Err(e) = lock(&bible).seed_known_vocab(req.min_occurrences, now_epoch()) {
+        let bible_guard = lock(&bible);
+        if let Err(e) = bible_guard.seed_known_vocab(req.min_occurrences, now_epoch()) {
             debug_print!("finish_calibration error: {:?}", e);
+        } else {
+            persist_browser_progress(&bible_guard);
         }
     }
 }

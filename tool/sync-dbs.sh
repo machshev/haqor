@@ -16,7 +16,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/../../haqor-core/data"
 dst="$here/../assets/db"
-installer="$here/../lib/src/db_installer.dart"
+installer="$here/../lib/src/db_installer_native.dart"
 
 mkdir -p "$dst"
 for db in bible sedra hebrew lexicon; do

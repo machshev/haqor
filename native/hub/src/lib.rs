@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use haqor_core::bible::Bible;
-use rinf::{DartSignal, dart_shutdown, debug_print, write_interface};
+use rinf::{DartSignalBinary, dart_shutdown, debug_print, write_interface};
 use tokio::spawn;
+use tokio_with_wasm::alias as tokio;
 
 use functions::{
     SharedBible, finish_calibration, get_calibration_probe, get_chapter_text, get_next_study_item,
@@ -20,9 +21,6 @@ use functions::{
 };
 use signals::SetDataDir;
 
-// Uncomment below to target the web.
-// use tokio_with_wasm::alias as tokio;
-
 write_interface!();
 
 /// Wait for Dart to send the directory the database assets were copied to,
@@ -32,6 +30,14 @@ async fn open_bible() -> Option<(SharedBible, PathBuf)> {
     let receiver = SetDataDir::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let path = signal_pack.message.path;
+        #[cfg(target_arch = "wasm32")]
+        if path == "web" {
+            match open_web_bible(signal_pack.binary) {
+                Ok(bible) => return Some((Arc::new(Mutex::new(bible)), PathBuf::new())),
+                Err(e) => debug_print!("failed to open browser databases: {e}"),
+            }
+            continue;
+        }
         match Bible::open(Path::new(&path)) {
             Ok(bible) => {
                 // Attach the writable tutor progress DB (created on first run)
@@ -46,6 +52,46 @@ async fn open_bible() -> Option<(SharedBible, PathBuf)> {
         }
     }
     None
+}
+
+#[cfg(target_arch = "wasm32")]
+fn open_web_bible(binary: Vec<u8>) -> Result<Bible, String> {
+    const FILES: [&str; 4] = ["bible.db", "sedra.db", "hebrew.db", "lexicon.db"];
+    let mut offset = 0usize;
+    let mut next = || -> Result<Vec<u8>, String> {
+        let length = binary
+            .get(offset..offset + 8)
+            .ok_or_else(|| "database bundle is truncated".to_string())?
+            .try_into()
+            .map(u64::from_le_bytes)
+            .map_err(|_| "database bundle length is invalid".to_string())?
+            as usize;
+        offset += 8;
+        let bytes = binary
+            .get(offset..offset + length)
+            .ok_or_else(|| "database bundle is truncated".to_string())?
+            .to_vec();
+        offset += length;
+        Ok(bytes)
+    };
+    let mut databases = Vec::with_capacity(FILES.len());
+    for file in FILES {
+        databases.push((file, next()?));
+    }
+    let progress = next()?;
+    if offset != binary.len() {
+        return Err("database bundle has trailing bytes".to_string());
+    }
+    let mut bible = Bible::open_from_bytes(databases).map_err(|e| e.to_string())?;
+    bible
+        .attach_progress_in_memory()
+        .map_err(|e| e.to_string())?;
+    if !progress.is_empty() {
+        bible
+            .restore_progress_snapshot_bytes(progress)
+            .map_err(|e| format!("could not restore browser progress: {e}"))?;
+    }
+    Ok(bible)
 }
 
 // You can go with any async library, not just `tokio`.

@@ -218,6 +218,23 @@ rinf gen
 
 Now you can run and build this app just like any other Flutter projects.
 
+## Web PWA
+
+The web build is installable and works offline after its first load. It runs
+the same Rust/SQLite reader and tutor engine in WebAssembly; the approximately
+54 MB corpus download is cached by the browser, while tutor progress is stored
+locally in browser storage.
+
+Build a deployable bundle from the development shell:
+
+```shell
+nix develop -c bash tool/build-web.sh
+```
+
+Deploy the contents of `build/web/` over HTTPS. The web build currently keeps
+progress on that browser; LAN snapshot sync remains available in the native
+apps.
+
 ```shell
 flutter run
 ```

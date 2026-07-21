@@ -1,14 +1,21 @@
-use rinf::{DartSignal, RustSignal, SignalPiece};
+use rinf::{DartSignal, DartSignalBinary, RustSignal, RustSignalBinary, SignalPiece};
 use serde::{Deserialize, Serialize};
 
 /// Directory holding the database files (bible.db, sedra.db, hebrew.db,
 /// lexicon.db). Sent once from Dart at startup, after the bundled
 /// assets have been copied into app-local storage; no queries are answered
 /// until it arrives.
-#[derive(Debug, Deserialize, DartSignal)]
+#[derive(Debug, Deserialize, DartSignalBinary)]
 pub struct SetDataDir {
     pub path: String,
 }
+
+/// A fresh SQLite progress snapshot for browser persistence.  On native
+/// platforms progress remains in its app-support directory; the web host
+/// stores this binary in its platform preferences after each learner change.
+#[derive(Debug, Serialize, RustSignalBinary)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub struct ProgressSnapshot {}
 
 /// Ask the native layer to merge this device's progress with the trusted LAN
 /// sync server. The token is deliberately never persisted by Rust; Dart keeps

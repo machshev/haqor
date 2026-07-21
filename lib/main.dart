@@ -14,10 +14,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   await initializeRust(assignRustSignal);
-  // Tell Rust where the databases live; it answers no queries until it has
-  // opened them, so this must precede runApp (the reader queries in initState).
-  final dbDir = await installDatabases();
-  SetDataDir(path: dbDir).sendSignalToRust();
+  // Tell Rust where the databases live (or supply their bytes to WebAssembly)
+  // before the reader sends its first query.
+  await initializeDatabases();
   unawaited(migrateLegacyFlaggedWords());
   unawaited(syncProgressNow());
   runApp(const Haqor());
