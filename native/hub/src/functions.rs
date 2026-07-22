@@ -253,15 +253,22 @@ pub async fn save_lexicon_entry_override(bible: SharedBible) {
     let receiver = SaveLexiconEntryOverride::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let correction = signal_pack.message;
-        match lock(&bible).set_lexicon_entry_override(
-            &correction.surface,
-            &correction.root,
-            &correction.gloss,
-            &correction.reader_gloss,
-            now_epoch(),
-        ) {
+        let save_result = {
+            let bible_guard = lock(&bible);
+            let result = bible_guard.set_lexicon_entry_override(
+                &correction.surface,
+                &correction.root,
+                &correction.gloss,
+                &correction.reader_gloss,
+                now_epoch(),
+            );
+            if result.is_ok() {
+                persist_browser_progress(&bible_guard);
+            }
+            result
+        };
+        match save_result {
             Ok(()) => {
-                persist_browser_progress(&lock(&bible));
                 debug_print!("lexicon entry override saved: {}", correction.surface);
                 LexiconEntryOverrideStatus {
                     surface: correction.surface,
