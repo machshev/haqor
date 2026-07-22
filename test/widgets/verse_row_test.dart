@@ -19,6 +19,12 @@ void main() {
     expect(verseGlossPositions(interlinearVerseWords(words)), [0, null, 1]);
   });
 
+  test('Syriac words consume interlinear gloss positions', () {
+    final words = 'ܟܬܒܐ ܕܝܫܘܥ ܡܫܝܚܐ'.split(' ');
+
+    expect(verseGlossPositions(words), [0, 1, 2]);
+  });
+
   test('recognises Yahweh with or without an attached particle', () {
     expect(isYahweh('יְהוָה'), isTrue);
     expect(isYahweh('יַהְוֶה'), isTrue);

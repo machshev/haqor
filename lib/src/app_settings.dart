@@ -240,7 +240,9 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Gloss interlinear'),
-                subtitle: const Text('Show a gloss beneath each Hebrew word.'),
+                subtitle: const Text(
+                  'Show an English gloss beneath each source-text word.',
+                ),
                 value: _readingSettings.glossInterlinear,
                 onChanged: (value) => _updateReadingSettings(
                   _readingSettings.copyWith(glossInterlinear: value),

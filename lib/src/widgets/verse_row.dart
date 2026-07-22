@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../bindings/bindings.dart';
 import '../tutor/transliterate.dart';
 
-final RegExp _hebrewLetter = RegExp(r'[\u05D0-\u05EA]');
+final RegExp _sourceTextLetter = RegExp(
+  r'[\u05D0-\u05EA\u0710-\u072F\u074D-\u074F]',
+);
 final RegExp _hebrewMarks = RegExp(r'[^\u05D0-\u05EA]');
 final RegExp _yahwehWithPrefixes = RegExp(r'^[ובלכמשה]*יהוה$');
 final RegExp _readerWordMarks = RegExp(
@@ -41,7 +43,7 @@ List<int?> verseGlossPositions(List<String> words) {
   var glossPosition = 0;
   return [
     for (final word in words)
-      if (_hebrewLetter.hasMatch(word)) glossPosition++ else null,
+      if (_sourceTextLetter.hasMatch(word)) glossPosition++ else null,
   ];
 }
 
