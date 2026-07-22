@@ -51,7 +51,7 @@ void main() {
             hebrewNumerals: true,
             highlightProperNames: true,
             onTap: () {},
-            onWordTap: (_, _) {},
+            onWordTap: (_, _, _) {},
           ),
         ),
       ),
@@ -84,7 +84,7 @@ void main() {
             hebrewNumerals: true,
             showCantillation: false,
             onTap: () {},
-            onWordTap: (_, _) {},
+            onWordTap: (_, _, _) {},
           ),
         ),
       ),
@@ -92,6 +92,36 @@ void main() {
 
     expect(find.text('בְּרֵאשִׁית'), findsOneWidget);
     expect(find.text('בְּרֵאשִׁ֖ית'), findsNothing);
+  });
+
+  testWidgets('word taps carry the lexical occurrence position', (
+    tester,
+  ) async {
+    (String, String?, int?)? tapped;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VerseRow(
+            entry: const VerseEntry(
+              verse: 1,
+              text: 'דָבָר ׀ יְהוָה',
+              glosses: ['word', 'Yahweh'],
+              names: [],
+            ),
+            isSelected: false,
+            hebrewNumerals: true,
+            glossInterlinear: true,
+            onTap: () {},
+            onWordTap: (word, gloss, position) {
+              tapped = (word, gloss, position);
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('יְהוָה'));
+    expect(tapped, ('יְהוָה', 'Yahweh', 1));
   });
 
   testWidgets('interlinear continuation lines start at the visual right edge', (
@@ -134,7 +164,7 @@ void main() {
               showCantillation: true,
               glossInterlinear: true,
               onTap: () {},
-              onWordTap: (_, _) {},
+              onWordTap: (_, _, _) {},
             ),
           ),
         ),

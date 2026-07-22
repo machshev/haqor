@@ -564,6 +564,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         word: entry.headword,
                         root: entry.root,
                         gloss: entry.gloss,
+                        part_of_speech: None,
                         gender: None,
                         number: None,
                         prefix: None,
@@ -587,6 +588,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         word: req.word.clone(),
                         root: String::new(),
                         gloss: String::new(),
+                        part_of_speech: None,
                         gender: None,
                         number: None,
                         prefix: None,
@@ -632,6 +634,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         word: first.word.clone(),
                         root: first.root.clone(),
                         gloss,
+                        part_of_speech: None,
                         gender: first.gender.clone(),
                         number: first.number.clone(),
                         prefix: None,
@@ -655,6 +658,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         word: req.word,
                         root: String::new(),
                         gloss: String::new(),
+                        part_of_speech: None,
                         gender: None,
                         number: None,
                         prefix: None,
@@ -678,7 +682,13 @@ pub async fn get_word_info(bible: SharedBible) {
             // OpenScriptures BDB lexicon (`lexicon.db`) by consonantal root for
             // glossed root trees. `hebrew_word_info` normalises the lookup
             // itself, so the raw word is passed through.
-            match bible.hebrew_word_info(&req.word) {
+            let contextual = match (req.book, req.chapter, req.verse, req.position) {
+                (Some(book), Some(chapter), Some(verse), Some(position)) => {
+                    bible.hebrew_word_info_at(&req.word, book, chapter, verse, position as usize)
+                }
+                _ => bible.hebrew_word_info(&req.word),
+            };
+            match contextual {
                 Some(info) => {
                     // Match core's lexicon-coverage lookup: rooted words use
                     // the root tree, while rootless function words are looked
@@ -710,10 +720,11 @@ pub async fn get_word_info(bible: SharedBible) {
                         word: info.word,
                         root: info.root,
                         gloss,
+                        part_of_speech: info.part_of_speech,
                         gender: info.gender,
                         number: info.number,
                         prefix: info.prefix,
-                        suffix: None,
+                        suffix: info.obj_suffix,
                         prepositions: None,
                         article: false,
                         vav_con: info.vav_con,
@@ -733,6 +744,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         word: req.word,
                         root: String::new(),
                         gloss: String::new(),
+                        part_of_speech: None,
                         gender: None,
                         number: None,
                         prefix: None,

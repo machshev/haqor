@@ -150,6 +150,13 @@ pub struct ChapterText {
 pub struct GetWordInfo {
     pub word: String,
     pub syriac: bool,
+    /// Optional OT reader location. When complete, morphology is resolved from
+    /// the occurrence-level OSHB primary analysis instead of a surface-wide
+    /// generated default.
+    pub book: Option<u8>,
+    pub chapter: Option<u8>,
+    pub verse: Option<u8>,
+    pub position: Option<u32>,
     /// When set, look the entry up by BDB entry id instead of by `word` —
     /// used to follow a Lexicon cross-reference to its target's root tree.
     /// `word` then carries only the target headword, for the sheet title.
@@ -249,6 +256,7 @@ pub struct WordInfo {
     pub word: String,
     pub root: String,
     pub gloss: String,
+    pub part_of_speech: Option<String>,
     pub gender: Option<String>,
     pub number: Option<String>,
     pub prefix: Option<String>,

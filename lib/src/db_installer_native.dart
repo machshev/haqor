@@ -7,7 +7,7 @@ import 'bindings/bindings.dart';
 
 /// Bump whenever the bundled databases change (tool/sync-dbs.sh) so installed
 /// copies on devices are replaced on the next app start.
-const _dbVersion = 19;
+const _dbVersion = 20;
 
 const _dbFiles = ['bible.db', 'sedra.db', 'hebrew.db', 'lexicon.db'];
 

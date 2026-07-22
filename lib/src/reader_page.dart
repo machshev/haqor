@@ -1094,6 +1094,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     int chapter,
     int verse, {
     String? readerGloss,
+    int? position,
   }) {
     showModalBottomSheet<void>(
       context: context,
@@ -1103,6 +1104,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       builder: (ctx) => WordInfoSheet(
         word: word,
         syriac: bookIndex >= 39,
+        book: bookIndex + 1,
+        chapter: chapter,
+        verse: verse,
+        position: position,
         readerGloss: readerGloss,
         useEnglishBookNames: _englishBookNames,
         reportContext: {
@@ -1378,12 +1383,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                   _selectedVerse = entry.verse;
                 }
               }),
-              onWordTap: (word, readerGloss) => _showWordInfo(
+              onWordTap: (word, readerGloss, position) => _showWordInfo(
                 word,
                 b,
                 c,
                 entry.verse,
                 readerGloss: readerGloss,
+                position: position,
               ),
               fontSize: _fontSize,
               fontFamily: _fontFamily,

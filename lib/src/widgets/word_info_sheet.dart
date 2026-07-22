@@ -71,6 +71,10 @@ class WordInfoSheet extends StatefulWidget {
     required this.syriac,
     this.bdbId,
     this.readerGloss,
+    this.book,
+    this.chapter,
+    this.verse,
+    this.position,
     this.useEnglishBookNames = false,
     this.onNavigateToPassage,
     this.reportContext,
@@ -87,6 +91,12 @@ class WordInfoSheet extends StatefulWidget {
   /// The exact gloss currently rendered underneath this token in the reader.
   /// It can intentionally differ from the descriptive Lexicon header.
   final String? readerGloss;
+
+  /// Concrete reader location for occurrence-level OT morphology.
+  final int? book;
+  final int? chapter;
+  final int? verse;
+  final int? position;
 
   /// Whether references in the Occurrences tab use standard English names.
   final bool useEnglishBookNames;
@@ -149,6 +159,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       word: widget.word,
       syriac: widget.syriac,
       bdbId: widget.bdbId,
+      book: widget.book,
+      chapter: widget.chapter,
+      verse: widget.verse,
+      position: widget.position,
     ).sendSignalToRust();
   }
 
@@ -207,6 +221,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       'gloss': info.gloss,
       'morphology': {
         if (info.gender != null) 'gender': info.gender,
+        if (info.partOfSpeech != null) 'partOfSpeech': info.partOfSpeech,
         if (info.person != null) 'person': info.person,
         if (info.number != null) 'number': info.number,
         if (info.state != null) 'state': info.state,
@@ -500,6 +515,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                 spacing: 6,
                 runSpacing: 4,
                 children: [
+                  if (info.partOfSpeech != null)
+                    _chip(context, 'Part of speech', info.partOfSpeech!),
                   if (info.gender != null)
                     _chip(context, 'Gender', info.gender!),
                   if (info.person != null)
