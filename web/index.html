@@ -83,7 +83,12 @@
           return;
         }
 
-        if (crossOriginIsolated) {
+        const controllerUrl = navigator.serviceWorker.controller?.scriptURL;
+        const controller = controllerUrl ? new URL(controllerUrl) : null;
+        const unifiedWorkerIsControlling =
+          controller?.pathname.endsWith('/flutter_service_worker.js') &&
+          controller.search === '';
+        if (crossOriginIsolated && unifiedWorkerIsControlling) {
           removeRetryParameter();
           loadFlutter();
           return;
@@ -107,13 +112,8 @@
           );
           registration.waiting?.postMessage('skipWaiting');
 
-          const controllerUrl = navigator.serviceWorker.controller?.scriptURL;
-          if (controllerUrl) {
-            const controller = new URL(controllerUrl);
-            if (controller.pathname.endsWith('/flutter_service_worker.js') &&
-                controller.search === '') {
-              reloadOnce();
-            }
+          if (unifiedWorkerIsControlling) {
+            reloadOnce();
           }
         } catch (error) {
           console.error('Unable to install the Haqor service worker.', error);
