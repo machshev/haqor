@@ -34,22 +34,95 @@
 </head>
 <body>
   <script>
-    // The worker reloads the page after taking control. That is necessary for
-    // the deployed threaded-WASM runtime, but it tears down Flutter's DWDS
-    // debug connection during `flutter run` on its localhost server.
-    const isLocalDevelopment =
-      window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1' ||
-      window.location.hostname === '[::1]';
-    if ('serviceWorker' in navigator && !crossOriginIsolated && !isLocalDevelopment) {
-      window.addEventListener('load', async () => {
-        await navigator.serviceWorker.register('coi-serviceworker.js');
-        if (!navigator.serviceWorker.controller) {
-          window.location.reload();
+    (() => {
+      const retryParameter = '_haqor_coi_retry';
+
+      function loadFlutter() {
+        const script = document.createElement('script');
+        script.src = 'flutter_bootstrap.js';
+        script.async = true;
+        document.body.appendChild(script);
+      }
+
+      function removeRetryParameter() {
+        const url = new URL(window.location.href);
+        if (!url.searchParams.delete(retryParameter)) return;
+        window.history.replaceState(null, '', url);
+      }
+
+      function reloadForIsolation() {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has(retryParameter)) {
+          // Do not trap the user in a reload loop if a browser blocks service
+          // workers. The non-isolated fallback remains usable, but threaded
+          // WASM may be unavailable.
+          console.error(
+            'The Haqor service worker did not establish cross-origin isolation.',
+          );
+          removeRetryParameter();
+          loadFlutter();
+          return;
         }
-      });
-    }
+        url.searchParams.set(retryParameter, '1');
+        window.location.replace(url);
+      }
+
+      async function start() {
+        // The service worker is intentionally skipped for Flutter's local
+        // development server because its reload breaks the DWDS connection.
+        // The query override is used by the release-build browser test.
+        const isLocalDevelopment =
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1' ||
+          window.location.hostname === '[::1]';
+        const testServiceWorker =
+          new URLSearchParams(window.location.search).has('test-service-worker');
+        if (!('serviceWorker' in navigator) ||
+            (isLocalDevelopment && !testServiceWorker)) {
+          loadFlutter();
+          return;
+        }
+
+        if (crossOriginIsolated) {
+          removeRetryParameter();
+          loadFlutter();
+          return;
+        }
+
+        let reloading = false;
+        const reloadOnce = () => {
+          if (reloading) return;
+          reloading = true;
+          reloadForIsolation();
+        };
+        navigator.serviceWorker.addEventListener(
+          'controllerchange',
+          reloadOnce,
+          {once: true},
+        );
+
+        try {
+          const registration = await navigator.serviceWorker.register(
+            'flutter_service_worker.js',
+          );
+          registration.waiting?.postMessage('skipWaiting');
+
+          const controllerUrl = navigator.serviceWorker.controller?.scriptURL;
+          if (controllerUrl) {
+            const controller = new URL(controllerUrl);
+            if (controller.pathname.endsWith('/flutter_service_worker.js') &&
+                controller.search === '') {
+              reloadOnce();
+            }
+          }
+        } catch (error) {
+          console.error('Unable to install the Haqor service worker.', error);
+          loadFlutter();
+        }
+      }
+
+      start();
+    })();
   </script>
-  <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

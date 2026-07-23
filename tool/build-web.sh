@@ -44,5 +44,6 @@ wasm-bindgen target/wasm32-unknown-unknown/release/hub.wasm \
   --out-dir web/pkg --no-typescript --target web --out-name hub
 
 flutter build web --release "$@"
+"$here/patch-web-service-worker.sh"
 
 echo "PWA bundle ready in build/web"
