@@ -66,7 +66,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: haqor-core/data/*.db
-          key: assets-db-v1-${{ steps.core.outputs.sha }}
+          key: assets-db-v2-${{ steps.core.outputs.sha }}
 
       - name: Install Nix
         if: steps.db-cache.outputs.cache-hit != 'true'
@@ -118,8 +118,11 @@ jobs:
         # Order matters: gen-hebrew reads bible.db and lexicon.db. --force
         # wipes any stale hebrew.db so the shipped DB is a clean full build of
         # the current parser (the curated lexicon_overrides.json is committed
-        # in haqor-core and baked in by gen-lexicon).
+        # in haqor-core and baked in by gen-lexicon). STEP Bible's TAHOT files
+        # are deliberately not committed; the pinned fetch script verifies
+        # their checksums before gen-hebrew consumes them.
         run: |
+          ./scripts/fetch-stepbible-data.sh
           nix develop --command bash -c '
             set -euo pipefail
             cargo run --release -p haqor-cli -- db gen-bible
