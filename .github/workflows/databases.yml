@@ -13,21 +13,47 @@ on:
   workflow_call:
     inputs:
       core-ref:
-        description: machshev/haqor-core ref to generate the databases from
+        description: >
+          Optional machshev/haqor-core ref override. By default this is derived
+          from native/hub/Cargo.toml so generated data matches the app runtime.
         type: string
         required: false
-        default: v0.7.1
+        default: ""
 
 jobs:
   generate:
     name: Generate SQLite databases
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout haqor
+        uses: actions/checkout@v4
+        with:
+          path: haqor
+
+      - name: Resolve pinned haqor-core ref
+        id: core-ref
+        env:
+          CORE_REF_OVERRIDE: ${{ inputs.core-ref }}
+        run: |
+          set -euo pipefail
+          core_ref="$CORE_REF_OVERRIDE"
+          if [[ -z "$core_ref" ]]; then
+            core_version="$(
+              sed -nE \
+                's/^haqor-core = \{ version = "=([^"]+)".*/\1/p' \
+                haqor/native/hub/Cargo.toml
+            )"
+            test -n "$core_version"
+            core_ref="v$core_version"
+          fi
+          echo "ref=$core_ref" >> "$GITHUB_OUTPUT"
+          echo "Generating databases from haqor-core $core_ref"
+
       - name: Checkout haqor-core
         uses: actions/checkout@v4
         with:
           repository: machshev/haqor-core
-          ref: ${{ inputs.core-ref }}
+          ref: ${{ steps.core-ref.outputs.ref }}
           path: haqor-core
           submodules: recursive
 
@@ -101,6 +127,22 @@ jobs:
             cargo run --release -p haqor-cli -- db gen-hebrew --force
             cargo run --release -p haqor-cli -- db gen-sedra
           '
+
+      - name: Verify reader gloss data
+        working-directory: haqor-core
+        run: |
+          set -euo pipefail
+          reader_gloss_column="$(
+            sqlite3 data/hebrew.db \
+              "SELECT count(*) FROM pragma_table_info('verse_word') WHERE name = 'reader_gloss';"
+          )"
+          reader_gloss_rows="$(
+            sqlite3 data/hebrew.db \
+              "SELECT count(*) FROM verse_word WHERE reader_gloss != '';"
+          )"
+          test "$reader_gloss_column" -eq 1
+          test "$reader_gloss_rows" -gt 0
+          echo "Verified $reader_gloss_rows populated reader glosses"
 
       - name: Upload databases artifact
         uses: actions/upload-artifact@v4
