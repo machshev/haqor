@@ -268,6 +268,14 @@ class _VerseRowState extends State<VerseRow> {
                           style: theme.textTheme.labelSmall,
                         ),
                       if (glossPosition != null &&
+                          widget.glossInterlinear &&
+                          widget.morphologyInterlinear &&
+                          glossPosition < widget.entry.glosses.length &&
+                          glossPosition < widget.entry.morphologies.length &&
+                          widget.entry.glosses[glossPosition].isNotEmpty &&
+                          widget.entry.morphologies[glossPosition].isNotEmpty)
+                        const SizedBox(height: 2),
+                      if (glossPosition != null &&
                           widget.morphologyInterlinear &&
                           glossPosition < widget.entry.morphologies.length &&
                           widget.entry.morphologies[glossPosition].isNotEmpty)

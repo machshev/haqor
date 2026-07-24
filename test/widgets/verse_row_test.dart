@@ -45,6 +45,7 @@ void main() {
               verse: 1,
               text: 'דָבָר ׀ יְהוָה חָכְמָה',
               glosses: [],
+              morphologies: [],
               names: [],
             ),
             isSelected: false,
@@ -78,6 +79,7 @@ void main() {
               verse: 1,
               text: 'בְּרֵאשִׁ֖ית',
               glosses: [],
+              morphologies: [],
               names: [],
             ),
             isSelected: false,
@@ -106,6 +108,7 @@ void main() {
               verse: 1,
               text: 'דָבָר ׀ יְהוָה',
               glosses: ['word', 'Yahweh'],
+              morphologies: ['noun singular', 'noun singular'],
               names: [],
             ),
             isSelected: false,
@@ -122,6 +125,37 @@ void main() {
 
     await tester.tap(find.text('יְהוָה'));
     expect(tapped, ('יְהוָה', 'Yahweh', 1));
+  });
+
+  testWidgets('morphology sits below the gloss with visible spacing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VerseRow(
+            entry: const VerseEntry(
+              verse: 1,
+              text: 'דָבָר',
+              glosses: ['word'],
+              morphologies: ['noun singular'],
+              names: [],
+            ),
+            isSelected: false,
+            hebrewNumerals: true,
+            glossInterlinear: true,
+            morphologyInterlinear: true,
+            onTap: () {},
+            onWordTap: (_, _, _) {},
+          ),
+        ),
+      ),
+    );
+
+    final glossRect = tester.getRect(find.text('word'));
+    final morphologyRect = tester.getRect(find.text('N sg'));
+
+    expect(morphologyRect.top, greaterThan(glossRect.bottom));
   });
 
   testWidgets('interlinear continuation lines start at the visual right edge', (
@@ -157,6 +191,7 @@ void main() {
                 verse: 1,
                 text: words.join(' '),
                 glosses: glosses,
+                morphologies: const [],
                 names: const [],
               ),
               isSelected: false,
