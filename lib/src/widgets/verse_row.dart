@@ -274,7 +274,7 @@ class _VerseRowState extends State<VerseRow> {
                           glossPosition < widget.entry.morphologies.length &&
                           widget.entry.glosses[glossPosition].isNotEmpty &&
                           widget.entry.morphologies[glossPosition].isNotEmpty)
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 4),
                       if (glossPosition != null &&
                           widget.morphologyInterlinear &&
                           glossPosition < widget.entry.morphologies.length &&

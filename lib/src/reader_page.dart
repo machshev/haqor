@@ -976,15 +976,24 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   }
 
   KeyEventResult _handleReaderKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent || !_scrollController.hasClients) {
+    if ((event is! KeyDownEvent && event is! KeyRepeatEvent) ||
+        !_scrollController.hasClients) {
       return KeyEventResult.ignored;
     }
 
     final key = event.logicalKey;
     final distance = key == LogicalKeyboardKey.arrowUp
-        ? -56.0
+        ? -verseRowScrollExtent(
+            fontSize: _fontSize,
+            fontFamily: _fontFamily,
+            interlinear: _glossInterlinear || _morphologyInterlinear,
+          )
         : key == LogicalKeyboardKey.arrowDown
-        ? 56.0
+        ? verseRowScrollExtent(
+            fontSize: _fontSize,
+            fontFamily: _fontFamily,
+            interlinear: _glossInterlinear || _morphologyInterlinear,
+          )
         : key == LogicalKeyboardKey.pageUp
         ? -_scrollController.position.viewportDimension * 0.9
         : key == LogicalKeyboardKey.pageDown
@@ -997,11 +1006,16 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       position.minScrollExtent,
       position.maxScrollExtent,
     );
-    _scrollController.animateTo(
-      target,
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
-    );
+    if (key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowDown) {
+      _scrollController.jumpTo(target);
+    } else {
+      _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+    }
     return KeyEventResult.handled;
   }
 
