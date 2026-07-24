@@ -285,8 +285,17 @@ class _VerseRowState extends State<VerseRow> {
       onTap: widget.onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        margin: const EdgeInsets.symmetric(vertical: 2),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        margin: EdgeInsets.symmetric(
+          vertical: widget.glossInterlinear || widget.morphologyInterlinear
+              ? 2
+              : 1,
+        ),
+        padding: EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: widget.glossInterlinear || widget.morphologyInterlinear
+              ? 8
+              : 4,
+        ),
         decoration: BoxDecoration(
           color: widget.isSelected
               ? theme.colorScheme.primaryContainer
