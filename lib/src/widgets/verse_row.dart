@@ -260,6 +260,14 @@ class _VerseRowState extends State<VerseRow> {
                             : styleForWord(interlinearWords[i], glossPosition),
                       ),
                       if (glossPosition != null &&
+                          widget.glossInterlinear &&
+                          glossPosition < widget.entry.glosses.length &&
+                          widget.entry.glosses[glossPosition].isNotEmpty)
+                        Text(
+                          widget.entry.glosses[glossPosition],
+                          style: theme.textTheme.labelSmall,
+                        ),
+                      if (glossPosition != null &&
                           widget.morphologyInterlinear &&
                           glossPosition < widget.entry.morphologies.length &&
                           widget.entry.morphologies[glossPosition].isNotEmpty)
@@ -268,14 +276,6 @@ class _VerseRowState extends State<VerseRow> {
                             widget.entry.morphologies[glossPosition],
                           ),
                           style: morphologyStyle,
-                        ),
-                      if (glossPosition != null &&
-                          widget.glossInterlinear &&
-                          glossPosition < widget.entry.glosses.length &&
-                          widget.entry.glosses[glossPosition].isNotEmpty)
-                        Text(
-                          widget.entry.glosses[glossPosition],
-                          style: theme.textTheme.labelSmall,
                         ),
                     ],
                   ),
