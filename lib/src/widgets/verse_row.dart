@@ -200,6 +200,9 @@ class _VerseRowState extends State<VerseRow> {
           // In an RTL wrap, `start` is the visual right edge.  Using
           // `end` puts a partially filled final run on the left.
           alignment: WrapAlignment.start,
+          // Keep adjacent word columns visibly separated even when a gloss or
+          // morphology label is very short.
+          spacing: 6,
           textDirection: TextDirection.rtl,
           children: [
             for (final (i, glossPosition) in verseGlossPositions(
