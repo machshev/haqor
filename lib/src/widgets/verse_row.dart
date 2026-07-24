@@ -13,6 +13,26 @@ final RegExp _readerWordMarks = RegExp(
 );
 const _maqaf = '\u05BE';
 
+String compactInterlinearMorphology(String morphology) {
+  const abbreviations = {
+    'noun': 'N',
+    'proper': 'prop',
+    'verb': 'V',
+    'singular': 'sg',
+    'plural': 'pl',
+    'dual': 'du',
+    'absolute': 'abs',
+    'construct': 'cstr',
+    'perfect': 'perf',
+    'imperfect': 'impf',
+    'imperative': 'imp',
+  };
+  return morphology
+      .split(RegExp(r'\s+'))
+      .map((part) => abbreviations[part.toLowerCase()] ?? part)
+      .join(' ');
+}
+
 /// Whether [word] is the tetragrammaton, allowing common attached particles.
 bool isYahweh(String word) =>
     _yahwehWithPrefixes.hasMatch(word.replaceAll(_hebrewMarks, ''));
@@ -59,6 +79,7 @@ class VerseRow extends StatefulWidget {
     this.fontFamily = 'Cardo',
     this.showCantillation = true,
     this.glossInterlinear = false,
+    this.morphologyInterlinear = false,
     this.highlightProperNames = false,
   });
 
@@ -72,6 +93,7 @@ class VerseRow extends StatefulWidget {
   final String fontFamily;
   final bool showCantillation;
   final bool glossInterlinear;
+  final bool morphologyInterlinear;
   final bool highlightProperNames;
 
   @override
@@ -146,6 +168,12 @@ class _VerseRowState extends State<VerseRow> {
       color: const Color(0xFFB8860B),
       fontWeight: FontWeight.w800,
     );
+    final morphologyStyle = theme.textTheme.labelSmall?.copyWith(
+      color: theme.colorScheme.secondary,
+      fontSize: 10,
+      fontWeight: FontWeight.w600,
+      height: 1.0,
+    );
     TextStyle styleForWord(String word, int lexicalPosition) {
       if (!widget.highlightProperNames) return wordStyle;
       // The corpus's traditional pointing `יַהְוֶה` currently has a verb
@@ -159,7 +187,9 @@ class _VerseRowState extends State<VerseRow> {
     }
 
     final Widget content;
-    if (widget.glossInterlinear && widget.entry.glosses.isNotEmpty) {
+    if ((widget.glossInterlinear || widget.morphologyInterlinear) &&
+        (widget.entry.glosses.isNotEmpty ||
+            widget.entry.morphologies.isNotEmpty)) {
       final interlinearWords = interlinearVerseWords(_words);
       final interlinearDisplayWords = widget.showCantillation
           ? interlinearWords
@@ -200,6 +230,17 @@ class _VerseRowState extends State<VerseRow> {
                             : styleForWord(interlinearWords[i], glossPosition),
                       ),
                       if (glossPosition != null &&
+                          widget.morphologyInterlinear &&
+                          glossPosition < widget.entry.morphologies.length &&
+                          widget.entry.morphologies[glossPosition].isNotEmpty)
+                        Text(
+                          compactInterlinearMorphology(
+                            widget.entry.morphologies[glossPosition],
+                          ),
+                          style: morphologyStyle,
+                        ),
+                      if (glossPosition != null &&
+                          widget.glossInterlinear &&
                           glossPosition < widget.entry.glosses.length &&
                           widget.entry.glosses[glossPosition].isNotEmpty)
                         Text(

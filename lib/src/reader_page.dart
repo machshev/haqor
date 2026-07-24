@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:rinf/rinf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -131,7 +132,7 @@ class _Section {
   }) : key = GlobalKey();
 }
 
-typedef _ChapterRequest = (int, int, bool, bool, bool);
+typedef _ChapterRequest = (int, int, bool, bool, bool, bool);
 
 enum _ReaderMenuAction { readingPlan, tutor, reportIssue, settings }
 
@@ -163,6 +164,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   static const _kFontFamily = 'font_family';
   static const _kShowCantillation = 'show_cantillation';
   static const _kGlossInterlinear = 'gloss_interlinear';
+  static const _kMorphologyInterlinear = 'morphology_interlinear';
   static const _kHighlightProperNames = 'highlight_proper_names';
   static const _kReadingPlanBook = 'reading_plan_book';
   static const _kReadingPlanCompleted = 'reading_plan_completed';
@@ -220,6 +222,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   String _fontFamily = 'Cardo';
   bool _showCantillation = true;
   bool _glossInterlinear = false;
+  bool _morphologyInterlinear = false;
   bool _highlightProperNames = false;
   List<_ReadingPlan> _readingPlans = [];
 
@@ -248,6 +251,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         msg.chapter,
         msg.syriac,
         msg.includeGlosses,
+        msg.includeMorphology,
         msg.includeNames,
       );
       if (!_pendingFetches.contains(fetchKey)) return;
@@ -410,6 +414,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _fontFamily = _fontFamilies.contains(savedFamily) ? savedFamily : 'Cardo';
       _showCantillation = prefs.getBool(_kShowCantillation) ?? true;
       _glossInterlinear = prefs.getBool(_kGlossInterlinear) ?? false;
+      _morphologyInterlinear = prefs.getBool(_kMorphologyInterlinear) ?? false;
       _highlightProperNames = prefs.getBool(_kHighlightProperNames) ?? false;
       final savedPlans = prefs.getStringList(_kReadingPlans);
       if (savedPlans != null) {
@@ -491,6 +496,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       prefs.setString(_kFontFamily, _fontFamily),
       prefs.setBool(_kShowCantillation, _showCantillation),
       prefs.setBool(_kGlossInterlinear, _glossInterlinear),
+      prefs.setBool(_kMorphologyInterlinear, _morphologyInterlinear),
       prefs.setBool(_kHighlightProperNames, _highlightProperNames),
     ]);
   }
@@ -511,6 +517,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     final reloadChapter =
         (settings.ntSyriac != _ntSyriac && _bookIndex >= 39) ||
         settings.glossInterlinear != _glossInterlinear ||
+        settings.morphologyInterlinear != _morphologyInterlinear ||
         settings.highlightProperNames != _highlightProperNames;
     setState(() {
       _ntSyriac = settings.ntSyriac;
@@ -518,6 +525,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _hebrewNumerals = settings.hebrewNumerals;
       _showCantillation = settings.showCantillation;
       _glossInterlinear = settings.glossInterlinear;
+      _morphologyInterlinear = settings.morphologyInterlinear;
       _highlightProperNames = settings.highlightProperNames;
       _fontSize = settings.fontSize;
       _fontFamily = settings.fontFamily;
@@ -538,6 +546,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         hebrewNumerals: _hebrewNumerals,
         showCantillation: _showCantillation,
         glossInterlinear: _glossInterlinear,
+        morphologyInterlinear: _morphologyInterlinear,
         highlightProperNames: _highlightProperNames,
         fontSize: _fontSize,
         fontFamily: _fontFamily,
@@ -813,6 +822,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     chapter,
     _isSyriac(bookIndex),
     _glossInterlinear,
+    _morphologyInterlinear,
     _highlightProperNames,
   );
 
@@ -885,6 +895,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       chapter: chapter,
       syriac: _isSyriac(bookIndex),
       includeGlosses: _glossInterlinear,
+      includeMorphology: _morphologyInterlinear,
       includeNames: _highlightProperNames,
     );
     final send = widget.sendChapterRequest;
@@ -962,6 +973,36 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         position.pixels >= position.maxScrollExtent - triggerDistance) {
       _maybeLoadNext();
     }
+  }
+
+  KeyEventResult _handleReaderKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent || !_scrollController.hasClients) {
+      return KeyEventResult.ignored;
+    }
+
+    final key = event.logicalKey;
+    final distance = key == LogicalKeyboardKey.arrowUp
+        ? -56.0
+        : key == LogicalKeyboardKey.arrowDown
+        ? 56.0
+        : key == LogicalKeyboardKey.pageUp
+        ? -_scrollController.position.viewportDimension * 0.9
+        : key == LogicalKeyboardKey.pageDown
+        ? _scrollController.position.viewportDimension * 0.9
+        : null;
+    if (distance == null) return KeyEventResult.ignored;
+
+    final position = _scrollController.position;
+    final target = (position.pixels + distance).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+    );
+    return KeyEventResult.handled;
   }
 
   (int, int)? _nextChapterAfter(int bookIndex, int chapter) {
@@ -1274,24 +1315,28 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           ? const Center(child: CircularProgressIndicator())
           : _sections.isEmpty
           ? const Center(child: Text('No text found'))
-          : Stack(
-              children: [
-                _buildScrollView(),
-                if (_loadingPrev)
-                  const Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: IgnorePointer(child: LinearProgressIndicator()),
-                  ),
-                if (_loadingNext)
-                  const Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: IgnorePointer(child: LinearProgressIndicator()),
-                  ),
-              ],
+          : Focus(
+              autofocus: true,
+              onKeyEvent: _handleReaderKey,
+              child: Stack(
+                children: [
+                  _buildScrollView(),
+                  if (_loadingPrev)
+                    const Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: IgnorePointer(child: LinearProgressIndicator()),
+                    ),
+                  if (_loadingNext)
+                    const Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: IgnorePointer(child: LinearProgressIndicator()),
+                    ),
+                ],
+              ),
             ),
     );
   }
@@ -1395,6 +1440,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               fontFamily: _fontFamily,
               showCantillation: _showCantillation,
               glossInterlinear: _glossInterlinear,
+              morphologyInterlinear: _morphologyInterlinear,
               highlightProperNames: _highlightProperNames,
             );
           },

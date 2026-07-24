@@ -410,6 +410,7 @@ pub async fn get_chapter_text(bible: SharedBible) {
                         req.book,
                         req.chapter,
                         req.include_glosses,
+                        req.include_morphology,
                         req.include_names,
                     )
                     .unwrap_or_default();
@@ -423,6 +424,9 @@ pub async fn get_chapter_text(bible: SharedBible) {
                             glosses: metadata
                                 .map(|metadata| metadata.glosses.clone())
                                 .unwrap_or_default(),
+                            morphologies: metadata
+                                .map(|metadata| metadata.morphologies.clone())
+                                .unwrap_or_default(),
                             names: metadata
                                 .map(|metadata| metadata.names.clone())
                                 .unwrap_or_default(),
@@ -434,6 +438,7 @@ pub async fn get_chapter_text(bible: SharedBible) {
                     chapter: req.chapter,
                     syriac: req.syriac,
                     include_glosses: req.include_glosses,
+                    include_morphology: req.include_morphology,
                     include_names: req.include_names,
                     verses,
                 }

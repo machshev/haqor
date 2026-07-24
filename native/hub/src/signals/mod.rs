@@ -123,6 +123,8 @@ pub struct GetChapter {
     pub syriac: bool,
     /// Include compact interlinear glosses in the payload.
     pub include_glosses: bool,
+    /// Include compact inline morphology labels in the payload.
+    pub include_morphology: bool,
     /// Include proper-name flags in the payload.
     pub include_names: bool,
 }
@@ -132,6 +134,7 @@ pub struct VerseEntry {
     pub verse: u8,
     pub text: String,
     pub glosses: Vec<String>,
+    pub morphologies: Vec<String>,
     /// Aligned with the lexical words: true where the word is a proper name.
     pub names: Vec<bool>,
 }
@@ -142,6 +145,7 @@ pub struct ChapterText {
     pub chapter: u8,
     pub syriac: bool,
     pub include_glosses: bool,
+    pub include_morphology: bool,
     pub include_names: bool,
     pub verses: Vec<VerseEntry>,
 }

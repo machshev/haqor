@@ -22,6 +22,7 @@ class AppReadingSettings {
     required this.hebrewNumerals,
     required this.showCantillation,
     required this.glossInterlinear,
+    required this.morphologyInterlinear,
     required this.highlightProperNames,
     required this.fontSize,
     required this.fontFamily,
@@ -32,6 +33,7 @@ class AppReadingSettings {
   final bool hebrewNumerals;
   final bool showCantillation;
   final bool glossInterlinear;
+  final bool morphologyInterlinear;
   final bool highlightProperNames;
   final double fontSize;
   final String fontFamily;
@@ -42,6 +44,7 @@ class AppReadingSettings {
     bool? hebrewNumerals,
     bool? showCantillation,
     bool? glossInterlinear,
+    bool? morphologyInterlinear,
     bool? highlightProperNames,
     double? fontSize,
     String? fontFamily,
@@ -51,6 +54,7 @@ class AppReadingSettings {
     hebrewNumerals: hebrewNumerals ?? this.hebrewNumerals,
     showCantillation: showCantillation ?? this.showCantillation,
     glossInterlinear: glossInterlinear ?? this.glossInterlinear,
+    morphologyInterlinear: morphologyInterlinear ?? this.morphologyInterlinear,
     highlightProperNames: highlightProperNames ?? this.highlightProperNames,
     fontSize: fontSize ?? this.fontSize,
     fontFamily: fontFamily ?? this.fontFamily,
@@ -235,6 +239,15 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
                 value: _readingSettings.showCantillation,
                 onChanged: (value) => _updateReadingSettings(
                   _readingSettings.copyWith(showCantillation: value),
+                ),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Morphology interlinear'),
+                subtitle: const Text('Show compact morphology beneath each Hebrew word.'),
+                value: _readingSettings.morphologyInterlinear,
+                onChanged: (value) => _updateReadingSettings(
+                  _readingSettings.copyWith(morphologyInterlinear: value),
                 ),
               ),
               SwitchListTile(
