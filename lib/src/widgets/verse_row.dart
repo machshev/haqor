@@ -67,6 +67,32 @@ List<int?> verseGlossPositions(List<String> words) {
   ];
 }
 
+double verseRowScrollExtent({
+  required double fontSize,
+  required String fontFamily,
+  required bool interlinear,
+}) {
+  final textPainter = TextPainter(
+    text: TextSpan(
+      text: 'אבגדהוזחט',
+      style: TextStyle(
+        fontFamily: fontFamily,
+        fontFamilyFallback: const ['Noto Serif Hebrew'],
+        fontSize: fontSize,
+        fontWeight: FontWeight.w500,
+        height: 1.6,
+      ),
+    ),
+    textDirection: TextDirection.rtl,
+    maxLines: 1,
+  )..layout();
+
+  final lineHeight = textPainter.preferredLineHeight;
+  final verticalMargin = interlinear ? 2.0 : 1.0;
+  final verticalPadding = interlinear ? 8.0 : 4.0;
+  return lineHeight + (verticalMargin * 2) + (verticalPadding * 2);
+}
+
 class VerseRow extends StatefulWidget {
   const VerseRow({
     super.key,
@@ -172,6 +198,7 @@ class _VerseRowState extends State<VerseRow> {
       color: theme.colorScheme.secondary,
       fontSize: 10,
       fontWeight: FontWeight.w600,
+      fontStyle: FontStyle.italic,
       height: 1.0,
     );
     TextStyle styleForWord(String word, int lexicalPosition) {
