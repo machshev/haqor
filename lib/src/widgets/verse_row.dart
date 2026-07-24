@@ -262,7 +262,7 @@ class _VerseRowState extends State<VerseRow> {
       final displayNamePositions = verseGlossPositions(_words);
       for (var i = 0; i < _words.length; i++) {
         if (i > 0 && !_words[i - 1].endsWith(_maqaf)) {
-          spans.add(const TextSpan(text: ' '));
+          spans.add(const TextSpan(text: '  '));
         }
         spans.add(
           TextSpan(
