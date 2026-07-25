@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:rinf/rinf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'about_page.dart';
 import 'app_settings.dart';
 import 'bible_data.dart';
 import 'christadelphian_readings.dart';
@@ -134,7 +135,7 @@ class _Section {
 
 typedef _ChapterRequest = (int, int, bool, bool, bool, bool);
 
-enum _ReaderMenuAction { readingPlan, tutor, reportIssue, settings }
+enum _ReaderMenuAction { readingPlan, tutor, reportIssue, settings, about }
 
 /// Leave enough room for the longest book name and chapter picker after the
 /// five direct app-bar actions are laid out.
@@ -1270,59 +1271,68 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               tooltip: 'Settings',
             ),
           ],
-          if (!showInlineReaderActions || _adminMode)
-            PopupMenuButton<_ReaderMenuAction>(
-              icon: const Icon(Icons.more_vert),
-              tooltip: 'More reader options',
-              onSelected: (action) {
-                switch (action) {
-                  case _ReaderMenuAction.readingPlan:
-                    _showReadingPlan();
-                  case _ReaderMenuAction.tutor:
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const TutorEntryPage()),
-                    );
-                  case _ReaderMenuAction.reportIssue:
-                    _reportGeneralIssue();
-                  case _ReaderMenuAction.settings:
-                    _showAppSettings();
-                }
-              },
-              itemBuilder: (context) => [
-                if (!showInlineReaderActions) ...[
-                  const PopupMenuItem(
-                    value: _ReaderMenuAction.readingPlan,
-                    child: ListTile(
-                      leading: Icon(Icons.auto_stories_outlined),
-                      title: Text('Reading plan'),
-                    ),
+          // Always rendered: About lives here whatever else the width allows.
+          PopupMenuButton<_ReaderMenuAction>(
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'More reader options',
+            onSelected: (action) {
+              switch (action) {
+                case _ReaderMenuAction.readingPlan:
+                  _showReadingPlan();
+                case _ReaderMenuAction.tutor:
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const TutorEntryPage()),
+                  );
+                case _ReaderMenuAction.reportIssue:
+                  _reportGeneralIssue();
+                case _ReaderMenuAction.settings:
+                  _showAppSettings();
+                case _ReaderMenuAction.about:
+                  showAbout(context);
+              }
+            },
+            itemBuilder: (context) => [
+              if (!showInlineReaderActions) ...[
+                const PopupMenuItem(
+                  value: _ReaderMenuAction.readingPlan,
+                  child: ListTile(
+                    leading: Icon(Icons.auto_stories_outlined),
+                    title: Text('Reading plan'),
                   ),
-                  const PopupMenuItem(
-                    value: _ReaderMenuAction.tutor,
-                    child: ListTile(
-                      leading: Icon(Icons.school_outlined),
-                      title: Text('Tutor'),
-                    ),
+                ),
+                const PopupMenuItem(
+                  value: _ReaderMenuAction.tutor,
+                  child: ListTile(
+                    leading: Icon(Icons.school_outlined),
+                    title: Text('Tutor'),
                   ),
-                ],
-                if (_adminMode)
-                  const PopupMenuItem(
-                    value: _ReaderMenuAction.reportIssue,
-                    child: ListTile(
-                      leading: Icon(Icons.flag_outlined),
-                      title: Text('Report an issue'),
-                    ),
-                  ),
-                if (!showInlineReaderActions)
-                  const PopupMenuItem(
-                    value: _ReaderMenuAction.settings,
-                    child: ListTile(
-                      leading: Icon(Icons.settings_outlined),
-                      title: Text('Settings'),
-                    ),
-                  ),
+                ),
               ],
-            ),
+              if (_adminMode)
+                const PopupMenuItem(
+                  value: _ReaderMenuAction.reportIssue,
+                  child: ListTile(
+                    leading: Icon(Icons.flag_outlined),
+                    title: Text('Report an issue'),
+                  ),
+                ),
+              if (!showInlineReaderActions)
+                const PopupMenuItem(
+                  value: _ReaderMenuAction.settings,
+                  child: ListTile(
+                    leading: Icon(Icons.settings_outlined),
+                    title: Text('Settings'),
+                  ),
+                ),
+              const PopupMenuItem(
+                value: _ReaderMenuAction.about,
+                child: ListTile(
+                  leading: Icon(Icons.info_outline),
+                  title: Text('About'),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: _initialLoading

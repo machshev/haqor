@@ -241,3 +241,45 @@ flutter run
 
 For detailed instructions on writing Rust and Flutter together,
 please refer to Rinf's [documentation](https://rinf.cunarist.com).
+
+## Attribution
+
+Haqor's bundled databases are curated from the sources below, several of which
+carry attribution requirements. The same credits are shown in-app under
+**About**, alongside the app and database versions. See the
+[haqor-core README](../haqor-core/README.md#attribution) for how each source
+feeds the generation pipeline.
+
+**Hebrew Bible text** — the Unicode/XML Leningrad Codex (UXLC) from
+[tanach.us](https://tanach.us), transcribed from the *Westminster Leningrad
+Codex*, which is in the public domain.
+
+**Hebrew lemmas and morphology** — the
+[Open Scriptures Hebrew Bible](https://github.com/openscriptures/morphhb)
+(morphhb), licensed CC BY 4.0.
+
+**Hebrew lexicon** — the
+[OSHB Hebrew Lexicon](https://github.com/openscriptures/HebrewLexicon):
+*Brown-Driver-Briggs*, *Strong's Hebrew Dictionary* and the lexical index
+bridging them, released CC BY 4.0 — credit the Open Scriptures Hebrew Bible
+Project — over public-domain BDB and Strong's text.
+
+**Interlinear translations** — STEP Bible's
+[TAHOT dataset](https://github.com/STEPBible/STEPBible-Data), licensed CC BY
+4.0.
+
+**Syriac New Testament** — the text of the British and Foreign Bible Society's
+edition, with lexical and morphological data from SEDRA:
+
+> This work makes use of the Syriac Electronic Data Retrieval Archive (SEDRA)
+> by George A. Kiraz, distributed by the Syriac Computing Institute.
+
+SEDRA III's terms also ask that work using it cite:
+
+> G. Kiraz, 'Automatic Concordance Generation of Syriac Texts', in *VI Symposium
+> Syriacum 1992*, ed. R. Lavenant, Orientalia Christiana Analecta 247, Rome,
+> 1994.
+
+The reader renders SEDRA's Syriac in Unicode, in Syriac script and
+transliterated into Hebrew letters. That script conversion is the only change:
+the entries, morphology and text content are unmodified.

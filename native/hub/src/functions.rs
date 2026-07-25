@@ -1,16 +1,16 @@
 #[cfg(target_arch = "wasm32")]
 use crate::signals::ProgressSnapshot;
 use crate::signals::{
-    BdbSummary, CalibrationProbe, ChapterText, FinishCalibration, GetCalibrationProbe, GetChapter,
-    GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts, GetTutorGlossOverrideStats,
-    GetTutorSettings, GetTutorStats, GetVerseText, GetVocab, GetWordInfo, GetWordOccurrences,
-    GlyphCard, GrammarCard, HebrewOccurrence, IssueReportStatus, LexiconEntryOverrideStatus,
-    OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, SaveIssueReport,
-    SaveLexiconEntryOverride, SaveTutorGloss, SedraOccurrence, SedraSummary, SeenConcept,
-    SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, SuffixCard,
-    SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard,
-    VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence,
-    WordOccurrences,
+    BdbSummary, BuildInfo, CalibrationProbe, ChapterText, FinishCalibration, GetBuildInfo,
+    GetCalibrationProbe, GetChapter, GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts,
+    GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVocab,
+    GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence, IssueReportStatus,
+    LexiconEntryOverrideStatus, OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus,
+    ResetTutor, SaveIssueReport, SaveLexiconEntryOverride, SaveTutorGloss, SedraOccurrence,
+    SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem,
+    SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings,
+    TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard,
+    WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -1235,6 +1235,21 @@ pub async fn get_onboarding_status(bible: SharedBible) {
         });
         let tier_count = bible.calibration_tier_count().unwrap_or(0);
         OnboardingStatus { needed, tier_count }.send_signal_to_dart();
+    }
+}
+
+/// Report what the app is running. The core version is compiled in; the data
+/// version comes from the opened database, so the About view shows the build
+/// actually in use rather than whatever was bundled.
+pub async fn get_build_info(bible: SharedBible) {
+    let receiver = GetBuildInfo::get_dart_signal_receiver();
+    while let Some(_pack) = receiver.recv().await {
+        let data_version = lock(&bible).data_version().unwrap_or_default();
+        BuildInfo {
+            core_version: haqor_core::VERSION.to_string(),
+            data_version,
+        }
+        .send_signal_to_dart();
     }
 }
 

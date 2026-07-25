@@ -643,3 +643,18 @@ pub struct CalibrationProbe {
 pub struct FinishCalibration {
     pub min_occurrences: i64,
 }
+
+/// Ask for the build identity shown in the app's About view. Sent when that
+/// sheet opens; the reply is a single [`BuildInfo`].
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetBuildInfo {}
+
+/// What the app is actually running: the `haqor-core` crate version, and the
+/// build stamp of the data it opened. `data_version` is empty while the app
+/// ships the four generation databases, which carry no `meta` table — Dart
+/// then falls back to the version sidecar written beside the assets.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct BuildInfo {
+    pub core_version: String,
+    pub data_version: String,
+}

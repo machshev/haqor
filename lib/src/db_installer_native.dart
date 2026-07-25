@@ -4,10 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'bindings/bindings.dart';
-
-/// Bump whenever the bundled databases change (tool/sync-dbs.sh) so installed
-/// copies on devices are replaced on the next app start.
-const _dbVersion = 22;
+import 'db_version.dart';
 
 const _dbFiles = ['bible.db', 'sedra.db', 'hebrew.db', 'lexicon.db'];
 
@@ -18,8 +15,9 @@ Future<void> initializeDatabases() async {
   final dbDir = Directory('${support.path}${Platform.pathSeparator}db');
   final marker = File('${dbDir.path}${Platform.pathSeparator}.version');
 
+  final bundled = await bundledDbVersion();
   final installed = await marker.exists() ? await marker.readAsString() : null;
-  if (installed != '$_dbVersion') {
+  if (installed != bundled) {
     await dbDir.create(recursive: true);
     for (final name in _dbFiles) {
       final data = await rootBundle.load('assets/db/$name');
@@ -31,7 +29,7 @@ Future<void> initializeDatabases() async {
         '${dbDir.path}${Platform.pathSeparator}$name',
       ).writeAsBytes(bytes, flush: true);
     }
-    await marker.writeAsString('$_dbVersion', flush: true);
+    await marker.writeAsString(bundled, flush: true);
   }
   SetDataDir(path: dbDir.path).sendSignalToRust(Uint8List(0));
 }
