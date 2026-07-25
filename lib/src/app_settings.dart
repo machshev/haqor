@@ -108,6 +108,7 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
   StreamSubscription<RustSignalPack<TutorGlossOverrideStats>>? _overrideSub;
   late AppReadingSettings _readingSettings;
   bool _adminMode = false;
+  bool _occurrenceVerseEnglishOnly = false;
   TutorGlossOverrideStats? _overrideStats;
   bool _optimizingOverrides = false;
   String? _overrideStatus;
@@ -118,6 +119,7 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
     super.initState();
     _readingSettings = widget.readingSettings;
     _loadAdminMode();
+    _loadOccurrenceVerseMode();
     _overrideStats = TutorGlossOverrideStats.latestRustSignal?.message;
     _overrideSub = TutorGlossOverrideStats.rustSignalStream.listen((pack) {
       if (!mounted) return;
@@ -154,6 +156,16 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
   Future<void> _setAdminMode(bool enabled) async {
     setState(() => _adminMode = enabled);
     await setAdminModeEnabled(enabled);
+  }
+
+  Future<void> _loadOccurrenceVerseMode() async {
+    final enabled = await occurrenceVerseEnglishOnlyEnabled();
+    if (mounted) setState(() => _occurrenceVerseEnglishOnly = enabled);
+  }
+
+  Future<void> _setOccurrenceVerseMode(bool enabled) async {
+    setState(() => _occurrenceVerseEnglishOnly = enabled);
+    await setOccurrenceVerseEnglishOnlyEnabled(enabled);
   }
 
   void _updateReadingSettings(AppReadingSettings settings) {
@@ -286,6 +298,16 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
                 onChanged: (value) => _updateReadingSettings(
                   _readingSettings.copyWith(highlightProperNames: value),
                 ),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('English-only occurrences'),
+                subtitle: const Text(
+                  'Show the English reader gloss instead of the Hebrew text '
+                  'in the word-info occurrences list.',
+                ),
+                value: _occurrenceVerseEnglishOnly,
+                onChanged: _setOccurrenceVerseMode,
               ),
               const SizedBox(height: 8),
               _SettingsDropdown<double>(

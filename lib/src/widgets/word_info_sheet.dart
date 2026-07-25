@@ -918,30 +918,34 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
           child: Row(
             children: [
-              Flexible(
-                child: ActionChip(
-                  avatar: const Icon(Icons.filter_list, size: 18),
-                  label: Text(
-                    filterSummary,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Cardo',
-                      fontFamilyFallback: ['Noto Serif Hebrew'],
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: ActionChip(
+                        avatar: const Icon(Icons.filter_list, size: 18),
+                        label: Text(
+                          filterSummary,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: 'Cardo',
+                            fontFamilyFallback: ['Noto Serif Hebrew'],
+                          ),
+                        ),
+                        onPressed: () =>
+                            _openHebrewFilterSheet(context, forms, counts),
+                      ),
                     ),
-                  ),
-                  onPressed: () =>
-                      _openHebrewFilterSheet(context, forms, counts),
+                    const SizedBox(width: 12),
+                    Text(
+                      '${verses.length} verse${verses.length == 1 ? '' : 's'}',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Text(
-                '${verses.length} verse${verses.length == 1 ? '' : 's'}',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const Spacer(),
-              const SizedBox(width: 8),
               IconButton(
                 tooltip: _occurrenceVerseEnglishOnly
                     ? 'Show Hebrew verse text'
@@ -952,7 +956,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                 },
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                alignment: Alignment.centerRight,
+                constraints: const BoxConstraints(minHeight: 40),
               ),
             ],
           ),
@@ -1016,24 +1021,24 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                       ),
                     ),
                     Flexible(
-                      child: ListView(
-                        shrinkWrap: true,
-                        children: [
-                          CheckboxListTile(
-                            dense: true,
-                            title: const Text('All forms'),
-                            value: showAll,
-                            onChanged: (_) => apply(() {
-                              _otForms = {};
-                            }),
-                          ),
-                          for (final form in forms)
-                            CheckboxListTile(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          // Pack the short form labels into as many columns as
+                          // the sheet width comfortably allows (~200px each).
+                          final columns = (constraints.maxWidth / 200)
+                              .floor()
+                              .clamp(1, 3);
+                          CheckboxListTile buildFormTile(String form) {
+                            return CheckboxListTile(
                               dense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
                               title: Text(
                                 '$form (${counts[form] ?? 0})',
                                 style: formStyle,
                                 textDirection: TextDirection.rtl,
+                                overflow: TextOverflow.ellipsis,
                               ),
                               value: selected.contains(form),
                               onChanged: (on) => apply(() {
@@ -1045,8 +1050,35 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                                 }
                                 _otForms = next;
                               }),
-                            ),
-                        ],
+                            );
+                          }
+
+                          return ListView(
+                            shrinkWrap: true,
+                            children: [
+                              CheckboxListTile(
+                                dense: true,
+                                title: const Text('All forms'),
+                                value: showAll,
+                                onChanged: (_) => apply(() {
+                                  _otForms = {};
+                                }),
+                              ),
+                              for (var i = 0; i < forms.length; i += columns)
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    for (var j = i; j < i + columns; j++)
+                                      Expanded(
+                                        child: j < forms.length
+                                            ? buildFormTile(forms[j])
+                                            : const SizedBox.shrink(),
+                                      ),
+                                  ],
+                                ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -1156,30 +1188,34 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
           child: Row(
             children: [
-              Flexible(
-                child: ActionChip(
-                  avatar: const Icon(Icons.filter_list, size: 18),
-                  label: Text(
-                    filterSummary,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Cardo',
-                      fontFamilyFallback: ['Noto Serif Hebrew'],
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: ActionChip(
+                        avatar: const Icon(Icons.filter_list, size: 18),
+                        label: Text(
+                          filterSummary,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: 'Cardo',
+                            fontFamilyFallback: ['Noto Serif Hebrew'],
+                          ),
+                        ),
+                        onPressed: () =>
+                            _openLexemeFilterSheet(context, info, occ, counts),
+                      ),
                     ),
-                  ),
-                  onPressed: () =>
-                      _openLexemeFilterSheet(context, info, occ, counts),
+                    const SizedBox(width: 12),
+                    Text(
+                      '${verses.length} verse${verses.length == 1 ? '' : 's'}',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Text(
-                '${verses.length} verse${verses.length == 1 ? '' : 's'}',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const Spacer(),
-              const SizedBox(width: 8),
               IconButton(
                 tooltip: _occurrenceVerseEnglishOnly
                     ? 'Show Hebrew verse text'
@@ -1190,7 +1226,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                 },
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                alignment: Alignment.centerRight,
+                constraints: const BoxConstraints(minHeight: 40),
               ),
             ],
           ),
@@ -1257,34 +1294,23 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                       ),
                     ),
                     Flexible(
-                      child: ListView(
-                        shrinkWrap: true,
-                        children: [
-                          CheckboxListTile(
-                            dense: true,
-                            title: const Text('All lexemes'),
-                            value: showAll,
-                            onChanged: (_) => apply(() {
-                              _selectedLexemes = {};
-                            }),
-                          ),
-                          if (occ.otOccurrences.isNotEmpty)
-                            CheckboxListTile(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          // Pack the short lexeme labels into as many columns as
+                          // the sheet width comfortably allows (~200px each).
+                          final columns = (constraints.maxWidth / 200)
+                              .floor()
+                              .clamp(1, 3);
+                          CheckboxListTile buildLexemeTile(int i) {
+                            return CheckboxListTile(
                               dense: true,
-                              title: Text(
-                                'Old Testament (${occ.otOccurrences.length})',
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
                               ),
-                              value: _otSelected,
-                              onChanged: (on) => apply(() {
-                                _otSelected = on ?? false;
-                              }),
-                            ),
-                          for (var i = 0; i < info.sedraEntries.length; i++)
-                            CheckboxListTile(
-                              dense: true,
                               title: Text(
                                 '${info.sedraEntries[i].lexeme} (${counts[i] ?? 0})',
                                 style: lexStyle,
+                                overflow: TextOverflow.ellipsis,
                               ),
                               value: selected.contains(i),
                               onChanged: (on) => apply(() {
@@ -1296,8 +1322,50 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                                 }
                                 _selectedLexemes = next;
                               }),
-                            ),
-                        ],
+                            );
+                          }
+
+                          return ListView(
+                            shrinkWrap: true,
+                            children: [
+                              CheckboxListTile(
+                                dense: true,
+                                title: const Text('All lexemes'),
+                                value: showAll,
+                                onChanged: (_) => apply(() {
+                                  _selectedLexemes = {};
+                                }),
+                              ),
+                              if (occ.otOccurrences.isNotEmpty)
+                                CheckboxListTile(
+                                  dense: true,
+                                  title: Text(
+                                    'Old Testament (${occ.otOccurrences.length})',
+                                  ),
+                                  value: _otSelected,
+                                  onChanged: (on) => apply(() {
+                                    _otSelected = on ?? false;
+                                  }),
+                                ),
+                              for (
+                                var i = 0;
+                                i < info.sedraEntries.length;
+                                i += columns
+                              )
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    for (var j = i; j < i + columns; j++)
+                                      Expanded(
+                                        child: j < info.sedraEntries.length
+                                            ? buildLexemeTile(j)
+                                            : const SizedBox.shrink(),
+                                      ),
+                                  ],
+                                ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -1377,37 +1445,41 @@ class _VerseModeIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final activeColor = theme.colorScheme.primary;
-    final inactiveColor = theme.colorScheme.onSurfaceVariant;
-    final hebrewStyle = TextStyle(
-      fontSize: 13,
-      height: 1.0,
-      color: englishOnly ? inactiveColor : activeColor,
-      fontFamily: 'Cardo',
-      fontFamilyFallback: const ['Noto Serif Hebrew'],
-    );
-    final latinStyle = TextStyle(
-      fontSize: 11,
-      height: 1.0,
-      fontWeight: FontWeight.w600,
-      letterSpacing: -0.2,
-      color: englishOnly ? activeColor : inactiveColor,
-    );
-    return SizedBox(
-      width: 34,
-      height: 20,
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(text: 'א', style: hebrewStyle),
-              TextSpan(text: '/Abc', style: latinStyle),
-            ],
-          ),
-          maxLines: 1,
-          softWrap: false,
+
+    Widget segment(String label, bool active, String fontFamily) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: active ? theme.colorScheme.primary : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          height: 1.0,
+          fontWeight: FontWeight.w600,
+          fontFamily: fontFamily,
+          fontFamilyFallback: const ['Noto Serif Hebrew'],
+          color: active
+              ? theme.colorScheme.onPrimary
+              : theme.colorScheme.onSurfaceVariant,
         ),
+      ),
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(1.5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          segment('א', !englishOnly, 'Cardo'),
+          const SizedBox(width: 1),
+          segment('EN', englishOnly, 'Cardo'),
+        ],
       ),
     );
   }
@@ -1515,8 +1587,10 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
               SizedBox(
                 height: 20,
                 child: Align(
-                  alignment: Alignment.centerRight,
-                  child: SizedBox(
+                  alignment: widget.englishOnly
+                      ? Alignment.centerLeft
+                      : Alignment.centerRight,
+                  child: const SizedBox(
                     width: 14,
                     height: 14,
                     child: CircularProgressIndicator(strokeWidth: 1.5),
@@ -1544,6 +1618,7 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
       fontFamily: 'Cardo',
       fontFamilyFallback: const ['Noto Serif Hebrew'],
       fontSize: 12,
+      fontWeight: FontWeight.bold,
       color: theme.colorScheme.primary,
     );
     final strippedTargets = widget.highlightWords.map(_stripTrope).toSet();
@@ -1571,7 +1646,9 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
     spans.insert(0, TextSpan(text: '${_compactRef()}  ', style: refStyle));
     return SelectableText.rich(
       TextSpan(children: spans),
-      textDirection: TextDirection.rtl,
+      textDirection: widget.englishOnly
+          ? TextDirection.ltr
+          : TextDirection.rtl,
       // SelectableText swallows taps, so the wrapping InkWell never sees them;
       // forward single taps to keep click-to-navigate working.
       onTap: widget.onTap,
