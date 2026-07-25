@@ -383,12 +383,25 @@ pub async fn get_verse_text(bible: SharedBible) {
     while let Some(signal_pack) = receiver.recv().await {
         let verse_ref = signal_pack.message;
         debug_print!("{:?}", verse_ref);
-        match lock(&bible).get(verse_ref.book, verse_ref.chapter, verse_ref.verse) {
+        let bible = lock(&bible);
+        let result = if verse_ref.english_only {
+            bible
+                .verse_glosses(verse_ref.book, verse_ref.chapter, verse_ref.verse)
+                .map(|glosses| glosses.join(" "))
+        } else {
+            bible.get(verse_ref.book, verse_ref.chapter, verse_ref.verse)
+        };
+        match result {
             Ok(text) => VerseText {
                 book: verse_ref.book,
                 chapter: verse_ref.chapter,
                 verse: verse_ref.verse,
-                translit: haqor_core::romanize::romanize(&text),
+                english_only: verse_ref.english_only,
+                translit: if verse_ref.english_only {
+                    String::new()
+                } else {
+                    haqor_core::romanize::romanize(&text)
+                },
                 text,
             }
             .send_signal_to_dart(),

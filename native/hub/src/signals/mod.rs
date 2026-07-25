@@ -104,6 +104,8 @@ pub struct GetVerseText {
     pub book: u8,
     pub chapter: u8,
     pub verse: u8,
+    /// When true, return the reader gloss text instead of the Hebrew verse.
+    pub english_only: bool,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
@@ -111,6 +113,8 @@ pub struct VerseText {
     pub book: u8,
     pub chapter: u8,
     pub verse: u8,
+    /// Mirrors the request mode so broadcast listeners can ignore mismatches.
+    pub english_only: bool,
     pub text: String,
     /// The verse's voiced reading (learner romanization, cantillation ignored).
     pub translit: String,

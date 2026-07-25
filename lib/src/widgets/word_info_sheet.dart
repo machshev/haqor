@@ -126,6 +126,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   // NT-only: when true the occurrences list shows OT (Hebrew Bible) verses of
   // the same consonantal root instead of the SEDRA-based NT occurrences.
   bool _otSelected = false;
+  // Shared across both occurrences tabs: false shows Hebrew verse text, true
+  // shows the aligned English reader glosses instead.
+  bool _occurrenceVerseEnglishOnly = false;
   // Occurrence lists are fetched lazily (full-text root scans) the first time
   // the Occurrences tab is opened, so the sheet pops up on the lexicon data
   // alone. Null until that fetch completes.
@@ -139,6 +142,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     _tabController = TabController(length: 2, vsync: this);
     _requestInfo();
     _loadAdminMode();
+    _loadOccurrenceVerseMode();
   }
 
   void _requestInfo() {
@@ -186,6 +190,16 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   Future<void> _loadAdminMode() async {
     final enabled = await adminModeEnabled();
     if (mounted) setState(() => _adminMode = enabled);
+  }
+
+  Future<void> _loadOccurrenceVerseMode() async {
+    final enabled = await occurrenceVerseEnglishOnlyEnabled();
+    if (mounted) setState(() => _occurrenceVerseEnglishOnly = enabled);
+  }
+
+  Future<void> _setOccurrenceVerseMode(bool enabled) async {
+    setState(() => _occurrenceVerseEnglishOnly = enabled);
+    await setOccurrenceVerseEnglishOnlyEnabled(enabled);
   }
 
   Future<void> _openLexiconEditor(WordInfo info) async {
@@ -926,6 +940,20 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+              const Spacer(),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: _occurrenceVerseEnglishOnly
+                    ? 'Show Hebrew verse text'
+                    : 'Show English-only verse text',
+                icon: _VerseModeIcon(englishOnly: _occurrenceVerseEnglishOnly),
+                onPressed: () {
+                  _setOccurrenceVerseMode(!_occurrenceVerseEnglishOnly);
+                },
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              ),
             ],
           ),
         ),
@@ -1150,6 +1178,20 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+              const Spacer(),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: _occurrenceVerseEnglishOnly
+                    ? 'Show Hebrew verse text'
+                    : 'Show English-only verse text',
+                icon: _VerseModeIcon(englishOnly: _occurrenceVerseEnglishOnly),
+                onPressed: () {
+                  _setOccurrenceVerseMode(!_occurrenceVerseEnglishOnly);
+                },
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              ),
             ],
           ),
         ),
@@ -1284,6 +1326,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         chapter: v.chapter,
         verse: v.verse,
         highlightWords: v.words,
+        englishOnly: _occurrenceVerseEnglishOnly,
         useEnglishBookNames: widget.useEnglishBookNames,
         onTap: widget.onNavigateToPassage == null
             ? null
@@ -1326,6 +1369,50 @@ class _VerseOccurrence {
   final List<String> words;
 }
 
+class _VerseModeIcon extends StatelessWidget {
+  const _VerseModeIcon({required this.englishOnly});
+
+  final bool englishOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final activeColor = theme.colorScheme.primary;
+    final inactiveColor = theme.colorScheme.onSurfaceVariant;
+    final hebrewStyle = TextStyle(
+      fontSize: 13,
+      height: 1.0,
+      color: englishOnly ? inactiveColor : activeColor,
+      fontFamily: 'Cardo',
+      fontFamilyFallback: const ['Noto Serif Hebrew'],
+    );
+    final latinStyle = TextStyle(
+      fontSize: 11,
+      height: 1.0,
+      fontWeight: FontWeight.w600,
+      letterSpacing: -0.2,
+      color: englishOnly ? activeColor : inactiveColor,
+    );
+    return SizedBox(
+      width: 34,
+      height: 20,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(text: 'א', style: hebrewStyle),
+              TextSpan(text: '/Abc', style: latinStyle),
+            ],
+          ),
+          maxLines: 1,
+          softWrap: false,
+        ),
+      ),
+    );
+  }
+}
+
 class _OccurrenceRow extends StatefulWidget {
   const _OccurrenceRow({
     super.key,
@@ -1334,6 +1421,7 @@ class _OccurrenceRow extends StatefulWidget {
     required this.chapter,
     required this.verse,
     required this.highlightWords,
+    required this.englishOnly,
     required this.useEnglishBookNames,
     this.onTap,
   });
@@ -1343,6 +1431,7 @@ class _OccurrenceRow extends StatefulWidget {
   final int chapter;
   final int verse;
   final List<String> highlightWords;
+  final bool englishOnly;
   final bool useEnglishBookNames;
   final VoidCallback? onTap;
 
@@ -1367,7 +1456,8 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
     // cached text and fetch again rather than rendering the previous verse.
     if (old.bookIndex != widget.bookIndex ||
         old.chapter != widget.chapter ||
-        old.verse != widget.verse) {
+        old.verse != widget.verse ||
+        old.englishOnly != widget.englishOnly) {
       _sub?.cancel();
       _text = null;
       _fetch();
@@ -1381,7 +1471,8 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
       if (mounted &&
           msg.book == targetBook &&
           msg.chapter == widget.chapter &&
-          msg.verse == widget.verse) {
+          msg.verse == widget.verse &&
+          msg.englishOnly == widget.englishOnly) {
         setState(() => _text = msg.text);
         _sub?.cancel();
       }
@@ -1390,6 +1481,7 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
       book: targetBook,
       chapter: widget.chapter,
       verse: widget.verse,
+      englishOnly: widget.englishOnly,
     ).sendSignalToRust();
   }
 
@@ -1936,7 +2028,8 @@ class _BibleRefPreviewDialogState extends State<_BibleRefPreviewDialog> {
       if (mounted &&
           msg.book == targetBook &&
           msg.chapter == widget.chapter &&
-          msg.verse == widget.verse) {
+          msg.verse == widget.verse &&
+          !msg.englishOnly) {
         setState(() => _verseText = msg.text);
         _sub?.cancel();
       }
@@ -1945,6 +2038,7 @@ class _BibleRefPreviewDialogState extends State<_BibleRefPreviewDialog> {
       book: targetBook,
       chapter: widget.chapter,
       verse: widget.verse,
+      englishOnly: false,
     ).sendSignalToRust();
   }
 

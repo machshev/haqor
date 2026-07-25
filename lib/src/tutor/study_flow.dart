@@ -2060,7 +2060,10 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
     _sub = VerseText.rustSignalStream.listen((pack) {
       final m = pack.message;
       if (!mounted) return;
-      if (m.book == _book && m.chapter == _chapter && m.verse == _verse) {
+      if (m.book == _book &&
+          m.chapter == _chapter &&
+          m.verse == _verse &&
+          !m.englishOnly) {
         setState(() {
           _text = m.text;
           _translit = m.translit;
@@ -2086,7 +2089,12 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
       _readOk = null;
       _misread.clear();
     });
-    GetVerseText(book: book, chapter: chapter, verse: verse).sendSignalToRust();
+    GetVerseText(
+      book: book,
+      chapter: chapter,
+      verse: verse,
+      englishOnly: false,
+    ).sendSignalToRust();
   }
 
   void _finish() {

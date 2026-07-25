@@ -8,12 +8,25 @@ import 'bindings/bindings.dart';
 import 'tutor/progress_sync.dart';
 
 const _adminModeKey = 'tutor_admin_mode';
+const _occurrenceVerseEnglishOnlyKey = 'occurrence_verse_english_only';
 
 Future<bool> adminModeEnabled() async =>
     (await SharedPreferences.getInstance()).getBool(_adminModeKey) ?? false;
 
 Future<void> setAdminModeEnabled(bool enabled) async =>
     (await SharedPreferences.getInstance()).setBool(_adminModeKey, enabled);
+
+Future<bool> occurrenceVerseEnglishOnlyEnabled() async =>
+    (await SharedPreferences.getInstance()).getBool(
+      _occurrenceVerseEnglishOnlyKey,
+    ) ??
+    false;
+
+Future<void> setOccurrenceVerseEnglishOnlyEnabled(bool enabled) async =>
+    (await SharedPreferences.getInstance()).setBool(
+      _occurrenceVerseEnglishOnlyKey,
+      enabled,
+    );
 
 class AppReadingSettings {
   const AppReadingSettings({
@@ -244,7 +257,9 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Morphology interlinear'),
-                subtitle: const Text('Show compact morphology beneath each Hebrew word.'),
+                subtitle: const Text(
+                  'Show compact morphology beneath each Hebrew word.',
+                ),
                 value: _readingSettings.morphologyInterlinear,
                 onChanged: (value) => _updateReadingSettings(
                   _readingSettings.copyWith(morphologyInterlinear: value),
