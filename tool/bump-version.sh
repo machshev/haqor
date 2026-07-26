@@ -46,6 +46,9 @@ fi
 
 root="$(git rev-parse --show-toplevel)"
 manifest="$root/pubspec.yaml"
+# The About view shows a compile-time constant rather than reading the bundle,
+# so the manifest is not the only place the version is written down.
+app_info="$root/lib/src/app_info.dart"
 
 if [ "$do_tag" -eq 1 ] && { ! git -C "$root" diff --quiet || ! git -C "$root" diff --cached --quiet; }; then
     echo "refusing to tag with uncommitted changes; commit them first" >&2
@@ -105,10 +108,18 @@ if [ "$do_tag" -eq 1 ] && [ "$force_tag" -ne 1 ] && git -C "$root" rev-parse -q 
 fi
 
 sed -i -E "0,/^version:[[:space:]]*/s|^version:.*|version: $new|" "$manifest"
+
+# `test/app_info_test.dart` fails when the constant and the manifest disagree.
+# Left to a releaser to remember, that is a failure found after the tag is cut.
+sed -i -E "s|^const appVersion = '[^']*';|const appVersion = '$new';|" "$app_info"
+grep -q "const appVersion = '$new';" "$app_info" || {
+    echo "failed to update appVersion in $app_info" >&2
+    exit 1
+}
 echo "bumped $current -> $new"
 
 if [ "$do_tag" -eq 1 ]; then
-    git -C "$root" add -- pubspec.yaml
+    git -C "$root" add -- pubspec.yaml lib/src/app_info.dart
     git -C "$root" commit -m "chore: release v$next"
     create_tag
     echo "committed and tagged v$next (not pushed)"
