@@ -293,6 +293,33 @@ void main() {
     );
   });
 
+  testWidgets('the tab opens unfiltered, on every form of the root', (
+    tester,
+  ) async {
+    // The looked-up word is only one of the root's forms; the others are the
+    // reason to open the list at all.
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1),
+      _occurrence(book: 1, chapter: 2, verse: 1, surface: 'וַיִּבְרָא'),
+    ]);
+    expect(find.text('All occurrences'), findsOneWidget);
+    expect(find.text('2 verses'), findsOneWidget);
+  });
+
+  testWidgets('the filter sheet offers parse before form', (tester) async {
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1),
+    ]);
+    await tester.tap(find.byType(ActionChip));
+    await tester.pumpAndSettle();
+
+    final tabs = tester.widget<TabBar>(find.byType(TabBar).last);
+    expect([for (final tab in tabs.tabs) (tab as Tab).text], ['Parse', 'Form']);
+    // And the parse list is the one on screen, not the form list.
+    expect(find.text('All parses'), findsOneWidget);
+    expect(find.text('All forms'), findsNothing);
+  });
+
   testWidgets('filtering by parse narrows the list', (tester) async {
     final rust = await _pumpOccurrences(tester, [
       _occurrence(book: 1, chapter: 1, verse: 1, parse: 'Qal perfect 3ms'),
@@ -305,15 +332,12 @@ void main() {
         parse: 'Qal imperfect 3ms',
       ),
     ]);
-    // The form filter defaults to the looked-up word, so only its two verses
-    // show; clearing it shows all three.
-    expect(find.text('2 verses'), findsOneWidget);
+    // Unfiltered to begin with: every form of the root, all three verses.
+    expect(find.text('All occurrences'), findsOneWidget);
+    expect(find.text('3 verses'), findsOneWidget);
 
+    // Parse is the sheet's first tab, so the list is already showing.
     await tester.tap(find.byType(ActionChip));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('All forms'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Parse'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Qal imperfect 3ms'));
     await tester.pumpAndSettle();

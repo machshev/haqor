@@ -128,9 +128,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   late final TabController _tabController;
   bool _adminMode = false;
   // OT-only: which surface forms of the root are shown in the occurrences list.
-  // Null until first built, then defaults to the looked-up word's form. Empty
-  // set means "show all forms".
-  Set<String>? _otForms;
+  // Empty means "every form", which is where the tab starts: a root's other
+  // inflections are the reason to open the list, so narrowing to the one word
+  // that was tapped is the wrong first answer.
+  final Set<String> _otForms = {};
   // OT-only: which parse labels are shown. Empty means "every parse".
   final Set<String> _otParses = {};
   // OT-only: restrict the list to one book (1-based, matching the occurrence
@@ -876,15 +877,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
 
     final all = occ.hebrewOccurrences;
 
-    // Lazily default the form filter to the looked-up word's own form.
-    if (_otForms == null) {
-      final key = _surfaceKey(widget.word);
-      final match = all
-          .map((o) => o.surface)
-          .firstWhere((s) => _surfaceKey(s) == key, orElse: () => '');
-      _otForms = match.isEmpty ? {} : {match};
-    }
-    final forms = _otForms!;
+    final forms = _otForms;
     final parses = _otParses;
 
     bool passesForm(HebrewOccurrence o) =>
@@ -1032,18 +1025,20 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   static String _parseLabel(HebrewOccurrence o) =>
       o.parse.isEmpty ? 'unparsed' : o.parse;
 
+  /// The active filter, in the order the sheet's tabs offer it. Nothing selected
+  /// is the tab's starting state, and covers both dimensions at once.
   String _hebrewFilterSummary(Set<String> forms, Set<String> parses) {
     final parts = [
-      if (forms.length == 1)
-        forms.first
-      else if (forms.length > 1)
-        '${forms.length} forms',
       if (parses.length == 1)
         parses.first
       else if (parses.length > 1)
         '${parses.length} parses',
+      if (forms.length == 1)
+        forms.first
+      else if (forms.length > 1)
+        '${forms.length} forms',
     ];
-    return parts.isEmpty ? 'All forms' : parts.join(' · ');
+    return parts.isEmpty ? 'All occurrences' : parts.join(' · ');
   }
 
   /// Verses *and* tokens: a root can stand twice in one verse, and a reader
@@ -1091,10 +1086,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       builder: (sheetContext) => _OccurrenceFilterSheet(
         occurrences: occurrences,
         parseLabel: _parseLabel,
-        selectedForms: _otForms ?? {},
+        selectedForms: _otForms,
         selectedParses: _otParses,
         onChanged: (forms, parses) => setState(() {
-          _otForms = forms;
+          _otForms
+            ..clear()
+            ..addAll(forms);
           _otParses
             ..clear()
             ..addAll(parses);
@@ -1944,14 +1941,17 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
             ),
             TabBar(
               controller: _tabs,
+              // Parse first: a root's dozen stem/tense buckets are what a reader
+              // wants to slice by, where its inflected forms can run to
+              // hundreds and mostly say the same thing.
               tabs: [
                 Tab(
                   height: 36,
-                  text: _forms.isEmpty ? 'Form' : 'Form (${_forms.length})',
+                  text: _parses.isEmpty ? 'Parse' : 'Parse (${_parses.length})',
                 ),
                 Tab(
                   height: 36,
-                  text: _parses.isEmpty ? 'Parse' : 'Parse (${_parses.length})',
+                  text: _forms.isEmpty ? 'Form' : 'Form (${_forms.length})',
                 ),
               ],
             ),
@@ -1980,18 +1980,6 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
                 controller: _tabs,
                 children: [
                   _list(
-                    counts: formCounts,
-                    selected: _forms,
-                    allLabel: 'All forms',
-                    hebrew: true,
-                    onToggle: (key, on) => _apply(() {
-                      final next = {..._forms};
-                      on ? next.add(key) : next.remove(key);
-                      _forms = next;
-                    }),
-                    onAll: () => _apply(() => _forms = {}),
-                  ),
-                  _list(
                     counts: parseCounts,
                     selected: _parses,
                     allLabel: 'All parses',
@@ -2002,6 +1990,18 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
                       _parses = next;
                     }),
                     onAll: () => _apply(() => _parses = {}),
+                  ),
+                  _list(
+                    counts: formCounts,
+                    selected: _forms,
+                    allLabel: 'All forms',
+                    hebrew: true,
+                    onToggle: (key, on) => _apply(() {
+                      final next = {..._forms};
+                      on ? next.add(key) : next.remove(key);
+                      _forms = next;
+                    }),
+                    onAll: () => _apply(() => _forms = {}),
                   ),
                 ],
               ),
