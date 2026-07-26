@@ -18,11 +18,10 @@ class ChristadelphianReading {
 }
 
 List<ChristadelphianReading> christadelphianReadingsFor(DateTime date) {
-  final index = DateTime(
-    date.year,
-    date.month,
-    date.day,
-  ).difference(DateTime(date.year, 1, 1)).inDays;
+  // UTC keeps daylight-saving transitions from shortening or lengthening the
+  // elapsed duration between local calendar dates.
+  final calendarDate = DateTime.utc(date.year, date.month, date.day);
+  final index = calendarDate.difference(DateTime.utc(date.year, 1, 1)).inDays;
   // The Companion has no February 29 entry; leap day uses February 28.
   final day = date.month == 2 && date.day == 29
       ? 58
