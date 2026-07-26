@@ -47,6 +47,7 @@ class _FakeRust {
         state: null,
         tense: 'Perfect',
         form: 'Qal',
+        roots: [RootChoice(root: root, gloss: 'create', isPrimary: true)],
       ).bincodeSerialize(),
       Uint8List(0),
     );

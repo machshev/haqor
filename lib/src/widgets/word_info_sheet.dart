@@ -127,6 +127,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   final Set<int> _expandedBdb = {};
   late final TabController _tabController;
   bool _adminMode = false;
+  // OT-only: which of the word's roots the Lexicon and Occurrences tabs show.
+  // Null means the root the parse resolved to, which is what Rust answers with
+  // when the request names none. A compound name is built from two roots
+  // (אֱלִיעֶזֶר from אל "god" and עזר "help") and belongs to both lists, so which
+  // of them to read it under is the reader's to choose.
+  String? _selectedRoot;
   // OT-only: which surface forms of the root are shown in the occurrences list.
   // Empty means "every form", which is where the tab starts: a root's other
   // inflections are the reason to open the list, so narrowing to the one word
@@ -194,6 +200,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       chapter: widget.chapter,
       verse: widget.verse,
       position: widget.position,
+      root: _selectedRoot,
     );
     final send = widget.sendInfoRequest;
     if (send == null) {
@@ -217,6 +224,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     final request = GetWordOccurrences(
       word: widget.word,
       syriac: widget.syriac,
+      root: _selectedRoot,
     );
     final send = widget.sendOccurrencesRequest;
     if (send == null) {
@@ -224,6 +232,35 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     } else {
       send(request);
     }
+  }
+
+  // Read the word under another of its roots. Both tabs are re-fetched, since
+  // both answer per root: the Lexicon shows that root's lexeme tree and the
+  // Occurrences its concordance. The occurrence filters go with them — a stem or
+  // parse chosen among עזר's forms means nothing among אלה's.
+  void _selectRoot(String root) {
+    if ((_selectedRoot ?? _primaryRoot()) == root) return;
+    setState(() {
+      _selectedRoot = root;
+      _otForms.clear();
+      _otParse.clear();
+      _otBook = null;
+      _expandedBdb.clear();
+      _occ = null;
+      _occRequested = false;
+    });
+    _occSub?.cancel();
+    _requestInfo();
+    _fetchOccurrences();
+  }
+
+  /// The root the parse resolved to, which the sheet opens on.
+  String? _primaryRoot() {
+    final roots = _info?.roots ?? const <RootChoice>[];
+    for (final option in roots) {
+      if (option.isPrimary) return option.root;
+    }
+    return roots.isEmpty ? null : roots.first.root;
   }
 
   Future<void> _loadAdminMode() async {
@@ -248,7 +285,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       isScrollControlled: true,
       builder: (_) => _LexiconEntryOverrideEditor(
         surface: info.word,
-        root: info.root,
+        // The override records what this surface resolves to, which is the
+        // parse's root — not whichever of a name's roots is being browsed.
+        root: _primaryRoot() ?? info.root,
         gloss: info.gloss,
         readerGloss: widget.readerGloss,
       ),
@@ -553,7 +592,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                         ),
                         textDirection: TextDirection.rtl,
                       ),
-                      if (info.root.isNotEmpty)
+                      if (info.roots.length > 1)
+                        _rootSelector(context, info)
+                      else if (info.root.isNotEmpty)
                         Text(
                           info.root,
                           style: TextStyle(
@@ -1464,6 +1505,59 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           ),
         ),
         SliverToBoxAdapter(child: SizedBox(height: 8 + bottomPad)),
+      ],
+    );
+  }
+
+  /// The root line, when the word has more than one root to be read under.
+  ///
+  /// A compound name belongs to each of its elements — אֱלִיעֶזֶר is אל "god" and
+  /// עזר "help" — and BDB could only print it under the first. Tapping a root
+  /// moves both tabs to it: its lexeme tree, and its concordance with the name
+  /// standing among the other words built from it.
+  Widget _rootSelector(BuildContext context, WordInfo info) {
+    final theme = Theme.of(context);
+    final selected = _selectedRoot ?? _primaryRoot();
+    return Wrap(
+      alignment: WrapAlignment.end,
+      spacing: 4,
+      children: [
+        for (final option in info.roots)
+          Tooltip(
+            message: option.gloss.isEmpty
+                ? 'Read ${option.root} as this word’s root'
+                : '${option.root} — ${option.gloss}',
+            child: InkWell(
+              onTap: () => _selectRoot(option.root),
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: option.root == selected
+                      ? theme.colorScheme.secondaryContainer
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: option.root == selected
+                        ? theme.colorScheme.secondaryContainer
+                        : theme.colorScheme.outlineVariant,
+                  ),
+                ),
+                child: Text(
+                  option.root,
+                  style: TextStyle(
+                    fontFamily: 'Noto Serif Hebrew',
+                    fontFamilyFallback: const ['Cardo'],
+                    fontSize: 13,
+                    color: option.root == selected
+                        ? theme.colorScheme.onSecondaryContainer
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  textDirection: TextDirection.rtl,
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }

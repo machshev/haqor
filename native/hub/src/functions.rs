@@ -6,7 +6,7 @@ use crate::signals::{
     GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts,
     GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence,
     IssueReportStatus, KetivEntry, LexiconEntryOverrideStatus, OccurrenceParse, OnboardingStatus,
-    OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, SaveIssueReport,
+    OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, RootChoice, SaveIssueReport,
     SaveLexiconEntryOverride, SaveTutorGloss, SedraOccurrence, SedraSummary, SeenConcept,
     SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, SuffixCard,
     SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard,
@@ -683,6 +683,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         state: None,
                         tense: None,
                         form: None,
+                        roots: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -707,6 +708,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         state: None,
                         tense: None,
                         form: None,
+                        roots: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -753,6 +755,9 @@ pub async fn get_word_info(bible: SharedBible) {
                         state: first.state.clone(),
                         tense: first.tense.clone(),
                         form: first.form.clone(),
+                        // NT words reach their root through SEDRA, which files
+                        // each lexeme under exactly one.
+                        roots: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -777,6 +782,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         state: None,
                         tense: None,
                         form: None,
+                        roots: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -795,16 +801,38 @@ pub async fn get_word_info(bible: SharedBible) {
             };
             match contextual {
                 Some(info) => {
+                    // Every root the word can be read under, the resolved one
+                    // first. A compound name has one per element, and which of
+                    // them the reader wants is theirs to say — so the sheet is
+                    // sent the list, and may ask for another one's lexicon.
+                    let roots = bible
+                        .hebrew_root_options(&info.word, &info.root)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|o| RootChoice {
+                            root: o.root,
+                            gloss: o.gloss,
+                            is_primary: o.is_primary,
+                        })
+                        .collect::<Vec<_>>();
+                    // The selection only redirects the lexicon; the morphology
+                    // below still describes the token that was tapped.
+                    let selected = req
+                        .root
+                        .as_deref()
+                        .filter(|root| roots.iter().any(|o| o.root == *root))
+                        .unwrap_or(&info.root)
+                        .to_string();
                     // Match core's lexicon-coverage lookup: rooted words use
                     // the root tree, while rootless function words are looked
                     // up by their surface form and prefix.
-                    let bdb_entries = (if info.root.is_empty() {
+                    let bdb_entries = (if selected.is_empty() {
                         bible.hebrew_bdb_for_surface(
                             &info.word,
                             info.prefix.as_deref().unwrap_or(""),
                         )
                     } else {
-                        bible.hebrew_bdb_by_root(&info.root)
+                        bible.hebrew_bdb_by_root(&selected)
                     })
                     .unwrap_or_default()
                     .into_iter()
@@ -823,7 +851,7 @@ pub async fn get_word_info(bible: SharedBible) {
                     WordInfo {
                         found: true,
                         word: info.word,
-                        root: info.root,
+                        root: selected,
                         gloss,
                         part_of_speech: info.part_of_speech,
                         gender: info.gender,
@@ -839,6 +867,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         state: info.state,
                         tense: info.tense,
                         form: info.form,
+                        roots,
                     }
                     .send_signal_to_dart();
                 }
@@ -863,6 +892,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         state: None,
                         tense: None,
                         form: None,
+                        roots: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -914,26 +944,35 @@ pub async fn get_word_occurrences(bible: SharedBible) {
             }
         } else {
             match bible.hebrew_word_info(&req.word) {
-                Some(info) => WordOccurrences {
-                    found: true,
-                    occurrences: to_signal_occurrences(
-                        bible
-                            .hebrew_surface_occurrences(&req.word)
-                            .unwrap_or_default(),
-                    ),
-                    // The detailed scan below already names every verse of the
-                    // root, so scanning the corpus a second time for the verse
-                    // list would be paying twice for one answer.
-                    root_occurrences: Vec::new(),
-                    sedra_occurrences: Vec::new(),
-                    ot_occurrences: Vec::new(),
-                    hebrew_occurrences: to_signal_hebrew_occurrences(
-                        bible
-                            .hebrew_root_occurrences_detailed(&info.root)
-                            .unwrap_or_default(),
-                    ),
+                Some(info) => {
+                    // A compound name belongs to each of its roots, and the
+                    // sheet says which one the reader is reading it under.
+                    let root = req
+                        .root
+                        .as_deref()
+                        .filter(|root| !root.is_empty())
+                        .unwrap_or(&info.root);
+                    WordOccurrences {
+                        found: true,
+                        occurrences: to_signal_occurrences(
+                            bible
+                                .hebrew_surface_occurrences(&req.word)
+                                .unwrap_or_default(),
+                        ),
+                        // The detailed scan below already names every verse of
+                        // the root, so scanning the corpus a second time for the
+                        // verse list would be paying twice for one answer.
+                        root_occurrences: Vec::new(),
+                        sedra_occurrences: Vec::new(),
+                        ot_occurrences: Vec::new(),
+                        hebrew_occurrences: to_signal_hebrew_occurrences(
+                            bible
+                                .hebrew_root_occurrences_detailed(root)
+                                .unwrap_or_default(),
+                        ),
+                    }
+                    .send_signal_to_dart()
                 }
-                .send_signal_to_dart(),
                 // Even a word the parse engine can't analyse is still a
                 // surface form of the text — return its own occurrences so
                 // the word-info sheet has something useful to show.

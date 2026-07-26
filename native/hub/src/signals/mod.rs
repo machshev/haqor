@@ -237,6 +237,11 @@ pub struct GetWordInfo {
     /// used to follow a Lexicon cross-reference to its target's root tree.
     /// `word` then carries only the target headword, for the sheet title.
     pub bdb_id: Option<String>,
+    /// Which of the word's roots to show the lexicon of. `None` takes the one the
+    /// parse resolved to; the sheet sets it when the reader picks another of a
+    /// compound name's roots (אֱלִיעֶזֶר read under עזר rather than אלה).
+    /// Morphology is unaffected — it is the same token either way.
+    pub root: Option<String>,
 }
 
 /// Lazy companion to [`GetWordInfo`]: requests only the occurrence lists, which
@@ -246,6 +251,10 @@ pub struct GetWordInfo {
 pub struct GetWordOccurrences {
     pub word: String,
     pub syriac: bool,
+    /// Which root to list occurrences of, as in [`GetWordInfo::root`]. The
+    /// surface's own occurrences are the same list either way; the root scan is
+    /// what changes.
+    pub root: Option<String>,
 }
 
 /// Request a page of the frequency-ordered learner vocabulary (tutor mode):
@@ -350,10 +359,24 @@ pub struct OccurrenceParse {
     pub state: String,
 }
 
+/// One root a word can be read under, for the sheet's root selector. A compound
+/// name has one per element — אֱלִיעֶ֫זֶר is אל "god" and עזר "help" — and BDB
+/// prints it under only the first of them.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct RootChoice {
+    pub root: String,
+    /// The root's own headline gloss, to label the choice with.
+    pub gloss: String,
+    /// True for the root the parse resolves to, which the sheet opens on.
+    pub is_primary: bool,
+}
+
 #[derive(Debug, Serialize, RustSignal)]
 pub struct WordInfo {
     pub found: bool,
     pub word: String,
+    /// The root the entries below belong to — the resolved one, or whichever the
+    /// reader selected via [`GetWordInfo::root`].
     pub root: String,
     pub gloss: String,
     pub part_of_speech: Option<String>,
@@ -370,6 +393,10 @@ pub struct WordInfo {
     pub state: Option<String>,
     pub tense: Option<String>,
     pub form: Option<String>,
+    /// Every root this word can be read under, the resolved one first. One entry
+    /// for an ordinary word; a compound name has one per element, and the sheet
+    /// offers the choice only when there is more than one. OT lookups only.
+    pub roots: Vec<RootChoice>,
 }
 
 /// Occurrence lists for a looked-up word, fetched lazily via
