@@ -174,13 +174,26 @@ jobs:
           test "$(query "SELECT count(*) FROM word;")" -gt 300000
           test "$(query "SELECT count(*) FROM word_info;")" -gt 50000
 
-          # A ratchet, not a target: 6 tokens (two spellings of אַחֲרֵיכֵן)
-          # have no analysis, no curated gloss and no lexicon bridge, so they
-          # resolve to nothing here exactly as they do in today's reader. The
-          # bound catches a curation bug that would drop renderings wholesale.
+          # Two ratchets, neither a target. A token resolving to nothing has no
+          # analysis, no curated gloss and no lexicon bridge, and the reader
+          # shows it bare — which is right for a handful of forms and a symptom
+          # of a curation bug if it happens wholesale.
+          #
+          # Almost all of them are qere readings. Those arrived with core's fix
+          # for the 1,278 qere words the importer had been dropping, and they
+          # are the awkward forms by nature: consonantal variants the Masoretes
+          # pointed for a word other than the one written. Roughly one in ten
+          # lands without an analysis, so the total bound has to leave room for
+          # them — which would also hide a real regression in the running text,
+          # hence the second, much tighter bound on everything else.
           unresolved="$(query "SELECT count(*) FROM word WHERE info_id IS NULL;")"
-          test "$unresolved" -lt 50
-          echo "$unresolved tokens resolve to no word info"
+          test "$unresolved" -lt 300
+          plain="$(query "SELECT count(*) FROM word w WHERE w.info_id IS NULL
+                          AND NOT EXISTS(SELECT 1 FROM ketiv k
+                                         WHERE k.ref = w.ref
+                                           AND k.position = w.position);")"
+          test "$plain" -lt 20
+          echo "$unresolved tokens resolve to no word info ($plain outside a qere)"
 
           # The reader glosses TAHOT supplies have to survive curation; they
           # have been silently empty before now, so assert rather than hope.
