@@ -1657,10 +1657,7 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
       if (isTarget(i)) {
         spans.add(
           TextSpan(
-            // In English-only mode the highlighted word is shown as the Hebrew
-            // it stands for: the point of the list is which form of the word
-            // this verse uses, and its gloss is the entry already on screen.
-            text: useGlosses ? _sourceWords[i] : token,
+            text: token,
             style: baseStyle.copyWith(
               backgroundColor: theme.colorScheme.primaryContainer,
               color: theme.colorScheme.onPrimaryContainer,
