@@ -27,6 +27,7 @@ class _FakeRust {
         chapter: request.chapter,
         syriac: request.syriac,
         includeGlosses: request.includeGlosses,
+        includeMorphology: request.includeMorphology,
         includeNames: request.includeNames,
         verses: [
           for (var v = 1; v <= 20; v++)
@@ -36,7 +37,9 @@ class _FakeRust {
                   'ספר${request.book} פרק${request.chapter} פסוק$v '
                   'מלה מלה מלה מלה מלה מלה מלה מלה',
               glosses: const [],
+              morphologies: const [],
               names: const [],
+              ketivs: const [],
             ),
         ],
       );

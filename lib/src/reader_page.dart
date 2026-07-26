@@ -167,6 +167,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   static const _kGlossInterlinear = 'gloss_interlinear';
   static const _kMorphologyInterlinear = 'morphology_interlinear';
   static const _kHighlightProperNames = 'highlight_proper_names';
+  static const _kKetivDisplay = 'ketiv_display';
   static const _kReadingPlanBook = 'reading_plan_book';
   static const _kReadingPlanCompleted = 'reading_plan_completed';
   static const _kReadingPlans = 'reading_plans';
@@ -225,6 +226,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   bool _glossInterlinear = false;
   bool _morphologyInterlinear = false;
   bool _highlightProperNames = false;
+  KetivDisplay _ketivDisplay = KetivDisplay.superscript;
   List<_ReadingPlan> _readingPlans = [];
 
   _ReadingPlan? _planForChapter(int bookIndex, int chapter) {
@@ -417,6 +419,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _glossInterlinear = prefs.getBool(_kGlossInterlinear) ?? false;
       _morphologyInterlinear = prefs.getBool(_kMorphologyInterlinear) ?? false;
       _highlightProperNames = prefs.getBool(_kHighlightProperNames) ?? false;
+      _ketivDisplay = KetivDisplay.values.firstWhere(
+        (option) => option.name == prefs.getString(_kKetivDisplay),
+        orElse: () => KetivDisplay.superscript,
+      );
       final savedPlans = prefs.getStringList(_kReadingPlans);
       if (savedPlans != null) {
         _readingPlans = savedPlans
@@ -499,6 +505,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       prefs.setBool(_kGlossInterlinear, _glossInterlinear),
       prefs.setBool(_kMorphologyInterlinear, _morphologyInterlinear),
       prefs.setBool(_kHighlightProperNames, _highlightProperNames),
+      prefs.setString(_kKetivDisplay, _ketivDisplay.name),
     ]);
   }
 
@@ -528,6 +535,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _glossInterlinear = settings.glossInterlinear;
       _morphologyInterlinear = settings.morphologyInterlinear;
       _highlightProperNames = settings.highlightProperNames;
+      _ketivDisplay = settings.ketivDisplay;
       _fontSize = settings.fontSize;
       _fontFamily = settings.fontFamily;
     });
@@ -549,6 +557,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         glossInterlinear: _glossInterlinear,
         morphologyInterlinear: _morphologyInterlinear,
         highlightProperNames: _highlightProperNames,
+        ketivDisplay: _ketivDisplay,
         fontSize: _fontSize,
         fontFamily: _fontFamily,
       ),
@@ -1466,6 +1475,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               glossInterlinear: _glossInterlinear,
               morphologyInterlinear: _morphologyInterlinear,
               highlightProperNames: _highlightProperNames,
+              ketivDisplay: _ketivDisplay,
             );
           },
         ),

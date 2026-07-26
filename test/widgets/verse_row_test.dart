@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:haqor/src/app_settings.dart';
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/widgets/verse_row.dart';
 
@@ -47,6 +48,7 @@ void main() {
               glosses: [],
               morphologies: [],
               names: [],
+              ketivs: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -81,6 +83,7 @@ void main() {
               glosses: [],
               morphologies: [],
               names: [],
+              ketivs: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -110,6 +113,7 @@ void main() {
               glosses: ['word', 'Yahweh'],
               morphologies: ['noun singular', 'noun singular'],
               names: [],
+              ketivs: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -140,6 +144,7 @@ void main() {
               glosses: ['word'],
               morphologies: ['noun singular'],
               names: [],
+              ketivs: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -193,6 +198,7 @@ void main() {
                 glosses: glosses,
                 morphologies: const [],
                 names: const [],
+                ketivs: const [],
               ),
               isSelected: false,
               hebrewNumerals: true,
@@ -220,5 +226,140 @@ void main() {
 
     expect(lastLineTop, greaterThan(firstLineTop));
     expect(lastLineRight, closeTo(firstLineRight, 0.01));
+  });
+
+  group('ketiv', () {
+    // 2 Sam 12:31 in miniature: the qere בַּמַּלְבֵּן is the third word, and
+    // במלכן is what stands written in its place.
+    const words = 'וְהֶעֱבִיר אוֹתָם בַּמַּלְבֵּן וְכֵן';
+    const ketiv = KetivEntry(position: 2, span: 1, text: 'במלכן');
+
+    VerseEntry entryWith(List<KetivEntry> ketivs) => VerseEntry(
+      verse: 31,
+      text: words,
+      glosses: const [],
+      morphologies: const [],
+      names: const [],
+      ketivs: ketivs,
+    );
+
+    Future<void> pump(
+      WidgetTester tester,
+      KetivDisplay display, {
+      VerseEntry? entry,
+    }) => tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VerseRow(
+            entry: entry ?? entryWith(const [ketiv]),
+            isSelected: false,
+            hebrewNumerals: true,
+            ketivDisplay: display,
+            onTap: () {},
+            onWordTap: (_, _, _) {},
+          ),
+        ),
+      ),
+    );
+
+    test('a reading anchors after the last word it stands behind', () {
+      final tokens = words.split(' ');
+      expect(
+        ketivAnchors(tokens, const [ketiv]).keys,
+        [2],
+        reason: 'a one-word reading anchors on that word',
+      );
+      expect(
+        ketivAnchors(tokens, const [
+          KetivEntry(position: 1, span: 2, text: 'א ב'),
+        ]).keys,
+        [2],
+        reason: 'a two-word reading follows the second of them',
+      );
+    });
+
+    test('a reading that is never read anchors before its word', () {
+      final anchors = ketivAnchors(words.split(' '), const [
+        KetivEntry(position: 2, span: 0, text: 'אם'),
+      ]);
+      expect(anchors[2]!.single.before, isTrue);
+    });
+
+    test('a standalone paseq does not shift the anchor', () {
+      // The paseq is displayed but takes no lexical position, so the reading
+      // still lands on the word the core counted.
+      final anchors = ketivAnchors(
+        'וְהֶעֱבִיר ׀ אוֹתָם בַּמַּלְבֵּן'.split(' '),
+        const [ketiv],
+      );
+      expect(anchors.keys, [3], reason: 'token 3 is the third lexical word');
+    });
+
+    testWidgets('off shows nothing of the written form', (tester) async {
+      await pump(tester, KetivDisplay.hidden);
+
+      expect(find.textContaining('במלכן'), findsNothing);
+      expect(find.text('בַּמַּלְבֵּן'), findsNothing);
+    });
+
+    testWidgets('superscript raises the written form above the baseline', (
+      tester,
+    ) async {
+      await pump(tester, KetivDisplay.superscript);
+
+      final ketivRect = tester.getRect(find.text('במלכן'));
+      final verseRect = tester.getRect(find.byType(SelectableText));
+      expect(ketivRect.top, lessThan(verseRect.center.dy));
+      expect(
+        ketivRect.height,
+        lessThan(verseRect.height),
+        reason: 'set smaller than the text it annotates',
+      );
+    });
+
+    testWidgets('brackets keep the written form in the line of reading', (
+      tester,
+    ) async {
+      await pump(tester, KetivDisplay.brackets);
+
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is SelectableText &&
+              (w.textSpan?.toPlainText() ?? '').contains('[במלכן]'),
+        ),
+        findsOne,
+      );
+    });
+
+    testWidgets('the marker hides the written form until tapped', (
+      tester,
+    ) async {
+      await pump(tester, KetivDisplay.marker);
+
+      expect(find.text('במלכן'), findsNothing);
+      await tester.tap(find.text('⊙'));
+      await tester.pump();
+      expect(find.text('[במלכן]'), findsOne);
+
+      // Tapping again puts it away, so nothing is left stranded open.
+      await tester.tap(find.text('[במלכן]'));
+      await tester.pump();
+      expect(find.text('[במלכן]'), findsNothing);
+      expect(find.text('⊙'), findsOne);
+    });
+
+    testWidgets('a verse with no reading is left alone', (tester) async {
+      await pump(tester, KetivDisplay.brackets, entry: entryWith(const []));
+
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is SelectableText &&
+              (w.textSpan?.toPlainText() ?? '').contains('['),
+        ),
+        findsNothing,
+      );
+    });
   });
 }

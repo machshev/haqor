@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import '../app_settings.dart';
 import '../bindings/bindings.dart';
 import '../tutor/transliterate.dart';
 
@@ -67,6 +68,39 @@ List<int?> verseGlossPositions(List<String> words) {
   ];
 }
 
+/// Which displayed token each *ketiv* attaches to, and on which side.
+///
+/// A ketiv covers a range of the running text (`position`, `span`), so it is
+/// shown after the last word of that range — the reader has finished the phrase
+/// the Masoretes substituted before being told what stands written. The eight
+/// readings that are written but never read have `span == 0` and no word of their
+/// own; those attach *before* the word they would have preceded, which is where
+/// they stand in the manuscript.
+///
+/// Keyed by index into the displayed tokens, not by lexical position, so the
+/// caller can look up as it walks the spans.
+Map<int, List<({KetivEntry ketiv, bool before})>> ketivAnchors(
+  List<String> words,
+  List<KetivEntry> ketivs,
+) {
+  if (ketivs.isEmpty) return const {};
+  final lexical = verseGlossPositions(words);
+  // Lexical position -> displayed token index.
+  final tokenAt = <int, int>{};
+  for (final (i, position) in lexical.indexed) {
+    if (position != null) tokenAt[position] = i;
+  }
+  final anchors = <int, List<({KetivEntry ketiv, bool before})>>{};
+  for (final ketiv in ketivs) {
+    final before = ketiv.span == 0;
+    final target = before ? ketiv.position : ketiv.position + ketiv.span - 1;
+    final token = tokenAt[target];
+    if (token == null) continue;
+    (anchors[token] ??= []).add((ketiv: ketiv, before: before));
+  }
+  return anchors;
+}
+
 double verseRowScrollExtent({
   required double fontSize,
   required String fontFamily,
@@ -107,6 +141,7 @@ class VerseRow extends StatefulWidget {
     this.glossInterlinear = false,
     this.morphologyInterlinear = false,
     this.highlightProperNames = false,
+    this.ketivDisplay = KetivDisplay.superscript,
   });
 
   final VerseEntry entry;
@@ -121,6 +156,7 @@ class VerseRow extends StatefulWidget {
   final bool glossInterlinear;
   final bool morphologyInterlinear;
   final bool highlightProperNames;
+  final KetivDisplay ketivDisplay;
 
   @override
   State<VerseRow> createState() => _VerseRowState();
@@ -166,6 +202,87 @@ class _VerseRowState extends State<VerseRow> {
   void dispose() {
     _disposeRecognizers();
     super.dispose();
+  }
+
+  /// Which ketiv readings the reader has tapped open, by their position.
+  final Set<int> _revealed = {};
+
+  /// The spans that show one ketiv, in whichever presentation is configured.
+  ///
+  /// All three are quiet by design: the qere is the text being read, and the
+  /// written form is an aside. So none of them inherits the word colouring —
+  /// a ketiv beside a proper name must not look like part of the name.
+  List<InlineSpan> _ketivSpans(KetivEntry ketiv, TextStyle wordStyle) {
+    final theme = Theme.of(context);
+    final aside = wordStyle.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      fontWeight: FontWeight.w400,
+    );
+    switch (widget.ketivDisplay) {
+      case KetivDisplay.hidden:
+        return const [];
+
+      case KetivDisplay.superscript:
+        // A real raised baseline rather than a smaller font on the same one,
+        // so it reads as an annotation and not as a small word.
+        return [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.top,
+            child: Padding(
+              padding: const EdgeInsetsDirectional.only(start: 1),
+              child: Text(
+                ketiv.text,
+                textDirection: TextDirection.rtl,
+                style: aside.copyWith(fontSize: widget.fontSize * 0.58),
+              ),
+            ),
+          ),
+        ];
+
+      case KetivDisplay.brackets:
+        return [
+          TextSpan(
+            text: ' [${ketiv.text}]',
+            style: aside.copyWith(fontSize: widget.fontSize * 0.85),
+          ),
+        ];
+
+      case KetivDisplay.marker:
+        // Tapping the marker swaps it for the written form; tapping that puts
+        // it away again, so nothing is stranded open.
+        final open = _revealed.contains(ketiv.position);
+        return [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: GestureDetector(
+              onTap: () => setState(() {
+                if (!_revealed.remove(ketiv.position)) {
+                  _revealed.add(ketiv.position);
+                }
+              }),
+              child: Padding(
+                // A generous tap area around a very small mark.
+                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                child: open
+                    ? Text(
+                        '[${ketiv.text}]',
+                        textDirection: TextDirection.rtl,
+                        style: aside.copyWith(fontSize: widget.fontSize * 0.85),
+                      )
+                    : Text(
+                        // Circled dot: visible at reading size, and not a
+                        // Hebrew mark that could be read as pointing.
+                        '⊙',
+                        style: aside.copyWith(
+                          fontSize: widget.fontSize * 0.5,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ];
+    }
   }
 
   @override
@@ -295,9 +412,15 @@ class _VerseRowState extends State<VerseRow> {
     } else {
       final spans = <InlineSpan>[];
       final displayNamePositions = verseGlossPositions(_words);
+      final anchors = widget.ketivDisplay == KetivDisplay.hidden
+          ? const <int, List<({KetivEntry ketiv, bool before})>>{}
+          : ketivAnchors(_words, widget.entry.ketivs);
       for (var i = 0; i < _words.length; i++) {
         if (i > 0 && !_words[i - 1].endsWith(_maqaf)) {
           spans.add(const TextSpan(text: '  '));
+        }
+        for (final anchor in anchors[i] ?? const []) {
+          if (anchor.before) spans.addAll(_ketivSpans(anchor.ketiv, wordStyle));
         }
         spans.add(
           TextSpan(
@@ -310,6 +433,10 @@ class _VerseRowState extends State<VerseRow> {
             recognizer: _recognizers[i],
           ),
         );
+        for (final anchor in anchors[i] ?? const []) {
+          if (!anchor.before)
+            spans.addAll(_ketivSpans(anchor.ketiv, wordStyle));
+        }
       }
       content = SelectableText.rich(
         TextSpan(children: spans),

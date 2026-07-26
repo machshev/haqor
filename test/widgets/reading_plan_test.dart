@@ -23,6 +23,7 @@ class _FakeRust {
         chapter: request.chapter,
         syriac: request.syriac,
         includeGlosses: request.includeGlosses,
+        includeMorphology: request.includeMorphology,
         includeNames: request.includeNames,
         verses: [
           for (var v = 1; v <= 5; v++)
@@ -30,7 +31,9 @@ class _FakeRust {
               verse: v,
               text: 'ספר${request.book} פרק${request.chapter} פסוק$v',
               glosses: const [],
+              morphologies: const [],
               names: const [],
+              ketivs: const [],
             ),
         ],
       );
@@ -60,13 +63,17 @@ Future<void> _openPlanSheet(
   rust.deliverAll();
   await tester.pump();
 
-  final moreOptions = find.byTooltip('More reader options');
-  if (moreOptions.evaluate().isNotEmpty) {
-    await tester.tap(moreOptions);
+  // The overflow menu exists in both layouts — it still holds settings and
+  // about when the reader actions are inline — so the inline button has to be
+  // looked for first. Checking the menu first sent every wide-surface test into
+  // a menu that has no reading-plan item in it.
+  final inline = find.byTooltip('Reading plan');
+  if (inline.evaluate().isNotEmpty) {
+    await tester.tap(inline);
+  } else {
+    await tester.tap(find.byTooltip('More reader options'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Reading plan'));
-  } else {
-    await tester.tap(find.byTooltip('Reading plan'));
   }
   await tester.pumpAndSettle();
 }

@@ -28,6 +28,32 @@ Future<void> setOccurrenceVerseEnglishOnlyEnabled(bool enabled) async =>
       enabled,
     );
 
+/// How the reader shows a *ketiv* — what the consonantal text writes where the
+/// running text gives the *qere* the Masoretes read in its place.
+///
+/// Three presentations rather than one, because which reads best is a judgement
+/// about the page, not about the data. They differ in how much they interrupt: a
+/// superscript is quietest but easy to miss, brackets sit in the line of reading
+/// and cannot be, and a marker shows nothing at all until asked.
+enum KetivDisplay {
+  /// The qere alone, as a printed reading edition sets it.
+  hidden('Off', 'Show the read text only.'),
+
+  /// Small grey letters, raised, immediately after the word.
+  superscript('Superscript', 'Raised grey letters after the word.'),
+
+  /// In the line of reading, bracketed.
+  brackets('Brackets', 'In square brackets beside the word.'),
+
+  /// A marker only; tapping it reveals the written form.
+  marker('Marker', 'A dot to tap wherever the writing differs.');
+
+  const KetivDisplay(this.label, this.description);
+
+  final String label;
+  final String description;
+}
+
 class AppReadingSettings {
   const AppReadingSettings({
     required this.ntSyriac,
@@ -37,6 +63,7 @@ class AppReadingSettings {
     required this.glossInterlinear,
     required this.morphologyInterlinear,
     required this.highlightProperNames,
+    required this.ketivDisplay,
     required this.fontSize,
     required this.fontFamily,
   });
@@ -48,6 +75,7 @@ class AppReadingSettings {
   final bool glossInterlinear;
   final bool morphologyInterlinear;
   final bool highlightProperNames;
+  final KetivDisplay ketivDisplay;
   final double fontSize;
   final String fontFamily;
 
@@ -59,6 +87,7 @@ class AppReadingSettings {
     bool? glossInterlinear,
     bool? morphologyInterlinear,
     bool? highlightProperNames,
+    KetivDisplay? ketivDisplay,
     double? fontSize,
     String? fontFamily,
   }) => AppReadingSettings(
@@ -69,6 +98,7 @@ class AppReadingSettings {
     glossInterlinear: glossInterlinear ?? this.glossInterlinear,
     morphologyInterlinear: morphologyInterlinear ?? this.morphologyInterlinear,
     highlightProperNames: highlightProperNames ?? this.highlightProperNames,
+    ketivDisplay: ketivDisplay ?? this.ketivDisplay,
     fontSize: fontSize ?? this.fontSize,
     fontFamily: fontFamily ?? this.fontFamily,
   );
@@ -299,6 +329,37 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
                   _readingSettings.copyWith(highlightProperNames: value),
                 ),
               ),
+              const SizedBox(height: 16),
+              Text('Ketiv (written form)', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 4),
+              Text(
+                'Around 1,250 places in the Hebrew Bible are read differently '
+                'from how they are written. The reading is always shown; this '
+                'chooses how the writing appears beside it.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<KetivDisplay>(
+                showSelectedIcon: false,
+                segments: [
+                  for (final option in KetivDisplay.values)
+                    ButtonSegment(value: option, label: Text(option.label)),
+                ],
+                selected: {_readingSettings.ketivDisplay},
+                onSelectionChanged: (selection) => _updateReadingSettings(
+                  _readingSettings.copyWith(ketivDisplay: selection.single),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _readingSettings.ketivDisplay.description,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('English-only occurrences'),
