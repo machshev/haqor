@@ -887,18 +887,16 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     final forms = _otForms!;
     final parses = _otParses;
 
-    // Faceted counts: each dimension is counted over the tokens the *other*
-    // dimensions admit, so a chip's number is what selecting it would actually
-    // yield rather than a corpus-wide total that ignores the current filter.
     bool passesForm(HebrewOccurrence o) =>
         forms.isEmpty || forms.contains(o.surface);
     bool passesParse(HebrewOccurrence o) =>
         parses.isEmpty || parses.contains(_parseLabel(o));
     bool passesBook(HebrewOccurrence o) => _otBook == null || o.book == _otBook;
 
-    // The filter sheet counts its own form/parse facets, since those have to be
-    // recomputed as selections change inside it; only the book bar's counts are
-    // fixed while the sheet is open.
+    // Each filter's own inventory is counted over what the *other* filters
+    // admit, so a number says what selecting that entry would actually yield.
+    // The bar is counted here; the sheet counts forms and parses itself, since
+    // those have to move as selections change inside it.
     final inScope = all.where(passesBook).toList();
     final bookCounts = <int, int>{};
     for (final o in all.where((o) => passesForm(o) && passesParse(o))) {
@@ -1509,10 +1507,6 @@ class _VerseOccurrence {
   /// looked-up word that is *not* an occurrence of its root, and text matching
   /// cannot tell the two apart.
   final List<int> positions;
-
-  /// Matched tokens in this verse — 2 where a root stands twice, so a list can
-  /// report true frequency and not just how many verses it touches.
-  int get hits => positions.isEmpty ? 1 : positions.length;
 }
 
 class _VerseModeIcon extends StatelessWidget {
