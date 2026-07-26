@@ -1,8 +1,16 @@
-# Generates the bundled SQLite databases (bible/lexicon/hebrew/sedra) from
-# haqor-core's committed source texts. The .db files (~56 MB) are gitignored
-# in both repos, so every CI/release build regenerates them here — cached per
-# haqor-core commit — and ships them to the platform build jobs as the
-# `assets-db` artifact.
+# Builds the database the app ships: a single haqor.db, curated by
+# haqor-core's gen-runtime stage from the four generation databases
+# (bible/lexicon/hebrew/sedra).
+#
+# Only haqor.db is published. The four are build inputs — the generation
+# pipeline's cache, carrying candidate analyses and review state the reader
+# never looks at — so they are produced here and left behind. See
+# haqor-core doc/adr/0006-single-runtime-database.md.
+#
+# The .db files are gitignored in both repos, so every CI/release build
+# regenerates them here — cached per haqor-core commit — and ships haqor.db
+# plus its version stamp to the platform build jobs as the `assets-db`
+# artifact.
 #
 # Reusable workflow: called by ci.yml and release.yml. Uses haqor-core's Nix
 # flake (packages.haqor-cli) so the generator toolchain is pinned by that
@@ -19,6 +27,14 @@ on:
         type: string
         required: false
         default: ""
+      blob-codec:
+        description: >
+          How haqor.db stores verse text and lexicon entry bodies. `zstd` is
+          ~8 MiB smaller; `none` keeps them readable with sqlite3, which is
+          worth having on a debugging build.
+        type: string
+        required: false
+        default: "zstd"
 
 jobs:
   generate:
@@ -61,12 +77,15 @@ jobs:
         id: core
         run: echo "sha=$(git -C haqor-core rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache generated databases
+      - name: Cache the runtime database
         id: db-cache
         uses: actions/cache@v4
         with:
-          path: haqor-core/data/*.db
-          key: assets-db-v2-${{ steps.core.outputs.sha }}
+          # Only haqor.db is cached: the generation databases are inputs to it
+          # and nothing downstream reads them, so caching them would carry
+          # ~56 MB per haqor-core commit for nothing.
+          path: haqor-core/data/haqor.db
+          key: assets-db-v3-${{ inputs.blob-codec }}-${{ steps.core.outputs.sha }}
 
       - name: Install Nix
         if: steps.db-cache.outputs.cache-hit != 'true'
@@ -115,12 +134,13 @@ jobs:
         # points at the vanished build sandbox. `cargo run` from the checkout
         # (as in local dev) resolves it correctly.
         #
-        # Order matters: gen-hebrew reads bible.db and lexicon.db. --force
-        # wipes any stale hebrew.db so the shipped DB is a clean full build of
-        # the current parser (the curated lexicon_overrides.json is committed
-        # in haqor-core and baked in by gen-lexicon). STEP Bible's TAHOT files
-        # are deliberately not committed; the pinned fetch script verifies
-        # their checksums before gen-hebrew consumes them.
+        # Order matters: gen-hebrew reads bible.db and lexicon.db, and
+        # gen-runtime reads all four. --force wipes any stale hebrew.db so the
+        # shipped data is a clean full build of the current parser (the curated
+        # lexicon_overrides.json is committed in haqor-core and baked in by
+        # gen-lexicon). STEP Bible's TAHOT files are deliberately not
+        # committed; the pinned fetch script verifies their checksums before
+        # gen-hebrew consumes them.
         run: |
           ./scripts/fetch-stepbible-data.sh
           nix develop --command bash -c '
@@ -129,27 +149,62 @@ jobs:
             cargo run --release -p haqor-cli -- db gen-lexicon
             cargo run --release -p haqor-cli -- db gen-hebrew --force
             cargo run --release -p haqor-cli -- db gen-sedra
+            cargo run --release -p haqor-cli -- db gen-runtime \
+              --blob-codec "${{ inputs.blob-codec }}"
           '
 
-      - name: Verify reader gloss data
+      # Runs on a cache hit too: a cached database that fails these is worse
+      # than no cache, because nothing downstream would notice.
+      - name: Verify the runtime database
         working-directory: haqor-core
         run: |
           set -euo pipefail
-          reader_gloss_column="$(
-            sqlite3 data/hebrew.db \
-              "SELECT count(*) FROM pragma_table_info('verse_word') WHERE name = 'reader_gloss';"
-          )"
-          reader_gloss_rows="$(
-            sqlite3 data/hebrew.db \
-              "SELECT count(*) FROM verse_word WHERE reader_gloss != '';"
-          )"
-          test "$reader_gloss_column" -eq 1
-          test "$reader_gloss_rows" -gt 0
-          echo "Verified $reader_gloss_rows populated reader glosses"
+          query() { sqlite3 data/haqor.db "$1"; }
 
-      - name: Upload databases artifact
+          codec="$(query "SELECT value FROM meta WHERE key = 'blob_codec';")"
+          test "$codec" = "${{ inputs.blob-codec }}"
+
+          # Compressed blobs are unreadable without the dictionary they were
+          # trained against, which travels inside the database.
+          if [[ "$codec" == "zstd" ]]; then
+            test "$(query "SELECT count(*) FROM blob_dict;")" -eq 1
+          fi
+
+          test "$(query "SELECT count(*) FROM verse;")" -eq 31171
+          test "$(query "SELECT count(*) FROM word;")" -gt 300000
+          test "$(query "SELECT count(*) FROM word_info;")" -gt 50000
+
+          # A ratchet, not a target: 6 tokens (two spellings of אַחֲרֵיכֵן)
+          # have no analysis, no curated gloss and no lexicon bridge, so they
+          # resolve to nothing here exactly as they do in today's reader. The
+          # bound catches a curation bug that would drop renderings wholesale.
+          unresolved="$(query "SELECT count(*) FROM word WHERE info_id IS NULL;")"
+          test "$unresolved" -lt 50
+          echo "$unresolved tokens resolve to no word info"
+
+          # The reader glosses TAHOT supplies have to survive curation; they
+          # have been silently empty before now, so assert rather than hope.
+          reader_glosses="$(query "SELECT count(*) FROM word WHERE gloss_id IS NOT NULL;")"
+          test "$reader_glosses" -gt 250000
+          echo "Verified $reader_glosses reader glosses"
+
+      # The database's build stamp is its version: the installer compares it to
+      # decide whether to reinstall, and About shows it. tool/sync-dbs.sh
+      # writes the same file for local builds.
+      - name: Write the version stamp
+        working-directory: haqor-core
+        run: |
+          set -euo pipefail
+          version="$(sqlite3 data/haqor.db "SELECT value FROM meta WHERE key = 'built';")"
+          test -n "$version"
+          printf '%s\n' "$version" > data/version.txt
+          echo "Database build $version"
+
+      - name: Upload the runtime database
         uses: actions/upload-artifact@v4
         with:
           name: assets-db
-          path: haqor-core/data/*.db
+          path: |
+            haqor-core/data/haqor.db
+            haqor-core/data/version.txt
           if-no-files-found: error
