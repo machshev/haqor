@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:rinf/rinf.dart';
 
 import '../app_settings.dart';
@@ -10,6 +11,8 @@ import '../bindings/bindings.dart';
 import '../bible_data.dart';
 import '../issue_reporting.dart';
 import '../tutor/progress_sync.dart';
+import 'verse_row.dart' show verseGlossPositions;
+import 'verse_text_cache.dart';
 
 const Map<String, int> _kBdbBookToIndex = {
   'Genesis': 0,
@@ -78,10 +81,19 @@ class WordInfoSheet extends StatefulWidget {
     this.useEnglishBookNames = false,
     this.onNavigateToPassage,
     this.reportContext,
+    this.sendInfoRequest,
+    this.sendOccurrencesRequest,
+    this.sendVerseTextsRequest,
   });
 
   final String word;
   final bool syriac;
+
+  /// How the sheet's three requests reach Rust. Injectable so a widget test can
+  /// drive the sheet without the native library loaded, as the reader does.
+  final void Function(GetWordInfo)? sendInfoRequest;
+  final void Function(GetWordOccurrences)? sendOccurrencesRequest;
+  final void Function(GetVerseTexts)? sendVerseTextsRequest;
 
   /// When set, the sheet shows the BDB entry with this id (a Lexicon
   /// cross-reference target) rather than parsing [word] as a surface form;
@@ -119,6 +131,16 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   // Null until first built, then defaults to the looked-up word's form. Empty
   // set means "show all forms".
   Set<String>? _otForms;
+  // OT-only: which parse labels are shown. Empty means "every parse".
+  final Set<String> _otParses = {};
+  // OT-only: restrict the list to one book (1-based, matching the occurrence
+  // rows). Null shows the whole canon.
+  int? _otBook;
+  // Every occurrence row reads its verse text through this one cache, which
+  // batches the requests of a layout pass into a single round-trip.
+  late final VerseTextCache _verseTexts = VerseTextCache(
+    send: widget.sendVerseTextsRequest,
+  );
   // NT-only: which lexeme indices (positions in info.sedraEntries) are shown in
   // the occurrences list. Null until first built, then defaults to the looked-up
   // lexeme. Empty set means "show all".
@@ -159,7 +181,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         _fetchOccurrences();
       }
     });
-    GetWordInfo(
+    final request = GetWordInfo(
       word: widget.word,
       syriac: widget.syriac,
       bdbId: widget.bdbId,
@@ -167,7 +189,13 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       chapter: widget.chapter,
       verse: widget.verse,
       position: widget.position,
-    ).sendSignalToRust();
+    );
+    final send = widget.sendInfoRequest;
+    if (send == null) {
+      request.sendSignalToRust();
+    } else {
+      send(request);
+    }
   }
 
   // Fetch the occurrence lists (full-text root scans). Idempotent via
@@ -181,10 +209,16 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         _occSub?.cancel();
       }
     });
-    GetWordOccurrences(
+    final request = GetWordOccurrences(
       word: widget.word,
       syriac: widget.syriac,
-    ).sendSignalToRust();
+    );
+    final send = widget.sendOccurrencesRequest;
+    if (send == null) {
+      request.sendSignalToRust();
+    } else {
+      send(request);
+    }
   }
 
   Future<void> _loadAdminMode() async {
@@ -271,6 +305,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     _tabController.dispose();
     _sub?.cancel();
     _occSub?.cancel();
+    _verseTexts.dispose();
     super.dispose();
   }
 
@@ -420,7 +455,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                 ? const Center(child: CircularProgressIndicator())
                 : occurrences.isEmpty
                 ? const SizedBox.shrink()
-                : ListView(
+                : ListView.builder(
                     controller: scrollController,
                     padding: EdgeInsets.fromLTRB(
                       20,
@@ -428,16 +463,20 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                       20,
                       8 + MediaQuery.viewPaddingOf(context).bottom,
                     ),
-                    children: [
-                      Text(
-                        'Occurrences',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      ..._occurrenceVerseRows(occurrences),
-                    ],
+                    // Header plus one row per verse, built on demand: an
+                    // unparsed but common surface still has a long list.
+                    itemCount: occurrences.length + 1,
+                    itemBuilder: (context, i) => i == 0
+                        ? Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              'Occurrences',
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          )
+                        : _occurrenceVerseRow(occurrences[i - 1]),
                   ),
           ),
         ],
@@ -802,20 +841,16 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       return _buildSedraOccurrencesTab(context, info, occ, bottomPad);
     }
 
-    if (occ.occurrences.isNotEmpty || occ.rootOccurrences.isNotEmpty) {
+    if (occ.occurrences.isNotEmpty || occ.hebrewOccurrences.isNotEmpty) {
       return _buildHebrewOccurrencesTab(context, info, occ, bottomPad);
     }
 
-    return ListView(
-      padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
-      children: const [],
-    );
+    return const SizedBox.shrink();
   }
 
-  /// OT counterpart of [_buildSedraOccurrencesTab]: a pinned filter header with
-  /// a verse count over a merged-by-verse list. The NT side filters by lexeme;
-  /// the OT side filters by surface form (the inflected forms sharing the root),
-  /// since the parse data carries no per-occurrence lexeme.
+  /// OT counterpart of [_buildSedraOccurrencesTab]: a filter header and a canon
+  /// distribution over a merged-by-verse list. The NT side filters by lexeme;
+  /// the OT side filters by surface form, by parse, and by book.
   Widget _buildHebrewOccurrencesTab(
     BuildContext context,
     WordInfo info,
@@ -824,14 +859,11 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   ) {
     final theme = Theme.of(context);
 
-    // Older/edge data (e.g. an NT lookup with no detailed occurrences) has no
-    // per-form tagging — fall back to a flat root list highlighting the word.
+    // Older/edge data (e.g. a word with no readable root) has no per-token
+    // tagging — fall back to a flat list of the surface's own verses.
     if (occ.hebrewOccurrences.isEmpty) {
       final flat = [
-        for (final o
-            in (occ.rootOccurrences.isNotEmpty
-                ? occ.rootOccurrences
-                : occ.occurrences))
+        for (final o in occ.occurrences)
           _VerseOccurrence(
             book: o.book,
             chapter: o.chapter,
@@ -839,41 +871,47 @@ class _WordInfoSheetState extends State<WordInfoSheet>
             words: [widget.word],
           ),
       ];
-      return ListView(
-        padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
-        children: _occurrenceVerseRows(flat),
-      );
+      return _occurrenceVerseList(flat, bottomPad: bottomPad);
     }
 
-    // Distinct-verse counts per surface form, for the chip labels. The detailed
-    // query already returns one row per (verse, form).
-    final counts = <String, int>{};
-    for (final o in occ.hebrewOccurrences) {
-      counts[o.form] = (counts[o.form] ?? 0) + 1;
-    }
-    final forms = counts.keys.toList()
-      ..sort((a, b) {
-        final byCount = counts[b]!.compareTo(counts[a]!);
-        return byCount != 0 ? byCount : a.compareTo(b);
-      });
+    final all = occ.hebrewOccurrences;
 
-    // Lazily default the filter to the looked-up word's form.
+    // Lazily default the form filter to the looked-up word's own form.
     if (_otForms == null) {
       final key = _surfaceKey(widget.word);
-      final match = forms.firstWhere(
-        (f) => _surfaceKey(f) == key,
-        orElse: () => '',
-      );
+      final match = all
+          .map((o) => o.surface)
+          .firstWhere((s) => _surfaceKey(s) == key, orElse: () => '');
       _otForms = match.isEmpty ? {} : {match};
     }
-    final selected = _otForms!;
-    final showAll = selected.isEmpty;
+    final forms = _otForms!;
+    final parses = _otParses;
 
-    // Apply the filter, then merge rows on the same verse so a verse appears
-    // once with all matched forms highlighted.
+    // Faceted counts: each dimension is counted over the tokens the *other*
+    // dimensions admit, so a chip's number is what selecting it would actually
+    // yield rather than a corpus-wide total that ignores the current filter.
+    bool passesForm(HebrewOccurrence o) =>
+        forms.isEmpty || forms.contains(o.surface);
+    bool passesParse(HebrewOccurrence o) =>
+        parses.isEmpty || parses.contains(_parseLabel(o));
+    bool passesBook(HebrewOccurrence o) => _otBook == null || o.book == _otBook;
+
+    // The filter sheet counts its own form/parse facets, since those have to be
+    // recomputed as selections change inside it; only the book bar's counts are
+    // fixed while the sheet is open.
+    final inScope = all.where(passesBook).toList();
+    final bookCounts = <int, int>{};
+    for (final o in all.where((o) => passesForm(o) && passesParse(o))) {
+      bookCounts[o.book] = (bookCounts[o.book] ?? 0) + 1;
+    }
+
+    // Apply every filter, then merge tokens standing in the same verse so it
+    // appears once with all its matches highlighted.
     final byVerse = <String, _VerseOccurrence>{};
-    for (final o in occ.hebrewOccurrences) {
-      if (!showAll && !selected.contains(o.form)) continue;
+    var hits = 0;
+    for (final o in all) {
+      if (!passesForm(o) || !passesParse(o) || !passesBook(o)) continue;
+      hits++;
       final key = '${o.book}:${o.chapter}:${o.verse}';
       final existing = byVerse[key];
       if (existing == null) {
@@ -881,27 +919,20 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           book: o.book,
           chapter: o.chapter,
           verse: o.verse,
-          words: [o.form],
+          words: [o.surface],
+          positions: [o.position],
         );
-      } else if (!existing.words.contains(o.form)) {
-        existing.words.add(o.form);
+      } else {
+        if (!existing.words.contains(o.surface)) existing.words.add(o.surface);
+        existing.positions.add(o.position);
       }
     }
-    final verses = byVerse.values.toList();
-    verses.sort((a, b) {
-      if (a.book != b.book) return a.book.compareTo(b.book);
-      if (a.chapter != b.chapter) return a.chapter.compareTo(b.chapter);
-      return a.verse.compareTo(b.verse);
-    });
-
-    final String filterSummary;
-    if (showAll) {
-      filterSummary = 'All forms';
-    } else if (selected.length == 1) {
-      filterSummary = selected.first;
-    } else {
-      filterSummary = '${selected.length} forms';
-    }
+    final verses = byVerse.values.toList()
+      ..sort((a, b) {
+        if (a.book != b.book) return a.book.compareTo(b.book);
+        if (a.chapter != b.chapter) return a.chapter.compareTo(b.chapter);
+        return a.verse.compareTo(b.verse);
+      });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -915,179 +946,162 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               ),
             ),
           ),
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-          child: Row(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: ActionChip(
-                        avatar: const Icon(Icons.filter_list, size: 18),
-                        label: Text(
-                          filterSummary,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontFamily: 'Cardo',
-                            fontFamilyFallback: ['Noto Serif Hebrew'],
-                          ),
+              Row(
+                children: [
+                  Flexible(
+                    child: ActionChip(
+                      avatar: const Icon(Icons.filter_list, size: 18),
+                      label: Text(
+                        _hebrewFilterSummary(forms, parses),
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Cardo',
+                          fontFamilyFallback: ['Noto Serif Hebrew'],
                         ),
-                        onPressed: () =>
-                            _openHebrewFilterSheet(context, forms, counts),
                       ),
+                      onPressed: () =>
+                          _openHebrewFilterSheet(context, occurrences: inScope),
                     ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '${verses.length} verse${verses.length == 1 ? '' : 's'}',
-                      style: theme.textTheme.labelLarge?.copyWith(
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _occurrenceCountLabel(verses.length, hits),
+                      style: theme.textTheme.labelMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  IconButton(
+                    tooltip: 'Copy references',
+                    icon: const Icon(Icons.copy_all_outlined, size: 20),
+                    onPressed: verses.isEmpty
+                        ? null
+                        : () => _copyReferences(verses),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minHeight: 40),
+                  ),
+                  IconButton(
+                    tooltip: _occurrenceVerseEnglishOnly
+                        ? 'Show Hebrew verse text'
+                        : 'Show English-only verse text',
+                    icon: _VerseModeIcon(
+                      englishOnly: _occurrenceVerseEnglishOnly,
+                    ),
+                    onPressed: () {
+                      _setOccurrenceVerseMode(!_occurrenceVerseEnglishOnly);
+                    },
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    alignment: Alignment.centerRight,
+                    constraints: const BoxConstraints(minHeight: 40),
+                  ),
+                ],
               ),
-              IconButton(
-                tooltip: _occurrenceVerseEnglishOnly
-                    ? 'Show Hebrew verse text'
-                    : 'Show English-only verse text',
-                icon: _VerseModeIcon(englishOnly: _occurrenceVerseEnglishOnly),
-                onPressed: () {
-                  _setOccurrenceVerseMode(!_occurrenceVerseEnglishOnly);
-                },
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                alignment: Alignment.centerRight,
-                constraints: const BoxConstraints(minHeight: 40),
+              const SizedBox(height: 2),
+              _CanonDistribution(
+                countsByBook: bookCounts,
+                selectedBook: _otBook,
+                useEnglishBookNames: widget.useEnglishBookNames,
+                onSelect: (book) => setState(() => _otBook = book),
               ),
             ],
           ),
         ),
         Expanded(
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
-            children: _occurrenceVerseRows(verses),
-          ),
+          child: verses.isEmpty
+              ? Center(
+                  child: Text(
+                    'No occurrences match this filter',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              : _occurrenceVerseList(verses, bottomPad: bottomPad),
         ),
       ],
     );
   }
 
-  Future<void> _openHebrewFilterSheet(
-    BuildContext context,
-    List<String> forms,
-    Map<String, int> counts,
-  ) async {
-    final theme = Theme.of(context);
-    const formStyle = TextStyle(
-      fontFamily: 'Cardo',
-      fontFamilyFallback: ['Noto Serif Hebrew'],
+  /// The parse a filter chip stands for. Tokens the build could not analyse
+  /// still need a bucket, or filtering by parse would silently drop them.
+  static String _parseLabel(HebrewOccurrence o) =>
+      o.parse.isEmpty ? 'unparsed' : o.parse;
+
+  String _hebrewFilterSummary(Set<String> forms, Set<String> parses) {
+    final parts = [
+      if (forms.length == 1)
+        forms.first
+      else if (forms.length > 1)
+        '${forms.length} forms',
+      if (parses.length == 1)
+        parses.first
+      else if (parses.length > 1)
+        '${parses.length} parses',
+    ];
+    return parts.isEmpty ? 'All forms' : parts.join(' · ');
+  }
+
+  /// Verses *and* tokens: a root can stand twice in one verse, and a reader
+  /// asking how common a word is means the second number.
+  static String _occurrenceCountLabel(int verses, int hits) {
+    final versePart = '$verses verse${verses == 1 ? '' : 's'}';
+    return hits == verses ? versePart : '$versePart · $hits×';
+  }
+
+  Future<void> _copyReferences(List<_VerseOccurrence> verses) async {
+    final refs = verses
+        .map((v) {
+          final bookIndex = v.book - 1;
+          final name = bookIndex >= 0 && bookIndex < kBooks.length
+              ? bookDisplayName(
+                  bookIndex,
+                  useEnglish: widget.useEnglishBookNames,
+                )
+              : 'Book ${v.book}';
+          return '$name ${v.chapter}:${v.verse}';
+        })
+        .join('\n');
+    await Clipboard.setData(ClipboardData(text: refs));
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(
+          'Copied ${verses.length} reference${verses.length == 1 ? '' : 's'}',
+        ),
+      ),
     );
+  }
+
+  /// The OT filter sheet: forms on one tab, parses on the other, each searchable
+  /// because a common root has hundreds of forms (בוא alone has 320) and a wall
+  /// of unsorted checkboxes is not a filter anyone can use.
+  Future<void> _openHebrewFilterSheet(
+    BuildContext context, {
+    required List<HebrewOccurrence> occurrences,
+  }) async {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (sheetContext, setSheetState) {
-            final selected = _otForms ?? {};
-            final showAll = selected.isEmpty;
-            void apply(VoidCallback fn) {
-              setState(fn);
-              setSheetState(() {});
-            }
-
-            return SafeArea(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(sheetContext).size.height * 0.6,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 12, 4),
-                      child: Row(
-                        children: [
-                          Text(
-                            'Filter occurrences',
-                            style: theme.textTheme.titleSmall,
-                          ),
-                          const Spacer(),
-                          TextButton(
-                            onPressed: () => Navigator.of(sheetContext).pop(),
-                            child: const Text('Done'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Flexible(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          // Pack the short form labels into as many columns as
-                          // the sheet width comfortably allows (~200px each).
-                          final columns = (constraints.maxWidth / 200)
-                              .floor()
-                              .clamp(1, 3);
-                          CheckboxListTile buildFormTile(String form) {
-                            return CheckboxListTile(
-                              dense: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              title: Text(
-                                '$form (${counts[form] ?? 0})',
-                                style: formStyle,
-                                textDirection: TextDirection.rtl,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              value: selected.contains(form),
-                              onChanged: (on) => apply(() {
-                                final next = {...selected};
-                                if (on ?? false) {
-                                  next.add(form);
-                                } else {
-                                  next.remove(form);
-                                }
-                                _otForms = next;
-                              }),
-                            );
-                          }
-
-                          return ListView(
-                            shrinkWrap: true,
-                            children: [
-                              CheckboxListTile(
-                                dense: true,
-                                title: const Text('All forms'),
-                                value: showAll,
-                                onChanged: (_) => apply(() {
-                                  _otForms = {};
-                                }),
-                              ),
-                              for (var i = 0; i < forms.length; i += columns)
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    for (var j = i; j < i + columns; j++)
-                                      Expanded(
-                                        child: j < forms.length
-                                            ? buildFormTile(forms[j])
-                                            : const SizedBox.shrink(),
-                                      ),
-                                  ],
-                                ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+      builder: (sheetContext) => _OccurrenceFilterSheet(
+        occurrences: occurrences,
+        parseLabel: _parseLabel,
+        selectedForms: _otForms ?? {},
+        selectedParses: _otParses,
+        onChanged: (forms, parses) => setState(() {
+          _otForms = forms;
+          _otParses
+            ..clear()
+            ..addAll(parses);
+        }),
+      ),
     );
   }
 
@@ -1232,12 +1246,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
             ],
           ),
         ),
-        Expanded(
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
-            children: _occurrenceVerseRows(verses),
-          ),
-        ),
+        Expanded(child: _occurrenceVerseList(verses, bottomPad: bottomPad)),
       ],
     );
   }
@@ -1378,29 +1387,83 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     );
   }
 
-  List<Widget> _occurrenceVerseRows(List<_VerseOccurrence> verses) {
-    return verses.map((v) {
-      final bookIndex = v.book - 1;
-      final bookName = bookIndex >= 0 && bookIndex < kBooks.length
-          ? bookDisplayName(bookIndex, useEnglish: widget.useEnglishBookNames)
-          : 'Book ${v.book}';
-      final ref = '$bookName ${v.chapter}:${v.verse}';
-      return _OccurrenceRow(
-        // Stable identity per verse so Flutter never re-binds a row's State
-        // (which caches the fetched verse text) to a different verse on rebuild.
-        key: ValueKey('${v.book}:${v.chapter}:${v.verse}'),
-        displayRef: ref,
-        bookIndex: bookIndex,
-        chapter: v.chapter,
-        verse: v.verse,
-        highlightWords: v.words,
-        englishOnly: _occurrenceVerseEnglishOnly,
-        useEnglishBookNames: widget.useEnglishBookNames,
-        onTap: widget.onNavigateToPassage == null
-            ? null
-            : () => widget.onNavigateToPassage!(bookIndex, v.chapter, v.verse),
-      );
-    }).toList();
+  /// One row of an occurrence list. Built on demand by the lazy lists below, so
+  /// only the verses on screen ever ask for their text.
+  Widget _occurrenceVerseRow(_VerseOccurrence v) {
+    final bookIndex = v.book - 1;
+    final bookName = bookIndex >= 0 && bookIndex < kBooks.length
+        ? bookDisplayName(bookIndex, useEnglish: widget.useEnglishBookNames)
+        : 'Book ${v.book}';
+    return _OccurrenceRow(
+      key: ValueKey('${v.book}:${v.chapter}:${v.verse}'),
+      cache: _verseTexts,
+      displayRef: '$bookName ${v.chapter}:${v.verse}',
+      bookIndex: bookIndex,
+      chapter: v.chapter,
+      verse: v.verse,
+      highlightWords: v.words,
+      positions: v.positions,
+      isCurrent: _isCurrentVerse(v),
+      englishOnly: _occurrenceVerseEnglishOnly,
+      useEnglishBookNames: widget.useEnglishBookNames,
+      onTap: widget.onNavigateToPassage == null
+          ? null
+          : () => widget.onNavigateToPassage!(bookIndex, v.chapter, v.verse),
+    );
+  }
+
+  /// Whether this is the verse the reader was on when the sheet opened.
+  bool _isCurrentVerse(_VerseOccurrence v) =>
+      widget.book == v.book &&
+      widget.chapter == v.chapter &&
+      widget.verse == v.verse;
+
+  /// An occurrence list as a lazy, scrollable list opened at the verse the
+  /// reader came from.
+  ///
+  /// Two slivers meeting at a zero-height centre: the verses before the anchor
+  /// grow backwards into negative scroll offsets, so the list opens on the
+  /// reader's own verse with no scroll-offset correction, however tall the rows
+  /// above it turn out to be. Same anchoring the reader itself uses.
+  Widget _occurrenceVerseList(
+    List<_VerseOccurrence> verses, {
+    required double bottomPad,
+  }) {
+    final anchor = verses.indexWhere(_isCurrentVerse);
+    final centre = anchor < 0 ? 0 : anchor;
+    // Keyed on the anchor, so changing a filter (and with it the anchor's index)
+    // builds a fresh viewport rather than keeping a scroll offset that now
+    // points at some other verse.
+    final identity = '$centre-${verses.length}';
+    return CustomScrollView(
+      key: ValueKey('occurrences-$identity'),
+      center: ValueKey('occurrence-centre-$identity'),
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: SliverList.builder(
+            itemCount: centre,
+            // Children before the centre grow in reverse order, so feed this
+            // list from the end for the verses to read downwards on screen.
+            itemBuilder: (context, i) =>
+                _occurrenceVerseRow(verses[centre - 1 - i]),
+          ),
+        ),
+        SliverToBoxAdapter(
+          key: ValueKey('occurrence-centre-$identity'),
+          child: const SizedBox.shrink(),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+          sliver: SliverList.builder(
+            itemCount: verses.length - centre,
+            itemBuilder: (context, i) =>
+                _occurrenceVerseRow(verses[centre + i]),
+          ),
+        ),
+        SliverToBoxAdapter(child: SizedBox(height: 8 + bottomPad)),
+      ],
+    );
   }
 
   Widget _chip(BuildContext context, String label, String value) {
@@ -1423,18 +1486,33 @@ class _WordInfoSheetState extends State<WordInfoSheet>
 
 /// A merged NT occurrence: a single verse with all the matched word forms to
 /// highlight within it.
+/// One verse of an occurrence list, with everything matched inside it.
 class _VerseOccurrence {
   _VerseOccurrence({
     required this.book,
     required this.chapter,
     required this.verse,
     required this.words,
-  });
+    List<int>? positions,
+  }) : positions = positions ?? [];
 
   final int book;
   final int chapter;
   final int verse;
+
+  /// The surface forms matched here. Used to highlight by text where no
+  /// positions are known.
   final List<String> words;
+
+  /// Lexical positions of the matched words, when the occurrence data carries
+  /// them. Highlighting prefers these: a verse can hold a homograph of the
+  /// looked-up word that is *not* an occurrence of its root, and text matching
+  /// cannot tell the two apart.
+  final List<int> positions;
+
+  /// Matched tokens in this verse — 2 where a root stands twice, so a list can
+  /// report true frequency and not just how many verses it touches.
+  int get hits => positions.isEmpty ? 1 : positions.length;
 }
 
 class _VerseModeIcon extends StatelessWidget {
@@ -1485,9 +1563,15 @@ class _VerseModeIcon extends StatelessWidget {
   }
 }
 
-class _OccurrenceRow extends StatefulWidget {
+/// One verse of an occurrence list, with the looked-up word highlighted.
+///
+/// Stateless: the verse text comes from the shared [VerseTextCache], so a row
+/// scrolling into view costs a slot in the next batched request rather than a
+/// round-trip and a stream listener of its own.
+class _OccurrenceRow extends StatelessWidget {
   const _OccurrenceRow({
     super.key,
+    required this.cache,
     required this.displayRef,
     required this.bookIndex,
     required this.chapter,
@@ -1495,129 +1579,78 @@ class _OccurrenceRow extends StatefulWidget {
     required this.highlightWords,
     required this.englishOnly,
     required this.useEnglishBookNames,
+    this.positions = const [],
+    this.isCurrent = false,
     this.onTap,
   });
 
+  final VerseTextCache cache;
   final String displayRef;
   final int bookIndex;
   final int chapter;
   final int verse;
   final List<String> highlightWords;
+
+  /// Lexical positions to highlight. Preferred over [highlightWords] when
+  /// known, since text matching cannot tell an occurrence of the root from an
+  /// unrelated homograph standing in the same verse.
+  final List<int> positions;
   final bool englishOnly;
   final bool useEnglishBookNames;
+
+  /// The verse the reader was looking at when the sheet opened.
+  final bool isCurrent;
   final VoidCallback? onTap;
 
-  @override
-  State<_OccurrenceRow> createState() => _OccurrenceRowState();
-}
-
-class _OccurrenceRowState extends State<_OccurrenceRow> {
-  StreamSubscription<RustSignalPack<VerseText>>? _sub;
-  String? _text;
-  // English-only mode: the verse's glosses and the Hebrew word behind each, so
-  // the looked-up word can be highlighted in a translation that does not
-  // contain it. Both empty in Hebrew mode, where the verse text carries the
-  // words to match on directly.
-  List<String> _glossWords = const [];
-  List<String> _sourceWords = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    _fetch();
-  }
-
-  @override
-  void didUpdateWidget(_OccurrenceRow old) {
-    super.didUpdateWidget(old);
-    // Defensive: if this State is ever re-bound to a different verse, drop the
-    // cached text and fetch again rather than rendering the previous verse.
-    if (old.bookIndex != widget.bookIndex ||
-        old.chapter != widget.chapter ||
-        old.verse != widget.verse ||
-        old.englishOnly != widget.englishOnly) {
-      _sub?.cancel();
-      _text = null;
-      _glossWords = const [];
-      _sourceWords = const [];
-      _fetch();
-    }
-  }
-
-  void _fetch() {
-    final targetBook = widget.bookIndex + 1;
-    _sub = VerseText.rustSignalStream.listen((pack) {
-      final msg = pack.message;
-      if (mounted &&
-          msg.book == targetBook &&
-          msg.chapter == widget.chapter &&
-          msg.verse == widget.verse &&
-          msg.englishOnly == widget.englishOnly) {
-        setState(() {
-          _text = msg.text;
-          _glossWords = msg.glossWords;
-          _sourceWords = msg.sourceWords;
-        });
-        _sub?.cancel();
-      }
-    });
-    GetVerseText(
-      book: targetBook,
-      chapter: widget.chapter,
-      verse: widget.verse,
-      englishOnly: widget.englishOnly,
-    ).sendSignalToRust();
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
-  }
-
   String _compactRef() {
-    final book = widget.bookIndex >= 0 && widget.bookIndex < kBooks.length
-        ? kBooks[widget.bookIndex]
+    final book = bookIndex >= 0 && bookIndex < kBooks.length
+        ? kBooks[bookIndex]
         : null;
-    if (book == null) return widget.displayRef;
-    return '${bookDisplayName(widget.bookIndex, useEnglish: widget.useEnglishBookNames)} '
-        '${widget.chapter}:${widget.verse}';
+    if (book == null) return displayRef;
+    return '${bookDisplayName(bookIndex, useEnglish: useEnglishBookNames)} '
+        '$chapter:$verse';
   }
 
   @override
   Widget build(BuildContext context) {
-    final text = _text;
-    return InkWell(
-      borderRadius: BorderRadius.circular(6),
-      onTap: widget.onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (text == null)
-              SizedBox(
-                height: 20,
-                child: Align(
-                  alignment: widget.englishOnly
-                      ? Alignment.centerLeft
-                      : Alignment.centerRight,
-                  child: const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 1.5),
-                  ),
-                ),
-              )
-            else
-              _buildHighlightedText(context, text),
-          ],
-        ),
+    final theme = Theme.of(context);
+    return ValueListenableBuilder<VerseTextData?>(
+      valueListenable: cache.textFor(
+        book: bookIndex + 1,
+        chapter: chapter,
+        verse: verse,
+        englishOnly: englishOnly,
       ),
+      builder: (context, data, _) {
+        return InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: onTap,
+          child: Container(
+            decoration: isCurrent
+                ? BoxDecoration(
+                    borderRadius: BorderRadius.circular(6),
+                    color: theme.colorScheme.surfaceContainerHighest,
+                  )
+                : null,
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // A settled-but-empty verse is one the core could not read;
+                // leaving the placeholder in place would spin forever.
+                if (data == null)
+                  const _VersePlaceholder()
+                else
+                  _buildHighlightedText(context, data),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildHighlightedText(BuildContext context, String text) {
+  Widget _buildHighlightedText(BuildContext context, VerseTextData data) {
     final theme = Theme.of(context);
     final baseStyle = TextStyle(
       fontFamily: 'Cardo',
@@ -1633,18 +1666,31 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
       fontWeight: FontWeight.bold,
       color: theme.colorScheme.primary,
     );
-    final strippedTargets = widget.highlightWords.map(_stripTrope).toSet();
-    final keyTargets = widget.highlightWords.map(_surfaceKey).toSet();
+    final strippedTargets = highlightWords.map(_stripTrope).toSet();
+    final keyTargets = highlightWords.map(_surfaceKey).toSet();
     // Hebrew mode matches the displayed words themselves. English-only shows
     // glosses, which never match a Hebrew surface, so match on the word each
     // gloss was made from and highlight the English standing in for it.
     final useGlosses =
-        widget.englishOnly &&
-        _glossWords.isNotEmpty &&
-        _sourceWords.length == _glossWords.length;
-    final tokens = useGlosses ? _glossWords : text.split(' ');
+        englishOnly &&
+        data.glossWords.isNotEmpty &&
+        data.sourceWords.length == data.glossWords.length;
+    final tokens = useGlosses ? data.glossWords : data.text.split(' ');
+    // Glosses come one per lexical word, so a position indexes them directly.
+    // The Hebrew text also carries standalone punctuation, which has no lexical
+    // position of its own — the same mapping the reader applies.
+    final lexicalOf = useGlosses
+        ? [for (var i = 0; i < tokens.length; i++) i]
+        : verseGlossPositions(tokens);
+    final targetPositions = positions.toSet();
     bool isTarget(int i) {
-      final word = useGlosses ? _sourceWords[i] : tokens[i];
+      if (targetPositions.isNotEmpty) {
+        final lexical = lexicalOf[i];
+        return lexical != null && targetPositions.contains(lexical);
+      }
+      // No positions known (an occurrence list that predates them, or a bare
+      // surface lookup) — fall back to matching the text.
+      final word = useGlosses ? data.sourceWords[i] : tokens[i];
       if (word.isEmpty) return false;
       return strippedTargets.contains(_stripTrope(word)) ||
           keyTargets.contains(_surfaceKey(word));
@@ -1671,10 +1717,371 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
     spans.insert(0, TextSpan(text: '${_compactRef()}  ', style: refStyle));
     return SelectableText.rich(
       TextSpan(children: spans),
-      textDirection: widget.englishOnly ? TextDirection.ltr : TextDirection.rtl,
+      textDirection: englishOnly ? TextDirection.ltr : TextDirection.rtl,
       // SelectableText swallows taps, so the wrapping InkWell never sees them;
       // forward single taps to keep click-to-navigate working.
-      onTap: widget.onTap,
+      onTap: onTap,
+    );
+  }
+}
+
+/// Where a word falls across the canon, as one bar per book in Tanakh order.
+///
+/// A root's verse list answers "where does this occur" one screen at a time;
+/// this answers it at a glance — and doubles as the book filter, since the
+/// bar you want to look into is the one you just noticed was tall.
+class _CanonDistribution extends StatelessWidget {
+  const _CanonDistribution({
+    required this.countsByBook,
+    required this.selectedBook,
+    required this.onSelect,
+    required this.useEnglishBookNames,
+  });
+
+  /// Occurrence counts keyed by 1-based book number.
+  final Map<int, int> countsByBook;
+  final int? selectedBook;
+  final void Function(int? book) onSelect;
+  final bool useEnglishBookNames;
+
+  static const _height = 26.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final books = countsByBook.keys.toList()..sort();
+    if (books.isEmpty) return const SizedBox.shrink();
+    final peak = countsByBook.values.reduce((a, b) => a > b ? a : b);
+    return SizedBox(
+      height: _height,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (final book in books)
+            Expanded(
+              child: _bar(context, theme, book, countsByBook[book]!, peak),
+            ),
+          if (selectedBook != null)
+            IconButton(
+              tooltip: 'Whole Bible',
+              icon: const Icon(Icons.close, size: 14),
+              onPressed: () => onSelect(null),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(
+                minWidth: 24,
+                minHeight: _height,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bar(
+    BuildContext context,
+    ThemeData theme,
+    int book,
+    int count,
+    int peak,
+  ) {
+    final bookIndex = book - 1;
+    final name = bookIndex >= 0 && bookIndex < kBooks.length
+        ? bookDisplayName(bookIndex, useEnglish: useEnglishBookNames)
+        : 'Book $book';
+    final selected = selectedBook == book;
+    // A floor under the height, so a book with a single occurrence is still
+    // something you can see and aim at.
+    final fraction = peak == 0 ? 0.0 : count / peak;
+    return Tooltip(
+      message: '$name · $count',
+      child: GestureDetector(
+        onTap: () => onSelect(selected ? null : book),
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 0.5),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              height: 4 + (_height - 6) * fraction,
+              decoration: BoxDecoration(
+                color: selected
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.primary.withValues(alpha: 0.35),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(1.5),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The OT occurrence filter: surface forms on one tab, parses on the other.
+///
+/// Both lists are searchable and both report counts faceted by the other tab's
+/// selection, so the numbers say what selecting an entry would actually yield.
+class _OccurrenceFilterSheet extends StatefulWidget {
+  const _OccurrenceFilterSheet({
+    required this.occurrences,
+    required this.parseLabel,
+    required this.selectedForms,
+    required this.selectedParses,
+    required this.onChanged,
+  });
+
+  /// Every token the current book filter admits. The sheet counts its own
+  /// facets from these rather than taking totals computed when it opened —
+  /// those go stale the moment a selection changes, which is the one thing the
+  /// sheet exists to do.
+  final List<HebrewOccurrence> occurrences;
+  final String Function(HebrewOccurrence) parseLabel;
+  final Set<String> selectedForms;
+  final Set<String> selectedParses;
+  final void Function(Set<String> forms, Set<String> parses) onChanged;
+
+  @override
+  State<_OccurrenceFilterSheet> createState() => _OccurrenceFilterSheetState();
+}
+
+class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs = TabController(length: 2, vsync: this);
+  late Set<String> _forms = {...widget.selectedForms};
+  late Set<String> _parses = {...widget.selectedParses};
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _apply(VoidCallback change) {
+    setState(change);
+    widget.onChanged(_forms, _parses);
+  }
+
+  /// Counts for one dimension over the tokens the *other* dimension admits, so
+  /// a number says what selecting that entry would actually yield.
+  Map<String, int> _facet({
+    required String Function(HebrewOccurrence) label,
+    required String Function(HebrewOccurrence) otherLabel,
+    required Set<String> otherSelection,
+  }) {
+    final counts = <String, int>{};
+    for (final o in widget.occurrences) {
+      if (otherSelection.isNotEmpty &&
+          !otherSelection.contains(otherLabel(o))) {
+        continue;
+      }
+      final key = label(o);
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  static String _formOf(HebrewOccurrence o) => o.surface;
+
+  /// Most frequent first, and alphabetically within a count, so the entries a
+  /// reader is most likely to want are the ones they do not have to search for.
+  List<String> _entries(Map<String, int> counts) {
+    final query = _search.text.trim();
+    final keys = counts.keys.where((key) {
+      if (query.isEmpty) return true;
+      // Hebrew is matched ignoring points, so a reader can type consonants.
+      return key.contains(query) ||
+          _stripTrope(key).contains(_stripTrope(query)) ||
+          key.toLowerCase().contains(query.toLowerCase());
+    }).toList();
+    keys.sort((a, b) {
+      final byCount = counts[b]!.compareTo(counts[a]!);
+      return byCount != 0 ? byCount : a.compareTo(b);
+    });
+    return keys;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final formCounts = _facet(
+      label: _formOf,
+      otherLabel: widget.parseLabel,
+      otherSelection: _parses,
+    );
+    final parseCounts = _facet(
+      label: widget.parseLabel,
+      otherLabel: _formOf,
+      otherSelection: _forms,
+    );
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.7,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 12, 0),
+              child: Row(
+                children: [
+                  Text('Filter occurrences', style: theme.textTheme.titleSmall),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _forms.isEmpty && _parses.isEmpty
+                        ? null
+                        : () => _apply(() {
+                            _forms = {};
+                            _parses = {};
+                          }),
+                    child: const Text('Reset'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Done'),
+                  ),
+                ],
+              ),
+            ),
+            TabBar(
+              controller: _tabs,
+              tabs: [
+                Tab(
+                  height: 36,
+                  text: _forms.isEmpty ? 'Form' : 'Form (${_forms.length})',
+                ),
+                Tab(
+                  height: 36,
+                  text: _parses.isEmpty ? 'Parse' : 'Parse (${_parses.length})',
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: TextField(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  hintText: 'Search',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _search.text.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () => setState(_search.clear),
+                        ),
+                ),
+              ),
+            ),
+            Flexible(
+              child: TabBarView(
+                controller: _tabs,
+                children: [
+                  _list(
+                    counts: formCounts,
+                    selected: _forms,
+                    allLabel: 'All forms',
+                    hebrew: true,
+                    onToggle: (key, on) => _apply(() {
+                      final next = {..._forms};
+                      on ? next.add(key) : next.remove(key);
+                      _forms = next;
+                    }),
+                    onAll: () => _apply(() => _forms = {}),
+                  ),
+                  _list(
+                    counts: parseCounts,
+                    selected: _parses,
+                    allLabel: 'All parses',
+                    hebrew: false,
+                    onToggle: (key, on) => _apply(() {
+                      final next = {..._parses};
+                      on ? next.add(key) : next.remove(key);
+                      _parses = next;
+                    }),
+                    onAll: () => _apply(() => _parses = {}),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _list({
+    required Map<String, int> counts,
+    required Set<String> selected,
+    required String allLabel,
+    required bool hebrew,
+    required void Function(String key, bool on) onToggle,
+    required VoidCallback onAll,
+  }) {
+    final entries = _entries(counts);
+    final style = hebrew
+        ? const TextStyle(
+            fontFamily: 'Cardo',
+            fontFamilyFallback: ['Noto Serif Hebrew'],
+          )
+        : null;
+    return ListView.builder(
+      // One tile per row: the previous multi-column grid packed more onto the
+      // screen but gave a 300-entry list no order anyone could scan.
+      itemCount: entries.length + 1,
+      itemBuilder: (context, i) {
+        if (i == 0) {
+          return CheckboxListTile(
+            dense: true,
+            title: Text(allLabel),
+            value: selected.isEmpty,
+            onChanged: (_) => onAll(),
+          );
+        }
+        final key = entries[i - 1];
+        return CheckboxListTile(
+          dense: true,
+          title: Text(
+            key,
+            style: style,
+            textDirection: hebrew ? TextDirection.rtl : TextDirection.ltr,
+            overflow: TextOverflow.ellipsis,
+          ),
+          secondary: Text('${counts[key] ?? 0}'),
+          value: selected.contains(key),
+          onChanged: (on) => onToggle(key, on ?? false),
+        );
+      },
+    );
+  }
+}
+
+/// Stands in for a verse whose text has not arrived. A static bar rather than a
+/// spinner: a screenful of rows means a screenful of these, and animating them
+/// all costs a repaint every frame for no information.
+class _VersePlaceholder extends StatelessWidget {
+  const _VersePlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Container(
+        height: 12,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(3),
+        ),
+      ),
     );
   }
 }

@@ -129,6 +129,43 @@ pub struct VerseText {
     pub source_words: Vec<String>,
 }
 
+/// Batched [`GetVerseText`]: one round-trip for a whole page of verses.
+///
+/// The Occurrences tab lists a root's verses — thousands of them for a common
+/// root — and needs the text of every row it scrolls past. Asking per row cost a
+/// signal and a broadcast-stream listener each, so every reply was delivered to
+/// every waiting row. `request_id` is echoed back so a caller can ignore replies
+/// to a superseded page.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetVerseTexts {
+    pub request_id: u32,
+    pub refs: Vec<VerseRef>,
+    pub english_only: bool,
+}
+
+#[derive(Debug, Serialize, RustSignal)]
+pub struct VerseTexts {
+    pub request_id: u32,
+    pub english_only: bool,
+    pub verses: Vec<VerseTextEntry>,
+}
+
+/// One verse of a [`VerseTexts`] batch. Same content as [`VerseText`] minus the
+/// mode echo, which the batch carries once.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct VerseTextEntry {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub text: String,
+    /// English-only mode: the gloss of each word of the verse, in order, whose
+    /// concatenation is `text`. Empty in Hebrew mode.
+    pub gloss_words: Vec<String>,
+    /// The source-language word each entry of `gloss_words` renders. Aligned
+    /// with `gloss_words`.
+    pub source_words: Vec<String>,
+}
+
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetChapter {
     pub book: u8,
@@ -277,16 +314,25 @@ pub struct SedraOccurrence {
     pub words: Vec<String>,
 }
 
-/// An OT occurrence tagged with the surface form found in that verse, so the UI
-/// can filter a root's occurrences by inflected form (the OT analogue of
-/// `SedraOccurrence`'s lexeme filter). The form inventory is derived on the Dart
-/// side from the distinct `form` values.
+/// One OT token of a root: where it stands, the surface form read there, and
+/// its parse. One row per token, so the tab can count true frequency, highlight
+/// the exact word, and filter by form or by parse (the OT analogue of
+/// `SedraOccurrence`'s lexeme filter). Both filter inventories are derived on
+/// the Dart side from the distinct `surface` / `parse` values.
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct HebrewOccurrence {
     pub book: u8,
     pub chapter: u8,
     pub verse: u8,
-    pub form: String,
+    /// Lexical index of the token within its verse — punctuation-only tokens of
+    /// the displayed text do not count, matching `verseGlossPositions`.
+    pub position: u32,
+    pub surface: String,
+    /// Verb stem (Qal, Piel, …), or part of speech for non-verbs. Empty when
+    /// the token has no readable analysis.
+    pub stem: String,
+    /// Full parse label as the reader shows it inline ("Qal perfect 3ms").
+    pub parse: String,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
@@ -319,6 +365,9 @@ pub struct WordInfo {
 pub struct WordOccurrences {
     pub found: bool,
     pub occurrences: Vec<WordOccurrence>,
+    /// NT only. The OT side reads its verse list off the distinct references in
+    /// `hebrew_occurrences`, rather than paying for a second scan of the corpus
+    /// to learn what that list already says.
     pub root_occurrences: Vec<WordOccurrence>,
     pub sedra_occurrences: Vec<SedraOccurrence>,
     /// OT (Hebrew Bible) occurrences of the same consonantal root, for the NT
@@ -509,7 +558,9 @@ pub struct SuffixCard {
     pub distractors: Vec<String>,
 }
 
-#[derive(Debug, Serialize, SignalPiece)]
+/// A bare verse reference. Travels both ways: out in the tutor's verse cards,
+/// and in as the page of verses [`GetVerseTexts`] asks for.
+#[derive(Debug, Serialize, Deserialize, SignalPiece)]
 pub struct VerseRef {
     pub book: u8,
     pub chapter: u8,

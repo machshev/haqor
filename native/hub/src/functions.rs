@@ -3,13 +3,15 @@ use crate::signals::ProgressSnapshot;
 use crate::signals::{
     BdbSummary, BuildInfo, CalibrationProbe, ChapterText, FinishCalibration, GetBuildInfo,
     GetCalibrationProbe, GetChapter, GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts,
-    GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVocab,
+    GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts,
+    GetVocab,
     GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence, IssueReportStatus,
     KetivEntry, LexiconEntryOverrideStatus, OnboardingStatus, OptimizeTutorGlossOverrides,
     ProgressSyncStatus, ResetTutor, SaveIssueReport, SaveLexiconEntryOverride, SaveTutorGloss,
     SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings,
     StudyItem, SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress,
-    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry, VocabList,
+    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry,
+    VerseTexts, VocabEntry, VocabList,
     WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 
@@ -421,6 +423,50 @@ pub async fn get_verse_text(bible: SharedBible) {
     }
 }
 
+/// Batched counterpart of [`get_verse_text`], for callers that need a page of
+/// verses at once (the Occurrences tab). A verse that cannot be read is simply
+/// absent from the reply rather than failing the batch.
+pub async fn get_verse_texts(bible: SharedBible) {
+    let receiver = GetVerseTexts::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let bible = lock(&bible);
+        let verses = req
+            .refs
+            .iter()
+            .filter_map(|r| {
+                let (text, gloss_words, source_words) = if req.english_only {
+                    let pairs = bible.verse_gloss_words(r.book, r.chapter, r.verse).ok()?;
+                    let (source_words, gloss_words): (Vec<String>, Vec<String>) =
+                        pairs.into_iter().unzip();
+                    (gloss_words.join(" "), gloss_words, source_words)
+                } else {
+                    (
+                        bible.get(r.book, r.chapter, r.verse).ok()?,
+                        Vec::new(),
+                        Vec::new(),
+                    )
+                };
+                Some(VerseTextEntry {
+                    book: r.book,
+                    chapter: r.chapter,
+                    verse: r.verse,
+                    text,
+                    gloss_words,
+                    source_words,
+                })
+            })
+            .collect();
+        VerseTexts {
+            request_id: req.request_id,
+            english_only: req.english_only,
+            verses,
+        }
+        .send_signal_to_dart();
+    }
+}
+
 pub async fn get_chapter_text(bible: SharedBible) {
     let receiver = GetChapter::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
@@ -542,7 +588,10 @@ fn to_signal_hebrew_occurrences(
             book: o.book,
             chapter: o.chapter,
             verse: o.verse,
-            form: o.form,
+            position: o.position,
+            surface: o.surface,
+            stem: o.stem,
+            parse: o.parse,
         })
         .collect()
 }
@@ -865,11 +914,10 @@ pub async fn get_word_occurrences(bible: SharedBible) {
                             .hebrew_surface_occurrences(&req.word)
                             .unwrap_or_default(),
                     ),
-                    root_occurrences: to_signal_occurrences(
-                        bible
-                            .hebrew_root_occurrences(&info.root)
-                            .unwrap_or_default(),
-                    ),
+                    // The detailed scan below already names every verse of the
+                    // root, so scanning the corpus a second time for the verse
+                    // list would be paying twice for one answer.
+                    root_occurrences: Vec::new(),
                     sedra_occurrences: Vec::new(),
                     ot_occurrences: Vec::new(),
                     hebrew_occurrences: to_signal_hebrew_occurrences(

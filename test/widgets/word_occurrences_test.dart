@@ -1,0 +1,352 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:haqor/src/bindings/bindings.dart';
+import 'package:haqor/src/widgets/word_info_sheet.dart';
+
+/// The verse text every occurrence row is answered with. Six lexical words; the
+/// third one repeats the second so a test can tell position-exact highlighting
+/// apart from matching on the text.
+const _words = ['אחד', 'בָּרָא', 'בָּרָא', 'ארבע', 'חמש', 'שש'];
+
+/// Answers the sheet's requests the way the Rust side would.
+///
+/// The sheet's outbound signals are captured through its injected send seams
+/// (`sendSignalToRust` needs the native library, which a widget test has not
+/// loaded), and replies go back through [assignRustSignal] — the same entry
+/// point real signals arrive on.
+class _FakeRust {
+  final List<GetVerseTexts> verseRequests = [];
+
+  void onVerseTextsRequest(GetVerseTexts request) => verseRequests.add(request);
+
+  void onInfoRequest(GetWordInfo request) {}
+
+  void onOccurrencesRequest(GetWordOccurrences request) {}
+
+  void deliverWordInfo({required String word, required String root}) {
+    assignRustSignal['WordInfo']!(
+      WordInfo(
+        found: true,
+        word: word,
+        root: root,
+        gloss: 'create',
+        partOfSpeech: 'verb',
+        gender: null,
+        number: null,
+        prefix: null,
+        suffix: null,
+        prepositions: null,
+        article: false,
+        vavCon: false,
+        bdbEntries: const [],
+        sedraEntries: const [],
+        person: null,
+        state: null,
+        tense: 'Perfect',
+        form: 'Qal',
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+  }
+
+  void deliverOccurrences(List<HebrewOccurrence> occurrences) {
+    assignRustSignal['WordOccurrences']!(
+      WordOccurrences(
+        found: true,
+        occurrences: const [],
+        rootOccurrences: const [],
+        sedraOccurrences: const [],
+        otOccurrences: const [],
+        hebrewOccurrences: occurrences,
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+  }
+
+  /// Answer every verse-text request made so far, each with the same six-word
+  /// verse.
+  void deliverVerseTexts() {
+    final pending = List<GetVerseTexts>.of(verseRequests);
+    verseRequests.clear();
+    for (final request in pending) {
+      assignRustSignal['VerseTexts']!(
+        VerseTexts(
+          requestId: request.requestId,
+          englishOnly: request.englishOnly,
+          verses: [
+            for (final ref in request.refs)
+              VerseTextEntry(
+                book: ref.book,
+                chapter: ref.chapter,
+                verse: ref.verse,
+                text:
+                    '${ref.book}:${ref.chapter}:${ref.verse} '
+                    '${_words.join(' ')}',
+                glossWords: const [],
+                sourceWords: const [],
+              ),
+          ],
+        ).bincodeSerialize(),
+        Uint8List(0),
+      );
+    }
+  }
+}
+
+HebrewOccurrence _occurrence({
+  required int book,
+  required int chapter,
+  required int verse,
+  int position = 1,
+  String surface = 'בָּרָא',
+  String stem = 'Qal',
+  String parse = 'Qal perfect 3ms',
+}) => HebrewOccurrence(
+  book: book,
+  chapter: chapter,
+  verse: verse,
+  position: position,
+  surface: surface,
+  stem: stem,
+  parse: parse,
+);
+
+/// Pump the sheet's Occurrences tab with [occurrences], opened from [at].
+Future<_FakeRust> _pumpOccurrences(
+  WidgetTester tester,
+  List<HebrewOccurrence> occurrences, {
+  ({int book, int chapter, int verse})? at,
+  String word = 'בָּרָא',
+}) async {
+  SharedPreferences.setMockInitialValues({
+    'occurrence_verse_english_only': false,
+  });
+  final rust = _FakeRust();
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          height: 600,
+          child: WordInfoSheet(
+            word: word,
+            syriac: false,
+            book: at?.book,
+            chapter: at?.chapter,
+            verse: at?.verse,
+            useEnglishBookNames: true,
+            sendInfoRequest: rust.onInfoRequest,
+            sendOccurrencesRequest: rust.onOccurrencesRequest,
+            sendVerseTextsRequest: rust.onVerseTextsRequest,
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+  rust.deliverWordInfo(word: word, root: 'ברא');
+  await tester.pump();
+  rust.deliverOccurrences(occurrences);
+  await tester.pumpAndSettle();
+  // Switch to the Occurrences tab.
+  await tester.tap(find.text('Occurrences'));
+  await tester.pumpAndSettle();
+  rust.deliverVerseTexts();
+  await tester.pumpAndSettle();
+  return rust;
+}
+
+/// The reference of every occurrence row currently built, in the order they
+/// appear on screen.
+///
+/// Sorted by screen position, not by the order the finder walks the tree: the
+/// slivers above the anchor grow upwards, so their children are visited from
+/// the bottom up and tree order says nothing about what a reader sees.
+List<String> _visibleRefs(WidgetTester tester) {
+  final rows = find.byType(SelectableText).evaluate().toList();
+  final refs = [
+    for (final row in rows)
+      (
+        y: tester.getTopLeft(find.byWidget(row.widget)).dy,
+        ref:
+            ((row.widget as SelectableText).textSpan!.children!.first
+                    as TextSpan)
+                .text!
+                .trim(),
+      ),
+  ]..sort((a, b) => a.y.compareTo(b.y));
+  return [for (final entry in refs) entry.ref];
+}
+
+void main() {
+  testWidgets('the list opens on the verse the reader came from', (
+    tester,
+  ) async {
+    // Forty verses, so the anchor is well past the first screenful.
+    final occurrences = [
+      for (var verse = 1; verse <= 40; verse++)
+        _occurrence(book: 1, chapter: 1, verse: verse),
+    ];
+    await _pumpOccurrences(
+      tester,
+      occurrences,
+      at: (book: 1, chapter: 1, verse: 30),
+    );
+
+    final refs = _visibleRefs(tester);
+    expect(refs, isNotEmpty);
+    expect(
+      refs.first,
+      'Genesis 1:30',
+      reason: 'the reader\'s own verse should be the first row on screen',
+    );
+    // And the rows below it still read forwards.
+    expect(refs.take(3), ['Genesis 1:30', 'Genesis 1:31', 'Genesis 1:32']);
+  });
+
+  testWidgets('verses above the anchor stay in reading order', (tester) async {
+    final occurrences = [
+      for (var verse = 1; verse <= 40; verse++)
+        _occurrence(book: 1, chapter: 1, verse: verse),
+    ];
+    await _pumpOccurrences(
+      tester,
+      occurrences,
+      at: (book: 1, chapter: 1, verse: 30),
+    );
+
+    // Scroll back above the anchor: the verses before it must ascend towards it,
+    // not run backwards.
+    await tester.drag(find.byType(SelectableText).first, const Offset(0, 400));
+    await tester.pumpAndSettle();
+    final refs = _visibleRefs(tester);
+    final verses = [for (final ref in refs) int.parse(ref.split(':').last)];
+    expect(verses.length, greaterThan(2));
+    expect(
+      verses,
+      orderedEquals(List<int>.of(verses)..sort()),
+      reason: 'rows above the anchor must still read downwards: $refs',
+    );
+  });
+
+  testWidgets('with no reader location the list starts at the beginning', (
+    tester,
+  ) async {
+    await _pumpOccurrences(tester, [
+      for (var verse = 1; verse <= 40; verse++)
+        _occurrence(book: 1, chapter: 1, verse: verse),
+    ]);
+    expect(_visibleRefs(tester).first, 'Genesis 1:1');
+  });
+
+  testWidgets('the count line reports verses and tokens apart', (tester) async {
+    // Two tokens in one verse, one in another: two verses, three occurrences.
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1, position: 1),
+      _occurrence(book: 1, chapter: 1, verse: 1, position: 2),
+      _occurrence(book: 1, chapter: 2, verse: 1, position: 1),
+    ]);
+    expect(find.text('2 verses · 3×'), findsOneWidget);
+  });
+
+  testWidgets('a verse with one occurrence reports only its verse count', (
+    tester,
+  ) async {
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1),
+      _occurrence(book: 1, chapter: 2, verse: 1),
+    ]);
+    expect(find.text('2 verses'), findsOneWidget);
+  });
+
+  testWidgets('highlighting follows the position, not the spelling', (
+    tester,
+  ) async {
+    // The verse holds בָּרָא twice (lexical positions 1 and 2) but only the
+    // second is an occurrence of the root. Matching on the text would light up
+    // both.
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1, position: 2),
+    ]);
+
+    final row = tester.widget<SelectableText>(
+      find.byType(SelectableText).first,
+    );
+    final spans = row.textSpan!.children!.cast<TextSpan>();
+    final highlighted = [
+      for (final span in spans)
+        if (span.style?.backgroundColor != null) span.text,
+    ];
+    expect(highlighted, ['בָּרָא'], reason: 'exactly one word, not both');
+    // Confirm it is the second of the two, by index among the verse's words.
+    final texts = [for (final span in spans) span.text];
+    final highlightedIndex = spans.toList().indexWhere(
+      (s) => s.style?.backgroundColor != null,
+    );
+    expect(texts[highlightedIndex], 'בָּרָא');
+    expect(
+      texts.sublist(0, highlightedIndex).where((t) => t == 'בָּרָא').length,
+      1,
+      reason: 'the earlier identical word must be left unhighlighted',
+    );
+  });
+
+  testWidgets('filtering by parse narrows the list', (tester) async {
+    final rust = await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1, parse: 'Qal perfect 3ms'),
+      _occurrence(book: 1, chapter: 2, verse: 1, parse: 'Qal perfect 3ms'),
+      _occurrence(
+        book: 1,
+        chapter: 3,
+        verse: 1,
+        surface: 'וַיִּבְרָא',
+        parse: 'Qal imperfect 3ms',
+      ),
+    ]);
+    // The form filter defaults to the looked-up word, so only its two verses
+    // show; clearing it shows all three.
+    expect(find.text('2 verses'), findsOneWidget);
+
+    await tester.tap(find.byType(ActionChip));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All forms'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Parse'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Qal imperfect 3ms'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 verse'), findsOneWidget);
+    // The surviving verse is new to the list, so its text is a fresh request.
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    expect(_visibleRefs(tester), ['Genesis 3:1']);
+  });
+
+  testWidgets('copying references puts the filtered list on the clipboard', (
+    tester,
+  ) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1),
+      _occurrence(book: 1, chapter: 2, verse: 3),
+    ]);
+
+    await tester.tap(find.byTooltip('Copy references'));
+    await tester.pumpAndSettle();
+    expect(copied, ['Genesis 1:1\nGenesis 2:3']);
+  });
+}
