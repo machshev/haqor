@@ -11,10 +11,13 @@ attaches all of them to a GitHub Release. Both repos are public, so all runners
    `major`, or an explicit `X.Y.Z`). It advances Flutter's build number for
    Android/iOS and the release tag must match the semantic version with a
    leading `v` (for example `version: 1.2.3+4` requires `v1.2.3`).
-2. If the databases changed since the last release, bump the installed-DB
-   version so existing installs refresh their local copy on next launch:
-   `tool/sync-dbs.sh --bump` (commits a `_dbVersion` increment in
-   `lib/src/db_installer.dart`).
+2. If the release should ship new databases, pin the `haqor-core` version they
+   come from: `native/hub/Cargo.toml`'s exact requirement (and `Cargo.lock`) is
+   what `databases.yml` derives its `machshev/haqor-core` tag from, and it
+   regenerates `haqor.db` there — the local `assets/db/` is gitignored and never
+   reaches a build. Nothing else is needed to make existing installs refresh:
+   the version travels with the databases as `assets/db/version.txt` (their own
+   build stamp), and the installer reinstalls on any difference.
 3. Commit any other release changes, then create the version commit and tag:
 
    ```sh
