@@ -118,6 +118,15 @@ pub struct VerseText {
     pub text: String,
     /// The verse's voiced reading (learner romanization, cantillation ignored).
     pub translit: String,
+    /// English-only mode: the gloss of each word of the verse, in order, whose
+    /// concatenation is `text`. Empty in Hebrew mode, where `text` carries its
+    /// own words.
+    pub gloss_words: Vec<String>,
+    /// The source-language word each entry of `gloss_words` renders, so a
+    /// gloss-only verse can still be highlighted on the Hebrew that is looked
+    /// up. Aligned with `gloss_words`; an entry is empty where the word behind
+    /// the gloss is unknown.
+    pub source_words: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, DartSignal)]

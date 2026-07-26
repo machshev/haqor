@@ -6,12 +6,11 @@ use crate::signals::{
     GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVocab,
     GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence, IssueReportStatus,
     KetivEntry, LexiconEntryOverrideStatus, OnboardingStatus, OptimizeTutorGlossOverrides,
-    ProgressSyncStatus,
-    ResetTutor, SaveIssueReport, SaveLexiconEntryOverride, SaveTutorGloss, SedraOccurrence,
-    SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem,
-    SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings,
-    TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry, VocabList, WordCard,
-    WordInfo, WordOccurrence, WordOccurrences,
+    ProgressSyncStatus, ResetTutor, SaveIssueReport, SaveLexiconEntryOverride, SaveTutorGloss,
+    SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings,
+    StudyItem, SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress,
+    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VocabEntry, VocabList,
+    WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -385,15 +384,24 @@ pub async fn get_verse_text(bible: SharedBible) {
         let verse_ref = signal_pack.message;
         debug_print!("{:?}", verse_ref);
         let bible = lock(&bible);
+        // English-only keeps the per-word split alongside the joined text: the
+        // caller needs to know which Hebrew word each piece of English came
+        // from to highlight it.
         let result = if verse_ref.english_only {
             bible
-                .verse_glosses(verse_ref.book, verse_ref.chapter, verse_ref.verse)
-                .map(|glosses| glosses.join(" "))
+                .verse_gloss_words(verse_ref.book, verse_ref.chapter, verse_ref.verse)
+                .map(|pairs| {
+                    let (source_words, gloss_words): (Vec<String>, Vec<String>) =
+                        pairs.into_iter().unzip();
+                    (gloss_words.join(" "), gloss_words, source_words)
+                })
         } else {
-            bible.get(verse_ref.book, verse_ref.chapter, verse_ref.verse)
+            bible
+                .get(verse_ref.book, verse_ref.chapter, verse_ref.verse)
+                .map(|text| (text, Vec::new(), Vec::new()))
         };
         match result {
-            Ok(text) => VerseText {
+            Ok((text, gloss_words, source_words)) => VerseText {
                 book: verse_ref.book,
                 chapter: verse_ref.chapter,
                 verse: verse_ref.verse,
@@ -404,6 +412,8 @@ pub async fn get_verse_text(bible: SharedBible) {
                     haqor_core::romanize::romanize(&text)
                 },
                 text,
+                gloss_words,
+                source_words,
             }
             .send_signal_to_dart(),
             Err(e) => debug_print!("get_verse_text error: {:?}", e),

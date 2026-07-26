@@ -1514,6 +1514,12 @@ class _OccurrenceRow extends StatefulWidget {
 class _OccurrenceRowState extends State<_OccurrenceRow> {
   StreamSubscription<RustSignalPack<VerseText>>? _sub;
   String? _text;
+  // English-only mode: the verse's glosses and the Hebrew word behind each, so
+  // the looked-up word can be highlighted in a translation that does not
+  // contain it. Both empty in Hebrew mode, where the verse text carries the
+  // words to match on directly.
+  List<String> _glossWords = const [];
+  List<String> _sourceWords = const [];
 
   @override
   void initState() {
@@ -1532,6 +1538,8 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
         old.englishOnly != widget.englishOnly) {
       _sub?.cancel();
       _text = null;
+      _glossWords = const [];
+      _sourceWords = const [];
       _fetch();
     }
   }
@@ -1545,7 +1553,11 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
           msg.chapter == widget.chapter &&
           msg.verse == widget.verse &&
           msg.englishOnly == widget.englishOnly) {
-        setState(() => _text = msg.text);
+        setState(() {
+          _text = msg.text;
+          _glossWords = msg.glossWords;
+          _sourceWords = msg.sourceWords;
+        });
         _sub?.cancel();
       }
     });
@@ -1623,16 +1635,32 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
     );
     final strippedTargets = widget.highlightWords.map(_stripTrope).toSet();
     final keyTargets = widget.highlightWords.map(_surfaceKey).toSet();
-    final tokens = text.split(' ');
+    // Hebrew mode matches the displayed words themselves. English-only shows
+    // glosses, which never match a Hebrew surface, so match on the word each
+    // gloss was made from and highlight the English standing in for it.
+    final useGlosses =
+        widget.englishOnly &&
+        _glossWords.isNotEmpty &&
+        _sourceWords.length == _glossWords.length;
+    final tokens = useGlosses ? _glossWords : text.split(' ');
+    bool isTarget(int i) {
+      final word = useGlosses ? _sourceWords[i] : tokens[i];
+      if (word.isEmpty) return false;
+      return strippedTargets.contains(_stripTrope(word)) ||
+          keyTargets.contains(_surfaceKey(word));
+    }
+
     final spans = <InlineSpan>[];
     for (var i = 0; i < tokens.length; i++) {
       if (i > 0) spans.add(const TextSpan(text: ' '));
       final token = tokens[i];
-      if (strippedTargets.contains(_stripTrope(token)) ||
-          keyTargets.contains(_surfaceKey(token))) {
+      if (isTarget(i)) {
         spans.add(
           TextSpan(
-            text: token,
+            // In English-only mode the highlighted word is shown as the Hebrew
+            // it stands for: the point of the list is which form of the word
+            // this verse uses, and its gloss is the entry already on screen.
+            text: useGlosses ? _sourceWords[i] : token,
             style: baseStyle.copyWith(
               backgroundColor: theme.colorScheme.primaryContainer,
               color: theme.colorScheme.onPrimaryContainer,
@@ -1646,9 +1674,7 @@ class _OccurrenceRowState extends State<_OccurrenceRow> {
     spans.insert(0, TextSpan(text: '${_compactRef()}  ', style: refStyle));
     return SelectableText.rich(
       TextSpan(children: spans),
-      textDirection: widget.englishOnly
-          ? TextDirection.ltr
-          : TextDirection.rtl,
+      textDirection: widget.englishOnly ? TextDirection.ltr : TextDirection.rtl,
       // SelectableText swallows taps, so the wrapping InkWell never sees them;
       // forward single taps to keep click-to-navigate working.
       onTap: widget.onTap,
