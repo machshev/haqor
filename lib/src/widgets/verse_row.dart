@@ -14,6 +14,15 @@ final RegExp _readerWordMarks = RegExp(
 );
 const _maqaf = '\u05BE';
 
+/// Superscript ketiv, as fractions of the running text's font size: how big the
+/// letters are, and how far their baseline is lifted above the reading baseline.
+///
+/// The rise has to clear the host word's vowel points without reaching its
+/// cantillation, which sits above the letters \u2014 so a little over a third of the
+/// text height, not the half a Latin superscript can afford.
+const _superscriptScale = 0.58;
+const _superscriptRise = 0.36;
+
 String compactInterlinearMorphology(String morphology) {
   const abbreviations = {
     'noun': 'N',
@@ -223,17 +232,36 @@ class _VerseRowState extends State<VerseRow> {
         return const [];
 
       case KetivDisplay.superscript:
-        // A real raised baseline rather than a smaller font on the same one,
-        // so it reads as an annotation and not as a small word.
+        // A raised baseline, which is what makes this a superscript.
+        //
+        // `PlaceholderAlignment.top` looks like one at a glance but is not: it
+        // pins the box to the top of the line, so the letters sit at whatever
+        // height the tallest thing on that line dictates and drift as the line
+        // changes. Aligning on the baseline and then lifting off it keeps the
+        // rise proportional to the text it annotates.
+        //
+        // There is no font-feature route here — OpenType `sups` covers digits
+        // and Latin, not Hebrew consonants — so the shift is done by hand. It
+        // is a visual translation only, which is what keeps it from opening up
+        // the line box the way real vertical space would.
         return [
           WidgetSpan(
-            alignment: PlaceholderAlignment.top,
-            child: Padding(
-              padding: const EdgeInsetsDirectional.only(start: 1),
-              child: Text(
-                ketiv.text,
-                textDirection: TextDirection.rtl,
-                style: aside.copyWith(fontSize: widget.fontSize * 0.58),
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: Transform.translate(
+              offset: Offset(0, -widget.fontSize * _superscriptRise),
+              child: Padding(
+                padding: const EdgeInsetsDirectional.only(start: 1),
+                child: Text(
+                  ketiv.text,
+                  textDirection: TextDirection.rtl,
+                  style: aside.copyWith(
+                    fontSize: widget.fontSize * _superscriptScale,
+                    // No extra leading, so the box is the letters and the rise
+                    // below is measured from where they actually sit.
+                    height: 1.0,
+                  ),
+                ),
               ),
             ),
           ),
@@ -434,8 +462,9 @@ class _VerseRowState extends State<VerseRow> {
           ),
         );
         for (final anchor in anchors[i] ?? const []) {
-          if (!anchor.before)
+          if (!anchor.before) {
             spans.addAll(_ketivSpans(anchor.ketiv, wordStyle));
+          }
         }
       }
       content = SelectableText.rich(

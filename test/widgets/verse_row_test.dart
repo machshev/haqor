@@ -302,18 +302,34 @@ void main() {
       expect(find.text('בַּמַּלְבֵּן'), findsNothing);
     });
 
-    testWidgets('superscript raises the written form above the baseline', (
+    testWidgets('superscript raises the written form off the baseline', (
       tester,
     ) async {
       await pump(tester, KetivDisplay.superscript);
 
       final ketivRect = tester.getRect(find.text('במלכן'));
       final verseRect = tester.getRect(find.byType(SelectableText));
-      expect(ketivRect.top, lessThan(verseRect.center.dy));
+
       expect(
         ketivRect.height,
         lessThan(verseRect.height),
         reason: 'set smaller than the text it annotates',
+      );
+      // Raised, so it sits in the upper part of the line rather than on the
+      // reading baseline near the bottom of it.
+      expect(
+        ketivRect.center.dy,
+        lessThan(verseRect.center.dy),
+        reason: 'a superscript rides above the middle of the line',
+      );
+      // Raised off the *baseline*, though — not pinned to the top of the line
+      // box. `PlaceholderAlignment.top` passes every other assertion here while
+      // looking wrong, so this is the one that tells them apart: it would put
+      // the letters flush with the top of the line.
+      expect(
+        ketivRect.top,
+        greaterThan(verseRect.top + 3),
+        reason: 'a superscript is lifted off the baseline, not top-aligned',
       );
     });
 
