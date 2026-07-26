@@ -7,7 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bindings/bindings.dart';
 
-const _dbFiles = ['bible.db', 'sedra.db', 'hebrew.db', 'lexicon.db'];
+/// One curated runtime database; the generation databases are not shipped
+/// (haqor-core doc/adr/0006-single-runtime-database.md).
+const _dbFiles = ['haqor.db'];
 const _progressKey = 'web_progress_sqlite_v1';
 
 /// Load the immutable SQLite assets into the WebAssembly runtime. The Rust

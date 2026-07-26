@@ -57,7 +57,7 @@ async fn open_bible() -> Option<(SharedBible, PathBuf)> {
 
 #[cfg(target_arch = "wasm32")]
 fn open_web_bible(binary: Vec<u8>) -> Result<Bible, String> {
-    const FILES: [&str; 4] = ["bible.db", "sedra.db", "hebrew.db", "lexicon.db"];
+    const FILES: [&str; 1] = ["haqor.db"];
     let mut offset = 0usize;
     let mut next = || -> Result<Vec<u8>, String> {
         let length = binary

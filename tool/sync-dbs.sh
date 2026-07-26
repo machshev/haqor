@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Copy the generated database files from haqor-core into the Flutter asset
-# bundle, then make the new copies take effect.
+# Copy the curated runtime database (haqor.db) from haqor-core into the Flutter
+# asset bundle, then make the new copy take effect.
 #
 # Regenerating DBs in haqor-core does NOT reach the app on its own: the app
 # bundles its own copy under assets/db/ and installs them to the device only
@@ -21,23 +21,22 @@ here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/../../haqor-core/data"
 dst="$here/../assets/db"
 
-mkdir -p "$dst"
-dbs=(bible sedra hebrew lexicon)
-for db in "${dbs[@]}"; do
-  cp -v "$src/$db.db" "$dst/$db.db"
-done
+if [[ ! -f "$src/haqor.db" ]]; then
+  echo "no $src/haqor.db — run 'cargo run --release -- db gen-runtime' first" >&2
+  exit 1
+fi
 
-# Version = the newest build time among the databases copied, in UTC ISO-8601.
-# Taken from the *sources*, since cp stamps its output with the time of the
-# copy — this has to identify the build, not the sync. Equality decides
-# reinstall; ordering lets a sync server tell whether it holds a newer build
-# than a client.
-newest=0
-for db in "${dbs[@]}"; do
-  stamp="$(stat -c %Y "$src/$db.db")"
-  ((stamp > newest)) && newest="$stamp"
-done
-version="$(date -u -d "@$newest" +%Y-%m-%dT%H:%M:%SZ)"
+mkdir -p "$dst"
+# Only the runtime database ships. The four generation databases beside it are
+# its inputs.
+rm -f "$dst"/bible.db "$dst"/sedra.db "$dst"/hebrew.db "$dst"/lexicon.db
+cp -v "$src/haqor.db" "$dst/haqor.db"
+
+# The database's own build stamp is its version — nothing to maintain by hand.
+# Equality decides reinstall; the format also orders, which is what lets a sync
+# server tell whether it holds a newer build than a client.
+version="$(sqlite3 "$dst/haqor.db" "SELECT value FROM meta WHERE key = 'built';")"
+test -n "$version"
 printf '%s\n' "$version" > "$dst/version.txt"
 echo "database build version: $version"
 

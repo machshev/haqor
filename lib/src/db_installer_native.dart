@@ -6,7 +6,9 @@ import 'package:path_provider/path_provider.dart';
 import 'bindings/bindings.dart';
 import 'db_version.dart';
 
-const _dbFiles = ['bible.db', 'sedra.db', 'hebrew.db', 'lexicon.db'];
+/// One curated runtime database; the generation databases are not shipped
+/// (haqor-core doc/adr/0006-single-runtime-database.md).
+const _dbFiles = ['haqor.db'];
 
 /// Copy the SQLite databases from the asset bundle into app-local storage,
 /// where Rust opens them file-backed.

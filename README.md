@@ -221,9 +221,9 @@ Now you can run and build this app just like any other Flutter projects.
 ## Web PWA
 
 The web build is installable and runs the same Rust core as the native apps.
-Its approximately 54 MB corpus is cached by the service worker; the Rust
-WebAssembly module opens the bundled databases in memory and keeps learner
-progress in browser storage.
+Its approximately 40 MB corpus (about 15 MB compressed over the wire) is
+cached by the service worker; the Rust WebAssembly module opens the bundled
+database in memory and keeps learner progress in browser storage.
 
 Build a deployable bundle from the development shell:
 
