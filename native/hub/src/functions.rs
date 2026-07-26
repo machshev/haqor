@@ -5,7 +5,8 @@ use crate::signals::{
     GetCalibrationProbe, GetChapter, GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts,
     GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVocab,
     GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence, IssueReportStatus,
-    LexiconEntryOverrideStatus, OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus,
+    KetivEntry, LexiconEntryOverrideStatus, OnboardingStatus, OptimizeTutorGlossOverrides,
+    ProgressSyncStatus,
     ResetTutor, SaveIssueReport, SaveLexiconEntryOverride, SaveTutorGloss, SedraOccurrence,
     SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem,
     SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings,
@@ -442,6 +443,19 @@ pub async fn get_chapter_text(bible: SharedBible) {
                                 .unwrap_or_default(),
                             names: metadata
                                 .map(|metadata| metadata.names.clone())
+                                .unwrap_or_default(),
+                            ketivs: metadata
+                                .map(|metadata| {
+                                    metadata
+                                        .ketivs
+                                        .iter()
+                                        .map(|ketiv| KetivEntry {
+                                            position: ketiv.position,
+                                            span: ketiv.span,
+                                            text: ketiv.text.clone(),
+                                        })
+                                        .collect()
+                                })
                                 .unwrap_or_default(),
                         }
                     })

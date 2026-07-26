@@ -1,8 +1,8 @@
 use rinf::{DartSignal, DartSignalBinary, RustSignal, RustSignalBinary, SignalPiece};
 use serde::{Deserialize, Serialize};
 
-/// Directory holding the database files (bible.db, sedra.db, hebrew.db,
-/// lexicon.db). Sent once from Dart at startup, after the bundled
+/// Directory holding the runtime database (haqor.db). Sent once from Dart at
+/// startup, after the bundled
 /// assets have been copied into app-local storage; no queries are answered
 /// until it arrives.
 #[derive(Debug, Deserialize, DartSignalBinary)]
@@ -133,6 +133,25 @@ pub struct GetChapter {
     pub include_names: bool,
 }
 
+/// What the consonantal text writes where the reader is shown the *qere* the
+/// Masoretes read in its place.
+///
+/// Not one per word: a reading can stand behind two words, or behind none at
+/// all, so it carries its own position instead of lining up with the vectors in
+/// [`VerseEntry`].
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct KetivEntry {
+    /// Index of the first word of the running text this stands behind.
+    pub position: u16,
+    /// Words of the running text it answers to. Zero for the eight readings that
+    /// are written but never read, where nothing in the verse corresponds to it
+    /// and `position` is where the word would have stood.
+    pub span: u16,
+    /// The written form — usually bare consonants, since the Masoretes did not
+    /// point what they did not read.
+    pub text: String,
+}
+
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct VerseEntry {
     pub verse: u8,
@@ -141,6 +160,9 @@ pub struct VerseEntry {
     pub morphologies: Vec<String>,
     /// Aligned with the lexical words: true where the word is a proper name.
     pub names: Vec<bool>,
+    /// The verse's ketiv readings, where it has any — empty for almost every
+    /// verse, as the OT carries about 1,250 in total.
+    pub ketivs: Vec<KetivEntry>,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
