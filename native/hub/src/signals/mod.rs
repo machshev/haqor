@@ -328,11 +328,26 @@ pub struct HebrewOccurrence {
     /// the displayed text do not count, matching `verseGlossPositions`.
     pub position: u32,
     pub surface: String,
-    /// Verb stem (Qal, Piel, …), or part of speech for non-verbs. Empty when
-    /// the token has no readable analysis.
+    /// The parse component by component, so the tab can filter one dimension at
+    /// a time instead of on the cross-product of whole labels.
+    pub parse: OccurrenceParse,
+    /// The whole parse as one label, as the reader shows it inline ("Qal perfect
+    /// 3ms"). For display; the filter cuts on `parse`.
+    pub parse_label: String,
+}
+
+/// One token's parse, split into the dimensions the filter groups by. A field is
+/// empty where the analysis does not carry it (an infinitive has no person), and
+/// all are empty for a token with no readable analysis.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct OccurrenceParse {
+    pub part_of_speech: String,
     pub stem: String,
-    /// Full parse label as the reader shows it inline ("Qal perfect 3ms").
-    pub parse: String,
+    pub tense: String,
+    pub person: String,
+    pub gender: String,
+    pub number: String,
+    pub state: String,
 }
 
 #[derive(Debug, Serialize, RustSignal)]

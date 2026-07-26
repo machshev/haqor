@@ -102,16 +102,29 @@ HebrewOccurrence _occurrence({
   required int verse,
   int position = 1,
   String surface = 'בָּרָא',
+  String partOfSpeech = 'Verb',
   String stem = 'Qal',
-  String parse = 'Qal perfect 3ms',
+  String tense = 'Perfect',
+  String person = 'Third',
+  String gender = 'Masculine',
+  String number = 'Singular',
+  String state = '',
 }) => HebrewOccurrence(
   book: book,
   chapter: chapter,
   verse: verse,
   position: position,
   surface: surface,
-  stem: stem,
-  parse: parse,
+  parse: OccurrenceParse(
+    partOfSpeech: partOfSpeech,
+    stem: stem,
+    tense: tense,
+    person: person,
+    gender: gender,
+    number: number,
+    state: state,
+  ),
+  parseLabel: '$stem ${tense.toLowerCase()}',
 );
 
 /// Pump the sheet's Occurrences tab with [occurrences], opened from [at].
@@ -156,6 +169,16 @@ Future<_FakeRust> _pumpOccurrences(
   rust.deliverVerseTexts();
   await tester.pumpAndSettle();
   return rust;
+}
+
+/// Give the test a tall window, so a filter sheet with seven morphology groups
+/// has them all on screen at once. The sheet scrolls on a real phone; these
+/// tests are about which groups and values it offers, not about scrolling to
+/// them.
+void _useTallWindow(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1000, 2400);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
 }
 
 /// The reference of every occurrence row currently built, in the order they
@@ -315,40 +338,113 @@ void main() {
 
     final tabs = tester.widget<TabBar>(find.byType(TabBar).last);
     expect([for (final tab in tabs.tabs) (tab as Tab).text], ['Parse', 'Form']);
-    // And the parse list is the one on screen, not the form list.
-    expect(find.text('All parses'), findsOneWidget);
+    // The parse tab is the one on screen, not the form list.
     expect(find.text('All forms'), findsNothing);
   });
 
-  testWidgets('filtering by parse narrows the list', (tester) async {
+  testWidgets('the parse tab groups morphology by dimension', (tester) async {
+    _useTallWindow(tester);
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1),
+      _occurrence(
+        book: 1,
+        chapter: 2,
+        verse: 1,
+        surface: 'הִבְרִיא',
+        stem: 'Hiphil',
+        tense: 'Imperfect',
+        number: 'Plural',
+      ),
+    ]);
+    await tester.tap(find.byType(ActionChip));
+    await tester.pumpAndSettle();
+
+    // Each component is its own group with its own values, rather than one
+    // entry per whole "Qal perfect 3ms" combination.
+    for (final heading in const [
+      'PART OF SPEECH',
+      'STEM',
+      'TENSE',
+      'PERSON',
+      'GENDER',
+      'NUMBER',
+    ]) {
+      expect(find.text(heading), findsOneWidget, reason: 'missing $heading');
+    }
+    // State is carried by neither token, so its group is left out rather than
+    // shown empty.
+    expect(find.text('STATE'), findsNothing);
+
+    // Values are per-dimension and counted.
+    expect(find.text('Qal  1'), findsOneWidget);
+    expect(find.text('Hiphil  1'), findsOneWidget);
+    expect(find.text('Singular  1'), findsOneWidget);
+    expect(find.text('Plural  1'), findsOneWidget);
+  });
+
+  testWidgets('parse dimensions combine, and each narrows the list', (
+    tester,
+  ) async {
+    _useTallWindow(tester);
     final rust = await _pumpOccurrences(tester, [
-      _occurrence(book: 1, chapter: 1, verse: 1, parse: 'Qal perfect 3ms'),
-      _occurrence(book: 1, chapter: 2, verse: 1, parse: 'Qal perfect 3ms'),
+      _occurrence(book: 1, chapter: 1, verse: 1, number: 'Singular'),
+      _occurrence(
+        book: 1,
+        chapter: 2,
+        verse: 1,
+        stem: 'Hiphil',
+        number: 'Singular',
+      ),
       _occurrence(
         book: 1,
         chapter: 3,
         verse: 1,
-        surface: 'וַיִּבְרָא',
-        parse: 'Qal imperfect 3ms',
+        surface: 'וַיַּבְרִיאוּ',
+        stem: 'Hiphil',
+        number: 'Plural',
       ),
     ]);
-    // Unfiltered to begin with: every form of the root, all three verses.
     expect(find.text('All occurrences'), findsOneWidget);
     expect(find.text('3 verses'), findsOneWidget);
 
-    // Parse is the sheet's first tab, so the list is already showing.
     await tester.tap(find.byType(ActionChip));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Qal imperfect 3ms'));
+    // One dimension: the two Hiphils.
+    await tester.tap(find.text('Hiphil  2'));
+    await tester.pumpAndSettle();
+    // A second dimension ANDs with the first, leaving the plural Hiphil — a
+    // combination that never had to exist as its own list entry. Its count is
+    // faceted by the Hiphil already chosen, so it reads 1 and not 2.
+    await tester.tap(find.text('Plural  1'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
 
+    expect(find.text('hiphil · plural'), findsOneWidget);
     expect(find.text('1 verse'), findsOneWidget);
     // The surviving verse is new to the list, so its text is a fresh request.
     rust.deliverVerseTexts();
     await tester.pumpAndSettle();
     expect(_visibleRefs(tester), ['Genesis 3:1']);
+  });
+
+  testWidgets('a dimension can be released back to Any', (tester) async {
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1),
+      _occurrence(book: 1, chapter: 2, verse: 1, stem: 'Hiphil'),
+    ]);
+    await tester.tap(find.byType(ActionChip));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hiphil  1'));
+    await tester.pumpAndSettle();
+    expect(find.text('Any'), findsOneWidget);
+
+    await tester.tap(find.text('Any'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(find.text('All occurrences'), findsOneWidget);
+    expect(find.text('2 verses'), findsOneWidget);
   });
 
   testWidgets('copying references puts the filtered list on the clipboard', (

@@ -132,8 +132,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   // inflections are the reason to open the list, so narrowing to the one word
   // that was tapped is the wrong first answer.
   final Set<String> _otForms = {};
-  // OT-only: which parse labels are shown. Empty means "every parse".
-  final Set<String> _otParses = {};
+  // OT-only: the parse filter, one selection per morphology dimension. A
+  // dimension with no selection admits everything; within a dimension the
+  // selections are alternatives, and across dimensions they all have to hold —
+  // so "Qal" plus "plural" plus "participle" narrows, where a list of whole
+  // labels would have needed the exact combination to exist as an entry.
+  final Map<_ParseDimension, Set<String>> _otParse = {};
   // OT-only: restrict the list to one book (1-based, matching the occurrence
   // rows). Null shows the whole canon.
   int? _otBook;
@@ -878,12 +882,14 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     final all = occ.hebrewOccurrences;
 
     final forms = _otForms;
-    final parses = _otParses;
 
     bool passesForm(HebrewOccurrence o) =>
         forms.isEmpty || forms.contains(o.surface);
-    bool passesParse(HebrewOccurrence o) =>
-        parses.isEmpty || parses.contains(_parseLabel(o));
+    bool passesParse(HebrewOccurrence o) => _otParse.entries.every(
+      (selection) =>
+          selection.value.isEmpty ||
+          selection.value.contains(selection.key.of(o)),
+    );
     bool passesBook(HebrewOccurrence o) => _otBook == null || o.book == _otBook;
 
     // Each filter's own inventory is counted over what the *other* filters
@@ -947,7 +953,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                     child: ActionChip(
                       avatar: const Icon(Icons.filter_list, size: 18),
                       label: Text(
-                        _hebrewFilterSummary(forms, parses),
+                        _hebrewFilterSummary(forms),
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontFamily: 'Cardo',
@@ -1020,19 +1026,21 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     );
   }
 
-  /// The parse a filter chip stands for. Tokens the build could not analyse
-  /// still need a bucket, or filtering by parse would silently drop them.
-  static String _parseLabel(HebrewOccurrence o) =>
-      o.parse.isEmpty ? 'unparsed' : o.parse;
-
   /// The active filter, in the order the sheet's tabs offer it. Nothing selected
-  /// is the tab's starting state, and covers both dimensions at once.
-  String _hebrewFilterSummary(Set<String> forms, Set<String> parses) {
-    final parts = [
-      if (parses.length == 1)
-        parses.first
-      else if (parses.length > 1)
-        '${parses.length} parses',
+  /// is the tab's starting state, and covers every dimension at once.
+  ///
+  /// A single selection reads as itself ("Qal", "Piel · plural"), so the chip
+  /// says what is being looked at rather than how many boxes are ticked; a
+  /// dimension with several selected collapses to a count, since spelling them
+  /// all out would not fit.
+  String _hebrewFilterSummary(Set<String> forms) {
+    final parts = <String>[
+      for (final dimension in _ParseDimension.values)
+        if (_otParse[dimension] case final selected? when selected.isNotEmpty)
+          if (selected.length == 1)
+            selected.first.toLowerCase()
+          else
+            '${selected.length} ${dimension.label.toLowerCase()}',
       if (forms.length == 1)
         forms.first
       else if (forms.length > 1)
@@ -1085,16 +1093,15 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       isScrollControlled: true,
       builder: (sheetContext) => _OccurrenceFilterSheet(
         occurrences: occurrences,
-        parseLabel: _parseLabel,
         selectedForms: _otForms,
-        selectedParses: _otParses,
-        onChanged: (forms, parses) => setState(() {
+        selectedParse: _otParse,
+        onChanged: (forms, parse) => setState(() {
           _otForms
             ..clear()
             ..addAll(forms);
-          _otParses
+          _otParse
             ..clear()
-            ..addAll(parses);
+            ..addAll(parse);
         }),
       ),
     );
@@ -1479,8 +1486,39 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   }
 }
 
-/// A merged NT occurrence: a single verse with all the matched word forms to
-/// highlight within it.
+/// One dimension of the parse filter.
+///
+/// The tab filters on the components of a parse rather than on whole labels: a
+/// verb root has a dozen stems times half a dozen tenses times nine
+/// person/gender/number cells, and a reader after "every Hiphil" or "every
+/// plural participle" should not have to find that exact combination in a list.
+enum _ParseDimension {
+  partOfSpeech('Part of speech'),
+  stem('Stem'),
+  tense('Tense'),
+  person('Person'),
+  gender('Gender'),
+  number('Number'),
+  state('State');
+
+  const _ParseDimension(this.label);
+
+  /// Section heading in the filter sheet.
+  final String label;
+
+  /// This dimension's value for a token, empty where the analysis has none (an
+  /// infinitive has no person, a verb no state).
+  String of(HebrewOccurrence o) => switch (this) {
+    _ParseDimension.partOfSpeech => o.parse.partOfSpeech,
+    _ParseDimension.stem => o.parse.stem,
+    _ParseDimension.tense => o.parse.tense,
+    _ParseDimension.person => o.parse.person,
+    _ParseDimension.gender => o.parse.gender,
+    _ParseDimension.number => o.parse.number,
+    _ParseDimension.state => o.parse.state,
+  };
+}
+
 /// One verse of an occurrence list, with everything matched inside it.
 class _VerseOccurrence {
   _VerseOccurrence({
@@ -1811,16 +1849,23 @@ class _CanonDistribution extends StatelessWidget {
   }
 }
 
-/// The OT occurrence filter: surface forms on one tab, parses on the other.
+/// The OT occurrence filter: the parse by morphology dimension on one tab,
+/// surface forms on the other.
 ///
-/// Both lists are searchable and both report counts faceted by the other tab's
-/// selection, so the numbers say what selecting an entry would actually yield.
+/// The parse tab groups its entries under Part of speech / Stem / Tense /
+/// Person / Gender / Number / State rather than listing whole parse labels.
+/// Within a group the entries are alternatives; across groups they all have to
+/// hold. So "every Hiphil plural participle" is three taps, where a flat list of
+/// labels needed that exact combination to exist as one entry — and a verb root
+/// has more combinations than a reader can scan.
+///
+/// Every count is faceted against the *other* selections, so a number says what
+/// selecting that entry would actually yield, and both lists are searchable.
 class _OccurrenceFilterSheet extends StatefulWidget {
   const _OccurrenceFilterSheet({
     required this.occurrences,
-    required this.parseLabel,
     required this.selectedForms,
-    required this.selectedParses,
+    required this.selectedParse,
     required this.onChanged,
   });
 
@@ -1829,10 +1874,13 @@ class _OccurrenceFilterSheet extends StatefulWidget {
   /// those go stale the moment a selection changes, which is the one thing the
   /// sheet exists to do.
   final List<HebrewOccurrence> occurrences;
-  final String Function(HebrewOccurrence) parseLabel;
   final Set<String> selectedForms;
-  final Set<String> selectedParses;
-  final void Function(Set<String> forms, Set<String> parses) onChanged;
+  final Map<_ParseDimension, Set<String>> selectedParse;
+  final void Function(
+    Set<String> forms,
+    Map<_ParseDimension, Set<String>> parse,
+  )
+  onChanged;
 
   @override
   State<_OccurrenceFilterSheet> createState() => _OccurrenceFilterSheetState();
@@ -1842,7 +1890,10 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs = TabController(length: 2, vsync: this);
   late Set<String> _forms = {...widget.selectedForms};
-  late Set<String> _parses = {...widget.selectedParses};
+  late final Map<_ParseDimension, Set<String>> _parse = {
+    for (final entry in widget.selectedParse.entries)
+      entry.key: {...entry.value},
+  };
   final _search = TextEditingController();
 
   @override
@@ -1854,41 +1905,69 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
 
   void _apply(VoidCallback change) {
     setState(change);
-    widget.onChanged(_forms, _parses);
+    widget.onChanged(_forms, _parse);
   }
 
-  /// Counts for one dimension over the tokens the *other* dimension admits, so
-  /// a number says what selecting that entry would actually yield.
-  Map<String, int> _facet({
-    required String Function(HebrewOccurrence) label,
-    required String Function(HebrewOccurrence) otherLabel,
-    required Set<String> otherSelection,
-  }) {
+  int get _parseSelectionCount =>
+      _parse.values.fold(0, (sum, selected) => sum + selected.length);
+
+  Set<String> _selected(_ParseDimension dimension) =>
+      _parse[dimension] ?? const {};
+
+  /// Whether a token passes every parse dimension *except* [ignoring] — the
+  /// basis for a faceted count, which has to answer "what would I get if I
+  /// changed only this dimension".
+  bool _passesParse(HebrewOccurrence o, {_ParseDimension? ignoring}) {
+    for (final dimension in _ParseDimension.values) {
+      if (dimension == ignoring) continue;
+      final selected = _selected(dimension);
+      if (selected.isNotEmpty && !selected.contains(dimension.of(o))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _passesForm(HebrewOccurrence o) =>
+      _forms.isEmpty || _forms.contains(o.surface);
+
+  /// Values and counts for one parse dimension, over the tokens every other
+  /// filter admits. Values the analysis does not carry are left out: a dimension
+  /// only lists what can actually be selected, and a token with no value there
+  /// is simply excluded once that dimension is used.
+  Map<String, int> _parseFacet(_ParseDimension dimension) {
     final counts = <String, int>{};
     for (final o in widget.occurrences) {
-      if (otherSelection.isNotEmpty &&
-          !otherSelection.contains(otherLabel(o))) {
-        continue;
-      }
-      final key = label(o);
-      counts[key] = (counts[key] ?? 0) + 1;
+      if (!_passesForm(o) || !_passesParse(o, ignoring: dimension)) continue;
+      final value = dimension.of(o);
+      if (value.isEmpty) continue;
+      counts[value] = (counts[value] ?? 0) + 1;
     }
     return counts;
   }
 
-  static String _formOf(HebrewOccurrence o) => o.surface;
+  Map<String, int> _formFacet() {
+    final counts = <String, int>{};
+    for (final o in widget.occurrences) {
+      if (!_passesParse(o)) continue;
+      counts[o.surface] = (counts[o.surface] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  bool _matchesSearch(String key) {
+    final query = _search.text.trim();
+    if (query.isEmpty) return true;
+    // Hebrew is matched ignoring points, so a reader can type consonants.
+    return key.contains(query) ||
+        _stripTrope(key).contains(_stripTrope(query)) ||
+        key.toLowerCase().contains(query.toLowerCase());
+  }
 
   /// Most frequent first, and alphabetically within a count, so the entries a
   /// reader is most likely to want are the ones they do not have to search for.
   List<String> _entries(Map<String, int> counts) {
-    final query = _search.text.trim();
-    final keys = counts.keys.where((key) {
-      if (query.isEmpty) return true;
-      // Hebrew is matched ignoring points, so a reader can type consonants.
-      return key.contains(query) ||
-          _stripTrope(key).contains(_stripTrope(query)) ||
-          key.toLowerCase().contains(query.toLowerCase());
-    }).toList();
+    final keys = counts.keys.where(_matchesSearch).toList();
     keys.sort((a, b) {
       final byCount = counts[b]!.compareTo(counts[a]!);
       return byCount != 0 ? byCount : a.compareTo(b);
@@ -1899,16 +1978,6 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final formCounts = _facet(
-      label: _formOf,
-      otherLabel: widget.parseLabel,
-      otherSelection: _parses,
-    );
-    final parseCounts = _facet(
-      label: widget.parseLabel,
-      otherLabel: _formOf,
-      otherSelection: _forms,
-    );
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -1924,11 +1993,11 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
                   Text('Filter occurrences', style: theme.textTheme.titleSmall),
                   const Spacer(),
                   TextButton(
-                    onPressed: _forms.isEmpty && _parses.isEmpty
+                    onPressed: _forms.isEmpty && _parseSelectionCount == 0
                         ? null
                         : () => _apply(() {
                             _forms = {};
-                            _parses = {};
+                            _parse.clear();
                           }),
                     child: const Text('Reset'),
                   ),
@@ -1939,15 +2008,17 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
                 ],
               ),
             ),
+            // Parse first: a root's morphology is what a reader wants to slice
+            // by, where its inflected forms can run to hundreds and mostly say
+            // the same thing.
             TabBar(
               controller: _tabs,
-              // Parse first: a root's dozen stem/tense buckets are what a reader
-              // wants to slice by, where its inflected forms can run to
-              // hundreds and mostly say the same thing.
               tabs: [
                 Tab(
                   height: 36,
-                  text: _parses.isEmpty ? 'Parse' : 'Parse (${_parses.length})',
+                  text: _parseSelectionCount == 0
+                      ? 'Parse'
+                      : 'Parse ($_parseSelectionCount)',
                 ),
                 Tab(
                   height: 36,
@@ -1978,32 +2049,7 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
             Flexible(
               child: TabBarView(
                 controller: _tabs,
-                children: [
-                  _list(
-                    counts: parseCounts,
-                    selected: _parses,
-                    allLabel: 'All parses',
-                    hebrew: false,
-                    onToggle: (key, on) => _apply(() {
-                      final next = {..._parses};
-                      on ? next.add(key) : next.remove(key);
-                      _parses = next;
-                    }),
-                    onAll: () => _apply(() => _parses = {}),
-                  ),
-                  _list(
-                    counts: formCounts,
-                    selected: _forms,
-                    allLabel: 'All forms',
-                    hebrew: true,
-                    onToggle: (key, on) => _apply(() {
-                      final next = {..._forms};
-                      on ? next.add(key) : next.remove(key);
-                      _forms = next;
-                    }),
-                    onAll: () => _apply(() => _forms = {}),
-                  ),
-                ],
+                children: [_parseTab(context), _formTab(context)],
               ),
             ),
           ],
@@ -2012,46 +2058,148 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
     );
   }
 
-  Widget _list({
-    required Map<String, int> counts,
-    required Set<String> selected,
-    required String allLabel,
-    required bool hebrew,
-    required void Function(String key, bool on) onToggle,
-    required VoidCallback onAll,
-  }) {
-    final entries = _entries(counts);
-    final style = hebrew
-        ? const TextStyle(
-            fontFamily: 'Cardo',
-            fontFamilyFallback: ['Noto Serif Hebrew'],
-          )
-        : null;
+  Widget _parseTab(BuildContext context) {
+    final theme = Theme.of(context);
+    // A dimension with nothing to offer is left out entirely — nouns have no
+    // stem, verbs no state, and an empty heading is just noise.
+    final sections = <(_ParseDimension, Map<String, int>, List<String>)>[];
+    for (final dimension in _ParseDimension.values) {
+      final counts = _parseFacet(dimension);
+      final entries = _entries(counts);
+      // Kept when a search hides its entries but a selection of it is live, so
+      // the reader can always see and undo what is filtering the list.
+      if (entries.isEmpty && _selected(dimension).isEmpty) continue;
+      sections.add((dimension, counts, entries));
+    }
+    if (sections.isEmpty) {
+      return Center(
+        child: Text(
+          'Nothing to filter on',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
     return ListView.builder(
-      // One tile per row: the previous multi-column grid packed more onto the
-      // screen but gave a 300-entry list no order anyone could scan.
+      itemCount: sections.length,
+      itemBuilder: (context, i) {
+        final (dimension, counts, entries) = sections[i];
+        final selected = _selected(dimension);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, i == 0 ? 4 : 14, 16, 2),
+              child: Row(
+                children: [
+                  Text(
+                    dimension.label.toUpperCase(),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (selected.isNotEmpty)
+                    TextButton(
+                      onPressed: () => _apply(() => _parse.remove(dimension)),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: Size.zero,
+                      ),
+                      child: const Text('Any'),
+                    ),
+                ],
+              ),
+            ),
+            // Wrapped chips rather than a column of checkboxes: a dimension has
+            // a handful of short values, and seven stacked lists would bury the
+            // later ones under a page of scrolling.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final value in entries)
+                    FilterChip(
+                      label: Text('$value  ${counts[value] ?? 0}'),
+                      selected: selected.contains(value),
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (on) => _apply(() {
+                        final next = {...selected};
+                        on ? next.add(value) : next.remove(value);
+                        if (next.isEmpty) {
+                          _parse.remove(dimension);
+                        } else {
+                          _parse[dimension] = next;
+                        }
+                      }),
+                    ),
+                  // A live selection whose entry the search or another filter
+                  // has hidden still needs to be visible to be turned off.
+                  for (final value in selected)
+                    if (!entries.contains(value))
+                      FilterChip(
+                        label: Text(value),
+                        selected: true,
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (_) => _apply(() {
+                          final next = {...selected}..remove(value);
+                          if (next.isEmpty) {
+                            _parse.remove(dimension);
+                          } else {
+                            _parse[dimension] = next;
+                          }
+                        }),
+                      ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _formTab(BuildContext context) {
+    final counts = _formFacet();
+    final entries = _entries(counts);
+    final formStyle = const TextStyle(
+      fontFamily: 'Cardo',
+      fontFamilyFallback: ['Noto Serif Hebrew'],
+    );
+    return ListView.builder(
+      // One tile per row: a 300-entry list packed into columns has no order
+      // anyone can scan.
       itemCount: entries.length + 1,
       itemBuilder: (context, i) {
         if (i == 0) {
           return CheckboxListTile(
             dense: true,
-            title: Text(allLabel),
-            value: selected.isEmpty,
-            onChanged: (_) => onAll(),
+            title: const Text('All forms'),
+            value: _forms.isEmpty,
+            onChanged: (_) => _apply(() => _forms = {}),
           );
         }
-        final key = entries[i - 1];
+        final form = entries[i - 1];
         return CheckboxListTile(
           dense: true,
           title: Text(
-            key,
-            style: style,
-            textDirection: hebrew ? TextDirection.rtl : TextDirection.ltr,
+            form,
+            style: formStyle,
+            textDirection: TextDirection.rtl,
             overflow: TextOverflow.ellipsis,
           ),
-          secondary: Text('${counts[key] ?? 0}'),
-          value: selected.contains(key),
-          onChanged: (on) => onToggle(key, on ?? false),
+          secondary: Text('${counts[form] ?? 0}'),
+          value: _forms.contains(form),
+          onChanged: (on) => _apply(() {
+            final next = {..._forms};
+            (on ?? false) ? next.add(form) : next.remove(form);
+            _forms = next;
+          }),
         );
       },
     );

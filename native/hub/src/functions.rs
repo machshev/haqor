@@ -4,15 +4,14 @@ use crate::signals::{
     BdbSummary, BuildInfo, CalibrationProbe, ChapterText, FinishCalibration, GetBuildInfo,
     GetCalibrationProbe, GetChapter, GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts,
     GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts,
-    GetVocab,
-    GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence, IssueReportStatus,
-    KetivEntry, LexiconEntryOverrideStatus, OnboardingStatus, OptimizeTutorGlossOverrides,
-    ProgressSyncStatus, ResetTutor, SaveIssueReport, SaveLexiconEntryOverride, SaveTutorGloss,
-    SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings,
-    StudyItem, SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress,
-    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry,
-    VerseTexts, VocabEntry, VocabList,
-    WordCard, WordInfo, WordOccurrence, WordOccurrences,
+    GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence,
+    IssueReportStatus, KetivEntry, LexiconEntryOverrideStatus, OccurrenceParse, OnboardingStatus,
+    OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, SaveIssueReport,
+    SaveLexiconEntryOverride, SaveTutorGloss, SedraOccurrence, SedraSummary, SeenConcept,
+    SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, SuffixCard,
+    SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard,
+    VerseEntry, VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry, VocabList, WordCard,
+    WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -590,8 +589,16 @@ fn to_signal_hebrew_occurrences(
             verse: o.verse,
             position: o.position,
             surface: o.surface,
-            stem: o.stem,
-            parse: o.parse,
+            parse: OccurrenceParse {
+                part_of_speech: o.parse.part_of_speech,
+                stem: o.parse.stem,
+                tense: o.parse.tense,
+                person: o.parse.person,
+                gender: o.parse.gender,
+                number: o.parse.number,
+                state: o.parse.state,
+            },
+            parse_label: o.parse_label,
         })
         .collect()
 }
