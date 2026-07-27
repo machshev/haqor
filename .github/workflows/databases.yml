@@ -87,21 +87,22 @@ jobs:
           path: haqor-core/data/haqor.db
           key: assets-db-v3-${{ inputs.blob-codec }}-${{ steps.core.outputs.sha }}
 
+      # The toolchain is set up whether or not the database was cached: the
+      # verification below reads the database back through the pinned core, and
+      # that check matters most on the cache-hit path, where nothing else here
+      # would open the file the release is about to ship.
       - name: Install Nix
-        if: steps.db-cache.outputs.cache-hit != 'true'
         uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ github.token }}
 
       - name: Cache Nix store
-        if: steps.db-cache.outputs.cache-hit != 'true'
         uses: nix-community/cache-nix-action@v6
         with:
           primary-key: nix-dbgen-${{ runner.os }}-${{ hashFiles('haqor-core/flake.lock', 'haqor-core/Cargo.lock') }}
           restore-prefixes-first-match: nix-dbgen-${{ runner.os }}-
 
       - name: Cache cargo build
-        if: steps.db-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -200,6 +201,23 @@ jobs:
           reader_glosses="$(query "SELECT count(*) FROM word WHERE gloss_id IS NOT NULL;")"
           test "$reader_glosses" -gt 250000
           echo "Verified $reader_glosses reader glosses"
+
+      # Everything above reads the database with sqlite3, which cannot tell
+      # whether the *app* can read it: verse text and lexicon bodies ship as
+      # zstd blobs, and a reader that fails to decode them leaves every verse
+      # empty while all of the counts above still pass. That shipped in v0.7.12.
+      #
+      # So open the finished file with the same pinned core the app links, and
+      # read a verse. The CLI's `get` goes through `Bible::open` and the blob
+      # reader, which is the whole point of the check.
+      - name: Read the database back through the pinned core
+        working-directory: haqor-core
+        run: |
+          set -euo pipefail
+          verse="$(nix develop --command bash -c \
+            'cargo run --release --quiet -p haqor-cli -- get 1 1 1')"
+          test -n "$verse" || { echo "::error::Genesis 1:1 read back empty"; exit 1; }
+          echo "Genesis 1:1 through the reader: $verse"
 
       # The database's build stamp is its version: the installer compares it to
       # decide whether to reinstall, and About shows it. tool/sync-dbs.sh
