@@ -127,9 +127,9 @@ checksum = "61803da095bee82a81bb1a452ecc25d3b2f1416d1897eb86430c6159ef717c17"
 
 [[package]]
 name = "either"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
+checksum = "9e5e8f6c15a24b9a3ee5efec809ccd006d3b30e8b3bb63c39af737c7f87daa1d"
 
 [[package]]
 name = "event-listener"
@@ -261,8 +261,6 @@ dependencies = [
 [[package]]
 name = "haqor-core"
 version = "0.7.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c65e4a66c21933b45847ea8692dba1dccdf1928537cdbb304bdcf02fc94cc5d"
 dependencies = [
  "anyhow",
  "haqor-morphology",
@@ -275,8 +273,6 @@ dependencies = [
 [[package]]
 name = "haqor-morphology"
 version = "0.7.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfb89dc8d72682e76642bbe9cb03a01fb2892b5d8329a7e6c75eb36d88468aab"
 dependencies = [
  "rayon",
 ]
