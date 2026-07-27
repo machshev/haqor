@@ -260,7 +260,7 @@ dependencies = [
 
 [[package]]
 name = "haqor-core"
-version = "0.7.7"
+version = "0.7.8"
 dependencies = [
  "anyhow",
  "haqor-morphology",
@@ -272,7 +272,7 @@ dependencies = [
 
 [[package]]
 name = "haqor-morphology"
-version = "0.7.7"
+version = "0.7.8"
 dependencies = [
  "rayon",
 ]
