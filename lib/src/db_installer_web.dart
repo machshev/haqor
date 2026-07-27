@@ -2,10 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bindings/bindings.dart';
+import 'boot_status.dart';
+import 'db_asset_web.dart';
 
 /// One curated runtime database; the generation databases are not shipped
 /// (haqor-core doc/adr/0006-single-runtime-database.md).
@@ -23,13 +24,19 @@ Future<void> initializeDatabases() async {
 
   final bundle = BytesBuilder(copy: false);
   for (final name in _dbFiles) {
-    final data = await rootBundle.load('assets/db/$name');
-    final bytes = data.buffer.asUint8List(
-      data.offsetInBytes,
-      data.lengthInBytes,
+    final bytes = await loadDatabaseAsset(
+      name,
+      onProgress: (fraction, received) => reportBootStatus(
+        'Loading the Hebrew Bible…',
+        progress: fraction,
+        detail: '${(received / (1024 * 1024)).toStringAsFixed(1)} MB',
+      ),
     );
     _append(bundle, bytes);
   }
+  // The engine deserializes what it is handed below, which takes a few seconds
+  // and reports nothing back while it does.
+  reportBootStatus('Preparing the text…');
   final persisted = prefs.getString(_progressKey);
   try {
     _append(bundle, persisted == null ? Uint8List(0) : base64Decode(persisted));

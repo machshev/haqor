@@ -31,16 +31,184 @@
 
   <title>Haqor</title>
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    The boot screen. Haqor cannot paint anything until the Dart runtime, the
+    Rust engine and a 38 MB database have all been fetched, and until they are
+    the page is an empty white rectangle — on a first visit or straight after an
+    update that lasts long enough to read as a broken app. So the wait is
+    described here, in plain HTML that needs nothing but the document itself,
+    and the phases are reported into it as they pass. Dart takes the last of
+    them over (`lib/src/boot_status_web.dart`) and hides the screen once the
+    reader has painted.
+
+    Styled to match the app's own light/dark surfaces rather than the framework
+    default, so the handover to the first frame is not a flash of another theme.
+  -->
+  <style>
+    :root {
+      color-scheme: light dark;
+      --haqor-surface: #fbfdf7;
+      --haqor-on-surface: #191d17;
+      --haqor-muted: #43483f;
+      --haqor-accent: #2d5a27;
+      --haqor-track: #dde5d8;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --haqor-surface: #10140f;
+        --haqor-on-surface: #e1e4dc;
+        --haqor-muted: #c2c8bc;
+        --haqor-accent: #9ccb8f;
+        --haqor-track: #2b3227;
+      }
+    }
+    body { margin: 0; background: var(--haqor-surface); }
+    #haqor-boot {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: var(--haqor-surface);
+      color: var(--haqor-on-surface);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      text-align: center;
+      padding: 24px;
+      transition: opacity 200ms ease-out;
+      z-index: 2147483647;
+    }
+    #haqor-boot.haqor-boot-done { opacity: 0; pointer-events: none; }
+    #haqor-boot-title {
+      font-size: 2rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+    #haqor-boot-status { font-size: 0.95rem; color: var(--haqor-muted); }
+    #haqor-boot-detail {
+      font-size: 0.8rem;
+      color: var(--haqor-muted);
+      max-width: 30rem;
+      line-height: 1.45;
+    }
+    #haqor-boot-track {
+      position: relative;
+      width: min(18rem, 70vw);
+      height: 4px;
+      border-radius: 2px;
+      background: var(--haqor-track);
+      overflow: hidden;
+    }
+    #haqor-boot-bar {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: var(--haqor-accent);
+      transform-origin: left center;
+    }
+    /* No measurable progress to show: sweep instead of sitting at zero. */
+    #haqor-boot-track.haqor-boot-indeterminate #haqor-boot-bar {
+      width: 40%;
+      animation: haqor-boot-sweep 1.4s ease-in-out infinite;
+    }
+    #haqor-boot-track:not(.haqor-boot-indeterminate) #haqor-boot-bar {
+      transition: transform 150ms linear;
+    }
+    @keyframes haqor-boot-sweep {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(250%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #haqor-boot-track.haqor-boot-indeterminate #haqor-boot-bar {
+        animation: none;
+        width: 100%;
+        opacity: 0.4;
+      }
+    }
+    #haqor-boot.haqor-boot-failed #haqor-boot-track { display: none; }
+  </style>
 </head>
 <body>
+  <div id="haqor-boot" role="status" aria-live="polite">
+    <div id="haqor-boot-title" lang="he" dir="rtl">הָקוֹר</div>
+    <div id="haqor-boot-track" class="haqor-boot-indeterminate">
+      <div id="haqor-boot-bar"></div>
+    </div>
+    <div id="haqor-boot-status">Starting…</div>
+    <div id="haqor-boot-detail"></div>
+  </div>
+
+  <script>
+    // The boot screen's controls, reachable from the loader below and from Dart
+    // through `window.haqorBoot`.
+    (() => {
+      const panel = document.getElementById('haqor-boot');
+      const track = document.getElementById('haqor-boot-track');
+      const bar = document.getElementById('haqor-boot-bar');
+      const status = document.getElementById('haqor-boot-status');
+      const detail = document.getElementById('haqor-boot-detail');
+      let done = false;
+
+      window.haqorBoot = {
+        // `fraction` is 0..1 where it is known, and null where it is not.
+        status(text, fraction, note) {
+          if (done) return;
+          status.textContent = text;
+          detail.textContent = note ?? '';
+          if (typeof fraction === 'number' && fraction >= 0) {
+            track.classList.remove('haqor-boot-indeterminate');
+            bar.style.transform = `scaleX(${Math.min(1, fraction)})`;
+          } else {
+            track.classList.add('haqor-boot-indeterminate');
+            bar.style.transform = '';
+          }
+        },
+        // A failure has to stay on screen: a blank page tells the reader
+        // nothing, and there is no Flutter view to report through yet.
+        fail(text, note) {
+          if (done) return;
+          panel.classList.add('haqor-boot-failed');
+          status.textContent = text;
+          detail.textContent = note ?? '';
+        },
+        // Whether the app has painted. The loader uses this to decide if it may
+        // still reload the page from under itself.
+        isDone() {
+          return done;
+        },
+        done() {
+          if (done) return;
+          done = true;
+          panel.classList.add('haqor-boot-done');
+          panel.addEventListener('transitionend', () => panel.remove(), {once: true});
+          // Belt and braces: `transitionend` never fires if the panel is
+          // already hidden (a background tab, say).
+          setTimeout(() => panel.remove(), 400);
+        },
+      };
+    })();
+  </script>
+
   <script>
     (() => {
       const retryParameter = '_haqor_coi_retry';
+      const boot = window.haqorBoot;
 
       function loadFlutter() {
+        boot.status('Starting the app…');
         const script = document.createElement('script');
         script.src = 'flutter_bootstrap.js';
         script.async = true;
+        script.addEventListener('error', () => {
+          boot.fail(
+            'Haqor could not be loaded.',
+            'Check your connection and reload the page.',
+          );
+        });
         document.body.appendChild(script);
       }
 
@@ -67,6 +235,40 @@
         window.location.replace(url);
       }
 
+      /// Report the arrival of a new version, and reload once it is in control.
+      ///
+      /// Without this the page keeps running the build it started with until
+      /// the reader happens to open Haqor again — so a release lands one visit
+      /// late, and the visit that downloads it shows no sign of doing so. The
+      /// worker calls `skipWaiting()` on install and claims its clients on
+      /// activate, so `controllerchange` is the signal that the new build is
+      /// the one a reload would get.
+      function watchForUpdates(registration, reload) {
+        const track = (worker) => {
+          if (!worker) return;
+          const report = () => {
+            if (worker.state === 'installing') {
+              boot.status(
+                'Updating Haqor…',
+                null,
+                'Fetching the new version. This happens once per release.',
+              );
+            }
+          };
+          report();
+          worker.addEventListener('statechange', report);
+        };
+
+        track(registration.installing);
+        registration.addEventListener('updatefound', () => {
+          track(registration.installing);
+        });
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          boot.status('Update ready. Restarting…');
+          reload();
+        }, {once: true});
+      }
+
       async function start() {
         // The service worker is intentionally skipped for Flutter's local
         // development server because its reload breaks the DWDS connection.
@@ -88,10 +290,39 @@
         const unifiedWorkerIsControlling =
           controller?.pathname.endsWith('/flutter_service_worker.js') &&
           controller.search === '';
+
         if (crossOriginIsolated && unifiedWorkerIsControlling) {
+          // The ready path: the app runs from the cache while the worker checks
+          // for a new version behind it. Registering again is what hands us the
+          // registration to watch — the browser reuses the existing worker.
           removeRetryParameter();
           loadFlutter();
+          try {
+            const registration = await navigator.serviceWorker.register(
+              'flutter_service_worker.js',
+            );
+            // Reload only while the boot screen is still up. An update that
+            // lands during startup is worth taking straight away — that is the
+            // visit which would otherwise run the version being replaced — but
+            // one that lands later must not pull the page out from under
+            // someone who is reading; it applies on their next visit, as before.
+            watchForUpdates(registration, () => {
+              if (boot.isDone()) return;
+              window.location.reload();
+            });
+          } catch (error) {
+            console.error('Unable to check for a Haqor update.', error);
+          }
           return;
+        }
+
+        if (!unifiedWorkerIsControlling && !controller) {
+          boot.status(
+            'Setting up Haqor…',
+            null,
+            'Fetching the app and the Hebrew Bible for offline use. '
+              + 'The first visit downloads about 40 MB.',
+          );
         }
 
         let reloading = false;
