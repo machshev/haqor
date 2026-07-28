@@ -84,6 +84,7 @@ class WordInfoSheet extends StatefulWidget {
     this.sendInfoRequest,
     this.sendOccurrencesRequest,
     this.sendVerseTextsRequest,
+    this.docked = false,
   });
 
   final String word;
@@ -94,6 +95,9 @@ class WordInfoSheet extends StatefulWidget {
   final void Function(GetWordInfo)? sendInfoRequest;
   final void Function(GetWordOccurrences)? sendOccurrencesRequest;
   final void Function(GetVerseTexts)? sendVerseTextsRequest;
+
+  /// Renders as a bounded side-panel body instead of a draggable bottom sheet.
+  final bool docked;
 
   /// When set, the sheet shows the BDB entry with this id (a Lexicon
   /// cross-reference target) rather than parsing [word] as a surface form;
@@ -144,6 +148,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   // so "Qal" plus "plural" plus "participle" narrows, where a list of whole
   // labels would have needed the exact combination to exist as an entry.
   final Map<_ParseDimension, Set<String>> _otParse = {};
+  final ScrollController _dockedScrollController = ScrollController();
   // OT-only: restrict the list to any selected books (1-based, matching the
   // occurrence rows). Empty shows the whole canon.
   final Set<int> _otBooks = {};
@@ -347,6 +352,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   @override
   void dispose() {
     _tabController.dispose();
+    _dockedScrollController.dispose();
     _sub?.cancel();
     _occSub?.cancel();
     _verseTexts.dispose();
@@ -406,6 +412,17 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final info = _info;
+
+    if (widget.docked) {
+      return ColoredBox(
+        color: theme.colorScheme.surface,
+        child: SelectionArea(
+          child: info == null
+              ? const Center(child: CircularProgressIndicator())
+              : _buildContent(context, _dockedScrollController, info),
+        ),
+      );
+    }
 
     return DraggableScrollableSheet(
       initialChildSize: 0.75,

@@ -54,6 +54,24 @@ enum KetivDisplay {
   final String description;
 }
 
+enum ReaderLayoutMode {
+  automatic(
+    'Automatic',
+    'Add study and word panels as the window becomes wider.',
+  ),
+  focus('Focus', 'Keep the reader on its own and open details as sheets.'),
+  split('Split', 'Keep one study or word panel beside the reader.'),
+  threePanel(
+    'Three panels',
+    'Show study navigation, the passage, and word details together.',
+  );
+
+  const ReaderLayoutMode(this.label, this.description);
+
+  final String label;
+  final String description;
+}
+
 class AppReadingSettings {
   const AppReadingSettings({
     required this.ntSyriac,
@@ -66,6 +84,7 @@ class AppReadingSettings {
     required this.ketivDisplay,
     required this.fontSize,
     required this.fontFamily,
+    required this.readerLayoutMode,
   });
 
   final bool ntSyriac;
@@ -78,6 +97,7 @@ class AppReadingSettings {
   final KetivDisplay ketivDisplay;
   final double fontSize;
   final String fontFamily;
+  final ReaderLayoutMode readerLayoutMode;
 
   AppReadingSettings copyWith({
     bool? ntSyriac,
@@ -90,6 +110,7 @@ class AppReadingSettings {
     KetivDisplay? ketivDisplay,
     double? fontSize,
     String? fontFamily,
+    ReaderLayoutMode? readerLayoutMode,
   }) => AppReadingSettings(
     ntSyriac: ntSyriac ?? this.ntSyriac,
     englishBookNames: englishBookNames ?? this.englishBookNames,
@@ -101,6 +122,7 @@ class AppReadingSettings {
     ketivDisplay: ketivDisplay ?? this.ketivDisplay,
     fontSize: fontSize ?? this.fontSize,
     fontFamily: fontFamily ?? this.fontFamily,
+    readerLayoutMode: readerLayoutMode ?? this.readerLayoutMode,
   );
 }
 
@@ -247,6 +269,33 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
               ),
               const SizedBox(height: 20),
               const _SectionLabel('Reading'),
+              Text('Large-screen layout', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<ReaderLayoutMode>(
+                initialValue: _readingSettings.readerLayoutMode,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: [
+                  for (final mode in ReaderLayoutMode.values)
+                    DropdownMenuItem(value: mode, child: Text(mode.label)),
+                ],
+                onChanged: (mode) {
+                  if (mode == null) return;
+                  _updateReadingSettings(
+                    _readingSettings.copyWith(readerLayoutMode: mode),
+                  );
+                },
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _readingSettings.readerLayoutMode.description,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
               Text('New Testament text', style: theme.textTheme.labelLarge),
               const SizedBox(height: 8),
               SegmentedButton<bool>(

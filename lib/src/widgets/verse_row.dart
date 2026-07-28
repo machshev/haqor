@@ -150,6 +150,9 @@ class VerseRow extends StatefulWidget {
     this.glossInterlinear = false,
     this.morphologyInterlinear = false,
     this.highlightProperNames = false,
+    this.studyHighlighted = false,
+    this.studyNote = false,
+    this.highlightedWordPositions = const {},
     this.ketivDisplay = KetivDisplay.superscript,
   });
 
@@ -165,6 +168,9 @@ class VerseRow extends StatefulWidget {
   final bool glossInterlinear;
   final bool morphologyInterlinear;
   final bool highlightProperNames;
+  final bool studyHighlighted;
+  final bool studyNote;
+  final Set<int> highlightedWordPositions;
   final KetivDisplay ketivDisplay;
 
   @override
@@ -347,15 +353,34 @@ class _VerseRowState extends State<VerseRow> {
       height: 1.0,
     );
     TextStyle styleForWord(String word, int lexicalPosition) {
-      if (!widget.highlightProperNames) return wordStyle;
+      final highlighted = widget.highlightedWordPositions.contains(
+        lexicalPosition,
+      );
+      final baseStyle = highlighted
+          ? wordStyle.copyWith(
+              backgroundColor: theme.colorScheme.tertiaryContainer,
+              fontWeight: FontWeight.w700,
+            )
+          : wordStyle;
+      if (!widget.highlightProperNames) return baseStyle;
       // The corpus's traditional pointing `יַהְוֶה` currently has a verb
       // analysis, so its special reader treatment must not depend on the
       // general proper-name flag.
-      if (isYahweh(word)) return yahwehStyle;
+      if (isYahweh(word)) {
+        return highlighted
+            ? yahwehStyle.copyWith(
+                backgroundColor: theme.colorScheme.tertiaryContainer,
+              )
+            : yahwehStyle;
+      }
       return lexicalPosition < widget.entry.names.length &&
               widget.entry.names[lexicalPosition]
-          ? properNameStyle
-          : wordStyle;
+          ? highlighted
+                ? properNameStyle.copyWith(
+                    backgroundColor: theme.colorScheme.tertiaryContainer,
+                  )
+                : properNameStyle
+          : baseStyle;
     }
 
     final Widget content;
@@ -490,6 +515,8 @@ class _VerseRowState extends State<VerseRow> {
         decoration: BoxDecoration(
           color: widget.isSelected
               ? theme.colorScheme.primaryContainer
+              : widget.studyHighlighted
+              ? theme.colorScheme.secondaryContainer.withValues(alpha: 0.55)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
@@ -500,14 +527,25 @@ class _VerseRowState extends State<VerseRow> {
             const SizedBox(width: 8),
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                widget.hebrewNumerals
-                    ? _toHebrewNumeral(widget.entry.verse)
-                    : '${widget.entry.verse}',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    widget.hebrewNumerals
+                        ? _toHebrewNumeral(widget.entry.verse)
+                        : '${widget.entry.verse}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (widget.studyNote)
+                    Icon(
+                      Icons.sticky_note_2_outlined,
+                      size: 12,
+                      color: theme.colorScheme.secondary,
+                    ),
+                ],
               ),
             ),
           ],

@@ -167,4 +167,61 @@ void main() {
     }
     expect(_verse(1, 8, 1), findsOneWidget);
   });
+
+  testWidgets('three-panel layout exposes persistent study navigation', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      'reader_layout_mode': 'threePanel',
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pump();
+
+    expect(find.text('Study workspace'), findsOneWidget);
+    expect(find.text('Word study'), findsOneWidget);
+    expect(find.text('Create workspace'), findsOneWidget);
+
+    await tester.tap(find.text('Create workspace'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connected passages'), findsOneWidget);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('study_workspaces_v1'), contains('"verse":1'));
+  });
+
+  testWidgets('scrolling persists the first visible verse', (tester) async {
+    tester.view.physicalSize = const Size(700, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final rust = await _pumpReader(tester, chapter: 5);
+    rust.deliverAll();
+    await tester.pump();
+
+    for (var i = 0; i < 4; i++) {
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -180));
+      await tester.pump();
+    }
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt('book'), 0);
+    expect(prefs.getInt('chapter'), 5);
+    expect(prefs.getInt('verse'), greaterThan(1));
+    final history = prefs.getStringList('nav_history');
+    expect(history?.last, '0,5,${prefs.getInt('verse')}');
+  });
 }

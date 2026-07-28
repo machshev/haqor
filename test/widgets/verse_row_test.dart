@@ -131,6 +131,52 @@ void main() {
     expect(tapped, ('יְהוָה', 'Yahweh', 1));
   });
 
+  testWidgets('study highlights stay occurrence-specific and show notes', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VerseRow(
+            entry: const VerseEntry(
+              verse: 4,
+              text: 'מִלָּה מִלָּה',
+              glosses: [],
+              morphologies: [],
+              names: [],
+              ketivs: [],
+            ),
+            isSelected: false,
+            hebrewNumerals: false,
+            studyHighlighted: true,
+            studyNote: true,
+            highlightedWordPositions: {1},
+            onTap: () {},
+            onWordTap: (_, _, _) {},
+          ),
+        ),
+      ),
+    );
+
+    final text = tester
+        .widget<SelectableText>(find.byType(SelectableText))
+        .textSpan!;
+    final words = text.children!
+        .whereType<TextSpan>()
+        .where((span) => span.text == 'מִלָּה')
+        .toList();
+
+    expect(words, hasLength(2));
+    expect(words.first.style!.backgroundColor, isNull);
+    expect(words.last.style!.backgroundColor, isNotNull);
+    expect(find.byIcon(Icons.sticky_note_2_outlined), findsOneWidget);
+    final container = tester.widget<AnimatedContainer>(
+      find.byType(AnimatedContainer),
+    );
+    final decoration = container.decoration! as BoxDecoration;
+    expect(decoration.color, isNot(Colors.transparent));
+  });
+
   testWidgets('morphology sits below the gloss with visible spacing', (
     tester,
   ) async {
