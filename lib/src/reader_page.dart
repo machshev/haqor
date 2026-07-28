@@ -177,16 +177,263 @@ const _readerInlineActionsMinWidth = 450.0;
 class BibleReaderPage extends StatefulWidget {
   const BibleReaderPage({super.key, this.sendChapterRequest});
 
-  /// Test seam: how a [GetChapter] request reaches the Rust side. Defaults to
-  /// the real rinf signal; widget tests substitute a stub that answers via
-  /// `assignRustSignal['ChapterText']`.
   final void Function(GetChapter request)? sendChapterRequest;
 
   @override
   State<BibleReaderPage> createState() => _BibleReaderPageState();
 }
 
+class _ReaderTab {
+  const _ReaderTab(this.id);
+
+  final String id;
+}
+
 class _BibleReaderPageState extends State<BibleReaderPage> {
+  static const _kTabs = 'reader_tabs';
+  static const _kActiveTab = 'reader_active_tab';
+  static const _kTiled = 'reader_tabs_tiled';
+  static const _maxReaderTabs = 4;
+
+  final List<_ReaderTab> _tabs = [const _ReaderTab('primary')];
+  final Map<String, GlobalKey<_ReaderSessionState>> _readerKeys = {
+    'primary': GlobalKey<_ReaderSessionState>(),
+  };
+  String _activeTabId = 'primary';
+  bool _tiled = false;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWorkspace();
+  }
+
+  Future<void> _loadWorkspace() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedIds = prefs.getStringList(_kTabs) ?? const [];
+    final ids = savedIds
+        .where((id) => id.isNotEmpty)
+        .take(_maxReaderTabs)
+        .toSet()
+        .toList();
+    if (!ids.contains('primary')) ids.insert(0, 'primary');
+    final active = prefs.getString(_kActiveTab);
+    if (!mounted) return;
+    setState(() {
+      _tabs
+        ..clear()
+        ..addAll(ids.map(_ReaderTab.new));
+      for (final tab in _tabs) {
+        _readerKeys.putIfAbsent(tab.id, () => GlobalKey<_ReaderSessionState>());
+      }
+      _activeTabId = ids.contains(active) ? active! : ids.first;
+      _tiled = prefs.getBool(_kTiled) ?? false;
+      _loaded = true;
+    });
+  }
+
+  Future<void> _saveWorkspace() async {
+    final prefs = await SharedPreferences.getInstance();
+    await Future.wait([
+      prefs.setStringList(_kTabs, _tabs.map((tab) => tab.id).toList()),
+      prefs.setString(_kActiveTab, _activeTabId),
+      prefs.setBool(_kTiled, _tiled),
+    ]);
+  }
+
+  Future<void> _addTab() async {
+    if (_tabs.length >= _maxReaderTabs) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Up to four reader tabs can be open.')),
+      );
+      return;
+    }
+    final id = DateTime.now().microsecondsSinceEpoch.toString();
+    final source = _readerKeys[_activeTabId]?.currentState;
+    if (source != null) {
+      await _ReaderSession.seedNavigation(
+        id,
+        source._bookIndex,
+        source._chapter,
+        source._visibleVerse,
+      );
+      if (!mounted) return;
+    }
+    setState(() {
+      _tabs.add(_ReaderTab(id));
+      _readerKeys[id] = GlobalKey<_ReaderSessionState>();
+      _activeTabId = id;
+    });
+    _saveWorkspace();
+  }
+
+  void _closeTab(String id) {
+    if (_tabs.length == 1) return;
+    final index = _tabs.indexWhere((tab) => tab.id == id);
+    if (index < 0) return;
+    setState(() {
+      _tabs.removeAt(index);
+      if (_activeTabId == id) {
+        _activeTabId = _tabs[math.min(index, _tabs.length - 1)].id;
+      }
+    });
+    _saveWorkspace();
+  }
+
+  Widget _tabLabel(_ReaderTab tab) {
+    final state = _readerKeys[tab.id]?.currentState;
+    final label = state == null
+        ? 'Reader'
+        : '${bookDisplayName(state._bookIndex, useEnglish: state._englishBookNames)} '
+              '${state._chapter}';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        if (_tabs.length > 1) ...[
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: () => _closeTab(tab.id),
+            borderRadius: BorderRadius.circular(12),
+            child: const Padding(
+              padding: EdgeInsets.all(2),
+              child: Icon(Icons.close, size: 16),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _reader(_ReaderTab tab) => _ReaderSession(
+    key: _readerKeys[tab.id],
+    sessionId: tab.id,
+    sendChapterRequest: widget.sendChapterRequest,
+    onPassageChanged: () {
+      if (mounted) setState(() {});
+    },
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final canTile = MediaQuery.sizeOf(context).width >= 900;
+    final tiled = _tiled && canTile && _tabs.length > 1;
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            Material(
+              color: Theme.of(context).colorScheme.surfaceContainer,
+              child: SizedBox(
+                height: 48,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _tabs.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 4),
+                        itemBuilder: (context, index) {
+                          final tab = _tabs[index];
+                          return ChoiceChip(
+                            label: _tabLabel(tab),
+                            selected: tab.id == _activeTabId,
+                            onSelected: (_) {
+                              setState(() => _activeTabId = tab.id);
+                              _saveWorkspace();
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add),
+                      tooltip: 'New reader tab',
+                      onPressed: _addTab,
+                    ),
+                    IconButton(
+                      isSelected: tiled,
+                      selectedIcon: const Icon(Icons.view_column),
+                      icon: const Icon(Icons.view_column_outlined),
+                      tooltip: tiled
+                          ? 'Show reader tabs'
+                          : canTile
+                          ? 'Tile reader tabs'
+                          : 'Tiling needs a wider window',
+                      onPressed: canTile && _tabs.length > 1
+                          ? () {
+                              setState(() => _tiled = !_tiled);
+                              _saveWorkspace();
+                            }
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: tiled
+                  ? Row(
+                      children: [
+                        for (var index = 0; index < _tabs.length; index++) ...[
+                          if (index > 0) const VerticalDivider(width: 1),
+                          Expanded(child: _reader(_tabs[index])),
+                        ],
+                      ],
+                    )
+                  : IndexedStack(
+                      index: _tabs.indexWhere((tab) => tab.id == _activeTabId),
+                      children: [for (final tab in _tabs) _reader(tab)],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReaderSession extends StatefulWidget {
+  const _ReaderSession({
+    super.key,
+    required this.sessionId,
+    required this.onPassageChanged,
+    this.sendChapterRequest,
+  });
+
+  final String sessionId;
+  final VoidCallback onPassageChanged;
+
+  /// Test seam: how a [GetChapter] request reaches the Rust side. Defaults to
+  /// the real rinf signal; widget tests substitute a stub that answers via
+  /// `assignRustSignal['ChapterText']`.
+  final void Function(GetChapter request)? sendChapterRequest;
+
+  static Future<void> seedNavigation(
+    String sessionId,
+    int book,
+    int chapter,
+    int verse,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final prefix = 'reader_session_${sessionId}_';
+    await Future.wait([
+      prefs.setInt('${prefix}book', book),
+      prefs.setInt('${prefix}chapter', chapter),
+      prefs.setInt('${prefix}verse', verse),
+    ]);
+  }
+
+  @override
+  State<_ReaderSession> createState() => _ReaderSessionState();
+}
+
+class _ReaderSessionState extends State<_ReaderSession> {
   static const _kBook = 'book';
   static const _kChapter = 'chapter';
   static const _kVerse = 'verse';
@@ -207,6 +454,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   static const _kReadingPlans = 'reading_plans';
   static const _kReaderLayoutMode = 'reader_layout_mode';
   static const _kStudyWorkspaceVisible = 'study_workspace_visible';
+  static const _kSidePanelWidth = 'reader_side_panel_width';
 
   static const _fontFamilies = ['Cardo', 'David Libre', 'Frank Ruhl Libre'];
 
@@ -271,7 +519,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   String? _activeStudyWorkspaceId;
   _SelectedWord? _selectedWord;
   bool _splitShowsWord = false;
+  double _sidePanelWidth = 360;
   Timer? _positionSaveTimer;
+
+  String _sessionKey(String key) => widget.sessionId == 'primary'
+      ? key
+      : 'reader_session_${widget.sessionId}_$key';
 
   _ReadingPlan? _planForChapter(int bookIndex, int chapter) {
     for (final plan in _readingPlans) {
@@ -455,12 +708,15 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _bookIndex = (prefs.getInt(_kBook) ?? 0).clamp(0, kBooks.length - 1);
-      _chapter = (prefs.getInt(_kChapter) ?? 1).clamp(
+      _bookIndex = (prefs.getInt(_sessionKey(_kBook)) ?? 0).clamp(
+        0,
+        kBooks.length - 1,
+      );
+      _chapter = (prefs.getInt(_sessionKey(_kChapter)) ?? 1).clamp(
         1,
         kBooks[_bookIndex].chapters,
       );
-      _visibleVerse = (prefs.getInt(_kVerse) ?? 1).clamp(1, 999);
+      _visibleVerse = (prefs.getInt(_sessionKey(_kVerse)) ?? 1).clamp(1, 999);
       _ntSyriac = prefs.getBool(_kNtSyriac) ?? false;
       _englishBookNames = prefs.getBool(_kEnglishBookNames) ?? false;
       _hebrewNumerals = prefs.getBool(_kHebrewNumerals) ?? true;
@@ -472,6 +728,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _morphologyInterlinear = prefs.getBool(_kMorphologyInterlinear) ?? false;
       _highlightProperNames = prefs.getBool(_kHighlightProperNames) ?? false;
       _studyWorkspaceVisible = prefs.getBool(_kStudyWorkspaceVisible) ?? false;
+      _sidePanelWidth = (prefs.getDouble(_kSidePanelWidth) ?? 360).clamp(
+        280,
+        600,
+      );
       _ketivDisplay = KetivDisplay.values.firstWhere(
         (option) => option.name == prefs.getString(_kKetivDisplay),
         orElse: () => KetivDisplay.superscript,
@@ -519,8 +779,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         }
       }
     });
-    final rawHistory = prefs.getStringList(_kHistory) ?? [];
-    final savedIndex = prefs.getInt(_kHistoryIndex) ?? -1;
+    final rawHistory = prefs.getStringList(_sessionKey(_kHistory)) ?? [];
+    final savedIndex = prefs.getInt(_sessionKey(_kHistoryIndex)) ?? -1;
     if (rawHistory.isNotEmpty &&
         savedIndex >= 0 &&
         savedIndex < rawHistory.length) {
@@ -538,6 +798,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           setState(() => _pendingVerse = current.verse);
         }
         _startAt(_bookIndex, _chapter);
+        widget.onPassageChanged();
         return;
       }
     }
@@ -552,25 +813,26 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     );
     _historyIndex = 0;
     _startAt(_bookIndex, _chapter);
+    widget.onPassageChanged();
   }
 
   Future<void> _saveHistory() async {
     final prefs = await SharedPreferences.getInstance();
     await Future.wait([
       prefs.setStringList(
-        _kHistory,
+        _sessionKey(_kHistory),
         _history.map((r) => r.toStorageString()).toList(),
       ),
-      prefs.setInt(_kHistoryIndex, _historyIndex),
+      prefs.setInt(_sessionKey(_kHistoryIndex), _historyIndex),
     ]);
   }
 
   Future<void> _savePrefs() async {
     final prefs = await SharedPreferences.getInstance();
     await Future.wait([
-      prefs.setInt(_kBook, _bookIndex),
-      prefs.setInt(_kChapter, _chapter),
-      prefs.setInt(_kVerse, _visibleVerse),
+      prefs.setInt(_sessionKey(_kBook), _bookIndex),
+      prefs.setInt(_sessionKey(_kChapter), _chapter),
+      prefs.setInt(_sessionKey(_kVerse), _visibleVerse),
       prefs.setBool(_kNtSyriac, _ntSyriac),
       prefs.setBool(_kEnglishBookNames, _englishBookNames),
       prefs.setBool(_kHebrewNumerals, _hebrewNumerals),
@@ -581,6 +843,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       prefs.setBool(_kMorphologyInterlinear, _morphologyInterlinear),
       prefs.setBool(_kHighlightProperNames, _highlightProperNames),
       prefs.setBool(_kStudyWorkspaceVisible, _studyWorkspaceVisible),
+      prefs.setDouble(_kSidePanelWidth, _sidePanelWidth),
       prefs.setString(_kKetivDisplay, _ketivDisplay.name),
       prefs.setString(_kReaderLayoutMode, _readerLayoutMode.name),
     ]);
@@ -1379,6 +1642,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     });
     _startAt(bookIndex, chapter);
     _saveHistory();
+    widget.onPassageChanged();
   }
 
   void _goBack() {
@@ -1729,6 +1993,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _savePrefs();
       _saveHistory();
     });
+    widget.onPassageChanged();
   }
 
   @override
@@ -1977,6 +2242,41 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     );
   }
 
+  double _resolvedSidePanelWidth(double availableWidth) =>
+      _sidePanelWidth.clamp(280, math.max(280, availableWidth - 420));
+
+  Widget _sidePanelResizeHandle(double availableWidth) => MouseRegion(
+    cursor: SystemMouseCursors.resizeColumn,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragUpdate: (details) {
+        setState(() {
+          _sidePanelWidth = (_sidePanelWidth - details.delta.dx).clamp(
+            280,
+            math.max(280, availableWidth - 420),
+          );
+        });
+      },
+      onHorizontalDragEnd: (_) => _savePrefs(),
+      child: Tooltip(
+        message: 'Drag to resize side panel',
+        child: SizedBox(
+          width: 9,
+          child: Center(
+            child: Container(
+              width: 2,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
   Widget _responsiveReaderBody(_ResolvedReaderLayout layout) {
     final reader = _readerSurface();
     switch (layout) {
@@ -1991,60 +2291,71 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         if (!_studyWorkspaceVisible && _selectedWord == null) {
           return reader;
         }
-        return Row(
-          children: [
-            Expanded(child: reader),
-            const VerticalDivider(width: 1),
-            SizedBox(
-              width: 360,
-              child: !_studyWorkspaceVisible
-                  ? _wordInspector()
-                  : Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: SegmentedButton<bool>(
-                            showSelectedIcon: false,
-                            segments: const [
-                              ButtonSegment(
-                                value: false,
-                                icon: Icon(Icons.account_tree_outlined),
-                                label: Text('Study'),
+        return LayoutBuilder(
+          builder: (context, constraints) => Row(
+            children: [
+              Expanded(child: reader),
+              _sidePanelResizeHandle(constraints.maxWidth),
+              SizedBox(
+                width: _resolvedSidePanelWidth(constraints.maxWidth),
+                child: !_studyWorkspaceVisible
+                    ? _wordInspector()
+                    : Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: SegmentedButton<bool>(
+                              showSelectedIcon: false,
+                              segments: const [
+                                ButtonSegment(
+                                  value: false,
+                                  icon: Icon(Icons.account_tree_outlined),
+                                  label: Text('Study'),
+                                ),
+                                ButtonSegment(
+                                  value: true,
+                                  icon: Icon(Icons.menu_book_outlined),
+                                  label: Text('Word'),
+                                ),
+                              ],
+                              selected: {_splitShowsWord},
+                              onSelectionChanged: (selection) => setState(
+                                () => _splitShowsWord = selection.single,
                               ),
-                              ButtonSegment(
-                                value: true,
-                                icon: Icon(Icons.menu_book_outlined),
-                                label: Text('Word'),
-                              ),
-                            ],
-                            selected: {_splitShowsWord},
-                            onSelectionChanged: (selection) => setState(
-                              () => _splitShowsWord = selection.single,
                             ),
                           ),
-                        ),
-                        const Divider(height: 1),
-                        Expanded(
-                          child: _splitShowsWord
-                              ? _wordInspector()
-                              : _studyWorkspacePanel(),
-                        ),
-                      ],
-                    ),
-            ),
-          ],
+                          const Divider(height: 1),
+                          Expanded(
+                            child: _splitShowsWord
+                                ? _wordInspector()
+                                : _studyWorkspacePanel(),
+                          ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
         );
       case _ResolvedReaderLayout.threePanel:
-        return Row(
-          children: [
-            if (_studyWorkspaceVisible) ...[
-              SizedBox(width: 300, child: _studyWorkspacePanel()),
-              const VerticalDivider(width: 1),
+        return LayoutBuilder(
+          builder: (context, constraints) => Row(
+            children: [
+              if (_studyWorkspaceVisible) ...[
+                SizedBox(width: 300, child: _studyWorkspacePanel()),
+                const VerticalDivider(width: 1),
+              ],
+              Expanded(child: reader),
+              _sidePanelResizeHandle(
+                constraints.maxWidth - (_studyWorkspaceVisible ? 301 : 0),
+              ),
+              SizedBox(
+                width: _resolvedSidePanelWidth(
+                  constraints.maxWidth - (_studyWorkspaceVisible ? 301 : 0),
+                ),
+                child: _wordInspector(),
+              ),
             ],
-            Expanded(child: reader),
-            const VerticalDivider(width: 1),
-            SizedBox(width: 380, child: _wordInspector()),
-          ],
+          ),
         );
     }
   }

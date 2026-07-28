@@ -120,6 +120,67 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('opens independent reader tabs and tiles them into columns', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final rust = await _pumpReader(tester, chapter: 5);
+
+    expect(find.byTooltip('New reader tab'), findsOneWidget);
+    expect(find.byType(CustomScrollView), findsOneWidget);
+
+    await tester.tap(find.byTooltip('New reader tab'));
+    await tester.pump();
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pump();
+
+    expect(
+      find.byType(CustomScrollView, skipOffstage: false),
+      findsNWidgets(2),
+    );
+    expect(find.byTooltip('Tile reader tabs'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Tile reader tabs'));
+    await tester.pump();
+
+    expect(find.byTooltip('Show reader tabs'), findsOneWidget);
+    final readers = find.byType(CustomScrollView);
+    expect(tester.getTopLeft(readers.at(0)).dx, 0);
+    expect(tester.getTopLeft(readers.at(1)).dx, greaterThan(500));
+  });
+
+  testWidgets('resizes and persists the reader side panel', (tester) async {
+    tester.view.physicalSize = const Size(1100, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      'reader_layout_mode': 'split',
+      'study_workspace_visible': true,
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pump();
+
+    final handle = find.byTooltip('Drag to resize side panel');
+    expect(handle, findsOneWidget);
+    await tester.drag(handle, const Offset(-80, 0));
+    await tester.pump();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getDouble('reader_side_panel_width'), greaterThan(400));
+  });
+
   testWidgets('prepending the previous chapter does not shift content', (
     tester,
   ) async {
