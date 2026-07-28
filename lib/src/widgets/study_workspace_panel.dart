@@ -510,16 +510,29 @@ class StudyWorkspacePanel extends StatelessWidget {
                   : ListView(
                       padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
                       children: [
-                        SwitchListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
+                        SizedBox(
+                          key: const ValueKey('study-highlight-master-control'),
+                          height: 40,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Row(
+                              children: [
+                                const Expanded(
+                                  child: Text('Show study highlights'),
+                                ),
+                                Tooltip(
+                                  message:
+                                      'Master switch for all bookmarked items',
+                                  child: Switch(
+                                    value: workspace.highlightsEnabled,
+                                    onChanged: onToggleHighlights,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          title: const Text('Show study highlights'),
-                          subtitle: const Text(
-                            'Master switch for all bookmarked items',
-                          ),
-                          value: workspace.highlightsEnabled,
-                          onChanged: onToggleHighlights,
                         ),
                         Row(
                           children: [

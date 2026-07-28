@@ -123,6 +123,13 @@ void main() {
     expect(find.text('Trace creation language.'), findsOneWidget);
     expect(find.text('Genesis 1:1'), findsOneWidget);
     expect(find.text('Creation begins'), findsOneWidget);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('study-highlight-master-control')))
+          .height,
+      40,
+    );
+    expect(find.text('Master switch for all bookmarked items'), findsNothing);
 
     await tester.tap(find.byType(Switch));
     expect(highlightsEnabled, isFalse);
