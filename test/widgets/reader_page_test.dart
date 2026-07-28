@@ -138,19 +138,54 @@ void main() {
     rust.deliverAll();
     await tester.pump();
 
-    expect(
-      find.byType(CustomScrollView, skipOffstage: false),
-      findsNWidgets(2),
-    );
+    expect(find.byType(PageView), findsOneWidget);
     expect(find.byTooltip('Tile reader tabs'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Tile reader tabs'));
+    await tester.pump();
+    rust.deliverAll();
     await tester.pump();
 
     expect(find.byTooltip('Show reader tabs'), findsOneWidget);
     final readers = find.byType(CustomScrollView);
     expect(tester.getTopLeft(readers.at(0)).dx, 0);
     expect(tester.getTopLeft(readers.at(1)).dx, greaterThan(500));
+  });
+
+  testWidgets('mobile hides a lone tab and swipes between reader tabs', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(500, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final rust = await _pumpReader(tester, chapter: 5);
+
+    expect(find.byType(ChoiceChip), findsNothing);
+    expect(find.byTooltip('More reader options'), findsOneWidget);
+    expect(find.byIcon(Icons.view_column_outlined), findsNothing);
+
+    await tester.tap(find.byTooltip('More reader options'));
+    await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsOneWidget);
+    await tester.tapAt(const Offset(10, 200));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('New reader tab'));
+    await tester.pump();
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byType(ChoiceChip), findsNWidgets(2));
+    var chips = tester.widgetList<ChoiceChip>(find.byType(ChoiceChip)).toList();
+    expect(chips[1].selected, isTrue);
+
+    await tester.drag(find.byType(PageView), const Offset(400, 0));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    chips = tester.widgetList<ChoiceChip>(find.byType(ChoiceChip)).toList();
+    expect(chips[0].selected, isTrue);
   });
 
   testWidgets('resizes and persists the reader side panel', (tester) async {

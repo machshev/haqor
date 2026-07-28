@@ -199,6 +199,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   final Map<String, GlobalKey<_ReaderSessionState>> _readerKeys = {
     'primary': GlobalKey<_ReaderSessionState>(),
   };
+  final PageController _pageController = PageController();
   String _activeTabId = 'primary';
   bool _tiled = false;
   bool _loaded = false;
@@ -230,6 +231,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _activeTabId = ids.contains(active) ? active! : ids.first;
       _tiled = prefs.getBool(_kTiled) ?? false;
       _loaded = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      _pageController.jumpToPage(
+        _tabs.indexWhere((tab) => tab.id == _activeTabId),
+      );
     });
   }
 
@@ -265,6 +272,15 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _readerKeys[id] = GlobalKey<_ReaderSessionState>();
       _activeTabId = id;
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _pageController.hasClients) {
+        _pageController.animateToPage(
+          _tabs.length - 1,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
+    });
     _saveWorkspace();
   }
 
@@ -278,7 +294,20 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         _activeTabId = _tabs[math.min(index, _tabs.length - 1)].id;
       }
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _pageController.hasClients) {
+        _pageController.jumpToPage(
+          _tabs.indexWhere((tab) => tab.id == _activeTabId),
+        );
+      }
+    });
     _saveWorkspace();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   Widget _tabLabel(_ReaderTab tab) {
@@ -309,19 +338,68 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   Widget _reader(_ReaderTab tab) => _ReaderSession(
     key: _readerKeys[tab.id],
     sessionId: tab.id,
+    externalMenu: MediaQuery.sizeOf(context).width < 900,
     sendChapterRequest: widget.sendChapterRequest,
     onPassageChanged: () {
       if (mounted) setState(() {});
     },
   );
 
+  _ReaderSessionState? get _activeReader =>
+      _readerKeys[_activeTabId]?.currentState;
+
+  List<PopupMenuEntry<_ReaderMenuAction>> _mobileMenuItems() => [
+    const PopupMenuItem(
+      value: _ReaderMenuAction.studyWorkspace,
+      child: ListTile(
+        leading: Icon(Icons.account_tree_outlined),
+        title: Text('Study workspace'),
+      ),
+    ),
+    const PopupMenuItem(
+      value: _ReaderMenuAction.readingPlan,
+      child: ListTile(
+        leading: Icon(Icons.auto_stories_outlined),
+        title: Text('Reading plan'),
+      ),
+    ),
+    const PopupMenuItem(
+      value: _ReaderMenuAction.tutor,
+      child: ListTile(
+        leading: Icon(Icons.school_outlined),
+        title: Text('Tutor'),
+      ),
+    ),
+    if (_activeReader?._adminMode ?? false)
+      const PopupMenuItem(
+        value: _ReaderMenuAction.reportIssue,
+        child: ListTile(
+          leading: Icon(Icons.flag_outlined),
+          title: Text('Report an issue'),
+        ),
+      ),
+    const PopupMenuItem(
+      value: _ReaderMenuAction.settings,
+      child: ListTile(
+        leading: Icon(Icons.settings_outlined),
+        title: Text('Settings'),
+      ),
+    ),
+    const PopupMenuItem(
+      value: _ReaderMenuAction.about,
+      child: ListTile(leading: Icon(Icons.info_outline), title: Text('About')),
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     if (!_loaded) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    final canTile = MediaQuery.sizeOf(context).width >= 900;
+    final mobile = MediaQuery.sizeOf(context).width < 900;
+    final canTile = !mobile;
     final tiled = _tiled && canTile && _tabs.length > 1;
+    final showTabStrip = !mobile || _tabs.length > 1;
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -333,45 +411,65 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _tabs.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 4),
-                        itemBuilder: (context, index) {
-                          final tab = _tabs[index];
-                          return ChoiceChip(
-                            label: _tabLabel(tab),
-                            selected: tab.id == _activeTabId,
-                            onSelected: (_) {
-                              setState(() => _activeTabId = tab.id);
-                              _saveWorkspace();
-                            },
-                          );
-                        },
-                      ),
+                      child: showTabStrip
+                          ? ListView.separated(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _tabs.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(width: 4),
+                              itemBuilder: (context, index) {
+                                final tab = _tabs[index];
+                                return ChoiceChip(
+                                  label: _tabLabel(tab),
+                                  selected: tab.id == _activeTabId,
+                                  onSelected: (_) {
+                                    setState(() => _activeTabId = tab.id);
+                                    _pageController.animateToPage(
+                                      index,
+                                      duration: const Duration(
+                                        milliseconds: 220,
+                                      ),
+                                      curve: Curves.easeOut,
+                                    );
+                                    _saveWorkspace();
+                                  },
+                                );
+                              },
+                            )
+                          : const SizedBox.shrink(),
                     ),
                     IconButton(
                       icon: const Icon(Icons.add),
                       tooltip: 'New reader tab',
                       onPressed: _addTab,
                     ),
-                    IconButton(
-                      isSelected: tiled,
-                      selectedIcon: const Icon(Icons.view_column),
-                      icon: const Icon(Icons.view_column_outlined),
-                      tooltip: tiled
-                          ? 'Show reader tabs'
-                          : canTile
-                          ? 'Tile reader tabs'
-                          : 'Tiling needs a wider window',
-                      onPressed: canTile && _tabs.length > 1
-                          ? () {
-                              setState(() => _tiled = !_tiled);
-                              _saveWorkspace();
-                            }
-                          : null,
-                    ),
+                    if (canTile)
+                      IconButton(
+                        isSelected: tiled,
+                        selectedIcon: const Icon(Icons.view_column),
+                        icon: const Icon(Icons.view_column_outlined),
+                        tooltip: tiled
+                            ? 'Show reader tabs'
+                            : 'Tile reader tabs',
+                        onPressed: _tabs.length > 1
+                            ? () {
+                                setState(() => _tiled = !_tiled);
+                                _saveWorkspace();
+                              }
+                            : null,
+                      )
+                    else
+                      PopupMenuButton<_ReaderMenuAction>(
+                        icon: const Icon(Icons.more_vert),
+                        tooltip: 'More reader options',
+                        enabled: _activeReader != null,
+                        onSelected: (action) =>
+                            _activeReader?._handleReaderMenuAction(action),
+                        itemBuilder: (_) => _mobileMenuItems(),
+                      ),
                   ],
                 ),
               ),
@@ -386,8 +484,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                         ],
                       ],
                     )
-                  : IndexedStack(
-                      index: _tabs.indexWhere((tab) => tab.id == _activeTabId),
+                  : PageView(
+                      controller: _pageController,
+                      onPageChanged: (index) {
+                        setState(() => _activeTabId = _tabs[index].id);
+                        _saveWorkspace();
+                      },
                       children: [for (final tab in _tabs) _reader(tab)],
                     ),
             ),
@@ -403,11 +505,13 @@ class _ReaderSession extends StatefulWidget {
     super.key,
     required this.sessionId,
     required this.onPassageChanged,
+    required this.externalMenu,
     this.sendChapterRequest,
   });
 
   final String sessionId;
   final VoidCallback onPassageChanged;
+  final bool externalMenu;
 
   /// Test seam: how a [GetChapter] request reaches the Rust side. Defaults to
   /// the real rinf signal; widget tests substitute a stub that answers via
@@ -433,7 +537,8 @@ class _ReaderSession extends StatefulWidget {
   State<_ReaderSession> createState() => _ReaderSessionState();
 }
 
-class _ReaderSessionState extends State<_ReaderSession> {
+class _ReaderSessionState extends State<_ReaderSession>
+    with AutomaticKeepAliveClientMixin {
   static const _kBook = 'book';
   static const _kChapter = 'chapter';
   static const _kVerse = 'verse';
@@ -521,6 +626,9 @@ class _ReaderSessionState extends State<_ReaderSession> {
   bool _splitShowsWord = false;
   double _sidePanelWidth = 360;
   Timer? _positionSaveTimer;
+
+  @override
+  bool get wantKeepAlive => true;
 
   String _sessionKey(String key) => widget.sessionId == 'primary'
       ? key
@@ -707,6 +815,7 @@ class _ReaderSessionState extends State<_ReaderSession> {
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       _bookIndex = (prefs.getInt(_sessionKey(_kBook)) ?? 0).clamp(
         0,
@@ -2360,8 +2469,33 @@ class _ReaderSessionState extends State<_ReaderSession> {
     }
   }
 
+  void _handleReaderMenuAction(_ReaderMenuAction action) {
+    final layout = _resolveReaderLayout(MediaQuery.sizeOf(context).width);
+    switch (action) {
+      case _ReaderMenuAction.studyWorkspace:
+        if (layout == _ResolvedReaderLayout.focus) {
+          _showStudyWorkspaceSheet();
+        } else {
+          _toggleStudyWorkspacePanel();
+        }
+      case _ReaderMenuAction.readingPlan:
+        _showReadingPlan();
+      case _ReaderMenuAction.tutor:
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const TutorEntryPage()));
+      case _ReaderMenuAction.reportIssue:
+        _reportGeneralIssue();
+      case _ReaderMenuAction.settings:
+        _showAppSettings();
+      case _ReaderMenuAction.about:
+        showAbout(context);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final book = kBooks[_bookIndex];
     final theme = Theme.of(context);
     final layout = _resolveReaderLayout(MediaQuery.sizeOf(context).width);
@@ -2467,82 +2601,63 @@ class _ReaderSessionState extends State<_ReaderSession> {
               tooltip: 'Settings',
             ),
           ],
-          // Always rendered: About lives here whatever else the width allows.
-          PopupMenuButton<_ReaderMenuAction>(
-            icon: const Icon(Icons.more_vert),
-            tooltip: 'More reader options',
-            onSelected: (action) {
-              switch (action) {
-                case _ReaderMenuAction.studyWorkspace:
-                  if (layout == _ResolvedReaderLayout.focus) {
-                    _showStudyWorkspaceSheet();
-                  } else {
-                    _toggleStudyWorkspacePanel();
-                  }
-                case _ReaderMenuAction.readingPlan:
-                  _showReadingPlan();
-                case _ReaderMenuAction.tutor:
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const TutorEntryPage()),
-                  );
-                case _ReaderMenuAction.reportIssue:
-                  _reportGeneralIssue();
-                case _ReaderMenuAction.settings:
-                  _showAppSettings();
-                case _ReaderMenuAction.about:
-                  showAbout(context);
-              }
-            },
-            itemBuilder: (context) => [
-              if (!showInlineReaderActions)
-                const PopupMenuItem(
-                  value: _ReaderMenuAction.studyWorkspace,
-                  child: ListTile(
-                    leading: Icon(Icons.account_tree_outlined),
-                    title: Text('Study workspace'),
+          // On phones this menu moves to the workspace bar, leaving more room
+          // for the book and chapter in the reader's own AppBar.
+          if (!widget.externalMenu)
+            PopupMenuButton<_ReaderMenuAction>(
+              icon: const Icon(Icons.more_vert),
+              tooltip: 'More reader options',
+              onSelected: _handleReaderMenuAction,
+              itemBuilder: (context) => [
+                if (!showInlineReaderActions)
+                  const PopupMenuItem(
+                    value: _ReaderMenuAction.studyWorkspace,
+                    child: ListTile(
+                      leading: Icon(Icons.account_tree_outlined),
+                      title: Text('Study workspace'),
+                    ),
                   ),
-                ),
-              if (!showInlineReaderActions) ...[
-                const PopupMenuItem(
-                  value: _ReaderMenuAction.readingPlan,
-                  child: ListTile(
-                    leading: Icon(Icons.auto_stories_outlined),
-                    title: Text('Reading plan'),
+                if (!showInlineReaderActions) ...[
+                  const PopupMenuItem(
+                    value: _ReaderMenuAction.readingPlan,
+                    child: ListTile(
+                      leading: Icon(Icons.auto_stories_outlined),
+                      title: Text('Reading plan'),
+                    ),
                   ),
-                ),
+                  const PopupMenuItem(
+                    value: _ReaderMenuAction.tutor,
+                    child: ListTile(
+                      leading: Icon(Icons.school_outlined),
+                      title: Text('Tutor'),
+                    ),
+                  ),
+                ],
+                if (_adminMode)
+                  const PopupMenuItem(
+                    value: _ReaderMenuAction.reportIssue,
+                    child: ListTile(
+                      leading: Icon(Icons.flag_outlined),
+                      title: Text('Report an issue'),
+                    ),
+                  ),
+                if (!showInlineReaderActions)
+                  const PopupMenuItem(
+                    value: _ReaderMenuAction.settings,
+                    child: ListTile(
+                      leading: Icon(Icons.settings_outlined),
+                      title: Text('Settings'),
+                    ),
+                  ),
                 const PopupMenuItem(
-                  value: _ReaderMenuAction.tutor,
+                  value: _ReaderMenuAction.about,
                   child: ListTile(
-                    leading: Icon(Icons.school_outlined),
-                    title: Text('Tutor'),
+                    leading: Icon(Icons.info_outline),
+                    title: Text('About'),
                   ),
                 ),
               ],
-              if (_adminMode)
-                const PopupMenuItem(
-                  value: _ReaderMenuAction.reportIssue,
-                  child: ListTile(
-                    leading: Icon(Icons.flag_outlined),
-                    title: Text('Report an issue'),
-                  ),
-                ),
-              if (!showInlineReaderActions)
-                const PopupMenuItem(
-                  value: _ReaderMenuAction.settings,
-                  child: ListTile(
-                    leading: Icon(Icons.settings_outlined),
-                    title: Text('Settings'),
-                  ),
-                ),
-              const PopupMenuItem(
-                value: _ReaderMenuAction.about,
-                child: ListTile(
-                  leading: Icon(Icons.info_outline),
-                  title: Text('About'),
-                ),
-              ),
-            ],
-          ),
+            ),
         ],
       ),
       body: _responsiveReaderBody(layout),
