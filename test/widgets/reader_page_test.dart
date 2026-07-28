@@ -148,9 +148,44 @@ void main() {
     await tester.pump();
 
     expect(find.byTooltip('Show reader tabs'), findsOneWidget);
+    expect(find.byTooltip('Study workspace'), findsOneWidget);
     final readers = find.byType(CustomScrollView);
     expect(tester.getTopLeft(readers.at(0)).dx, 0);
     expect(tester.getTopLeft(readers.at(1)).dx, greaterThan(500));
+
+    await tester.tap(find.byTooltip('Study workspace'));
+    await tester.pump();
+
+    final readerTile = find.byKey(const ValueKey('reader:primary'));
+    final secondReaderTile = find
+        .byWidgetPredicate(
+          (widget) =>
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith('reader:') &&
+              (widget.key! as ValueKey<String>).value != 'reader:primary',
+        )
+        .first;
+    final studyTile = find.byKey(const ValueKey('study-word-panel'));
+    expect(readerTile, findsOneWidget);
+    expect(studyTile, findsOneWidget);
+    expect(
+      tester.getTopLeft(studyTile).dx,
+      greaterThan(tester.getTopLeft(readerTile).dx),
+    );
+
+    final widthBefore = tester.getSize(readerTile).width;
+    final panelWidthBefore = tester.getSize(studyTile).width;
+    await tester.drag(
+      find.byTooltip('Drag to resize study and word panel'),
+      const Offset(60, 0),
+    );
+    await tester.pump();
+    expect(tester.getSize(readerTile).width, greaterThan(widthBefore));
+    expect(tester.getSize(studyTile).width, lessThan(panelWidthBefore));
+    expect(
+      tester.getSize(readerTile).width,
+      tester.getSize(secondReaderTile).width,
+    );
   });
 
   testWidgets('mobile hides a lone tab and swipes between reader tabs', (
@@ -163,7 +198,7 @@ void main() {
     final rust = await _pumpReader(tester, chapter: 5);
 
     expect(find.byType(InputChip), findsNothing);
-    expect(find.byTooltip('More reader options'), findsOneWidget);
+    expect(find.byTooltip('Reader options'), findsOneWidget);
     expect(find.byIcon(Icons.view_column_outlined), findsNothing);
 
     final readerPosition = tester
@@ -207,7 +242,7 @@ void main() {
       48,
     );
 
-    await tester.tap(find.byTooltip('More reader options'));
+    await tester.tap(find.byTooltip('Reader options'));
     await tester.pumpAndSettle();
     expect(find.text('Settings'), findsOneWidget);
     await tester.tapAt(const Offset(10, 200));
@@ -232,6 +267,46 @@ void main() {
     await tester.tap(find.byTooltip('Close reader tab').last);
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.byType(InputChip), findsNothing);
+  });
+
+  testWidgets('shows only the reader tiles that fit their minimum width', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      'reader_tabs': ['primary', 'two', 'three', 'four'],
+      'reader_active_tab': 'primary',
+      'reader_tabs_tiled': true,
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pump();
+
+    Finder readerTiles() => find.byWidgetPredicate(
+      (widget) =>
+          widget.key is ValueKey<String> &&
+          (widget.key! as ValueKey<String>).value.startsWith('reader:'),
+    );
+
+    expect(readerTiles(), findsNWidgets(4));
+    expect(find.byTooltip('Settings'), findsOneWidget);
+    expect(find.byTooltip('Reader options'), findsNothing);
+
+    tester.view.physicalSize = const Size(900, 800);
+    await tester.pump();
+    expect(readerTiles(), findsNWidgets(3));
+    expect(find.byKey(const ValueKey('reader:primary')), findsOneWidget);
+    expect(find.byTooltip('Settings'), findsNothing);
+    expect(find.byTooltip('Reader options'), findsOneWidget);
   });
 
   testWidgets('resizes and persists the reader side panel', (tester) async {
@@ -339,7 +414,7 @@ void main() {
       find.textContaining('Select a Hebrew or Syriac word'),
       findsOneWidget,
     );
-    await tester.tap(find.byTooltip('Show study workspace'));
+    await tester.tap(find.byTooltip('Study workspace'));
     await tester.pump();
     rust.deliverAll();
     await tester.pump();
