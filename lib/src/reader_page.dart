@@ -2136,42 +2136,48 @@ class _ReaderSessionState extends State<_ReaderSession>
     if (!mounted || _sections.isEmpty) return;
     final appBarBottom = kToolbarHeight + MediaQuery.of(context).padding.top;
     final readingLine = appBarBottom + 8;
-    ({int book, int chapter, int verse, double y})? firstVisible;
-    for (final section in _sections) {
-      for (final entry in section.verses) {
-        final ctx = section.verseKeys[entry.verse]?.currentContext;
-        if (ctx == null) continue;
-        final box = ctx.findRenderObject() as RenderBox?;
-        if (box == null || !box.attached) continue;
-        final y = box.localToGlobal(Offset.zero).dy;
-        final bottom = y + box.size.height;
-        if (bottom <= readingLine) continue;
-        if (firstVisible == null || y < firstVisible.y) {
-          firstVisible = (
-            book: section.bookIndex,
-            chapter: section.chapter,
-            verse: entry.verse,
-            y: y,
-          );
-        }
+    _Section? visibleSection;
+    for (int i = _sections.length - 1; i >= 0; i--) {
+      final ctx = _sections[i].key.currentContext;
+      final box = ctx?.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached) continue;
+      if (box.localToGlobal(Offset.zero).dy <= readingLine) {
+        visibleSection = _sections[i];
+        break;
       }
     }
-    if (firstVisible == null) return;
-    final passage = firstVisible;
-    if (_bookIndex == passage.book &&
-        _chapter == passage.chapter &&
-        _visibleVerse == passage.verse) {
+    if (visibleSection == null) return;
+
+    // Lazy slivers can keep children from adjacent chapters mounted while
+    // scrolling. Resolve the chapter from its divider first, then inspect only
+    // that chapter's verse rows; otherwise a retained neighbour can make the
+    // indicator alternate between books at a boundary.
+    ({int verse, double y})? firstVisibleVerse;
+    for (final entry in visibleSection.verses) {
+      final ctx = visibleSection.verseKeys[entry.verse]?.currentContext;
+      final box = ctx?.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached) continue;
+      final y = box.localToGlobal(Offset.zero).dy;
+      if (y + box.size.height <= readingLine) continue;
+      if (firstVisibleVerse == null || y < firstVisibleVerse.y) {
+        firstVisibleVerse = (verse: entry.verse, y: y);
+      }
+    }
+    final book = visibleSection.bookIndex;
+    final chapter = visibleSection.chapter;
+    final verse = firstVisibleVerse?.verse ?? _visibleVerse;
+    if (_bookIndex == book && _chapter == chapter && _visibleVerse == verse) {
       return;
     }
     setState(() {
-      _bookIndex = passage.book;
-      _chapter = passage.chapter;
-      _visibleVerse = passage.verse;
+      _bookIndex = book;
+      _chapter = chapter;
+      _visibleVerse = verse;
       if (_historyIndex >= 0 && _historyIndex < _history.length) {
         _history[_historyIndex] = _PassageRef(
-          bookIndex: passage.book,
-          chapter: passage.chapter,
-          verse: passage.verse,
+          bookIndex: book,
+          chapter: chapter,
+          verse: verse,
         );
       }
     });

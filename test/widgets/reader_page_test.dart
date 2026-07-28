@@ -64,11 +64,12 @@ Finder _anyVisibleVerse(WidgetTester tester) => find.byType(VerseRow).first;
 
 Future<_FakeRust> _pumpReader(
   WidgetTester tester, {
+  int book = 0,
   required int chapter,
   bool englishBookNames = false,
 }) async {
   SharedPreferences.setMockInitialValues({
-    'book': 0,
+    'book': book,
     'chapter': chapter,
     'english_book_names': englishBookNames,
   });
@@ -407,5 +408,37 @@ void main() {
     expect(prefs.getInt('verse'), greaterThan(1));
     final history = prefs.getStringList('nav_history');
     expect(history?.last, '0,5,${prefs.getInt('verse')}');
+  });
+
+  testWidgets('chapter indicator stays on 1 Samuel after crossing books', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(700, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final rust = await _pumpReader(
+      tester,
+      book: 6,
+      chapter: 21,
+      englishBookNames: true,
+    );
+    rust.deliverAll();
+    await tester.pump();
+
+    for (var i = 0; i < 40 && find.text('1 Samuel').evaluate().isEmpty; i++) {
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -300));
+      await tester.pump();
+      rust.deliverAll();
+      await tester.pump();
+    }
+    expect(find.text('1 Samuel'), findsOneWidget);
+
+    for (var i = 0; i < 6; i++) {
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -100));
+      await tester.pump();
+      expect(find.text('1 Samuel'), findsOneWidget);
+      expect(find.text('Judges'), findsNothing);
+    }
   });
 }
