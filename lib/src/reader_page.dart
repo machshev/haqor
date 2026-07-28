@@ -15,6 +15,7 @@ import 'bindings/bindings.dart';
 import 'issue_reporting.dart';
 import 'study_workspace.dart';
 import 'tutor/onboarding.dart';
+import 'tutor/progress_sync.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
 import 'widgets/study_workspace_panel.dart';
@@ -665,6 +666,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   StreamSubscription<RustSignalPack<ChapterText>>? _sub;
   StreamSubscription<RustSignalPack<LexiconEntryOverrideStatus>>?
   _lexiconOverrideSub;
+  StreamSubscription<RustSignalPack<StudyState>>? _studyStateSub;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -694,6 +696,37 @@ class _ReaderSessionState extends State<_ReaderSession>
       pack,
     ) {
       if (mounted && pack.message.success) _refreshLoadedOtChapters();
+    });
+    _studyStateSub = StudyState.rustSignalStream.listen((pack) async {
+      if (!mounted) return;
+      final message = pack.message;
+      if (!message.found) {
+        final prefs = await SharedPreferences.getInstance();
+        final legacyJson = prefs.getString(studyWorkspacesKey);
+        if (legacyJson != null && legacyJson.isNotEmpty) {
+          SaveStudyState(
+            workspacesJson: legacyJson,
+            activeWorkspaceId: prefs.getString(activeStudyWorkspaceKey) ?? '',
+          ).sendSignalToRust();
+          scheduleProgressSync();
+        }
+        return;
+      }
+      final workspaces = decodeStudyWorkspaces(message.workspacesJson);
+      final activeId =
+          workspaces.any(
+            (workspace) => workspace.id == message.activeWorkspaceId,
+          )
+          ? message.activeWorkspaceId
+          : workspaces.isEmpty
+          ? null
+          : workspaces.first.id;
+      setState(() {
+        _studyWorkspaces = workspaces;
+        _activeStudyWorkspaceId = activeId;
+      });
+      final prefs = await SharedPreferences.getInstance();
+      await saveStudyWorkspaces(prefs, workspaces, activeId);
     });
     _loadPrefs();
     _loadAdminMode();
@@ -907,6 +940,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         }
       }
     });
+    GetStudyState().sendSignalToRust();
     final rawHistory = prefs.getStringList(_sessionKey(_kHistory)) ?? [];
     final savedIndex = prefs.getInt(_sessionKey(_kHistoryIndex)) ?? -1;
     if (rawHistory.isNotEmpty &&
@@ -1080,6 +1114,11 @@ class _ReaderSessionState extends State<_ReaderSession>
   Future<void> _saveStudyState() async {
     final prefs = await SharedPreferences.getInstance();
     await saveStudyWorkspaces(prefs, _studyWorkspaces, _activeStudyWorkspaceId);
+    SaveStudyState(
+      workspacesJson: encodeStudyWorkspaces(_studyWorkspaces),
+      activeWorkspaceId: _activeStudyWorkspaceId ?? '',
+    ).sendSignalToRust();
+    scheduleProgressSync();
   }
 
   void _replaceStudyWorkspace(StudyWorkspace updated) {
@@ -2150,6 +2189,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     _scrollController.dispose();
     _sub?.cancel();
     _lexiconOverrideSub?.cancel();
+    _studyStateSub?.cancel();
     for (final timeout in _fetchTimeouts.values) {
       timeout.cancel();
     }

@@ -104,7 +104,7 @@ class _ProgressSyncSheetState extends State<_ProgressSyncSheet> {
       await prefs.remove(_tokenKey);
       if (mounted) {
         setState(() {
-          _status = 'Automatic progress sync is off.';
+          _status = 'Automatic study and progress sync is off.';
           _syncSucceeded = true;
         });
       }
@@ -121,7 +121,7 @@ class _ProgressSyncSheetState extends State<_ProgressSyncSheet> {
         SyncProgress(serverUrl: serverUrl, token: token).sendSignalToRust();
       } else if (mounted) {
         setState(() {
-          _status = 'Automatic progress sync is on.';
+          _status = 'Automatic study and progress sync is on.';
           _syncSucceeded = true;
         });
       }
@@ -152,7 +152,7 @@ class _ProgressSyncSheetState extends State<_ProgressSyncSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Progress sync',
+              'Study & progress sync',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleLarge,
             ),

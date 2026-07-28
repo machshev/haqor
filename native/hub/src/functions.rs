@@ -3,15 +3,15 @@ use crate::signals::ProgressSnapshot;
 use crate::signals::{
     BdbSummary, BuildInfo, CalibrationProbe, ChapterText, FinishCalibration, GetBuildInfo,
     GetCalibrationProbe, GetChapter, GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts,
-    GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts,
-    GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence,
-    IssueReportStatus, KetivEntry, LexiconEntryOverrideStatus, OccurrenceParse, OnboardingStatus,
-    OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, RootChoice, SaveIssueReport,
-    SaveLexiconEntryOverride, SaveTutorGloss, SedraOccurrence, SedraSummary, SeenConcept,
-    SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, SubmitReview, SuffixCard,
-    SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard,
-    VerseEntry, VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry, VocabList, WordCard,
-    WordInfo, WordOccurrence, WordOccurrences,
+    GetStudyState, GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText,
+    GetVerseTexts, GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard,
+    HebrewOccurrence, IssueReportStatus, KetivEntry, LexiconEntryOverrideStatus, OccurrenceParse,
+    OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, RootChoice,
+    SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState, SaveTutorGloss, SedraOccurrence,
+    SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem,
+    StudyState, SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress,
+    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry,
+    VerseTexts, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -193,6 +193,47 @@ fn sync_progress_blocking(
     result
 }
 
+fn send_study_state(bible: &Bible) {
+    match bible.study_state() {
+        Ok(Some((workspaces_json, active_workspace_id, _))) => StudyState {
+            found: true,
+            workspaces_json,
+            active_workspace_id: active_workspace_id.unwrap_or_default(),
+        }
+        .send_signal_to_dart(),
+        Ok(None) => StudyState {
+            found: false,
+            workspaces_json: "[]".to_string(),
+            active_workspace_id: String::new(),
+        }
+        .send_signal_to_dart(),
+        Err(error) => debug_print!("get_study_state error: {error:?}"),
+    }
+}
+
+pub async fn get_study_state(bible: SharedBible) {
+    let receiver = GetStudyState::get_dart_signal_receiver();
+    while receiver.recv().await.is_some() {
+        send_study_state(&lock(&bible));
+    }
+}
+
+pub async fn save_study_state(bible: SharedBible) {
+    let receiver = SaveStudyState::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let state = signal_pack.message;
+        let bible_guard = lock(&bible);
+        let active =
+            (!state.active_workspace_id.is_empty()).then_some(state.active_workspace_id.as_str());
+        if let Err(error) = bible_guard.set_study_state(&state.workspaces_json, active, now_epoch())
+        {
+            debug_print!("save_study_state error: {error:?}");
+        } else {
+            persist_browser_progress(&bible_guard);
+        }
+    }
+}
+
 /// Synchronise on startup and shortly after each answer. Requests are handled
 /// serially so a burst of answers cannot copy a half-updated SQLite file.
 pub async fn sync_progress(bible: SharedBible, data_dir: PathBuf) {
@@ -201,18 +242,20 @@ pub async fn sync_progress(bible: SharedBible, data_dir: PathBuf) {
         let request = signal_pack.message;
         debug_print!("progress sync: requested");
         let bible = bible.clone();
+        let sync_bible = bible.clone();
         let data_dir = data_dir.clone();
         let result = tokio::task::spawn_blocking(move || {
-            sync_progress_blocking(&bible, &data_dir, &request.server_url, &request.token)
+            sync_progress_blocking(&sync_bible, &data_dir, &request.server_url, &request.token)
         })
         .await
         .unwrap_or_else(|e| Err(format!("Sync task stopped unexpectedly: {e}")));
         match result {
             Ok(()) => {
                 debug_print!("progress sync: completed successfully");
+                send_study_state(&lock(&bible));
                 ProgressSyncStatus {
                     success: true,
-                    message: "Progress synced.".to_string(),
+                    message: "Study and progress synced.".to_string(),
                 }
                 .send_signal_to_dart();
             }

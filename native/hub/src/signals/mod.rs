@@ -99,6 +99,26 @@ pub struct ProgressSyncStatus {
     pub message: String,
 }
 
+/// Request the reader Study document stored in the syncable progress DB.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetStudyState {}
+
+/// Replace the reader Study document after a local workspace edit.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SaveStudyState {
+    pub workspaces_json: String,
+    pub active_workspace_id: String,
+}
+
+/// Current reader Study document. `found` is false before preferences from an
+/// older app version have been migrated into the progress DB.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct StudyState {
+    pub found: bool,
+    pub workspaces_json: String,
+    pub active_workspace_id: String,
+}
+
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetVerseText {
     pub book: u8,
