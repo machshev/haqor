@@ -481,6 +481,7 @@ pub async fn get_chapter_text(bible: SharedBible) {
                         req.include_glosses,
                         req.include_morphology,
                         req.include_names,
+                        req.include_roots,
                     )
                     .unwrap_or_default();
                 let verses = raw
@@ -498,6 +499,9 @@ pub async fn get_chapter_text(bible: SharedBible) {
                                 .unwrap_or_default(),
                             names: metadata
                                 .map(|metadata| metadata.names.clone())
+                                .unwrap_or_default(),
+                            roots: metadata
+                                .map(|metadata| metadata.roots.clone())
                                 .unwrap_or_default(),
                             ketivs: metadata
                                 .map(|metadata| {
@@ -522,6 +526,7 @@ pub async fn get_chapter_text(bible: SharedBible) {
                     include_glosses: req.include_glosses,
                     include_morphology: req.include_morphology,
                     include_names: req.include_names,
+                    include_roots: req.include_roots,
                     verses,
                 }
                 .send_signal_to_dart();

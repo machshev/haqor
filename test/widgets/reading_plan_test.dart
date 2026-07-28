@@ -25,6 +25,7 @@ class _FakeRust {
         includeGlosses: request.includeGlosses,
         includeMorphology: request.includeMorphology,
         includeNames: request.includeNames,
+        includeRoots: request.includeRoots,
         verses: [
           for (var v = 1; v <= 5; v++)
             VerseEntry(
@@ -33,6 +34,7 @@ class _FakeRust {
               glosses: const [],
               morphologies: const [],
               names: const [],
+              roots: const [],
               ketivs: const [],
             ),
         ],

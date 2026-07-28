@@ -6,6 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 const studyWorkspacesKey = 'study_workspaces_v1';
 const activeStudyWorkspaceKey = 'active_study_workspace';
 
+const defaultStudyWordColorValue = 0xffffd54f;
+const defaultStudyPassageColorValue = 0xff80cbc4;
+
 @immutable
 class StudyPassage {
   const StudyPassage({
@@ -13,20 +16,23 @@ class StudyPassage {
     required this.chapter,
     required this.verse,
     this.note = '',
+    this.highlightEnabled = true,
   });
 
   final int bookIndex;
   final int chapter;
   final int verse;
   final String note;
+  final bool highlightEnabled;
 
   String get locationKey => '$bookIndex:$chapter:$verse';
 
-  StudyPassage copyWith({String? note}) => StudyPassage(
+  StudyPassage copyWith({String? note, bool? highlightEnabled}) => StudyPassage(
     bookIndex: bookIndex,
     chapter: chapter,
     verse: verse,
     note: note ?? this.note,
+    highlightEnabled: highlightEnabled ?? this.highlightEnabled,
   );
 
   Map<String, Object?> toJson() => {
@@ -34,6 +40,7 @@ class StudyPassage {
     'chapter': chapter,
     'verse': verse,
     if (note.isNotEmpty) 'note': note,
+    if (!highlightEnabled) 'highlight': false,
   };
 
   static StudyPassage? fromJson(Object? value) {
@@ -48,6 +55,9 @@ class StudyPassage {
       chapter: chapter,
       verse: verse,
       note: value['note'] is String ? value['note'] as String : '',
+      highlightEnabled: value['highlight'] is bool
+          ? value['highlight'] as bool
+          : true,
     );
   }
 }
@@ -55,94 +65,77 @@ class StudyPassage {
 @immutable
 class StudyWord {
   const StudyWord({
-    required this.bookIndex,
-    required this.chapter,
-    required this.verse,
-    required this.position,
+    required this.root,
     required this.surface,
     this.note = '',
+    this.highlightEnabled = true,
   });
 
-  final int bookIndex;
-  final int chapter;
-  final int verse;
-  final int position;
+  /// The resolved consonantal root. This is the bookmark key: every reader
+  /// token carrying the same root is highlighted.
+  final String root;
   final String surface;
   final String note;
+  final bool highlightEnabled;
 
-  String get locationKey => '$bookIndex:$chapter:$verse:$position';
-
-  StudyWord copyWith({String? note}) => StudyWord(
-    bookIndex: bookIndex,
-    chapter: chapter,
-    verse: verse,
-    position: position,
-    surface: surface,
-    note: note ?? this.note,
-  );
+  StudyWord copyWith({String? surface, String? note, bool? highlightEnabled}) =>
+      StudyWord(
+        root: root,
+        surface: surface ?? this.surface,
+        note: note ?? this.note,
+        highlightEnabled: highlightEnabled ?? this.highlightEnabled,
+      );
 
   Map<String, Object?> toJson() => {
-    'book': bookIndex,
-    'chapter': chapter,
-    'verse': verse,
-    'position': position,
+    'root': root,
     'surface': surface,
     if (note.isNotEmpty) 'note': note,
+    if (!highlightEnabled) 'highlight': false,
   };
 
   static StudyWord? fromJson(Object? value) {
     if (value is! Map) return null;
-    final book = value['book'];
-    final chapter = value['chapter'];
-    final verse = value['verse'];
-    final position = value['position'];
+    final root = value['root'];
     final surface = value['surface'];
-    if (book is! int ||
-        chapter is! int ||
-        verse is! int ||
-        position is! int ||
-        surface is! String) {
-      return null;
-    }
-    if (book < 0 || chapter < 1 || verse < 1 || position < 0) return null;
+    if (surface is! String || surface.isEmpty) return null;
+    // v1 stored one verse occurrence instead of a root. Preserve it as a
+    // visible bookmark, but leave its root empty so it cannot falsely
+    // highlight unrelated homographs. Saving it after a fresh selection
+    // upgrades it to the resolved root.
     return StudyWord(
-      bookIndex: book,
-      chapter: chapter,
-      verse: verse,
-      position: position,
+      root: root is String ? root : '',
       surface: surface,
       note: value['note'] is String ? value['note'] as String : '',
+      highlightEnabled: value['highlight'] is bool
+          ? value['highlight'] as bool
+          : true,
     );
   }
 }
 
 @immutable
-class StudyWorkspace {
-  const StudyWorkspace({
+class StudyTheme {
+  const StudyTheme({
     required this.id,
     required this.name,
-    required this.centralPassage,
-    required this.passages,
-    this.words = const [],
+    this.headerNote = '',
+    this.passages = const [],
   });
 
   final String id;
   final String name;
-  final StudyPassage centralPassage;
+  final String headerNote;
   final List<StudyPassage> passages;
-  final List<StudyWord> words;
 
-  StudyWorkspace copyWith({
+  StudyTheme copyWith({
     String? name,
-    StudyPassage? centralPassage,
+    String? headerNote,
     List<StudyPassage>? passages,
-    List<StudyWord>? words,
-  }) => StudyWorkspace(
+  }) => StudyTheme(
     id: id,
     name: name ?? this.name,
-    centralPassage: centralPassage ?? this.centralPassage,
+    headerNote: headerNote ?? this.headerNote,
     passages: passages ?? this.passages,
-    words: words ?? this.words,
   );
 
   StudyPassage? passageAt(int bookIndex, int chapter, int verse) {
@@ -153,15 +146,7 @@ class StudyWorkspace {
     return null;
   }
 
-  StudyWord? wordAt(int bookIndex, int chapter, int verse, int position) {
-    final key = '$bookIndex:$chapter:$verse:$position';
-    for (final word in words) {
-      if (word.locationKey == key) return word;
-    }
-    return null;
-  }
-
-  StudyWorkspace putPassage(StudyPassage passage) {
+  StudyTheme putPassage(StudyPassage passage) {
     final updated = List<StudyPassage>.of(passages);
     final index = updated.indexWhere(
       (candidate) => candidate.locationKey == passage.locationKey,
@@ -174,17 +159,111 @@ class StudyWorkspace {
     return copyWith(passages: updated);
   }
 
-  StudyWorkspace removePassage(StudyPassage passage) => copyWith(
+  StudyTheme removePassage(StudyPassage passage) => copyWith(
     passages: passages
         .where((candidate) => candidate.locationKey != passage.locationKey)
         .toList(),
   );
 
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    if (headerNote.isNotEmpty) 'note': headerNote,
+    'passages': passages.map((passage) => passage.toJson()).toList(),
+  };
+
+  static StudyTheme? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final id = value['id'];
+    final name = value['name'];
+    if (id is! String || id.isEmpty || name is! String || name.isEmpty) {
+      return null;
+    }
+    return StudyTheme(
+      id: id,
+      name: name,
+      headerNote: value['note'] is String ? value['note'] as String : '',
+      passages: value['passages'] is List
+          ? (value['passages'] as List)
+                .map(StudyPassage.fromJson)
+                .whereType<StudyPassage>()
+                .toList()
+          : const [],
+    );
+  }
+}
+
+@immutable
+class StudyWorkspace {
+  const StudyWorkspace({
+    required this.id,
+    required this.name,
+    this.words = const [],
+    this.themes = const [],
+    this.highlightsEnabled = true,
+    this.wordColorValue = defaultStudyWordColorValue,
+    this.passageColorValue = defaultStudyPassageColorValue,
+  });
+
+  final String id;
+  final String name;
+  final List<StudyWord> words;
+  final List<StudyTheme> themes;
+  final bool highlightsEnabled;
+  final int wordColorValue;
+  final int passageColorValue;
+
+  StudyWorkspace copyWith({
+    String? name,
+    List<StudyWord>? words,
+    List<StudyTheme>? themes,
+    bool? highlightsEnabled,
+    int? wordColorValue,
+    int? passageColorValue,
+  }) => StudyWorkspace(
+    id: id,
+    name: name ?? this.name,
+    words: words ?? this.words,
+    themes: themes ?? this.themes,
+    highlightsEnabled: highlightsEnabled ?? this.highlightsEnabled,
+    wordColorValue: wordColorValue ?? this.wordColorValue,
+    passageColorValue: passageColorValue ?? this.passageColorValue,
+  );
+
+  StudyWord? wordForRoot(String root) {
+    if (root.isEmpty) return null;
+    for (final word in words) {
+      if (word.root == root) return word;
+    }
+    return null;
+  }
+
+  StudyTheme? themeById(String id) {
+    for (final theme in themes) {
+      if (theme.id == id) return theme;
+    }
+    return null;
+  }
+
+  StudyPassage? passageAt(int bookIndex, int chapter, int verse) {
+    for (final theme in themes) {
+      final passage = theme.passageAt(bookIndex, chapter, verse);
+      if (passage != null) return passage;
+    }
+    return null;
+  }
+
   StudyWorkspace putWord(StudyWord word) {
     final updated = List<StudyWord>.of(words);
-    final index = updated.indexWhere(
-      (candidate) => candidate.locationKey == word.locationKey,
+    var index = updated.indexWhere(
+      (candidate) => candidate.root.isNotEmpty && candidate.root == word.root,
     );
+    if (index < 0 && word.root.isNotEmpty) {
+      index = updated.indexWhere(
+        (candidate) =>
+            candidate.root.isEmpty && candidate.surface == word.surface,
+      );
+    }
     if (index < 0) {
       updated.add(word);
     } else {
@@ -195,36 +274,45 @@ class StudyWorkspace {
 
   StudyWorkspace removeWord(StudyWord word) => copyWith(
     words: words
-        .where((candidate) => candidate.locationKey != word.locationKey)
+        .where(
+          (candidate) => word.root.isNotEmpty
+              ? candidate.root != word.root
+              : candidate.root.isNotEmpty || candidate.surface != word.surface,
+        )
         .toList(),
+  );
+
+  StudyWorkspace putTheme(StudyTheme theme) {
+    final updated = List<StudyTheme>.of(themes);
+    final index = updated.indexWhere((candidate) => candidate.id == theme.id);
+    if (index < 0) {
+      updated.add(theme);
+    } else {
+      updated[index] = theme;
+    }
+    return copyWith(themes: updated);
+  }
+
+  StudyWorkspace removeTheme(StudyTheme theme) => copyWith(
+    themes: themes.where((candidate) => candidate.id != theme.id).toList(),
   );
 
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
-    'central': centralPassage.toJson(),
-    'passages': passages.map((passage) => passage.toJson()).toList(),
     'words': words.map((word) => word.toJson()).toList(),
+    'themes': themes.map((theme) => theme.toJson()).toList(),
+    if (!highlightsEnabled) 'highlights': false,
+    'wordColor': wordColorValue,
+    'passageColor': passageColorValue,
   };
 
   static StudyWorkspace? fromJson(Object? value) {
     if (value is! Map) return null;
     final id = value['id'];
     final name = value['name'];
-    final central = StudyPassage.fromJson(value['central']);
-    if (id is! String || id.isEmpty || name is! String || central == null) {
+    if (id is! String || id.isEmpty || name is! String || name.isEmpty) {
       return null;
-    }
-    final passages = value['passages'] is List
-        ? (value['passages'] as List)
-              .map(StudyPassage.fromJson)
-              .whereType<StudyPassage>()
-              .toList()
-        : <StudyPassage>[];
-    if (!passages.any(
-      (passage) => passage.locationKey == central.locationKey,
-    )) {
-      passages.insert(0, central);
     }
     final words = value['words'] is List
         ? (value['words'] as List)
@@ -232,12 +320,53 @@ class StudyWorkspace {
               .whereType<StudyWord>()
               .toList()
         : <StudyWord>[];
+    var themes = value['themes'] is List
+        ? (value['themes'] as List)
+              .map(StudyTheme.fromJson)
+              .whereType<StudyTheme>()
+              .toList()
+        : <StudyTheme>[];
+
+    // Migrate the earlier one-central-passage workspace shape into a first
+    // passage theme without dropping notes or linked references.
+    if (themes.isEmpty && value['central'] != null) {
+      final central = StudyPassage.fromJson(value['central']);
+      final passages = value['passages'] is List
+          ? (value['passages'] as List)
+                .map(StudyPassage.fromJson)
+                .whereType<StudyPassage>()
+                .toList()
+          : <StudyPassage>[];
+      if (central != null &&
+          !passages.any(
+            (passage) => passage.locationKey == central.locationKey,
+          )) {
+        passages.insert(0, central);
+      }
+      themes = [
+        StudyTheme(id: '$id-passages', name: 'Passages', passages: passages),
+      ];
+    }
+
+    int storedColor(Object? raw, int fallback) =>
+        raw is int && raw >= 0 && raw <= 0xffffffff ? raw : fallback;
+
     return StudyWorkspace(
       id: id,
       name: name,
-      centralPassage: central,
-      passages: passages,
       words: words,
+      themes: themes,
+      highlightsEnabled: value['highlights'] is bool
+          ? value['highlights'] as bool
+          : true,
+      wordColorValue: storedColor(
+        value['wordColor'],
+        defaultStudyWordColorValue,
+      ),
+      passageColorValue: storedColor(
+        value['passageColor'],
+        defaultStudyPassageColorValue,
+      ),
     );
   }
 }

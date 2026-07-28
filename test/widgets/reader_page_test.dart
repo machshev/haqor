@@ -29,6 +29,7 @@ class _FakeRust {
         includeGlosses: request.includeGlosses,
         includeMorphology: request.includeMorphology,
         includeNames: request.includeNames,
+        includeRoots: request.includeRoots,
         verses: [
           for (var v = 1; v <= 20; v++)
             VerseEntry(
@@ -39,6 +40,7 @@ class _FakeRust {
               glosses: const [],
               morphologies: const [],
               names: const [],
+              roots: const [],
               ketivs: const [],
             ),
         ],
@@ -168,7 +170,7 @@ void main() {
     expect(_verse(1, 8, 1), findsOneWidget);
   });
 
-  testWidgets('three-panel layout exposes persistent study navigation', (
+  testWidgets('three-panel study workspace toggles and stores passage themes', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1400, 900);
@@ -188,8 +190,14 @@ void main() {
     rust.deliverAll();
     await tester.pump();
 
-    expect(find.text('Study workspace'), findsOneWidget);
+    expect(find.text('Study workspace'), findsNothing);
     expect(find.text('Word study'), findsOneWidget);
+    await tester.tap(find.byTooltip('Show study workspace'));
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pump();
+
+    expect(find.text('Study workspace'), findsOneWidget);
     expect(find.text('Create workspace'), findsOneWidget);
 
     await tester.tap(find.text('Create workspace'));
@@ -197,7 +205,20 @@ void main() {
     await tester.tap(find.text('Create'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Connected passages'), findsOneWidget);
+    expect(find.text('Bookmarked words (0)'), findsOneWidget);
+    expect(find.text('Passage themes'), findsOneWidget);
+
+    await tester.tap(find.text('New theme'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), 'Creation');
+    await tester.tap(find.text('Next'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), 'Opening passage');
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Creation'), findsOneWidget);
+    expect(find.text('Opening passage'), findsOneWidget);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('study_workspaces_v1'), contains('"verse":1'));
   });

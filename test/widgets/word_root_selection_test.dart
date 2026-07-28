@@ -129,7 +129,11 @@ HebrewOccurrence _occurrence({
   parseLabel: 'noun $state',
 );
 
-Future<_FakeRust> _pumpSheet(WidgetTester tester) async {
+Future<_FakeRust> _pumpSheet(
+  WidgetTester tester, {
+  Future<bool> Function(String root, String surface)? onToggleStudyBookmark,
+  Future<void> Function(String root, String surface)? onEditStudyNote,
+}) async {
   SharedPreferences.setMockInitialValues({
     'occurrence_verse_english_only': false,
   });
@@ -146,6 +150,8 @@ Future<_FakeRust> _pumpSheet(WidgetTester tester) async {
             sendInfoRequest: rust.onInfoRequest,
             sendOccurrencesRequest: rust.onOccurrencesRequest,
             sendVerseTextsRequest: rust.onVerseTextsRequest,
+            onToggleStudyBookmark: onToggleStudyBookmark,
+            onEditStudyNote: onEditStudyNote,
           ),
         ),
       ),
@@ -160,6 +166,32 @@ Future<_FakeRust> _pumpSheet(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('a resolved root can be bookmarked and noted from the sheet', (
+    tester,
+  ) async {
+    (String, String)? bookmarked;
+    (String, String)? noted;
+    await _pumpSheet(
+      tester,
+      onToggleStudyBookmark: (root, surface) async {
+        bookmarked = (root, surface);
+        return true;
+      },
+      onEditStudyNote: (root, surface) async {
+        noted = (root, surface);
+      },
+    );
+
+    await tester.tap(find.byTooltip('Bookmark this root'));
+    await tester.pump();
+    expect(bookmarked, ('אלה', 'אֱלִיעֶזֶר'));
+    expect(find.byTooltip('Remove root bookmark'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Edit study note'));
+    await tester.pump();
+    expect(noted, ('אלה', 'אֱלִיעֶזֶר'));
+  });
+
   testWidgets('both of a name’s roots are offered, the resolved one selected', (
     tester,
   ) async {

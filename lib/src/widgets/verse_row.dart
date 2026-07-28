@@ -152,7 +152,9 @@ class VerseRow extends StatefulWidget {
     this.highlightProperNames = false,
     this.studyHighlighted = false,
     this.studyNote = false,
-    this.highlightedWordPositions = const {},
+    this.highlightedWordRoots = const {},
+    this.studyWordHighlightColor,
+    this.studyPassageHighlightColor,
     this.ketivDisplay = KetivDisplay.superscript,
   });
 
@@ -160,7 +162,12 @@ class VerseRow extends StatefulWidget {
   final bool isSelected;
   final bool hebrewNumerals;
   final VoidCallback onTap;
-  final void Function(String word, String? readerGloss, int? position)
+  final void Function(
+    String word,
+    String? readerGloss,
+    int? position,
+    String root,
+  )
   onWordTap;
   final double fontSize;
   final String fontFamily;
@@ -170,7 +177,9 @@ class VerseRow extends StatefulWidget {
   final bool highlightProperNames;
   final bool studyHighlighted;
   final bool studyNote;
-  final Set<int> highlightedWordPositions;
+  final Set<String> highlightedWordRoots;
+  final Color? studyWordHighlightColor;
+  final Color? studyPassageHighlightColor;
   final KetivDisplay ketivDisplay;
 
   @override
@@ -202,7 +211,17 @@ class _VerseRowState extends State<VerseRow> {
     _recognizers = [
       for (final (i, word) in _words.indexed)
         TapGestureRecognizer()
-          ..onTap = () => widget.onWordTap(word, null, positions[i]),
+          ..onTap = () {
+            final position = positions[i];
+            widget.onWordTap(
+              word,
+              null,
+              position,
+              position != null && position < widget.entry.roots.length
+                  ? widget.entry.roots[position]
+                  : '',
+            );
+          },
     ];
   }
 
@@ -353,12 +372,16 @@ class _VerseRowState extends State<VerseRow> {
       height: 1.0,
     );
     TextStyle styleForWord(String word, int lexicalPosition) {
-      final highlighted = widget.highlightedWordPositions.contains(
-        lexicalPosition,
-      );
+      final root = lexicalPosition < widget.entry.roots.length
+          ? widget.entry.roots[lexicalPosition]
+          : '';
+      final highlighted =
+          root.isNotEmpty && widget.highlightedWordRoots.contains(root);
       final baseStyle = highlighted
           ? wordStyle.copyWith(
-              backgroundColor: theme.colorScheme.tertiaryContainer,
+              backgroundColor:
+                  widget.studyWordHighlightColor ??
+                  theme.colorScheme.tertiaryContainer,
               fontWeight: FontWeight.w700,
             )
           : wordStyle;
@@ -369,7 +392,9 @@ class _VerseRowState extends State<VerseRow> {
       if (isYahweh(word)) {
         return highlighted
             ? yahwehStyle.copyWith(
-                backgroundColor: theme.colorScheme.tertiaryContainer,
+                backgroundColor:
+                    widget.studyWordHighlightColor ??
+                    theme.colorScheme.tertiaryContainer,
               )
             : yahwehStyle;
       }
@@ -377,7 +402,9 @@ class _VerseRowState extends State<VerseRow> {
               widget.entry.names[lexicalPosition]
           ? highlighted
                 ? properNameStyle.copyWith(
-                    backgroundColor: theme.colorScheme.tertiaryContainer,
+                    backgroundColor:
+                        widget.studyWordHighlightColor ??
+                        theme.colorScheme.tertiaryContainer,
                   )
                 : properNameStyle
           : baseStyle;
@@ -414,6 +441,9 @@ class _VerseRowState extends State<VerseRow> {
                             ? widget.entry.glosses[glossPosition]
                             : null,
                         glossPosition,
+                        glossPosition < widget.entry.roots.length
+                            ? widget.entry.roots[glossPosition]
+                            : '',
                       ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -516,7 +546,9 @@ class _VerseRowState extends State<VerseRow> {
           color: widget.isSelected
               ? theme.colorScheme.primaryContainer
               : widget.studyHighlighted
-              ? theme.colorScheme.secondaryContainer.withValues(alpha: 0.55)
+              ? (widget.studyPassageHighlightColor ??
+                        theme.colorScheme.secondaryContainer)
+                    .withValues(alpha: 0.55)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),

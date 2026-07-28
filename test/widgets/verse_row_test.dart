@@ -48,13 +48,14 @@ void main() {
               glosses: [],
               morphologies: [],
               names: [],
+              roots: [],
               ketivs: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
             highlightProperNames: true,
             onTap: () {},
-            onWordTap: (_, _, _) {},
+            onWordTap: (_, _, _, _) {},
           ),
         ),
       ),
@@ -83,13 +84,14 @@ void main() {
               glosses: [],
               morphologies: [],
               names: [],
+              roots: [],
               ketivs: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
             showCantillation: false,
             onTap: () {},
-            onWordTap: (_, _, _) {},
+            onWordTap: (_, _, _, _) {},
           ),
         ),
       ),
@@ -102,7 +104,7 @@ void main() {
   testWidgets('word taps carry the lexical occurrence position', (
     tester,
   ) async {
-    (String, String?, int?)? tapped;
+    (String, String?, int?, String)? tapped;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -113,14 +115,15 @@ void main() {
               glosses: ['word', 'Yahweh'],
               morphologies: ['noun singular', 'noun singular'],
               names: [],
+              roots: ['דבר', 'יהוה'],
               ketivs: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
             glossInterlinear: true,
             onTap: () {},
-            onWordTap: (word, gloss, position) {
-              tapped = (word, gloss, position);
+            onWordTap: (word, gloss, position, root) {
+              tapped = (word, gloss, position, root);
             },
           ),
         ),
@@ -128,10 +131,10 @@ void main() {
     );
 
     await tester.tap(find.text('יְהוָה'));
-    expect(tapped, ('יְהוָה', 'Yahweh', 1));
+    expect(tapped, ('יְהוָה', 'Yahweh', 1, 'יהוה'));
   });
 
-  testWidgets('study highlights stay occurrence-specific and show notes', (
+  testWidgets('study highlights every word carrying a bookmarked root', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -144,15 +147,16 @@ void main() {
               glosses: [],
               morphologies: [],
               names: [],
+              roots: ['מלל', 'מלל'],
               ketivs: [],
             ),
             isSelected: false,
             hebrewNumerals: false,
             studyHighlighted: true,
             studyNote: true,
-            highlightedWordPositions: {1},
+            highlightedWordRoots: {'מלל'},
             onTap: () {},
-            onWordTap: (_, _, _) {},
+            onWordTap: (_, _, _, _) {},
           ),
         ),
       ),
@@ -167,7 +171,7 @@ void main() {
         .toList();
 
     expect(words, hasLength(2));
-    expect(words.first.style!.backgroundColor, isNull);
+    expect(words.first.style!.backgroundColor, isNotNull);
     expect(words.last.style!.backgroundColor, isNotNull);
     expect(find.byIcon(Icons.sticky_note_2_outlined), findsOneWidget);
     final container = tester.widget<AnimatedContainer>(
@@ -190,6 +194,7 @@ void main() {
               glosses: ['word'],
               morphologies: ['noun singular'],
               names: [],
+              roots: [],
               ketivs: [],
             ),
             isSelected: false,
@@ -197,7 +202,7 @@ void main() {
             glossInterlinear: true,
             morphologyInterlinear: true,
             onTap: () {},
-            onWordTap: (_, _, _) {},
+            onWordTap: (_, _, _, _) {},
           ),
         ),
       ),
@@ -244,6 +249,7 @@ void main() {
                 glosses: glosses,
                 morphologies: const [],
                 names: const [],
+                roots: const [],
                 ketivs: const [],
               ),
               isSelected: false,
@@ -251,7 +257,7 @@ void main() {
               showCantillation: true,
               glossInterlinear: true,
               onTap: () {},
-              onWordTap: (_, _, _) {},
+              onWordTap: (_, _, _, _) {},
             ),
           ),
         ),
@@ -286,6 +292,7 @@ void main() {
       glosses: const [],
       morphologies: const [],
       names: const [],
+      roots: const [],
       ketivs: ketivs,
     );
 
@@ -302,7 +309,7 @@ void main() {
             hebrewNumerals: true,
             ketivDisplay: display,
             onTap: () {},
-            onWordTap: (_, _, _) {},
+            onWordTap: (_, _, _, _) {},
           ),
         ),
       ),

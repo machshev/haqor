@@ -177,6 +177,8 @@ pub struct GetChapter {
     pub include_morphology: bool,
     /// Include proper-name flags in the payload.
     pub include_names: bool,
+    /// Include consonantal roots for root-wide study-word highlights.
+    pub include_roots: bool,
 }
 
 /// What the consonantal text writes where the reader is shown the *qere* the
@@ -206,6 +208,8 @@ pub struct VerseEntry {
     pub morphologies: Vec<String>,
     /// Aligned with the lexical words: true where the word is a proper name.
     pub names: Vec<bool>,
+    /// Consonantal roots aligned with the lexical words. Empty where unresolved.
+    pub roots: Vec<String>,
     /// The verse's ketiv readings, where it has any — empty for almost every
     /// verse, as the OT carries about 1,250 in total.
     pub ketivs: Vec<KetivEntry>,
@@ -219,6 +223,7 @@ pub struct ChapterText {
     pub include_glosses: bool,
     pub include_morphology: bool,
     pub include_names: bool,
+    pub include_roots: bool,
     pub verses: Vec<VerseEntry>,
 }
 

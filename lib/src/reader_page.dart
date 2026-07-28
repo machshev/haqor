@@ -137,7 +137,7 @@ class _Section {
        verseKeys = {for (final verse in verses) verse.verse: GlobalKey()};
 }
 
-typedef _ChapterRequest = (int, int, bool, bool, bool, bool);
+typedef _ChapterRequest = (int, int, bool, bool, bool, bool, bool);
 
 class _SelectedWord {
   const _SelectedWord({
@@ -146,6 +146,7 @@ class _SelectedWord {
     required this.chapter,
     required this.verse,
     required this.position,
+    required this.root,
     this.readerGloss,
   });
 
@@ -154,6 +155,7 @@ class _SelectedWord {
   final int chapter;
   final int verse;
   final int? position;
+  final String root;
   final String? readerGloss;
 }
 
@@ -204,6 +206,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   static const _kReadingPlanCompleted = 'reading_plan_completed';
   static const _kReadingPlans = 'reading_plans';
   static const _kReaderLayoutMode = 'reader_layout_mode';
+  static const _kStudyWorkspaceVisible = 'study_workspace_visible';
 
   static const _fontFamilies = ['Cardo', 'David Libre', 'Frank Ruhl Libre'];
 
@@ -260,6 +263,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   bool _glossInterlinear = false;
   bool _morphologyInterlinear = false;
   bool _highlightProperNames = false;
+  bool _studyWorkspaceVisible = false;
   KetivDisplay _ketivDisplay = KetivDisplay.superscript;
   ReaderLayoutMode _readerLayoutMode = ReaderLayoutMode.automatic;
   List<_ReadingPlan> _readingPlans = [];
@@ -296,6 +300,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         msg.includeGlosses,
         msg.includeMorphology,
         msg.includeNames,
+        msg.includeRoots,
       );
       if (!_pendingFetches.contains(fetchKey)) return;
       _pendingFetches.remove(fetchKey);
@@ -466,6 +471,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _glossInterlinear = prefs.getBool(_kGlossInterlinear) ?? false;
       _morphologyInterlinear = prefs.getBool(_kMorphologyInterlinear) ?? false;
       _highlightProperNames = prefs.getBool(_kHighlightProperNames) ?? false;
+      _studyWorkspaceVisible = prefs.getBool(_kStudyWorkspaceVisible) ?? false;
       _ketivDisplay = KetivDisplay.values.firstWhere(
         (option) => option.name == prefs.getString(_kKetivDisplay),
         orElse: () => KetivDisplay.superscript,
@@ -574,6 +580,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       prefs.setBool(_kGlossInterlinear, _glossInterlinear),
       prefs.setBool(_kMorphologyInterlinear, _morphologyInterlinear),
       prefs.setBool(_kHighlightProperNames, _highlightProperNames),
+      prefs.setBool(_kStudyWorkspaceVisible, _studyWorkspaceVisible),
       prefs.setString(_kKetivDisplay, _ketivDisplay.name),
       prefs.setString(_kReaderLayoutMode, _readerLayoutMode.name),
     ]);
@@ -747,8 +754,6 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     final workspace = StudyWorkspace(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       name: name,
-      centralPassage: passage,
-      passages: [passage],
     );
     setState(() {
       _studyWorkspaces.add(workspace);
@@ -807,13 +812,99 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _saveStudyState();
   }
 
-  Future<void> _bookmarkCurrentPassage() async {
+  Future<void> _createStudyTheme() async {
     final workspace = await _ensureStudyWorkspace();
     if (workspace == null || !mounted) return;
-    _replaceStudyWorkspace(workspace.putPassage(_currentStudyPassage));
+    final name = await _askForText(
+      title: 'New passage theme',
+      initialValue: '',
+      label: 'Theme name',
+      confirmLabel: 'Next',
+    );
+    if (name == null || !mounted) return;
+    final note = await _askForText(
+      title: name,
+      initialValue: '',
+      label: 'Header note (optional)',
+      maxLines: 5,
+      confirmLabel: 'Create',
+    );
+    if (note == null || !mounted) return;
+    _replaceStudyWorkspace(
+      workspace.putTheme(
+        StudyTheme(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          name: name,
+          headerNote: note,
+          passages: [_currentStudyPassage],
+        ),
+      ),
+    );
   }
 
-  Future<void> _editStudyPassage(StudyPassage passage) async {
+  Future<void> _editStudyTheme(StudyTheme studyTheme) async {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    final name = await _askForText(
+      title: 'Edit passage theme',
+      initialValue: studyTheme.name,
+      label: 'Theme name',
+      confirmLabel: 'Next',
+    );
+    if (name == null || !mounted) return;
+    final note = await _askForText(
+      title: name,
+      initialValue: studyTheme.headerNote,
+      label: 'Header note (optional)',
+      maxLines: 5,
+    );
+    if (note == null || !mounted) return;
+    _replaceStudyWorkspace(
+      workspace.putTheme(studyTheme.copyWith(name: name, headerNote: note)),
+    );
+  }
+
+  Future<void> _deleteStudyTheme(StudyTheme studyTheme) async {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Delete ${studyTheme.name}?'),
+        content: Text(
+          '${studyTheme.passages.length} passage '
+          '${studyTheme.passages.length == 1 ? 'bookmark' : 'bookmarks'} '
+          'will be removed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      _replaceStudyWorkspace(workspace.removeTheme(studyTheme));
+    }
+  }
+
+  void _addCurrentPassageToTheme(StudyTheme studyTheme) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    _replaceStudyWorkspace(
+      workspace.putTheme(studyTheme.putPassage(_currentStudyPassage)),
+    );
+  }
+
+  Future<void> _editStudyPassage(
+    StudyTheme studyTheme,
+    StudyPassage passage,
+  ) async {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
     final note = await _askForText(
@@ -825,91 +916,130 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       maxLines: 5,
     );
     if (note != null && mounted) {
-      final updatedPassage = passage.copyWith(note: note);
-      var updated = workspace.putPassage(updatedPassage);
-      if (workspace.centralPassage.locationKey == passage.locationKey) {
-        updated = updated.copyWith(centralPassage: updatedPassage);
-      }
-      _replaceStudyWorkspace(updated);
+      _replaceStudyWorkspace(
+        workspace.putTheme(studyTheme.putPassage(passage.copyWith(note: note))),
+      );
     }
   }
 
-  void _setCentralStudyPassage(StudyPassage passage) {
+  void _toggleStudyPassage(StudyTheme studyTheme, StudyPassage passage) {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
     _replaceStudyWorkspace(
-      workspace.putPassage(passage).copyWith(centralPassage: passage),
+      workspace.putTheme(
+        studyTheme.putPassage(
+          passage.copyWith(highlightEnabled: !passage.highlightEnabled),
+        ),
+      ),
     );
   }
 
-  void _removeStudyPassage(StudyPassage passage) {
+  void _removeStudyPassage(StudyTheme studyTheme, StudyPassage passage) {
     final workspace = _activeStudyWorkspace;
-    if (workspace == null ||
-        workspace.centralPassage.locationKey == passage.locationKey) {
-      return;
-    }
-    _replaceStudyWorkspace(workspace.removePassage(passage));
+    if (workspace == null) return;
+    _replaceStudyWorkspace(
+      workspace.putTheme(studyTheme.removePassage(passage)),
+    );
   }
 
-  Future<void> _toggleSelectedWordHighlight() async {
-    final selected = _selectedWord;
-    if (selected == null || selected.position == null) return;
+  Future<bool> _toggleStudyWordBookmark(String root, String surface) async {
+    if (root.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This word has no resolved root.')),
+        );
+      }
+      return false;
+    }
     final workspace = await _ensureStudyWorkspace();
-    if (workspace == null || !mounted) return;
-    final existing = workspace.wordAt(
-      selected.bookIndex,
-      selected.chapter,
-      selected.verse,
-      selected.position!,
-    );
+    if (workspace == null || !mounted) return false;
+    final existing = workspace.wordForRoot(root);
     if (existing == null) {
       _replaceStudyWorkspace(
-        workspace.putWord(
-          StudyWord(
-            bookIndex: selected.bookIndex,
-            chapter: selected.chapter,
-            verse: selected.verse,
-            position: selected.position!,
-            surface: selected.word,
-          ),
-        ),
+        workspace.putWord(StudyWord(root: root, surface: surface)),
       );
-    } else {
-      _replaceStudyWorkspace(workspace.removeWord(existing));
+      _refreshLoadedChaptersForStudyRoots();
+      return true;
     }
+    _replaceStudyWorkspace(workspace.removeWord(existing));
+    return false;
   }
 
-  Future<void> _editSelectedWordNote() async {
-    final selected = _selectedWord;
-    if (selected == null || selected.position == null) return;
-    final workspace = await _ensureStudyWorkspace();
-    if (workspace == null || !mounted) return;
-    final existing = workspace.wordAt(
-      selected.bookIndex,
-      selected.chapter,
-      selected.verse,
-      selected.position!,
-    );
+  Future<void> _editStudyWord(StudyWord word) async {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
     final note = await _askForText(
-      title: selected.word,
-      initialValue: existing?.note ?? '',
+      title: word.root.isEmpty ? word.surface : word.root,
+      initialValue: word.note,
       label: 'Word note',
       maxLines: 5,
     );
     if (note == null || !mounted) return;
+    _replaceStudyWorkspace(workspace.putWord(word.copyWith(note: note)));
+  }
+
+  void _toggleStudyWord(StudyWord word) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
     _replaceStudyWorkspace(
       workspace.putWord(
-        (existing ??
-                StudyWord(
-                  bookIndex: selected.bookIndex,
-                  chapter: selected.chapter,
-                  verse: selected.verse,
-                  position: selected.position!,
-                  surface: selected.word,
-                ))
-            .copyWith(note: note),
+        word.copyWith(highlightEnabled: !word.highlightEnabled),
       ),
     );
+    if (!word.highlightEnabled) _refreshLoadedChaptersForStudyRoots();
+  }
+
+  void _removeStudyWord(StudyWord word) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    _replaceStudyWorkspace(workspace.removeWord(word));
+  }
+
+  Future<void> _editSelectedWordNote() async {
+    final selected = _selectedWord;
+    if (selected == null || selected.root.isEmpty) return;
+    final workspace = await _ensureStudyWorkspace();
+    if (workspace == null || !mounted) return;
+    final existing = workspace.wordForRoot(selected.root);
+    final word =
+        existing ?? StudyWord(root: selected.root, surface: selected.word);
+    await _editStudyWord(word);
+  }
+
+  void _toggleWorkspaceHighlights(bool enabled) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    _replaceStudyWorkspace(workspace.copyWith(highlightsEnabled: enabled));
+    if (enabled) _refreshLoadedChaptersForStudyRoots();
+  }
+
+  void _setWorkspaceWordColor(int value) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    _replaceStudyWorkspace(workspace.copyWith(wordColorValue: value));
+  }
+
+  void _setWorkspacePassageColor(int value) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    _replaceStudyWorkspace(workspace.copyWith(passageColorValue: value));
+  }
+
+  void _refreshLoadedChaptersForStudyRoots() {
+    for (final section in List<_Section>.of(_sections)) {
+      _dropCachedChapter(section.bookIndex, section.chapter);
+      _fetchChapter(section.bookIndex, section.chapter, force: true);
+    }
+  }
+
+  void _toggleStudyWorkspacePanel() {
+    final enabled = !_studyWorkspaceVisible;
+    setState(() {
+      _studyWorkspaceVisible = enabled;
+      if (enabled) _splitShowsWord = false;
+    });
+    _savePrefs();
+    if (enabled) _refreshLoadedChaptersForStudyRoots();
   }
 
   Future<void> _showStudyWorkspaceSheet() async {
@@ -932,6 +1062,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
             onSelect: (id) {
               setState(() => _activeStudyWorkspaceId = id);
               _saveStudyState();
+              _refreshLoadedChaptersForStudyRoots();
               setSheetState(() {});
             },
             onRename: () async {
@@ -942,8 +1073,32 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               await _deleteStudyWorkspace();
               setSheetState(() {});
             },
-            onBookmarkCurrent: () async {
-              await _bookmarkCurrentPassage();
+            onToggleHighlights: (enabled) {
+              _toggleWorkspaceHighlights(enabled);
+              setSheetState(() {});
+            },
+            onWordColorChanged: (value) {
+              _setWorkspaceWordColor(value);
+              setSheetState(() {});
+            },
+            onPassageColorChanged: (value) {
+              _setWorkspacePassageColor(value);
+              setSheetState(() {});
+            },
+            onCreateTheme: () async {
+              await _createStudyTheme();
+              setSheetState(() {});
+            },
+            onEditTheme: (studyTheme) async {
+              await _editStudyTheme(studyTheme);
+              setSheetState(() {});
+            },
+            onDeleteTheme: (studyTheme) async {
+              await _deleteStudyTheme(studyTheme);
+              setSheetState(() {});
+            },
+            onAddCurrentToTheme: (studyTheme) {
+              _addCurrentPassageToTheme(studyTheme);
               setSheetState(() {});
             },
             onOpenPassage: (passage) {
@@ -954,16 +1109,28 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 verse: passage.verse,
               );
             },
-            onEditPassage: (passage) async {
-              await _editStudyPassage(passage);
+            onEditPassage: (studyTheme, passage) async {
+              await _editStudyPassage(studyTheme, passage);
               setSheetState(() {});
             },
-            onSetCentral: (passage) {
-              _setCentralStudyPassage(passage);
+            onTogglePassage: (studyTheme, passage) {
+              _toggleStudyPassage(studyTheme, passage);
               setSheetState(() {});
             },
-            onRemovePassage: (passage) {
-              _removeStudyPassage(passage);
+            onRemovePassage: (studyTheme, passage) {
+              _removeStudyPassage(studyTheme, passage);
+              setSheetState(() {});
+            },
+            onEditWord: (word) async {
+              await _editStudyWord(word);
+              setSheetState(() {});
+            },
+            onToggleWord: (word) {
+              _toggleStudyWord(word);
+              setSheetState(() {});
+            },
+            onRemoveWord: (word) {
+              _removeStudyWord(word);
               setSheetState(() {});
             },
           ),
@@ -1228,6 +1395,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _glossInterlinear,
     _morphologyInterlinear,
     _highlightProperNames,
+    _studyWorkspaceVisible ||
+        (_activeStudyWorkspace?.words.any(
+              (word) => word.highlightEnabled && word.root.isNotEmpty,
+            ) ??
+            false),
   );
 
   void _cacheChapter(_ChapterRequest key, List<VerseEntry> verses) {
@@ -1301,6 +1473,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       includeGlosses: _glossInterlinear,
       includeMorphology: _morphologyInterlinear,
       includeNames: _highlightProperNames,
+      includeRoots: key.$7,
     );
     final send = widget.sendChapterRequest;
     if (send != null) {
@@ -1581,6 +1754,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     int verse, {
     String? readerGloss,
     int? position,
+    String root = '',
   }) {
     final selected = _SelectedWord(
       word: word,
@@ -1588,6 +1762,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       chapter: chapter,
       verse: verse,
       position: position,
+      root: root,
       readerGloss: readerGloss,
     );
     final layout = _resolveReaderLayout(MediaQuery.sizeOf(context).width);
@@ -1617,6 +1792,17 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           'book': kBooks[bookIndex].transliteration,
           'chapter': chapter,
           'verse': verse,
+        },
+        isStudyBookmarked: (resolvedRoot) =>
+            _activeStudyWorkspace?.wordForRoot(resolvedRoot) != null,
+        onToggleStudyBookmark: _toggleStudyWordBookmark,
+        onEditStudyNote: (resolvedRoot, surface) async {
+          final workspace = await _ensureStudyWorkspace();
+          if (workspace == null || !mounted) return;
+          final existing = workspace.wordForRoot(resolvedRoot);
+          await _editStudyWord(
+            existing ?? StudyWord(root: resolvedRoot, surface: surface),
+          );
         },
         onNavigateToPassage: (bi, chapter, verse) {
           Navigator.pop(ctx);
@@ -1654,28 +1840,33 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     onSelect: (id) {
       setState(() => _activeStudyWorkspaceId = id);
       _saveStudyState();
+      _refreshLoadedChaptersForStudyRoots();
     },
     onRename: _renameStudyWorkspace,
     onDelete: _deleteStudyWorkspace,
-    onBookmarkCurrent: _bookmarkCurrentPassage,
+    onToggleHighlights: _toggleWorkspaceHighlights,
+    onWordColorChanged: _setWorkspaceWordColor,
+    onPassageColorChanged: _setWorkspacePassageColor,
+    onCreateTheme: _createStudyTheme,
+    onEditTheme: _editStudyTheme,
+    onDeleteTheme: _deleteStudyTheme,
+    onAddCurrentToTheme: _addCurrentPassageToTheme,
     onOpenPassage: (passage) =>
         _navigateTo(passage.bookIndex, passage.chapter, verse: passage.verse),
     onEditPassage: _editStudyPassage,
-    onSetCentral: _setCentralStudyPassage,
+    onTogglePassage: _toggleStudyPassage,
     onRemovePassage: _removeStudyPassage,
+    onEditWord: _editStudyWord,
+    onToggleWord: _toggleStudyWord,
+    onRemoveWord: _removeStudyWord,
   );
 
   Widget _wordInspector() {
     final theme = Theme.of(context);
     final selected = _selectedWord;
-    final annotation = selected == null || selected.position == null
+    final annotation = selected == null
         ? null
-        : _activeStudyWorkspace?.wordAt(
-            selected.bookIndex,
-            selected.chapter,
-            selected.verse,
-            selected.position!,
-          );
+        : _activeStudyWorkspace?.wordForRoot(selected.root);
     return Material(
       color: theme.colorScheme.surface,
       child: SafeArea(
@@ -1701,9 +1892,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                   ),
                   if (selected != null) ...[
                     IconButton(
-                      onPressed: selected.position == null
+                      onPressed: selected.root.isEmpty
                           ? null
-                          : _toggleSelectedWordHighlight,
+                          : () => _toggleStudyWordBookmark(
+                              selected.root,
+                              selected.word,
+                            ),
                       icon: Icon(
                         annotation == null
                             ? Icons.highlight_outlined
@@ -1714,7 +1908,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                           : 'Remove word highlight',
                     ),
                     IconButton(
-                      onPressed: selected.position == null
+                      onPressed: selected.root.isEmpty
                           ? null
                           : _editSelectedWordNote,
                       icon: Icon(
@@ -1789,6 +1983,17 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                         'chapter': selected.chapter,
                         'verse': selected.verse,
                       },
+                      isStudyBookmarked: (root) =>
+                          _activeStudyWorkspace?.wordForRoot(root) != null,
+                      onToggleStudyBookmark: _toggleStudyWordBookmark,
+                      onEditStudyNote: (root, surface) async {
+                        final workspace = await _ensureStudyWorkspace();
+                        if (workspace == null || !mounted) return;
+                        final existing = workspace.wordForRoot(root);
+                        await _editStudyWord(
+                          existing ?? StudyWord(root: root, surface: surface),
+                        );
+                      },
                       onNavigateToPassage: (book, chapter, verse) {
                         setState(() => _selectedWord = null);
                         _navigateTo(book, chapter, verse: verse);
@@ -1842,51 +2047,59 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           ),
         );
       case _ResolvedReaderLayout.split:
+        if (!_studyWorkspaceVisible && _selectedWord == null) {
+          return reader;
+        }
         return Row(
           children: [
             Expanded(child: reader),
             const VerticalDivider(width: 1),
             SizedBox(
               width: 360,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: SegmentedButton<bool>(
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment(
-                          value: false,
-                          icon: Icon(Icons.account_tree_outlined),
-                          label: Text('Study'),
+              child: !_studyWorkspaceVisible
+                  ? _wordInspector()
+                  : Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: SegmentedButton<bool>(
+                            showSelectedIcon: false,
+                            segments: const [
+                              ButtonSegment(
+                                value: false,
+                                icon: Icon(Icons.account_tree_outlined),
+                                label: Text('Study'),
+                              ),
+                              ButtonSegment(
+                                value: true,
+                                icon: Icon(Icons.menu_book_outlined),
+                                label: Text('Word'),
+                              ),
+                            ],
+                            selected: {_splitShowsWord},
+                            onSelectionChanged: (selection) => setState(
+                              () => _splitShowsWord = selection.single,
+                            ),
+                          ),
                         ),
-                        ButtonSegment(
-                          value: true,
-                          icon: Icon(Icons.menu_book_outlined),
-                          label: Text('Word'),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: _splitShowsWord
+                              ? _wordInspector()
+                              : _studyWorkspacePanel(),
                         ),
                       ],
-                      selected: {_splitShowsWord},
-                      onSelectionChanged: (selection) =>
-                          setState(() => _splitShowsWord = selection.single),
                     ),
-                  ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: _splitShowsWord
-                        ? _wordInspector()
-                        : _studyWorkspacePanel(),
-                  ),
-                ],
-              ),
             ),
           ],
         );
       case _ResolvedReaderLayout.threePanel:
         return Row(
           children: [
-            SizedBox(width: 300, child: _studyWorkspacePanel()),
-            const VerticalDivider(width: 1),
+            if (_studyWorkspaceVisible) ...[
+              SizedBox(width: 300, child: _studyWorkspacePanel()),
+              const VerticalDivider(width: 1),
+            ],
             Expanded(child: reader),
             const VerticalDivider(width: 1),
             SizedBox(width: 380, child: _wordInspector()),
@@ -1969,18 +2182,21 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
             tooltip: 'Forward',
           ),
           if (showInlineReaderActions) ...[
-            if (layout == _ResolvedReaderLayout.focus)
-              IconButton(
-                icon: const Icon(Icons.account_tree_outlined),
-                onPressed: _showStudyWorkspaceSheet,
-                tooltip: 'Study workspace',
-              )
-            else if (layout == _ResolvedReaderLayout.split)
-              IconButton(
-                icon: const Icon(Icons.account_tree_outlined),
-                onPressed: () => setState(() => _splitShowsWord = false),
-                tooltip: 'Study workspace',
-              ),
+            IconButton(
+              isSelected:
+                  layout != _ResolvedReaderLayout.focus &&
+                  _studyWorkspaceVisible,
+              selectedIcon: const Icon(Icons.account_tree),
+              icon: const Icon(Icons.account_tree_outlined),
+              onPressed: layout == _ResolvedReaderLayout.focus
+                  ? _showStudyWorkspaceSheet
+                  : _toggleStudyWorkspacePanel,
+              tooltip: layout == _ResolvedReaderLayout.focus
+                  ? 'Study workspace'
+                  : _studyWorkspaceVisible
+                  ? 'Hide study workspace'
+                  : 'Show study workspace',
+            ),
             IconButton(
               icon: const Icon(Icons.auto_stories_outlined),
               onPressed: _showReadingPlan,
@@ -2006,10 +2222,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
             onSelected: (action) {
               switch (action) {
                 case _ReaderMenuAction.studyWorkspace:
-                  if (layout == _ResolvedReaderLayout.split) {
-                    setState(() => _splitShowsWord = false);
-                  } else {
+                  if (layout == _ResolvedReaderLayout.focus) {
                     _showStudyWorkspaceSheet();
+                  } else {
+                    _toggleStudyWorkspacePanel();
                   }
                 case _ReaderMenuAction.readingPlan:
                   _showReadingPlan();
@@ -2152,22 +2368,28 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 entry.verse == _selectedVerse &&
                 b == _selectedBook &&
                 c == _selectedChapter;
-            final studyPassage = _activeStudyWorkspace?.passageAt(
-              b,
-              c,
-              entry.verse,
-            );
-            final highlightedWordPositions =
-                _activeStudyWorkspace?.words
+            final workspace = _activeStudyWorkspace;
+            final studyPassages =
+                workspace?.themes
+                    .expand((studyTheme) => studyTheme.passages)
                     .where(
-                      (word) =>
-                          word.bookIndex == b &&
-                          word.chapter == c &&
-                          word.verse == entry.verse,
+                      (passage) =>
+                          passage.bookIndex == b &&
+                          passage.chapter == c &&
+                          passage.verse == entry.verse,
                     )
-                    .map((word) => word.position)
-                    .toSet() ??
-                const <int>{};
+                    .toList() ??
+                const <StudyPassage>[];
+            final studyHighlightsEnabled =
+                workspace?.highlightsEnabled ?? false;
+            final highlightedWordRoots = studyHighlightsEnabled
+                ? workspace!.words
+                      .where(
+                        (word) => word.highlightEnabled && word.root.isNotEmpty,
+                      )
+                      .map((word) => word.root)
+                      .toSet()
+                : const <String>{};
             return VerseRow(
               key: section.verseKeys[entry.verse],
               entry: entry,
@@ -2184,13 +2406,14 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                   _selectedVerse = entry.verse;
                 }
               }),
-              onWordTap: (word, readerGloss, position) => _showWordInfo(
+              onWordTap: (word, readerGloss, position, root) => _showWordInfo(
                 word,
                 b,
                 c,
                 entry.verse,
                 readerGloss: readerGloss,
                 position: position,
+                root: root,
               ),
               fontSize: _fontSize,
               fontFamily: _fontFamily,
@@ -2198,9 +2421,19 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               glossInterlinear: _glossInterlinear,
               morphologyInterlinear: _morphologyInterlinear,
               highlightProperNames: _highlightProperNames,
-              studyHighlighted: studyPassage != null,
-              studyNote: studyPassage?.note.isNotEmpty ?? false,
-              highlightedWordPositions: highlightedWordPositions,
+              studyHighlighted:
+                  studyHighlightsEnabled &&
+                  studyPassages.any((passage) => passage.highlightEnabled),
+              studyNote: studyPassages.any(
+                (passage) => passage.note.isNotEmpty,
+              ),
+              highlightedWordRoots: highlightedWordRoots,
+              studyWordHighlightColor: workspace == null
+                  ? null
+                  : Color(workspace.wordColorValue),
+              studyPassageHighlightColor: workspace == null
+                  ? null
+                  : Color(workspace.passageColorValue),
               ketivDisplay: _ketivDisplay,
             );
           },
