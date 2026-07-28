@@ -19,6 +19,7 @@ class StudyPassage {
     this.note = '',
     this.highlightEnabled = true,
     this.colorValue = defaultStudyPassageColorValue,
+    this.order = 0,
   });
 
   final int bookIndex;
@@ -28,6 +29,7 @@ class StudyPassage {
   final String note;
   final bool highlightEnabled;
   final int colorValue;
+  final int order;
 
   String get locationKey => '$bookIndex:$chapter:$verse';
 
@@ -36,6 +38,7 @@ class StudyPassage {
     String? note,
     bool? highlightEnabled,
     int? colorValue,
+    int? order,
   }) => StudyPassage(
     bookIndex: bookIndex,
     chapter: chapter,
@@ -44,6 +47,7 @@ class StudyPassage {
     note: note ?? this.note,
     highlightEnabled: highlightEnabled ?? this.highlightEnabled,
     colorValue: colorValue ?? this.colorValue,
+    order: order ?? this.order,
   );
 
   Map<String, Object?> toJson() => {
@@ -54,6 +58,7 @@ class StudyPassage {
     if (note.isNotEmpty) 'note': note,
     if (!highlightEnabled) 'highlight': false,
     if (colorValue != defaultStudyPassageColorValue) 'color': colorValue,
+    'order': order,
   };
 
   static StudyPassage? fromJson(
@@ -80,6 +85,7 @@ class StudyPassage {
           legacyHighlightsEnabled &&
           (value['highlight'] is bool ? value['highlight'] as bool : true),
       colorValue: _storedColor(value['color'], legacyColorValue),
+      order: value['order'] is int ? value['order'] as int : 0,
     );
   }
 }
@@ -93,6 +99,7 @@ class StudyWord {
     this.note = '',
     this.highlightEnabled = true,
     this.colorValue = defaultStudyWordColorValue,
+    this.order = 0,
   });
 
   /// The resolved consonantal root. This is the bookmark key: every reader
@@ -103,6 +110,7 @@ class StudyWord {
   final String note;
   final bool highlightEnabled;
   final int colorValue;
+  final int order;
 
   StudyWord copyWith({
     String? surface,
@@ -110,6 +118,7 @@ class StudyWord {
     String? note,
     bool? highlightEnabled,
     int? colorValue,
+    int? order,
   }) => StudyWord(
     root: root,
     surface: surface ?? this.surface,
@@ -117,6 +126,7 @@ class StudyWord {
     note: note ?? this.note,
     highlightEnabled: highlightEnabled ?? this.highlightEnabled,
     colorValue: colorValue ?? this.colorValue,
+    order: order ?? this.order,
   );
 
   Map<String, Object?> toJson() => {
@@ -126,6 +136,7 @@ class StudyWord {
     if (note.isNotEmpty) 'note': note,
     if (!highlightEnabled) 'highlight': false,
     if (colorValue != defaultStudyWordColorValue) 'color': colorValue,
+    'order': order,
   };
 
   static StudyWord? fromJson(
@@ -148,39 +159,85 @@ class StudyWord {
           legacyHighlightsEnabled &&
           (value['highlight'] is bool ? value['highlight'] as bool : true),
       colorValue: _storedColor(value['color'], legacyColorValue),
+      order: value['order'] is int ? value['order'] as int : 0,
     );
   }
 }
 
 @immutable
-class StudyGroup {
-  const StudyGroup({
+class StudyNote {
+  const StudyNote({
     required this.id,
-    required this.name,
-    this.note = '',
-    this.parentId,
+    required this.text,
+    this.groupId,
+    this.order = 0,
   });
 
   final String id;
+  final String text;
+  final String? groupId;
+  final int order;
+
+  StudyNote copyWith({String? text, String? Function()? groupId, int? order}) =>
+      StudyNote(
+        id: id,
+        text: text ?? this.text,
+        groupId: groupId == null ? this.groupId : groupId(),
+        order: order ?? this.order,
+      );
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'text': text,
+    if (groupId != null) 'group': groupId,
+    'order': order,
+  };
+
+  static StudyNote? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final id = value['id'];
+    final text = value['text'];
+    if (id is! String || id.isEmpty || text is! String || text.isEmpty) {
+      return null;
+    }
+    return StudyNote(
+      id: id,
+      text: text,
+      groupId: value['group'] is String ? value['group'] as String : null,
+      order: value['order'] is int ? value['order'] as int : 0,
+    );
+  }
+}
+
+enum StudyItemType { passage, word, note }
+
+@immutable
+class StudyItem {
+  const StudyItem._(this.type, this.value, this.order);
+
+  final StudyItemType type;
+  final Object value;
+  final int order;
+}
+
+@immutable
+class StudyGroup {
+  const StudyGroup({required this.id, required this.name, this.parentId});
+
+  final String id;
   final String name;
-  final String note;
   final String? parentId;
 
-  StudyGroup copyWith({
-    String? name,
-    String? note,
-    String? Function()? parentId,
-  }) => StudyGroup(
-    id: id,
-    name: name ?? this.name,
-    note: note ?? this.note,
-    parentId: parentId == null ? this.parentId : parentId(),
-  );
+  StudyGroup copyWith({String? name, String? Function()? parentId}) =>
+      StudyGroup(
+        id: id,
+        name: name ?? this.name,
+        parentId: parentId == null ? this.parentId : parentId(),
+      );
 
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
-    if (note.isNotEmpty) 'note': note,
     if (parentId != null) 'parent': parentId,
   };
 
@@ -194,7 +251,6 @@ class StudyGroup {
     return StudyGroup(
       id: id,
       name: name,
-      note: value['note'] is String ? value['note'] as String : '',
       parentId: value['parent'] is String ? value['parent'] as String : null,
     );
   }
@@ -209,6 +265,7 @@ class StudyWorkspace {
     this.groups = const [],
     this.passages = const [],
     this.words = const [],
+    this.notes = const [],
   });
 
   final String id;
@@ -217,6 +274,7 @@ class StudyWorkspace {
   final List<StudyGroup> groups;
   final List<StudyPassage> passages;
   final List<StudyWord> words;
+  final List<StudyNote> notes;
 
   StudyWorkspace copyWith({
     String? name,
@@ -224,6 +282,7 @@ class StudyWorkspace {
     List<StudyGroup>? groups,
     List<StudyPassage>? passages,
     List<StudyWord>? words,
+    List<StudyNote>? notes,
   }) => StudyWorkspace(
     id: id,
     name: name ?? this.name,
@@ -231,6 +290,7 @@ class StudyWorkspace {
     groups: groups ?? this.groups,
     passages: passages ?? this.passages,
     words: words ?? this.words,
+    notes: notes ?? this.notes,
   );
 
   StudyWord? wordForRoot(String root) {
@@ -261,6 +321,27 @@ class StudyWorkspace {
       .where((group) => group.parentId == parentId)
       .toList(growable: false);
 
+  List<StudyItem> itemsIn(String? groupId) {
+    final items = <StudyItem>[
+      for (final passage in passages)
+        if (passage.groupId == groupId)
+          StudyItem._(StudyItemType.passage, passage, passage.order),
+      for (final word in words)
+        if (word.groupId == groupId)
+          StudyItem._(StudyItemType.word, word, word.order),
+      for (final note in notes)
+        if (note.groupId == groupId)
+          StudyItem._(StudyItemType.note, note, note.order),
+    ];
+    items.sort((a, b) => a.order.compareTo(b.order));
+    return items;
+  }
+
+  int nextOrder(String? groupId) {
+    final items = itemsIn(groupId);
+    return items.isEmpty ? 0 : items.last.order + 1;
+  }
+
   StudyWorkspace putWord(StudyWord word) {
     final updated = List<StudyWord>.of(words);
     var index = updated.indexWhere(
@@ -273,9 +354,11 @@ class StudyWorkspace {
       );
     }
     if (index < 0) {
-      updated.add(word);
+      updated.add(word.copyWith(order: nextOrder(word.groupId)));
     } else {
-      updated[index] = word;
+      updated[index] = updated[index].groupId == word.groupId
+          ? word
+          : word.copyWith(order: nextOrder(word.groupId));
     }
     return copyWith(words: updated);
   }
@@ -296,9 +379,11 @@ class StudyWorkspace {
       (candidate) => candidate.locationKey == passage.locationKey,
     );
     if (index < 0) {
-      updated.add(passage);
+      updated.add(passage.copyWith(order: nextOrder(passage.groupId)));
     } else {
-      updated[index] = passage;
+      updated[index] = updated[index].groupId == passage.groupId
+          ? passage
+          : passage.copyWith(order: nextOrder(passage.groupId));
     }
     return copyWith(passages: updated);
   }
@@ -308,6 +393,51 @@ class StudyWorkspace {
         .where((candidate) => candidate.locationKey != passage.locationKey)
         .toList(),
   );
+
+  StudyWorkspace putNote(StudyNote note) {
+    final updated = List<StudyNote>.of(notes);
+    final index = updated.indexWhere((candidate) => candidate.id == note.id);
+    if (index < 0) {
+      updated.add(note.copyWith(order: nextOrder(note.groupId)));
+    } else {
+      updated[index] = updated[index].groupId == note.groupId
+          ? note
+          : note.copyWith(order: nextOrder(note.groupId));
+    }
+    return copyWith(notes: updated);
+  }
+
+  StudyWorkspace removeNote(StudyNote note) => copyWith(
+    notes: notes.where((candidate) => candidate.id != note.id).toList(),
+  );
+
+  StudyWorkspace reorderItems(String? groupId, int oldIndex, int newIndex) {
+    final items = itemsIn(groupId);
+    if (oldIndex < 0 || oldIndex >= items.length) return this;
+    if (newIndex > oldIndex) newIndex--;
+    if (newIndex < 0 || newIndex >= items.length) return this;
+    final moved = items.removeAt(oldIndex);
+    items.insert(newIndex, moved);
+    var updated = this;
+    for (var index = 0; index < items.length; index++) {
+      final item = items[index];
+      switch (item.type) {
+        case StudyItemType.passage:
+          updated = updated.putPassage(
+            (item.value as StudyPassage).copyWith(order: index),
+          );
+        case StudyItemType.word:
+          updated = updated.putWord(
+            (item.value as StudyWord).copyWith(order: index),
+          );
+        case StudyItemType.note:
+          updated = updated.putNote(
+            (item.value as StudyNote).copyWith(order: index),
+          );
+      }
+    }
+    return updated;
+  }
 
   StudyWorkspace putGroup(StudyGroup group) {
     final updated = List<StudyGroup>.of(groups);
@@ -344,6 +474,12 @@ class StudyWorkspace {
               ? word.copyWith(groupId: () => parentId)
               : word,
       ],
+      notes: [
+        for (final note in notes)
+          note.groupId == group.id
+              ? note.copyWith(groupId: () => parentId)
+              : note,
+      ],
     );
   }
 
@@ -351,9 +487,11 @@ class StudyWorkspace {
     'id': id,
     'name': name,
     if (!highlightsEnabled) 'highlights': false,
+    'ordered': true,
     'groups': groups.map((group) => group.toJson()).toList(),
     'passages': passages.map((passage) => passage.toJson()).toList(),
     'words': words.map((word) => word.toJson()).toList(),
+    'notes': notes.map((note) => note.toJson()).toList(),
   };
 
   static StudyWorkspace? fromJson(Object? value) {
@@ -375,7 +513,7 @@ class StudyWorkspace {
       defaultStudyPassageColorValue,
     );
 
-    final words = value['words'] is List
+    var words = value['words'] is List
         ? (value['words'] as List)
               .map(
                 (word) =>
@@ -384,6 +522,12 @@ class StudyWorkspace {
               .whereType<StudyWord>()
               .toList()
         : <StudyWord>[];
+    var notes = value['notes'] is List
+        ? (value['notes'] as List)
+              .map(StudyNote.fromJson)
+              .whereType<StudyNote>()
+              .toList()
+        : <StudyNote>[];
     var groups = value['groups'] is List
         ? (value['groups'] as List)
               .map(StudyGroup.fromJson)
@@ -483,6 +627,59 @@ class StudyWorkspace {
             ? word
             : word.copyWith(groupId: () => null),
     ];
+    notes = [
+      for (final note in notes)
+        note.groupId == null || groupIds.contains(note.groupId)
+            ? note
+            : note.copyWith(groupId: () => null),
+    ];
+
+    // Older data had no mixed item ordering. Preserve its visible order
+    // (passages followed by words) and turn former group notes into ordinary
+    // paragraph items at the start of each group.
+    final hasStoredOrder = value['ordered'] == true;
+    if (!hasStoredOrder) {
+      final counters = <String?, int>{};
+      int takeOrder(String? groupId) {
+        final order = counters[groupId] ?? 0;
+        counters[groupId] = order + 1;
+        return order;
+      }
+
+      for (final group in groups) {
+        Map? rawGroup;
+        for (final raw in [
+          ...?value['groups'] as List?,
+          ...?value['themes'] as List?,
+        ]) {
+          if (raw is Map && raw['id'] == group.id) {
+            rawGroup = raw;
+            break;
+          }
+        }
+        final legacyNote = rawGroup?['note'];
+        if (legacyNote is String && legacyNote.isNotEmpty) {
+          notes.add(
+            StudyNote(
+              id: '${group.id}-legacy-note',
+              text: legacyNote,
+              groupId: group.id,
+              order: takeOrder(group.id),
+            ),
+          );
+        }
+      }
+      passages = [
+        for (final passage in passages)
+          passage.copyWith(order: takeOrder(passage.groupId)),
+      ];
+      words = [
+        for (final word in validWords)
+          word.copyWith(order: takeOrder(word.groupId)),
+      ];
+    } else {
+      words = validWords;
+    }
 
     return StudyWorkspace(
       id: id,
@@ -490,7 +687,8 @@ class StudyWorkspace {
       highlightsEnabled: highlightsEnabled,
       groups: groups,
       passages: passages,
-      words: validWords,
+      words: words,
+      notes: notes,
     );
   }
 }

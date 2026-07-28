@@ -819,23 +819,14 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       title: parentId == null ? 'New study group' : 'New subgroup',
       initialValue: '',
       label: 'Group name',
-      confirmLabel: 'Next',
-    );
-    if (name == null || !mounted) return;
-    final note = await _askForText(
-      title: name,
-      initialValue: '',
-      label: 'Group note (optional)',
-      maxLines: 5,
       confirmLabel: 'Create',
     );
-    if (note == null || !mounted) return;
+    if (name == null || !mounted) return;
     _replaceStudyWorkspace(
       workspace.putGroup(
         StudyGroup(
           id: DateTime.now().microsecondsSinceEpoch.toString(),
           name: name,
-          note: note,
           parentId: parentId,
         ),
       ),
@@ -849,19 +840,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       title: 'Edit study group',
       initialValue: group.name,
       label: 'Group name',
-      confirmLabel: 'Next',
+      confirmLabel: 'Save',
     );
-    if (name == null || !mounted) return;
-    final note = await _askForText(
-      title: name,
-      initialValue: group.note,
-      label: 'Group note (optional)',
-      maxLines: 5,
-    );
-    if (note == null || !mounted) return;
-    _replaceStudyWorkspace(
-      workspace.putGroup(group.copyWith(name: name, note: note)),
-    );
+    if (name != null && mounted) {
+      _replaceStudyWorkspace(workspace.putGroup(group.copyWith(name: name)));
+    }
   }
 
   Future<void> _deleteStudyGroup(StudyGroup group) async {
@@ -993,6 +976,76 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _replaceStudyWorkspace(workspace.removeWord(word));
   }
 
+  Future<void> _createStudyNote(String? groupId) async {
+    final workspace = await _ensureStudyWorkspace();
+    if (workspace == null || !mounted) return;
+    final text = await _askForText(
+      title: 'New study note',
+      initialValue: '',
+      label: 'Note',
+      maxLines: 8,
+      confirmLabel: 'Add',
+    );
+    if (text == null || !mounted) return;
+    _replaceStudyWorkspace(
+      workspace.putNote(
+        StudyNote(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          text: text,
+          groupId: groupId,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editStudyNote(StudyNote note) async {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    final text = await _askForText(
+      title: 'Edit study note',
+      initialValue: note.text,
+      label: 'Note',
+      maxLines: 8,
+    );
+    if (text != null && mounted) {
+      _replaceStudyWorkspace(workspace.putNote(note.copyWith(text: text)));
+    }
+  }
+
+  void _updateStudyNote(StudyNote note) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace != null) {
+      _replaceStudyWorkspace(workspace.putNote(note));
+    }
+  }
+
+  void _removeStudyNote(StudyNote note) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace != null) {
+      _replaceStudyWorkspace(workspace.removeNote(note));
+    }
+  }
+
+  void _reorderStudyItems(String? groupId, int oldIndex, int newIndex) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace != null) {
+      _replaceStudyWorkspace(
+        workspace.reorderItems(groupId, oldIndex, newIndex),
+      );
+    }
+  }
+
+  void _openStudyWord(StudyWord word) {
+    final passage = _currentStudyPassage;
+    _showWordInfo(
+      word.surface,
+      passage.bookIndex,
+      passage.chapter,
+      passage.verse,
+      root: word.root,
+    );
+  }
+
   void _refreshLoadedChaptersForStudyRoots() {
     for (final section in List<_Section>.of(_sections)) {
       _dropCachedChapter(section.bookIndex, section.chapter);
@@ -1091,6 +1144,30 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
             },
             onRemoveWord: (word) {
               _removeStudyWord(word);
+              setSheetState(() {});
+            },
+            onOpenWord: (word) {
+              Navigator.pop(sheetContext);
+              _openStudyWord(word);
+            },
+            onCreateNote: (groupId) async {
+              await _createStudyNote(groupId);
+              setSheetState(() {});
+            },
+            onEditNote: (note) async {
+              await _editStudyNote(note);
+              setSheetState(() {});
+            },
+            onUpdateNote: (note) {
+              _updateStudyNote(note);
+              setSheetState(() {});
+            },
+            onRemoveNote: (note) {
+              _removeStudyNote(note);
+              setSheetState(() {});
+            },
+            onReorderItems: (groupId, oldIndex, newIndex) {
+              _reorderStudyItems(groupId, oldIndex, newIndex);
               setSheetState(() {});
             },
           ),
@@ -1809,6 +1886,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     onEditWord: _editStudyWord,
     onUpdateWord: _updateStudyWord,
     onRemoveWord: _removeStudyWord,
+    onOpenWord: _openStudyWord,
+    onCreateNote: _createStudyNote,
+    onEditNote: _editStudyNote,
+    onUpdateNote: _updateStudyNote,
+    onRemoveNote: _removeStudyNote,
+    onReorderItems: _reorderStudyItems,
   );
 
   Widget _wordInspector() {

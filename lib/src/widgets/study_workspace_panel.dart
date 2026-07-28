@@ -26,6 +26,12 @@ class StudyWorkspacePanel extends StatelessWidget {
     required this.onEditWord,
     required this.onUpdateWord,
     required this.onRemoveWord,
+    required this.onOpenWord,
+    required this.onCreateNote,
+    required this.onEditNote,
+    required this.onUpdateNote,
+    required this.onRemoveNote,
+    required this.onReorderItems,
   });
 
   final List<StudyWorkspace> workspaces;
@@ -48,6 +54,13 @@ class StudyWorkspacePanel extends StatelessWidget {
   final ValueChanged<StudyWord> onEditWord;
   final ValueChanged<StudyWord> onUpdateWord;
   final ValueChanged<StudyWord> onRemoveWord;
+  final ValueChanged<StudyWord> onOpenWord;
+  final ValueChanged<String?> onCreateNote;
+  final ValueChanged<StudyNote> onEditNote;
+  final ValueChanged<StudyNote> onUpdateNote;
+  final ValueChanged<StudyNote> onRemoveNote;
+  final void Function(String? groupId, int oldIndex, int newIndex)
+  onReorderItems;
 
   String _reference(StudyPassage passage) =>
       '${bookDisplayName(passage.bookIndex, useEnglish: useEnglishBookNames)} '
@@ -143,15 +156,55 @@ class StudyWorkspacePanel extends StatelessWidget {
     Set<String> ancestors = const {},
   }) {
     final children = <Widget>[];
-    for (final passage in workspace.passages.where(
-      (item) => item.groupId == groupId,
-    )) {
-      children.add(_passageTile(context, workspace, passage, depth: depth));
-    }
-    for (final word in workspace.words.where(
-      (item) => item.groupId == groupId,
-    )) {
-      children.add(_wordTile(context, workspace, word, depth: depth));
+    final items = workspace.itemsIn(groupId);
+    if (items.isNotEmpty) {
+      children.add(
+        ReorderableListView.builder(
+          key: ValueKey('items-${groupId ?? 'top'}'),
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          buildDefaultDragHandles: false,
+          itemCount: items.length,
+          onReorder: (oldIndex, newIndex) =>
+              onReorderItems(groupId, oldIndex, newIndex),
+          itemBuilder: (context, index) {
+            final item = items[index];
+            final tile = switch (item.type) {
+              StudyItemType.passage => _passageTile(
+                context,
+                workspace,
+                item.value as StudyPassage,
+                depth: depth,
+              ),
+              StudyItemType.word => _wordTile(
+                context,
+                workspace,
+                item.value as StudyWord,
+                depth: depth,
+              ),
+              StudyItemType.note => _noteTile(
+                context,
+                workspace,
+                item.value as StudyNote,
+                depth: depth,
+              ),
+            };
+            return Row(
+              key: ValueKey('${item.type.name}-${_itemKey(item)}'),
+              children: [
+                Expanded(child: tile),
+                ReorderableDragStartListener(
+                  index: index,
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(Icons.drag_handle, size: 20),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      );
     }
     for (final group in workspace.childGroups(groupId)) {
       if (ancestors.contains(group.id)) continue;
@@ -167,6 +220,13 @@ class StudyWorkspacePanel extends StatelessWidget {
     }
     return children;
   }
+
+  String _itemKey(StudyItem item) => switch (item.type) {
+    StudyItemType.passage => (item.value as StudyPassage).locationKey,
+    StudyItemType.word =>
+      '${(item.value as StudyWord).root}-${(item.value as StudyWord).surface}',
+    StudyItemType.note => (item.value as StudyNote).id,
+  };
 
   Widget _groupTile(
     BuildContext context,
@@ -194,6 +254,8 @@ class StudyWorkspacePanel extends StatelessWidget {
           switch (action) {
             case _GroupAction.addPassage:
               onBookmarkCurrent(group.id);
+            case _GroupAction.addNote:
+              onCreateNote(group.id);
             case _GroupAction.addGroup:
               onCreateGroup(group.id);
             case _GroupAction.edit:
@@ -203,6 +265,13 @@ class StudyWorkspacePanel extends StatelessWidget {
           }
         },
         itemBuilder: (_) => const [
+          PopupMenuItem(
+            value: _GroupAction.addNote,
+            child: ListTile(
+              leading: Icon(Icons.note_add_outlined),
+              title: Text('Add note'),
+            ),
+          ),
           PopupMenuItem(
             value: _GroupAction.addPassage,
             child: ListTile(
@@ -234,14 +303,6 @@ class StudyWorkspacePanel extends StatelessWidget {
         ],
       ),
       children: [
-        if (group.note.isNotEmpty)
-          Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(48, 0, 48, 8),
-            child: Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: Text(group.note),
-            ),
-          ),
         ..._itemsAt(
           context,
           workspace,
@@ -251,6 +312,7 @@ class StudyWorkspacePanel extends StatelessWidget {
         ),
         if (workspace.passages.every((item) => item.groupId != group.id) &&
             workspace.words.every((item) => item.groupId != group.id) &&
+            workspace.notes.every((item) => item.groupId != group.id) &&
             workspace.childGroups(group.id).isEmpty)
           const _SectionEmpty(text: 'This group is empty.'),
       ],
@@ -263,11 +325,13 @@ class StudyWorkspacePanel extends StatelessWidget {
     StudyPassage passage, {
     required int depth,
   }) => ListTile(
+    key: ValueKey('passage-${passage.locationKey}'),
     dense: true,
     contentPadding: EdgeInsetsDirectional.only(
       start: 16 + depth * 12.0,
       end: 0,
     ),
+    leading: const Icon(Icons.menu_book_outlined, size: 18),
     title: Text(_reference(passage)),
     subtitle: passage.note.isEmpty ? null : Text(passage.note),
     onTap: () => onOpenPassage(passage),
@@ -343,14 +407,23 @@ class StudyWorkspacePanel extends StatelessWidget {
     StudyWord word, {
     required int depth,
   }) => ListTile(
+    key: ValueKey('word-${word.root}-${word.surface}'),
     dense: true,
     contentPadding: EdgeInsetsDirectional.only(
       start: 16 + depth * 12.0,
       end: 0,
     ),
-    title: Text(
-      word.root.isEmpty ? word.surface : '${word.root} · ${word.surface}',
-      textDirection: TextDirection.rtl,
+    leading: const Icon(Icons.translate_outlined, size: 18),
+    title: InkWell(
+      onTap: () => onOpenWord(word),
+      child: Text(
+        word.root.isEmpty ? word.surface : '${word.root} · ${word.surface}',
+        textDirection: TextDirection.rtl,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.primary,
+          decoration: TextDecoration.underline,
+        ),
+      ),
     ),
     subtitle: word.note.isEmpty
         ? (word.root.isEmpty
@@ -416,6 +489,60 @@ class StudyWorkspacePanel extends StatelessWidget {
           value: _ItemAction.remove,
           child: ListTile(
             leading: Icon(Icons.bookmark_remove_outlined),
+            title: Text('Remove'),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _noteTile(
+    BuildContext context,
+    StudyWorkspace workspace,
+    StudyNote note, {
+    required int depth,
+  }) => ListTile(
+    key: ValueKey('note-${note.id}'),
+    dense: true,
+    contentPadding: EdgeInsetsDirectional.only(
+      start: 16 + depth * 12.0,
+      end: 0,
+    ),
+    title: Text(note.text),
+    trailing: PopupMenuButton<_NoteAction>(
+      tooltip: 'Note options',
+      onSelected: (action) async {
+        switch (action) {
+          case _NoteAction.edit:
+            onEditNote(note);
+          case _NoteAction.move:
+            final destination = await _chooseDestination(context, workspace);
+            if (destination != _cancelledChoice) {
+              onUpdateNote(note.copyWith(groupId: () => destination));
+            }
+          case _NoteAction.remove:
+            onRemoveNote(note);
+        }
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem(
+          value: _NoteAction.edit,
+          child: ListTile(
+            leading: Icon(Icons.edit_note),
+            title: Text('Edit note'),
+          ),
+        ),
+        PopupMenuItem(
+          value: _NoteAction.move,
+          child: ListTile(
+            leading: Icon(Icons.drive_file_move_outline),
+            title: Text('Move to group'),
+          ),
+        ),
+        PopupMenuItem(
+          value: _NoteAction.remove,
+          child: ListTile(
+            leading: Icon(Icons.delete_outline),
             title: Text('Remove'),
           ),
         ),
@@ -529,6 +656,7 @@ class StudyWorkspacePanel extends StatelessWidget {
                               null,
                           onBookmarkCurrent: () => onBookmarkCurrent(null),
                           onCreateGroup: () => onCreateGroup(null),
+                          onCreateNote: () => onCreateNote(null),
                         ),
                         ..._itemsAt(
                           context,
@@ -538,7 +666,8 @@ class StudyWorkspacePanel extends StatelessWidget {
                         ),
                         if (workspace.groups.isEmpty &&
                             workspace.passages.isEmpty &&
-                            workspace.words.isEmpty)
+                            workspace.words.isEmpty &&
+                            workspace.notes.isEmpty)
                           const _SectionEmpty(
                             text:
                                 'Bookmark a passage or word, or create a group '
@@ -559,11 +688,13 @@ class _OutlineHeader extends StatelessWidget {
     required this.currentIsBookmarked,
     required this.onBookmarkCurrent,
     required this.onCreateGroup,
+    required this.onCreateNote,
   });
 
   final bool currentIsBookmarked;
   final VoidCallback onBookmarkCurrent;
   final VoidCallback onCreateGroup;
+  final VoidCallback onCreateNote;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -587,6 +718,8 @@ class _OutlineHeader extends StatelessWidget {
                 onBookmarkCurrent();
               case _OutlineAction.createGroup:
                 onCreateGroup();
+              case _OutlineAction.createNote:
+                onCreateNote();
             }
           },
           itemBuilder: (_) => [
@@ -600,6 +733,13 @@ class _OutlineHeader extends StatelessWidget {
                       ? 'Current passage is bookmarked'
                       : 'Bookmark current passage',
                 ),
+              ),
+            ),
+            const PopupMenuItem(
+              value: _OutlineAction.createNote,
+              child: ListTile(
+                leading: Icon(Icons.note_add_outlined),
+                title: Text('New note'),
               ),
             ),
             const PopupMenuItem(
@@ -691,8 +831,10 @@ const _cancelledChoice = '__cancelled__';
 
 enum _WorkspaceAction { create, toggleHighlights, rename, delete }
 
-enum _OutlineAction { bookmarkPassage, createGroup }
+enum _OutlineAction { bookmarkPassage, createNote, createGroup }
 
-enum _GroupAction { addPassage, addGroup, edit, delete }
+enum _GroupAction { addPassage, addNote, addGroup, edit, delete }
 
 enum _ItemAction { highlight, note, move, color, remove }
+
+enum _NoteAction { edit, move, remove }

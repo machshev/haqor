@@ -41,6 +41,12 @@ void main() {
                 onEditWord: (_) {},
                 onUpdateWord: (_) {},
                 onRemoveWord: (_) {},
+                onOpenWord: (_) {},
+                onCreateNote: (_) {},
+                onEditNote: (_) {},
+                onUpdateNote: (_) {},
+                onRemoveNote: (_) {},
+                onReorderItems: (_, _, _) {},
               ),
             ),
           ),
@@ -56,11 +62,7 @@ void main() {
   testWidgets('outline shows unfiled and grouped items and can move a word', (
     tester,
   ) async {
-    const group = StudyGroup(
-      id: 'creation',
-      name: 'Creation',
-      note: 'Trace creation language.',
-    );
+    const group = StudyGroup(id: 'creation', name: 'Creation');
     const workspace = StudyWorkspace(
       id: 'study',
       name: 'Study',
@@ -75,9 +77,17 @@ void main() {
         ),
       ],
       words: [StudyWord(root: 'ברא', surface: 'בָּרָא', note: 'Create')],
+      notes: [
+        StudyNote(
+          id: 'creation-note',
+          text: 'Trace creation language.',
+          groupId: 'creation',
+        ),
+      ],
     );
     String? bookmarkedIn = 'unset';
     StudyWord? updatedWord;
+    StudyWord? openedWord;
     bool? highlightsEnabled;
     var createdWorkspace = false;
 
@@ -112,6 +122,12 @@ void main() {
               onEditWord: (_) {},
               onUpdateWord: (word) => updatedWord = word,
               onRemoveWord: (_) {},
+              onOpenWord: (word) => openedWord = word,
+              onCreateNote: (_) {},
+              onEditNote: (_) {},
+              onUpdateNote: (_) {},
+              onRemoveNote: (_) {},
+              onReorderItems: (_, _, _) {},
             ),
           ),
         ),
@@ -124,9 +140,16 @@ void main() {
     expect(find.text('Trace creation language.'), findsOneWidget);
     expect(find.text('Genesis 1:1'), findsOneWidget);
     expect(find.text('Creation begins'), findsOneWidget);
+    expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.translate_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.drag_handle), findsNWidgets(3));
+    expect(find.byType(ReorderableListView), findsNWidgets(2));
     expect(find.byType(Switch), findsNothing);
     expect(find.byIcon(Icons.highlight), findsNothing);
     expect(find.byIcon(Icons.folder_outlined), findsNothing);
+
+    await tester.tap(find.text('ברא · בָּרָא'));
+    expect(openedWord?.root, 'ברא');
 
     await tester.tap(find.byTooltip('Workspace options'));
     await tester.pumpAndSettle();

@@ -9,17 +9,8 @@ void main() {
       name: 'Promise study',
       highlightsEnabled: false,
       groups: const [
-        StudyGroup(
-          id: 'promise',
-          name: 'Promise',
-          note: 'Trace the promise and its seed.',
-        ),
-        StudyGroup(
-          id: 'fulfilment',
-          name: 'Fulfilment',
-          note: 'The promise in the New Testament.',
-          parentId: 'promise',
-        ),
+        StudyGroup(id: 'promise', name: 'Promise'),
+        StudyGroup(id: 'fulfilment', name: 'Fulfilment', parentId: 'promise'),
       ],
       passages: const [
         StudyPassage(
@@ -48,6 +39,14 @@ void main() {
           colorValue: 0xffffab91,
         ),
       ],
+      notes: const [
+        StudyNote(
+          id: 'intro',
+          text: 'Trace the promise and its seed.',
+          groupId: 'promise',
+          order: 0,
+        ),
+      ],
     );
 
     final decoded = decodeStudyWorkspaces(encodeStudyWorkspaces([workspace]));
@@ -61,6 +60,7 @@ void main() {
     expect(result.passages.first.colorValue, 0xff90caf9);
     expect(result.words.single.groupId, 'promise');
     expect(result.words.single.colorValue, 0xffffab91);
+    expect(result.notes.single.text, 'Trace the promise and its seed.');
   });
 
   test('invalid storage is ignored without losing valid workspaces', () {
@@ -135,7 +135,7 @@ void main() {
 
     expect(workspace.groups.single.name, 'Promise');
     expect(workspace.highlightsEnabled, isFalse);
-    expect(workspace.groups.single.note, 'Header');
+    expect(workspace.notes.single.text, 'Header');
     expect(workspace.passages.single.groupId, 'promise');
     expect(workspace.passages.single.colorValue, 4286626756);
     expect(workspace.passages.single.highlightEnabled, isTrue);
@@ -169,5 +169,31 @@ void main() {
     );
     expect(workspace.words, hasLength(1));
     expect(workspace.words.single.root, 'ראש');
+  });
+
+  test('mixed study items can be reordered within a group', () {
+    var workspace = const StudyWorkspace(
+      id: 'ordered',
+      name: 'Ordered',
+      passages: [StudyPassage(bookIndex: 0, chapter: 1, verse: 1, order: 0)],
+      words: [StudyWord(root: 'ברא', surface: 'בָּרָא', order: 1)],
+      notes: [StudyNote(id: 'note', text: 'Opening paragraph', order: 2)],
+    );
+
+    workspace = workspace.reorderItems(null, 2, 0);
+
+    expect(workspace.itemsIn(null).map((item) => item.type), [
+      StudyItemType.note,
+      StudyItemType.passage,
+      StudyItemType.word,
+    ]);
+    final decoded = decodeStudyWorkspaces(
+      encodeStudyWorkspaces([workspace]),
+    ).single;
+    expect(decoded.itemsIn(null).map((item) => item.type), [
+      StudyItemType.note,
+      StudyItemType.passage,
+      StudyItemType.word,
+    ]);
   });
 }
