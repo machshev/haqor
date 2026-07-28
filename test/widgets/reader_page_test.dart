@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -308,6 +308,47 @@ void main() {
     expect(find.byTooltip('Settings'), findsNothing);
     expect(find.byTooltip('Reader options'), findsOneWidget);
   });
+
+  testWidgets(
+    'adds overflow readers as tabs and arrows between tiled readers',
+    (tester) async {
+      tester.view.physicalSize = const Size(900, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({
+        'book': 0,
+        'chapter': 1,
+        'reader_tabs': ['primary', 'two', 'three'],
+        'reader_active_tab': 'three',
+        'reader_tabs_tiled': true,
+      });
+      final rust = _FakeRust();
+      await tester.pumpWidget(
+        MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+      );
+      await tester.pump();
+      rust.deliverAll();
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('New reader tab'));
+      await tester.pump();
+      rust.deliverAll();
+      await tester.pump();
+
+      expect(find.byType(InputChip), findsNWidgets(4));
+      expect(find.byKey(const ValueKey('reader:primary')), findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump();
+
+      final chips = tester
+          .widgetList<InputChip>(find.byType(InputChip))
+          .toList();
+      expect(chips[2].selected, isTrue);
+      expect(find.byKey(const ValueKey('reader:primary')), findsOneWidget);
+    },
+  );
 
   testWidgets('resizes and persists the reader side panel', (tester) async {
     tester.view.physicalSize = const Size(1100, 800);

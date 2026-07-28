@@ -258,27 +258,6 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   }
 
   Future<void> _addTab() async {
-    final width = MediaQuery.sizeOf(context).width;
-    if (_tiled && width >= 900) {
-      final hasPanel = _tiledAuxiliaryPanel() != null;
-      final panelWidth = hasPanel
-          ? _tiledPanelWidth.clamp(
-              _workspaceMinimumTileWidth,
-              width - _workspaceMinimumTileWidth - _workspacePanelDividerWidth,
-            )
-          : 0.0;
-      final readerSpace =
-          width - panelWidth - (hasPanel ? _workspacePanelDividerWidth : 0);
-      final capacity = math.max(1, readerSpace ~/ _workspaceMinimumTileWidth);
-      if (_tabs.length >= capacity) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('There is not enough room for another reader tile.'),
-          ),
-        );
-        return;
-      }
-    }
     final id = DateTime.now().microsecondsSinceEpoch.toString();
     final source = _readerKeys[_activeTabId]?.currentState;
     if (source != null) {
@@ -306,6 +285,28 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       }
     });
     _saveWorkspace();
+  }
+
+  KeyEventResult _handleWorkspaceKey(FocusNode node, KeyEvent event) {
+    if ((event is! KeyDownEvent && event is! KeyRepeatEvent) ||
+        !_tiled ||
+        MediaQuery.sizeOf(context).width < 900) {
+      return KeyEventResult.ignored;
+    }
+    final direction = event.logicalKey == LogicalKeyboardKey.arrowLeft
+        ? -1
+        : event.logicalKey == LogicalKeyboardKey.arrowRight
+        ? 1
+        : 0;
+    if (direction == 0) return KeyEventResult.ignored;
+
+    final activeIndex = _tabs.indexWhere((tab) => tab.id == _activeTabId);
+    final targetIndex = (activeIndex + direction).clamp(0, _tabs.length - 1);
+    if (targetIndex != activeIndex) {
+      setState(() => _activeTabId = _tabs[targetIndex].id);
+      _saveWorkspace();
+    }
+    return KeyEventResult.handled;
   }
 
   void _closeTab(String id) {
@@ -584,36 +585,39 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               ),
             ),
             Expanded(
-              child: tiled
-                  ? _ResponsiveTiledWorkspace(
-                      readers: [
-                        for (final tab in _tabs)
-                          _WorkspaceTile(
-                            id: 'reader:${tab.id}',
-                            child: _reader(tab, tiled: true),
-                          ),
-                      ],
-                      activeReaderId: 'reader:$_activeTabId',
-                      auxiliaryPanel: _tiledAuxiliaryPanel(),
-                      auxiliaryPanelWidth: _tiledPanelWidth,
-                      onAuxiliaryPanelWidthChanged: (width) {
-                        setState(() => _tiledPanelWidth = width);
-                      },
-                      onAuxiliaryPanelResizeEnd: _saveWorkspace,
-                    )
-                  : PageView(
-                      controller: _pageController,
-                      onPageChanged: (index) {
-                        setState(() {
-                          _activeTabId = _tabs[index].id;
-                          _mobileBarHidden = false;
-                        });
-                        _saveWorkspace();
-                      },
-                      children: [
-                        for (final tab in _tabs) _reader(tab, tiled: false),
-                      ],
-                    ),
+              child: Focus(
+                onKeyEvent: _handleWorkspaceKey,
+                child: tiled
+                    ? _ResponsiveTiledWorkspace(
+                        readers: [
+                          for (final tab in _tabs)
+                            _WorkspaceTile(
+                              id: 'reader:${tab.id}',
+                              child: _reader(tab, tiled: true),
+                            ),
+                        ],
+                        activeReaderId: 'reader:$_activeTabId',
+                        auxiliaryPanel: _tiledAuxiliaryPanel(),
+                        auxiliaryPanelWidth: _tiledPanelWidth,
+                        onAuxiliaryPanelWidthChanged: (width) {
+                          setState(() => _tiledPanelWidth = width);
+                        },
+                        onAuxiliaryPanelResizeEnd: _saveWorkspace,
+                      )
+                    : PageView(
+                        controller: _pageController,
+                        onPageChanged: (index) {
+                          setState(() {
+                            _activeTabId = _tabs[index].id;
+                            _mobileBarHidden = false;
+                          });
+                          _saveWorkspace();
+                        },
+                        children: [
+                          for (final tab in _tabs) _reader(tab, tiled: false),
+                        ],
+                      ),
+              ),
             ),
           ],
         ),
