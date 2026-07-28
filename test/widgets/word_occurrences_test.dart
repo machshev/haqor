@@ -285,6 +285,64 @@ void main() {
     expect(find.text('2 verses'), findsOneWidget);
   });
 
+  testWidgets('book distribution opens a labelled multi-select filter', (
+    tester,
+  ) async {
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1),
+      _occurrence(book: 2, chapter: 1, verse: 1),
+      _occurrence(book: 6, chapter: 1, verse: 1),
+    ]);
+
+    await tester.tap(find.byTooltip('Open book distribution and filters'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Occurrence distribution'), findsOneWidget);
+    expect(find.text('Genesis (1)'), findsOneWidget);
+    expect(find.text('Exodus (1)'), findsOneWidget);
+    expect(find.text('Torah  תּוֹרָה'), findsOneWidget);
+    expect(find.text("Nevi'im  נְבִיאִים"), findsOneWidget);
+
+    await tester.tap(find.text('Genesis (1)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Exodus (1)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 books'), findsOneWidget);
+    expect(find.text('2 verses'), findsOneWidget);
+  });
+
+  testWidgets('book categories can be selected and cleared together', (
+    tester,
+  ) async {
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1),
+      _occurrence(book: 5, chapter: 1, verse: 1),
+      _occurrence(book: 6, chapter: 1, verse: 1),
+    ]);
+
+    await tester.tap(find.byTooltip('Open book distribution and filters'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Torah  תּוֹרָה'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('5 books'), findsOneWidget);
+    expect(find.text('2 verses'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Open book distribution and filters'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show all'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+    expect(find.text('All occurrences'), findsOneWidget);
+    expect(find.text('3 verses'), findsOneWidget);
+  });
+
   testWidgets('highlighting follows the position, not the spelling', (
     tester,
   ) async {

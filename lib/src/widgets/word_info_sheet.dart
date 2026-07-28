@@ -144,9 +144,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   // so "Qal" plus "plural" plus "participle" narrows, where a list of whole
   // labels would have needed the exact combination to exist as an entry.
   final Map<_ParseDimension, Set<String>> _otParse = {};
-  // OT-only: restrict the list to one book (1-based, matching the occurrence
-  // rows). Null shows the whole canon.
-  int? _otBook;
+  // OT-only: restrict the list to any selected books (1-based, matching the
+  // occurrence rows). Empty shows the whole canon.
+  final Set<int> _otBooks = {};
   // Every occurrence row reads its verse text through this one cache, which
   // batches the requests of a layout pass into a single round-trip.
   late final VerseTextCache _verseTexts = VerseTextCache(
@@ -244,7 +244,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       _selectedRoot = root;
       _otForms.clear();
       _otParse.clear();
-      _otBook = null;
+      _otBooks.clear();
       _expandedBdb.clear();
       _occ = null;
       _occRequested = false;
@@ -931,7 +931,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           selection.value.isEmpty ||
           selection.value.contains(selection.key.of(o)),
     );
-    bool passesBook(HebrewOccurrence o) => _otBook == null || o.book == _otBook;
+    bool passesBook(HebrewOccurrence o) =>
+        _otBooks.isEmpty || _otBooks.contains(o.book);
 
     // Each filter's own inventory is counted over what the *other* filters
     // admit, so a number says what selecting that entry would actually yield.
@@ -1044,9 +1045,13 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               const SizedBox(height: 2),
               _CanonDistribution(
                 countsByBook: bookCounts,
-                selectedBook: _otBook,
+                selectedBooks: _otBooks,
                 useEnglishBookNames: widget.useEnglishBookNames,
-                onSelect: (book) => setState(() => _otBook = book),
+                onSelect: (books) => setState(() {
+                  _otBooks
+                    ..clear()
+                    ..addAll(books);
+                }),
               ),
             ],
           ),
@@ -1086,6 +1091,13 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         forms.first
       else if (forms.length > 1)
         '${forms.length} forms',
+      if (_otBooks.length == 1)
+        bookDisplayName(
+          _otBooks.first - 1,
+          useEnglish: widget.useEnglishBookNames,
+        )
+      else if (_otBooks.length > 1)
+        '${_otBooks.length} books',
     ];
     return parts.isEmpty ? 'All occurrences' : parts.join(' · ');
   }
@@ -1848,97 +1860,361 @@ class _OccurrenceRow extends StatelessWidget {
   }
 }
 
-/// Where a word falls across the canon, as one bar per book in Tanakh order.
-///
-/// A root's verse list answers "where does this occur" one screen at a time;
-/// this answers it at a glance — and doubles as the book filter, since the
-/// bar you want to look into is the one you just noticed was tall.
+/// A compact, all-books overview. Tapping it opens the labelled distribution
+/// and book/category multi-select; the small chart itself stays useful as a
+/// histogram instead of asking touch users to aim at an unnamed bar.
 class _CanonDistribution extends StatelessWidget {
   const _CanonDistribution({
     required this.countsByBook,
-    required this.selectedBook,
+    required this.selectedBooks,
     required this.onSelect,
     required this.useEnglishBookNames,
   });
 
   /// Occurrence counts keyed by 1-based book number.
   final Map<int, int> countsByBook;
-  final int? selectedBook;
-  final void Function(int? book) onSelect;
+  final Set<int> selectedBooks;
+  final void Function(Set<int> books) onSelect;
   final bool useEnglishBookNames;
 
-  static const _height = 26.0;
+  static const _height = 30.0;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final books = countsByBook.keys.toList()..sort();
-    if (books.isEmpty) return const SizedBox.shrink();
-    final peak = countsByBook.values.reduce((a, b) => a > b ? a : b);
-    return SizedBox(
-      height: _height,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (final book in books)
-            Expanded(
-              child: _bar(context, theme, book, countsByBook[book]!, peak),
-            ),
-          if (selectedBook != null)
-            IconButton(
-              tooltip: 'Whole Bible',
-              icon: const Icon(Icons.close, size: 14),
-              onPressed: () => onSelect(null),
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(
-                minWidth: 24,
-                minHeight: _height,
+    final books = List.generate(39, (index) => index + 1);
+    final peak = countsByBook.values.fold<int>(
+      0,
+      (highest, count) => count > highest ? count : highest,
+    );
+    return Semantics(
+      button: true,
+      label: 'Book distribution. Tap to filter by books.',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () => showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          builder: (context) => _BookDistributionFilterSheet(
+            countsByBook: countsByBook,
+            selectedBooks: selectedBooks,
+            useEnglishBookNames: useEnglishBookNames,
+            onChanged: onSelect,
+          ),
+        ),
+        child: Tooltip(
+          message: 'Open book distribution and filters',
+          child: Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: _height,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      for (final book in books)
+                        Expanded(
+                          child: _bar(
+                            theme,
+                            book,
+                            countsByBook[book] ?? 0,
+                            peak,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-        ],
+              const SizedBox(width: 8),
+              Text(
+                selectedBooks.isEmpty
+                    ? 'Books'
+                    : '${selectedBooks.length} selected',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const Icon(Icons.open_in_full, size: 15),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _bar(
-    BuildContext context,
-    ThemeData theme,
-    int book,
-    int count,
-    int peak,
-  ) {
-    final bookIndex = book - 1;
-    final name = bookIndex >= 0 && bookIndex < kBooks.length
-        ? bookDisplayName(bookIndex, useEnglish: useEnglishBookNames)
-        : 'Book $book';
-    final selected = selectedBook == book;
-    // A floor under the height, so a book with a single occurrence is still
-    // something you can see and aim at.
+  Widget _bar(ThemeData theme, int book, int count, int peak) {
+    final selected = selectedBooks.contains(book);
     final fraction = peak == 0 ? 0.0 : count / peak;
-    return Tooltip(
-      message: '$name · $count',
-      child: GestureDetector(
-        onTap: () => onSelect(selected ? null : book),
-        behavior: HitTestBehavior.opaque,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 0.5),
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: Container(
-              height: 4 + (_height - 6) * fraction,
-              decoration: BoxDecoration(
-                color: selected
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.primary.withValues(alpha: 0.35),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(1.5),
-                ),
-              ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 0.5),
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Container(
+          height: count == 0 ? 1 : 3 + (_height - 5) * fraction,
+          decoration: BoxDecoration(
+            color: selected
+                ? theme.colorScheme.primary
+                : theme.colorScheme.primary.withValues(alpha: 0.35),
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(1.5),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+const _kTanakhSections = [
+  (label: 'Torah', hebrew: 'תּוֹרָה', start: 1, end: 5),
+  (label: "Nevi'im", hebrew: 'נְבִיאִים', start: 6, end: 26),
+  (label: 'Ketuvim', hebrew: 'כְּתוּבִים', start: 27, end: 39),
+];
+
+class _BookDistributionFilterSheet extends StatefulWidget {
+  const _BookDistributionFilterSheet({
+    required this.countsByBook,
+    required this.selectedBooks,
+    required this.useEnglishBookNames,
+    required this.onChanged,
+  });
+
+  final Map<int, int> countsByBook;
+  final Set<int> selectedBooks;
+  final bool useEnglishBookNames;
+  final void Function(Set<int> books) onChanged;
+
+  @override
+  State<_BookDistributionFilterSheet> createState() =>
+      _BookDistributionFilterSheetState();
+}
+
+class _BookDistributionFilterSheetState
+    extends State<_BookDistributionFilterSheet> {
+  late final Set<int> _selected = {...widget.selectedBooks};
+
+  void _change(VoidCallback change) {
+    setState(change);
+    widget.onChanged({..._selected});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final peak = widget.countsByBook.values.fold<int>(
+      0,
+      (highest, count) => count > highest ? count : highest,
+    );
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.82,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 12, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Occurrence distribution',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                  ),
+                  if (_selected.isNotEmpty)
+                    TextButton(
+                      onPressed: () => _change(_selected.clear),
+                      child: const Text('Show all'),
+                    ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 150,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (var book = 1; book <= 39; book++)
+                      _ExpandedBookBar(
+                        book: book,
+                        count: widget.countsByBook[book] ?? 0,
+                        peak: peak,
+                        selected: _selected.contains(book),
+                        useEnglishBookNames: widget.useEnglishBookNames,
+                        onTap: () => _change(() {
+                          if (!_selected.remove(book)) _selected.add(book);
+                        }),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const Divider(height: 20),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                children: [
+                  for (final section in _kTanakhSections) ...[
+                    _BookCategoryHeader(
+                      label: section.label,
+                      hebrew: section.hebrew,
+                      selectedCount: [
+                        for (
+                          var book = section.start;
+                          book <= section.end;
+                          book++
+                        )
+                          if (_selected.contains(book)) book,
+                      ].length,
+                      bookCount: section.end - section.start + 1,
+                      onTap: () => _change(() {
+                        final books = {
+                          for (
+                            var book = section.start;
+                            book <= section.end;
+                            book++
+                          )
+                            book,
+                        };
+                        if (_selected.containsAll(books)) {
+                          _selected.removeAll(books);
+                        } else {
+                          _selected.addAll(books);
+                        }
+                      }),
+                    ),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        for (
+                          var book = section.start;
+                          book <= section.end;
+                          book++
+                        )
+                          FilterChip(
+                            selected: _selected.contains(book),
+                            label: Text(
+                              '${bookDisplayName(book - 1, useEnglish: widget.useEnglishBookNames)} '
+                              '(${widget.countsByBook[book] ?? 0})',
+                            ),
+                            onSelected: (_) => _change(() {
+                              if (!_selected.remove(book)) _selected.add(book);
+                            }),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExpandedBookBar extends StatelessWidget {
+  const _ExpandedBookBar({
+    required this.book,
+    required this.count,
+    required this.peak,
+    required this.selected,
+    required this.useEnglishBookNames,
+    required this.onTap,
+  });
+
+  final int book;
+  final int count;
+  final int peak;
+  final bool selected;
+  final bool useEnglishBookNames;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fraction = peak == 0 ? 0.0 : count / peak;
+    return Tooltip(
+      message:
+          '${bookDisplayName(book - 1, useEnglish: useEnglishBookNames)} · $count',
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          width: 42,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Text('$count', style: theme.textTheme.labelSmall),
+              const SizedBox(height: 2),
+              Container(
+                width: 24,
+                height: count == 0 ? 1 : 8 + 76 * fraction,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.primary.withValues(alpha: 0.35),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(3),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                bookSelectorLabel(book - 1, useEnglish: useEnglishBookNames),
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: selected ? FontWeight.bold : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BookCategoryHeader extends StatelessWidget {
+  const _BookCategoryHeader({
+    required this.label,
+    required this.hebrew,
+    required this.selectedCount,
+    required this.bookCount,
+    required this.onTap,
+  });
+
+  final String label;
+  final String hebrew;
+  final int selectedCount;
+  final int bookCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final allSelected = selectedCount == bookCount;
+    return CheckboxListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      tristate: true,
+      value: selectedCount == 0 ? false : (allSelected ? true : null),
+      onChanged: (_) => onTap(),
+      title: Text('$label  $hebrew'),
+      subtitle: Text(
+        selectedCount == 0 ? 'Select category' : '$selectedCount selected',
+      ),
+      controlAffinity: ListTileControlAffinity.leading,
     );
   }
 }
