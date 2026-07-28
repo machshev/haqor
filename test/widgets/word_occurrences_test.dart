@@ -298,6 +298,22 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Occurrence distribution'), findsOneWidget);
+    expect(find.text('Scroll to see all 39 books'), findsOneWidget);
+    expect(find.byType(Scrollbar), findsOneWidget);
+    final earlierButton = find.ancestor(
+      of: find.byTooltip('Earlier books'),
+      matching: find.byType(IconButton),
+    );
+    expect(
+      tester.widget<IconButton>(earlierButton).onPressed,
+      isNull,
+    );
+    await tester.tap(find.byTooltip('Later books'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<IconButton>(earlierButton).onPressed,
+      isNotNull,
+    );
     expect(find.text('Genesis (1)'), findsOneWidget);
     expect(find.text('Exodus (1)'), findsOneWidget);
     expect(find.text('Torah  תּוֹרָה'), findsOneWidget);

@@ -1993,6 +1993,54 @@ class _BookDistributionFilterSheet extends StatefulWidget {
 class _BookDistributionFilterSheetState
     extends State<_BookDistributionFilterSheet> {
   late final Set<int> _selected = {...widget.selectedBooks};
+  final ScrollController _distributionScroll = ScrollController();
+  bool _canScrollBack = false;
+  bool _canScrollForward = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _distributionScroll.addListener(_updateScrollIndicators);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateScrollIndicators();
+    });
+  }
+
+  @override
+  void dispose() {
+    _distributionScroll
+      ..removeListener(_updateScrollIndicators)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _updateScrollIndicators() {
+    if (!mounted || !_distributionScroll.hasClients) return;
+    final position = _distributionScroll.position;
+    final canScrollBack = position.pixels > position.minScrollExtent + 1;
+    final canScrollForward = position.pixels < position.maxScrollExtent - 1;
+    if (_canScrollBack == canScrollBack &&
+        _canScrollForward == canScrollForward) {
+      return;
+    }
+    setState(() {
+      _canScrollBack = canScrollBack;
+      _canScrollForward = canScrollForward;
+    });
+  }
+
+  void _scrollDistribution(bool forward) {
+    final position = _distributionScroll.position;
+    final distance = position.viewportDimension * 0.8;
+    _distributionScroll.animateTo(
+      (position.pixels + (forward ? distance : -distance)).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      ),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
+  }
 
   void _change(VoidCallback change) {
     setState(change);
@@ -2035,26 +2083,64 @@ class _BookDistributionFilterSheetState
                 ],
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Text(
+                    'Scroll to see all 39 books',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Earlier books',
+                    onPressed: _canScrollBack
+                        ? () => _scrollDistribution(false)
+                        : null,
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.chevron_left, size: 20),
+                  ),
+                  IconButton(
+                    tooltip: 'Later books',
+                    onPressed: _canScrollForward
+                        ? () => _scrollDistribution(true)
+                        : null,
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.chevron_right, size: 20),
+                  ),
+                ],
+              ),
+            ),
             SizedBox(
               height: 150,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    for (var book = 1; book <= 39; book++)
-                      _ExpandedBookBar(
-                        book: book,
-                        count: widget.countsByBook[book] ?? 0,
-                        peak: peak,
-                        selected: _selected.contains(book),
-                        useEnglishBookNames: widget.useEnglishBookNames,
-                        onTap: () => _change(() {
-                          if (!_selected.remove(book)) _selected.add(book);
-                        }),
-                      ),
-                  ],
+              child: Scrollbar(
+                controller: _distributionScroll,
+                thumbVisibility: true,
+                trackVisibility: true,
+                interactive: true,
+                scrollbarOrientation: ScrollbarOrientation.bottom,
+                child: SingleChildScrollView(
+                  controller: _distributionScroll,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      for (var book = 1; book <= 39; book++)
+                        _ExpandedBookBar(
+                          book: book,
+                          count: widget.countsByBook[book] ?? 0,
+                          peak: peak,
+                          selected: _selected.contains(book),
+                          useEnglishBookNames: widget.useEnglishBookNames,
+                          onTap: () => _change(() {
+                            if (!_selected.remove(book)) _selected.add(book);
+                          }),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
