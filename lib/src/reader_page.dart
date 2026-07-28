@@ -995,17 +995,6 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _replaceStudyWorkspace(workspace.removeWord(word));
   }
 
-  Future<void> _editSelectedWordNote() async {
-    final selected = _selectedWord;
-    if (selected == null || selected.root.isEmpty) return;
-    final workspace = await _ensureStudyWorkspace();
-    if (workspace == null || !mounted) return;
-    final existing = workspace.wordForRoot(selected.root);
-    final word =
-        existing ?? StudyWord(root: selected.root, surface: selected.word);
-    await _editStudyWord(word);
-  }
-
   void _toggleWorkspaceHighlights(bool enabled) {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
@@ -1864,144 +1853,64 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   Widget _wordInspector() {
     final theme = Theme.of(context);
     final selected = _selectedWord;
-    final annotation = selected == null
-        ? null
-        : _activeStudyWorkspace?.wordForRoot(selected.root);
     return Material(
       color: theme.colorScheme.surface,
       child: SafeArea(
         top: false,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
-              child: Row(
-                children: [
-                  const Icon(Icons.menu_book_outlined),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      selected == null ? 'Word study' : selected.word,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium,
-                      textDirection: selected == null
-                          ? null
-                          : TextDirection.rtl,
-                    ),
-                  ),
-                  if (selected != null) ...[
-                    IconButton(
-                      onPressed: selected.root.isEmpty
-                          ? null
-                          : () => _toggleStudyWordBookmark(
-                              selected.root,
-                              selected.word,
-                            ),
-                      icon: Icon(
-                        annotation == null
-                            ? Icons.highlight_outlined
-                            : Icons.highlight,
-                      ),
-                      tooltip: annotation == null
-                          ? 'Highlight word in workspace'
-                          : 'Remove word highlight',
-                    ),
-                    IconButton(
-                      onPressed: selected.root.isEmpty
-                          ? null
-                          : _editSelectedWordNote,
-                      icon: Icon(
-                        annotation?.note.isNotEmpty ?? false
-                            ? Icons.note_alt
-                            : Icons.note_alt_outlined,
-                      ),
-                      tooltip: 'Edit word note',
-                    ),
-                    IconButton(
-                      onPressed: () => setState(() {
-                        _selectedWord = null;
-                        _splitShowsWord = false;
-                      }),
-                      icon: const Icon(Icons.close),
-                      tooltip: 'Close word study',
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (selected != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
+        child: selected == null
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
                   child: Text(
-                    '${bookDisplayName(selected.bookIndex, useEnglish: _englishBookNames)} '
-                    '${selected.chapter}:${selected.verse}'
-                    '${annotation?.note.isNotEmpty ?? false ? ' · ${annotation!.note}' : ''}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    'Select a Hebrew or Syriac word to keep its lexicon '
+                    'and occurrences beside the passage.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
+              )
+            : WordInfoSheet(
+                key: ValueKey(
+                  '${selected.bookIndex}:${selected.chapter}:'
+                  '${selected.verse}:${selected.position}:${selected.word}',
+                ),
+                docked: true,
+                word: selected.word,
+                syriac: selected.bookIndex >= 39,
+                book: selected.bookIndex + 1,
+                chapter: selected.chapter,
+                verse: selected.verse,
+                position: selected.position,
+                readerGloss: selected.readerGloss,
+                useEnglishBookNames: _englishBookNames,
+                reportContext: {
+                  'bookIndex': selected.bookIndex,
+                  'book': kBooks[selected.bookIndex].transliteration,
+                  'chapter': selected.chapter,
+                  'verse': selected.verse,
+                },
+                isStudyBookmarked: (root) =>
+                    _activeStudyWorkspace?.wordForRoot(root) != null,
+                onToggleStudyBookmark: _toggleStudyWordBookmark,
+                onEditStudyNote: (root, surface) async {
+                  final workspace = await _ensureStudyWorkspace();
+                  if (workspace == null || !mounted) return;
+                  final existing = workspace.wordForRoot(root);
+                  await _editStudyWord(
+                    existing ?? StudyWord(root: root, surface: surface),
+                  );
+                },
+                onClose: () => setState(() {
+                  _selectedWord = null;
+                  _splitShowsWord = false;
+                }),
+                onNavigateToPassage: (book, chapter, verse) {
+                  setState(() => _selectedWord = null);
+                  _navigateTo(book, chapter, verse: verse);
+                },
               ),
-            const Divider(height: 1),
-            Expanded(
-              child: selected == null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(
-                          'Select a Hebrew or Syriac word to keep its lexicon '
-                          'and occurrences beside the passage.',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    )
-                  : WordInfoSheet(
-                      key: ValueKey(
-                        '${selected.bookIndex}:${selected.chapter}:'
-                        '${selected.verse}:${selected.position}:${selected.word}',
-                      ),
-                      docked: true,
-                      word: selected.word,
-                      syriac: selected.bookIndex >= 39,
-                      book: selected.bookIndex + 1,
-                      chapter: selected.chapter,
-                      verse: selected.verse,
-                      position: selected.position,
-                      readerGloss: selected.readerGloss,
-                      useEnglishBookNames: _englishBookNames,
-                      reportContext: {
-                        'bookIndex': selected.bookIndex,
-                        'book': kBooks[selected.bookIndex].transliteration,
-                        'chapter': selected.chapter,
-                        'verse': selected.verse,
-                      },
-                      isStudyBookmarked: (root) =>
-                          _activeStudyWorkspace?.wordForRoot(root) != null,
-                      onToggleStudyBookmark: _toggleStudyWordBookmark,
-                      onEditStudyNote: (root, surface) async {
-                        final workspace = await _ensureStudyWorkspace();
-                        if (workspace == null || !mounted) return;
-                        final existing = workspace.wordForRoot(root);
-                        await _editStudyWord(
-                          existing ?? StudyWord(root: root, surface: surface),
-                        );
-                      },
-                      onNavigateToPassage: (book, chapter, verse) {
-                        setState(() => _selectedWord = null);
-                        _navigateTo(book, chapter, verse: verse);
-                      },
-                    ),
-            ),
-          ],
-        ),
       ),
     );
   }

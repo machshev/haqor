@@ -191,7 +191,11 @@ void main() {
     await tester.pump();
 
     expect(find.text('Study workspace'), findsNothing);
-    expect(find.text('Word study'), findsOneWidget);
+    expect(find.text('Word study'), findsNothing);
+    expect(
+      find.textContaining('Select a Hebrew or Syriac word'),
+      findsOneWidget,
+    );
     await tester.tap(find.byTooltip('Show study workspace'));
     await tester.pump();
     rust.deliverAll();
