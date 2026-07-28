@@ -79,6 +79,7 @@ void main() {
     String? bookmarkedIn = 'unset';
     StudyWord? updatedWord;
     bool? highlightsEnabled;
+    var createdWorkspace = false;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -95,7 +96,7 @@ void main() {
                 verse: 2,
               ),
               useEnglishBookNames: true,
-              onCreate: () {},
+              onCreate: () => createdWorkspace = true,
               onSelect: (_) {},
               onRename: () {},
               onDelete: () {},
@@ -117,25 +118,45 @@ void main() {
       ),
     );
 
-    expect(find.text('Study notes'), findsOneWidget);
+    expect(find.text('Study notes'), findsNothing);
     expect(find.text('ברא · בָּרָא'), findsOneWidget);
     expect(find.text('Create'), findsOneWidget);
     expect(find.text('Trace creation language.'), findsOneWidget);
     expect(find.text('Genesis 1:1'), findsOneWidget);
     expect(find.text('Creation begins'), findsOneWidget);
-    expect(
-      tester
-          .getSize(find.byKey(const ValueKey('study-highlight-master-control')))
-          .height,
-      40,
-    );
-    expect(find.text('Master switch for all bookmarked items'), findsNothing);
+    expect(find.byType(Switch), findsNothing);
+    expect(find.byIcon(Icons.highlight), findsNothing);
+    expect(find.byIcon(Icons.folder_outlined), findsNothing);
 
-    await tester.tap(find.byType(Switch));
+    await tester.tap(find.byTooltip('Workspace options'));
+    await tester.pumpAndSettle();
+    expect(find.text('New workspace'), findsOneWidget);
+    expect(find.text('Show study highlights'), findsOneWidget);
+    await tester.tap(
+      find.byWidgetPredicate((widget) => widget is CheckedPopupMenuItem),
+    );
+    await tester.pumpAndSettle();
     expect(highlightsEnabled, isFalse);
 
-    await tester.tap(find.text('Bookmark current'));
+    await tester.tap(find.byTooltip('Workspace options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New workspace'));
+    await tester.pumpAndSettle();
+    expect(createdWorkspace, isTrue);
+
+    await tester.tap(find.byTooltip('Add study item'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bookmark current passage'));
+    await tester.pumpAndSettle();
     expect(bookmarkedIn, isNull);
+
+    await tester.tap(find.byTooltip('Word options'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byWidgetPredicate((widget) => widget is CheckedPopupMenuItem),
+    );
+    await tester.pumpAndSettle();
+    expect(updatedWord?.highlightEnabled, isFalse);
 
     await tester.tap(find.byTooltip('Word options'));
     await tester.pumpAndSettle();

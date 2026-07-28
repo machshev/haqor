@@ -202,7 +202,7 @@ void main() {
     rust.deliverAll();
     await tester.pump();
 
-    expect(find.text('Study notes'), findsOneWidget);
+    expect(find.text('Study notes'), findsNothing);
     expect(find.text('Create workspace'), findsOneWidget);
 
     await tester.tap(find.text('Create workspace'));
@@ -210,9 +210,11 @@ void main() {
     await tester.tap(find.text('Create'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Study items'), findsOneWidget);
+    expect(find.text('Outline'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('New group'));
+    await tester.tap(find.byTooltip('Add study item'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New group'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField), 'Creation');
     await tester.tap(find.text('Next'));

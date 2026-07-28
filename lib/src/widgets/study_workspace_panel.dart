@@ -146,12 +146,12 @@ class StudyWorkspacePanel extends StatelessWidget {
     for (final passage in workspace.passages.where(
       (item) => item.groupId == groupId,
     )) {
-      children.add(_passageTile(context, workspace, passage));
+      children.add(_passageTile(context, workspace, passage, depth: depth));
     }
     for (final word in workspace.words.where(
       (item) => item.groupId == groupId,
     )) {
-      children.add(_wordTile(context, workspace, word));
+      children.add(_wordTile(context, workspace, word, depth: depth));
     }
     for (final group in workspace.childGroups(groupId)) {
       if (ancestors.contains(group.id)) continue;
@@ -175,108 +175,110 @@ class StudyWorkspacePanel extends StatelessWidget {
     required int depth,
     required Set<String> ancestors,
   }) => Padding(
-    padding: EdgeInsetsDirectional.only(start: depth * 10.0),
-    child: Card(
-      elevation: 0,
-      clipBehavior: Clip.antiAlias,
-      child: ExpansionTile(
-        key: PageStorageKey(group.id),
-        initiallyExpanded: true,
-        leading: const Icon(Icons.folder_outlined),
-        title: Text(group.name),
-        subtitle: group.note.isEmpty
-            ? null
-            : Text(group.note, maxLines: 3, overflow: TextOverflow.ellipsis),
-        trailing: PopupMenuButton<_GroupAction>(
-          tooltip: 'Group options',
-          onSelected: (action) {
-            switch (action) {
-              case _GroupAction.addPassage:
-                onBookmarkCurrent(group.id);
-              case _GroupAction.addGroup:
-                onCreateGroup(group.id);
-              case _GroupAction.edit:
-                onEditGroup(group);
-              case _GroupAction.delete:
-                onDeleteGroup(group);
-            }
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(
-              value: _GroupAction.addPassage,
-              child: ListTile(
-                leading: Icon(Icons.bookmark_add_outlined),
-                title: Text('Add current passage'),
-              ),
+    padding: EdgeInsetsDirectional.only(start: depth * 12.0),
+    child: ExpansionTile(
+      key: PageStorageKey(group.id),
+      initiallyExpanded: true,
+      tilePadding: const EdgeInsetsDirectional.only(end: 0),
+      childrenPadding: EdgeInsets.zero,
+      controlAffinity: ListTileControlAffinity.leading,
+      title: Text(
+        group.name,
+        style: Theme.of(
+          context,
+        ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+      ),
+      trailing: PopupMenuButton<_GroupAction>(
+        tooltip: 'Group options',
+        onSelected: (action) {
+          switch (action) {
+            case _GroupAction.addPassage:
+              onBookmarkCurrent(group.id);
+            case _GroupAction.addGroup:
+              onCreateGroup(group.id);
+            case _GroupAction.edit:
+              onEditGroup(group);
+            case _GroupAction.delete:
+              onDeleteGroup(group);
+          }
+        },
+        itemBuilder: (_) => const [
+          PopupMenuItem(
+            value: _GroupAction.addPassage,
+            child: ListTile(
+              leading: Icon(Icons.bookmark_add_outlined),
+              title: Text('Add current passage'),
             ),
-            PopupMenuItem(
-              value: _GroupAction.addGroup,
-              child: ListTile(
-                leading: Icon(Icons.create_new_folder_outlined),
-                title: Text('Add subgroup'),
-              ),
-            ),
-            PopupMenuItem(
-              value: _GroupAction.edit,
-              child: ListTile(
-                leading: Icon(Icons.edit_note),
-                title: Text('Edit group'),
-              ),
-            ),
-            PopupMenuItem(
-              value: _GroupAction.delete,
-              child: ListTile(
-                leading: Icon(Icons.delete_outline),
-                title: Text('Delete group'),
-              ),
-            ),
-          ],
-        ),
-        children: [
-          ..._itemsAt(
-            context,
-            workspace,
-            group.id,
-            depth: depth + 1,
-            ancestors: ancestors,
           ),
-          if (workspace.passages.every((item) => item.groupId != group.id) &&
-              workspace.words.every((item) => item.groupId != group.id) &&
-              workspace.childGroups(group.id).isEmpty)
-            const _SectionEmpty(text: 'This group is empty.'),
+          PopupMenuItem(
+            value: _GroupAction.addGroup,
+            child: ListTile(
+              leading: Icon(Icons.create_new_folder_outlined),
+              title: Text('Add subgroup'),
+            ),
+          ),
+          PopupMenuItem(
+            value: _GroupAction.edit,
+            child: ListTile(
+              leading: Icon(Icons.edit_note),
+              title: Text('Edit group'),
+            ),
+          ),
+          PopupMenuItem(
+            value: _GroupAction.delete,
+            child: ListTile(
+              leading: Icon(Icons.delete_outline),
+              title: Text('Delete group'),
+            ),
+          ),
         ],
       ),
+      children: [
+        if (group.note.isNotEmpty)
+          Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(48, 0, 48, 8),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(group.note),
+            ),
+          ),
+        ..._itemsAt(
+          context,
+          workspace,
+          group.id,
+          depth: depth + 1,
+          ancestors: ancestors,
+        ),
+        if (workspace.passages.every((item) => item.groupId != group.id) &&
+            workspace.words.every((item) => item.groupId != group.id) &&
+            workspace.childGroups(group.id).isEmpty)
+          const _SectionEmpty(text: 'This group is empty.'),
+      ],
     ),
   );
 
   Widget _passageTile(
     BuildContext context,
     StudyWorkspace workspace,
-    StudyPassage passage,
-  ) => ListTile(
+    StudyPassage passage, {
+    required int depth,
+  }) => ListTile(
     dense: true,
-    contentPadding: const EdgeInsetsDirectional.only(start: 8, end: 4),
-    leading: IconButton(
-      onPressed: () => onUpdatePassage(
-        passage.copyWith(highlightEnabled: !passage.highlightEnabled),
-      ),
-      icon: Icon(
-        passage.highlightEnabled ? Icons.highlight : Icons.highlight_outlined,
-        color: passage.highlightEnabled ? Color(passage.colorValue) : null,
-      ),
-      tooltip: passage.highlightEnabled
-          ? 'Turn off this passage highlight'
-          : 'Turn on this passage highlight',
+    contentPadding: EdgeInsetsDirectional.only(
+      start: 16 + depth * 12.0,
+      end: 0,
     ),
     title: Text(_reference(passage)),
-    subtitle: passage.note.isEmpty
-        ? null
-        : Text(passage.note, maxLines: 3, overflow: TextOverflow.ellipsis),
+    subtitle: passage.note.isEmpty ? null : Text(passage.note),
     onTap: () => onOpenPassage(passage),
     trailing: PopupMenuButton<_ItemAction>(
       tooltip: 'Passage options',
       onSelected: (action) async {
         switch (action) {
+          case _ItemAction.highlight:
+            onUpdatePassage(
+              passage.copyWith(highlightEnabled: !passage.highlightEnabled),
+            );
           case _ItemAction.note:
             onEditPassage(passage);
           case _ItemAction.move:
@@ -297,7 +299,12 @@ class StudyWorkspacePanel extends StatelessWidget {
             onRemovePassage(passage);
         }
       },
-      itemBuilder: (_) => const [
+      itemBuilder: (_) => [
+        CheckedPopupMenuItem(
+          value: _ItemAction.highlight,
+          checked: passage.highlightEnabled,
+          child: const Text('Highlight passage'),
+        ),
         PopupMenuItem(
           value: _ItemAction.note,
           child: ListTile(
@@ -333,20 +340,13 @@ class StudyWorkspacePanel extends StatelessWidget {
   Widget _wordTile(
     BuildContext context,
     StudyWorkspace workspace,
-    StudyWord word,
-  ) => ListTile(
+    StudyWord word, {
+    required int depth,
+  }) => ListTile(
     dense: true,
-    contentPadding: const EdgeInsetsDirectional.only(start: 8, end: 4),
-    leading: IconButton(
-      onPressed: () =>
-          onUpdateWord(word.copyWith(highlightEnabled: !word.highlightEnabled)),
-      icon: Icon(
-        word.highlightEnabled ? Icons.highlight : Icons.highlight_outlined,
-        color: word.highlightEnabled ? Color(word.colorValue) : null,
-      ),
-      tooltip: word.highlightEnabled
-          ? 'Turn off this root highlight'
-          : 'Turn on this root highlight',
+    contentPadding: EdgeInsetsDirectional.only(
+      start: 16 + depth * 12.0,
+      end: 0,
     ),
     title: Text(
       word.root.isEmpty ? word.surface : '${word.root} · ${word.surface}',
@@ -356,11 +356,15 @@ class StudyWorkspacePanel extends StatelessWidget {
         ? (word.root.isEmpty
               ? const Text('Open this word again to resolve its root.')
               : null)
-        : Text(word.note, maxLines: 3, overflow: TextOverflow.ellipsis),
+        : Text(word.note),
     trailing: PopupMenuButton<_ItemAction>(
       tooltip: 'Word options',
       onSelected: (action) async {
         switch (action) {
+          case _ItemAction.highlight:
+            onUpdateWord(
+              word.copyWith(highlightEnabled: !word.highlightEnabled),
+            );
           case _ItemAction.note:
             onEditWord(word);
           case _ItemAction.move:
@@ -381,7 +385,12 @@ class StudyWorkspacePanel extends StatelessWidget {
             onRemoveWord(word);
         }
       },
-      itemBuilder: (_) => const [
+      itemBuilder: (_) => [
+        CheckedPopupMenuItem(
+          value: _ItemAction.highlight,
+          checked: word.highlightEnabled,
+          child: const Text('Highlight root'),
+        ),
         PopupMenuItem(
           value: _ItemAction.note,
           child: ListTile(
@@ -425,29 +434,9 @@ class StudyWorkspacePanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-              child: Row(
-                children: [
-                  Icon(Icons.notes_outlined, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Study notes',
-                      style: theme.textTheme.titleMedium,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: onCreate,
-                    icon: const Icon(Icons.add),
-                    tooltip: 'New workspace',
-                  ),
-                ],
-              ),
-            ),
             if (workspaces.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.fromLTRB(8, 8, 0, 4),
                 child: Row(
                   children: [
                     Expanded(
@@ -478,21 +467,41 @@ class StudyWorkspacePanel extends StatelessWidget {
                       tooltip: 'Workspace options',
                       onSelected: (action) {
                         switch (action) {
+                          case _WorkspaceAction.create:
+                            onCreate();
+                          case _WorkspaceAction.toggleHighlights:
+                            if (workspace != null) {
+                              onToggleHighlights(!workspace.highlightsEnabled);
+                            }
                           case _WorkspaceAction.rename:
                             onRename();
                           case _WorkspaceAction.delete:
                             onDelete();
                         }
                       },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: _WorkspaceAction.create,
+                          child: ListTile(
+                            leading: Icon(Icons.add),
+                            title: Text('New workspace'),
+                          ),
+                        ),
+                        if (workspace != null)
+                          CheckedPopupMenuItem(
+                            value: _WorkspaceAction.toggleHighlights,
+                            checked: workspace.highlightsEnabled,
+                            child: const Text('Show study highlights'),
+                          ),
+                        const PopupMenuDivider(),
+                        const PopupMenuItem(
                           value: _WorkspaceAction.rename,
                           child: ListTile(
                             leading: Icon(Icons.edit_outlined),
                             title: Text('Rename'),
                           ),
                         ),
-                        PopupMenuItem(
+                        const PopupMenuItem(
                           value: _WorkspaceAction.delete,
                           child: ListTile(
                             leading: Icon(Icons.delete_outline),
@@ -508,69 +517,19 @@ class StudyWorkspacePanel extends StatelessWidget {
               child: workspace == null
                   ? _EmptyWorkspace(onCreate: onCreate)
                   : ListView(
-                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
+                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
                       children: [
-                        SizedBox(
-                          key: const ValueKey('study-highlight-master-control'),
-                          height: 40,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Row(
-                              children: [
-                                const Expanded(
-                                  child: Text('Show study highlights'),
-                                ),
-                                Tooltip(
-                                  message:
-                                      'Master switch for all bookmarked items',
-                                  child: Switch(
-                                    value: workspace.highlightsEnabled,
-                                    onChanged: onToggleHighlights,
-                                    materialTapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                        _OutlineHeader(
+                          currentIsBookmarked:
+                              workspace.passageAt(
+                                currentPassage.bookIndex,
+                                currentPassage.chapter,
+                                currentPassage.verse,
+                              ) !=
+                              null,
+                          onBookmarkCurrent: () => onBookmarkCurrent(null),
+                          onCreateGroup: () => onCreateGroup(null),
                         ),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: FilledButton.tonalIcon(
-                                onPressed:
-                                    workspace.passageAt(
-                                          currentPassage.bookIndex,
-                                          currentPassage.chapter,
-                                          currentPassage.verse,
-                                        ) ==
-                                        null
-                                    ? () => onBookmarkCurrent(null)
-                                    : null,
-                                icon: const Icon(Icons.bookmark_add_outlined),
-                                label: Text(
-                                  workspace.passageAt(
-                                            currentPassage.bookIndex,
-                                            currentPassage.chapter,
-                                            currentPassage.verse,
-                                          ) ==
-                                          null
-                                      ? 'Bookmark current'
-                                      : 'Current is bookmarked',
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton.filledTonal(
-                              onPressed: () => onCreateGroup(null),
-                              icon: const Icon(
-                                Icons.create_new_folder_outlined,
-                              ),
-                              tooltip: 'New group',
-                            ),
-                          ],
-                        ),
-                        const _SectionHeader(title: 'Study items'),
                         ..._itemsAt(
                           context,
                           workspace,
@@ -593,6 +552,68 @@ class StudyWorkspacePanel extends StatelessWidget {
       ),
     );
   }
+}
+
+class _OutlineHeader extends StatelessWidget {
+  const _OutlineHeader({
+    required this.currentIsBookmarked,
+    required this.onBookmarkCurrent,
+    required this.onCreateGroup,
+  });
+
+  final bool currentIsBookmarked;
+  final VoidCallback onBookmarkCurrent;
+  final VoidCallback onCreateGroup;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsetsDirectional.only(start: 8, top: 4),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            'Outline',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        PopupMenuButton<_OutlineAction>(
+          tooltip: 'Add study item',
+          icon: const Icon(Icons.add),
+          onSelected: (action) {
+            switch (action) {
+              case _OutlineAction.bookmarkPassage:
+                onBookmarkCurrent();
+              case _OutlineAction.createGroup:
+                onCreateGroup();
+            }
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: _OutlineAction.bookmarkPassage,
+              enabled: !currentIsBookmarked,
+              child: ListTile(
+                leading: const Icon(Icons.bookmark_add_outlined),
+                title: Text(
+                  currentIsBookmarked
+                      ? 'Current passage is bookmarked'
+                      : 'Bookmark current passage',
+                ),
+              ),
+            ),
+            const PopupMenuItem(
+              value: _OutlineAction.createGroup,
+              child: ListTile(
+                leading: Icon(Icons.create_new_folder_outlined),
+                title: Text('New group'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
 }
 
 class _EmptyWorkspace extends StatelessWidget {
@@ -637,23 +658,6 @@ class _EmptyWorkspace extends StatelessWidget {
   );
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
-    child: Text(
-      title,
-      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
-    ),
-  );
-}
-
 class _SectionEmpty extends StatelessWidget {
   const _SectionEmpty({required this.text});
 
@@ -685,8 +689,10 @@ const _highlightColors = <int>[
 const _topLevelChoice = '__top_level__';
 const _cancelledChoice = '__cancelled__';
 
-enum _WorkspaceAction { rename, delete }
+enum _WorkspaceAction { create, toggleHighlights, rename, delete }
+
+enum _OutlineAction { bookmarkPassage, createGroup }
 
 enum _GroupAction { addPassage, addGroup, edit, delete }
 
-enum _ItemAction { note, move, color, remove }
+enum _ItemAction { highlight, note, move, color, remove }
