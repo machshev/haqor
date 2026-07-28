@@ -100,33 +100,42 @@ class StudyWorkspacePanel extends StatelessWidget {
               ),
             if (activeWorkspace == null)
               Expanded(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.bookmarks_outlined,
-                          size: 42,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Collect a central passage, related references, '
-                          'highlights and notes in one place.',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                child: LayoutBuilder(
+                  builder: (context, constraints) => SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.bookmarks_outlined,
+                                size: 42,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Collect a central passage, related references, '
+                                'highlights and notes in one place.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              FilledButton.icon(
+                                onPressed: onCreate,
+                                icon: const Icon(Icons.add),
+                                label: const Text('Create workspace'),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        FilledButton.icon(
-                          onPressed: onCreate,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Create workspace'),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
