@@ -161,9 +161,50 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final rust = await _pumpReader(tester, chapter: 5);
 
-    expect(find.byType(ChoiceChip), findsNothing);
+    expect(find.byType(InputChip), findsNothing);
     expect(find.byTooltip('More reader options'), findsOneWidget);
     expect(find.byIcon(Icons.view_column_outlined), findsNothing);
+
+    final readerPosition = tester
+        .widget<CustomScrollView>(find.byType(CustomScrollView))
+        .controller!
+        .position;
+    expect(readerPosition.axis, Axis.vertical);
+    expect(
+      readerPosition.maxScrollExtent - readerPosition.pixels,
+      greaterThan(31),
+    );
+    readerPosition.jumpTo(
+      (readerPosition.pixels + 1).clamp(
+        readerPosition.minScrollExtent,
+        readerPosition.maxScrollExtent,
+      ),
+    );
+    readerPosition.jumpTo(
+      (readerPosition.pixels + 30).clamp(
+        readerPosition.minScrollExtent,
+        readerPosition.maxScrollExtent,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(
+      tester.getSize(find.byKey(const ValueKey('reader-workspace-bar'))).height,
+      0,
+    );
+
+    readerPosition.jumpTo(
+      (readerPosition.pixels - 30).clamp(
+        readerPosition.minScrollExtent,
+        readerPosition.maxScrollExtent,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(
+      tester.getSize(find.byKey(const ValueKey('reader-workspace-bar'))).height,
+      48,
+    );
 
     await tester.tap(find.byTooltip('More reader options'));
     await tester.pumpAndSettle();
@@ -177,15 +218,19 @@ void main() {
     rust.deliverAll();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.byType(ChoiceChip), findsNWidgets(2));
-    var chips = tester.widgetList<ChoiceChip>(find.byType(ChoiceChip)).toList();
+    expect(find.byType(InputChip), findsNWidgets(2));
+    var chips = tester.widgetList<InputChip>(find.byType(InputChip)).toList();
     expect(chips[1].selected, isTrue);
 
     await tester.drag(find.byType(PageView), const Offset(400, 0));
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
-    chips = tester.widgetList<ChoiceChip>(find.byType(ChoiceChip)).toList();
+    chips = tester.widgetList<InputChip>(find.byType(InputChip)).toList();
     expect(chips[0].selected, isTrue);
+
+    await tester.tap(find.byTooltip('Close reader tab').last);
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byType(InputChip), findsNothing);
   });
 
   testWidgets('resizes and persists the reader side panel', (tester) async {

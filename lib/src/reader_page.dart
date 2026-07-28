@@ -203,6 +203,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   String _activeTabId = 'primary';
   bool _tiled = false;
   bool _loaded = false;
+  bool _mobileBarHidden = false;
+  Timer? _mobileBarTransitionTimer;
 
   @override
   void initState() {
@@ -271,6 +273,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _tabs.add(_ReaderTab(id));
       _readerKeys[id] = GlobalKey<_ReaderSessionState>();
       _activeTabId = id;
+      _mobileBarHidden = false;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _pageController.hasClients) {
@@ -290,6 +293,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     if (index < 0) return;
     setState(() {
       _tabs.removeAt(index);
+      _mobileBarHidden = false;
       if (_activeTabId == id) {
         _activeTabId = _tabs[math.min(index, _tabs.length - 1)].id;
       }
@@ -306,6 +310,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   @override
   void dispose() {
+    _mobileBarTransitionTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
@@ -316,29 +321,20 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         ? 'Reader'
         : '${bookDisplayName(state._bookIndex, useEnglish: state._englishBookNames)} '
               '${state._chapter}';
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-        if (_tabs.length > 1) ...[
-          const SizedBox(width: 4),
-          InkWell(
-            onTap: () => _closeTab(tab.id),
-            borderRadius: BorderRadius.circular(12),
-            child: const Padding(
-              padding: EdgeInsets.all(2),
-              child: Icon(Icons.close, size: 16),
-            ),
-          ),
-        ],
-      ],
-    );
+    return Text(label, maxLines: 1, overflow: TextOverflow.ellipsis);
   }
 
   Widget _reader(_ReaderTab tab) => _ReaderSession(
     key: _readerKeys[tab.id],
     sessionId: tab.id,
     externalMenu: MediaQuery.sizeOf(context).width < 900,
+    onScrollChromeChanged: (hidden) {
+      if (MediaQuery.sizeOf(context).width >= 900 ||
+          _mobileBarHidden == hidden) {
+        return;
+      }
+      _setMobileBarHidden(hidden);
+    },
     sendChapterRequest: widget.sendChapterRequest,
     onPassageChanged: () {
       if (mounted) setState(() {});
@@ -391,6 +387,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     ),
   ];
 
+  void _setMobileBarHidden(bool hidden) {
+    if (_mobileBarTransitionTimer?.isActive ?? false) return;
+    setState(() => _mobileBarHidden = hidden);
+    _mobileBarTransitionTimer = Timer(const Duration(milliseconds: 200), () {});
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_loaded) {
@@ -406,71 +408,81 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           children: [
             Material(
               color: Theme.of(context).colorScheme.surfaceContainer,
-              child: SizedBox(
-                height: 48,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: showTabStrip
-                          ? ListView.separated(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              scrollDirection: Axis.horizontal,
-                              itemCount: _tabs.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(width: 4),
-                              itemBuilder: (context, index) {
-                                final tab = _tabs[index];
-                                return ChoiceChip(
-                                  label: _tabLabel(tab),
-                                  selected: tab.id == _activeTabId,
-                                  onSelected: (_) {
-                                    setState(() => _activeTabId = tab.id);
-                                    _pageController.animateToPage(
-                                      index,
-                                      duration: const Duration(
-                                        milliseconds: 220,
-                                      ),
-                                      curve: Curves.easeOut,
-                                    );
-                                    _saveWorkspace();
-                                  },
-                                );
-                              },
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.add),
-                      tooltip: 'New reader tab',
-                      onPressed: _addTab,
-                    ),
-                    if (canTile)
-                      IconButton(
-                        isSelected: tiled,
-                        selectedIcon: const Icon(Icons.view_column),
-                        icon: const Icon(Icons.view_column_outlined),
-                        tooltip: tiled
-                            ? 'Show reader tabs'
-                            : 'Tile reader tabs',
-                        onPressed: _tabs.length > 1
-                            ? () {
-                                setState(() => _tiled = !_tiled);
-                                _saveWorkspace();
-                              }
-                            : null,
-                      )
-                    else
-                      PopupMenuButton<_ReaderMenuAction>(
-                        icon: const Icon(Icons.more_vert),
-                        tooltip: 'More reader options',
-                        enabled: _activeReader != null,
-                        onSelected: (action) =>
-                            _activeReader?._handleReaderMenuAction(action),
-                        itemBuilder: (_) => _mobileMenuItems(),
+              child: AnimatedContainer(
+                key: const ValueKey('reader-workspace-bar'),
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                height: mobile && _mobileBarHidden ? 0 : 48,
+                child: ClipRect(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: showTabStrip
+                            ? ListView.separated(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _tabs.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(width: 4),
+                                itemBuilder: (context, index) {
+                                  final tab = _tabs[index];
+                                  return InputChip(
+                                    label: _tabLabel(tab),
+                                    selected: tab.id == _activeTabId,
+                                    onPressed: () {
+                                      setState(() => _activeTabId = tab.id);
+                                      _pageController.animateToPage(
+                                        index,
+                                        duration: const Duration(
+                                          milliseconds: 220,
+                                        ),
+                                        curve: Curves.easeOut,
+                                      );
+                                      _saveWorkspace();
+                                    },
+                                    onDeleted: _tabs.length > 1
+                                        ? () => _closeTab(tab.id)
+                                        : null,
+                                    deleteButtonTooltipMessage:
+                                        'Close reader tab',
+                                  );
+                                },
+                              )
+                            : const SizedBox.shrink(),
                       ),
-                  ],
+                      IconButton(
+                        icon: const Icon(Icons.add),
+                        tooltip: 'New reader tab',
+                        onPressed: _addTab,
+                      ),
+                      if (canTile)
+                        IconButton(
+                          isSelected: tiled,
+                          selectedIcon: const Icon(Icons.view_column),
+                          icon: const Icon(Icons.view_column_outlined),
+                          tooltip: tiled
+                              ? 'Show reader tabs'
+                              : 'Tile reader tabs',
+                          onPressed: _tabs.length > 1
+                              ? () {
+                                  setState(() => _tiled = !_tiled);
+                                  _saveWorkspace();
+                                }
+                              : null,
+                        )
+                      else
+                        PopupMenuButton<_ReaderMenuAction>(
+                          icon: const Icon(Icons.more_vert),
+                          tooltip: 'More reader options',
+                          enabled: _activeReader != null,
+                          onSelected: (action) =>
+                              _activeReader?._handleReaderMenuAction(action),
+                          itemBuilder: (_) => _mobileMenuItems(),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -487,7 +499,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                   : PageView(
                       controller: _pageController,
                       onPageChanged: (index) {
-                        setState(() => _activeTabId = _tabs[index].id);
+                        setState(() {
+                          _activeTabId = _tabs[index].id;
+                          _mobileBarHidden = false;
+                        });
                         _saveWorkspace();
                       },
                       children: [for (final tab in _tabs) _reader(tab)],
@@ -506,12 +521,14 @@ class _ReaderSession extends StatefulWidget {
     required this.sessionId,
     required this.onPassageChanged,
     required this.externalMenu,
+    required this.onScrollChromeChanged,
     this.sendChapterRequest,
   });
 
   final String sessionId;
   final VoidCallback onPassageChanged;
   final bool externalMenu;
+  final ValueChanged<bool> onScrollChromeChanged;
 
   /// Test seam: how a [GetChapter] request reaches the Rust side. Defaults to
   /// the real rinf signal; widget tests substitute a stub that answers via
@@ -625,6 +642,8 @@ class _ReaderSessionState extends State<_ReaderSession>
   _SelectedWord? _selectedWord;
   bool _splitShowsWord = false;
   double _sidePanelWidth = 360;
+  double _chromeScrollDelta = 0;
+  double? _lastChromeScrollPixels;
   Timer? _positionSaveTimer;
 
   @override
@@ -1782,6 +1801,8 @@ class _ReaderSessionState extends State<_ReaderSession>
       }
       _fetchTimeouts.clear();
       _centerIndex = 0;
+      _lastChromeScrollPixels = null;
+      _chromeScrollDelta = 0;
       _bookIndex = bookIndex;
       _chapter = chapter;
       _initialLoading = true;
@@ -1949,6 +1970,24 @@ class _ReaderSessionState extends State<_ReaderSession>
     _updateCurrentPassage();
     if (!_scrollController.hasClients || _sections.isEmpty) return;
     final position = _scrollController.position;
+    final previousPixels = _lastChromeScrollPixels;
+    _lastChromeScrollPixels = position.pixels;
+    if (previousPixels != null) {
+      final delta = position.pixels - previousPixels;
+      if (_chromeScrollDelta != 0 &&
+          delta != 0 &&
+          _chromeScrollDelta.sign != delta.sign) {
+        _chromeScrollDelta = 0;
+      }
+      _chromeScrollDelta += delta;
+      if (_chromeScrollDelta > 24) {
+        widget.onScrollChromeChanged(true);
+        _chromeScrollDelta = 0;
+      } else if (_chromeScrollDelta < -24) {
+        widget.onScrollChromeChanged(false);
+        _chromeScrollDelta = 0;
+      }
+    }
     final triggerDistance = math.max(800.0, position.viewportDimension * 2);
     // Content above the center sliver lives at negative offsets, so the top
     // trigger is relative to minScrollExtent rather than zero.
