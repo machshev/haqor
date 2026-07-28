@@ -154,7 +154,7 @@ void main() {
             hebrewNumerals: false,
             studyHighlighted: true,
             studyNote: true,
-            highlightedWordRoots: {'מלל'},
+            studyWordHighlightColors: const {'מלל': Color(0xffffab91)},
             onTap: () {},
             onWordTap: (_, _, _, _) {},
           ),
@@ -171,8 +171,8 @@ void main() {
         .toList();
 
     expect(words, hasLength(2));
-    expect(words.first.style!.backgroundColor, isNotNull);
-    expect(words.last.style!.backgroundColor, isNotNull);
+    expect(words.first.style!.backgroundColor, const Color(0xffffab91));
+    expect(words.last.style!.backgroundColor, const Color(0xffffab91));
     expect(find.byIcon(Icons.sticky_note_2_outlined), findsOneWidget);
     final container = tester.widget<AnimatedContainer>(
       find.byType(AnimatedContainer),

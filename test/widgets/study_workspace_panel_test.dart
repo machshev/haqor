@@ -30,18 +30,16 @@ void main() {
                 onRename: () {},
                 onDelete: () {},
                 onToggleHighlights: (_) {},
-                onWordColorChanged: (_) {},
-                onPassageColorChanged: (_) {},
-                onCreateTheme: () {},
-                onEditTheme: (_) {},
-                onDeleteTheme: (_) {},
-                onAddCurrentToTheme: (_) {},
+                onCreateGroup: (_) {},
+                onEditGroup: (_) {},
+                onDeleteGroup: (_) {},
+                onBookmarkCurrent: (_) {},
                 onOpenPassage: (_) {},
-                onEditPassage: (_, _) {},
-                onTogglePassage: (_, _) {},
-                onRemovePassage: (_, _) {},
+                onEditPassage: (_) {},
+                onUpdatePassage: (_) {},
+                onRemovePassage: (_) {},
                 onEditWord: (_) {},
-                onToggleWord: (_) {},
+                onUpdateWord: (_) {},
                 onRemoveWord: (_) {},
               ),
             ),
@@ -55,35 +53,39 @@ void main() {
     expect(find.byType(SingleChildScrollView), findsOneWidget);
   });
 
-  testWidgets('panel shows root notes and themed passages with quick add', (
+  testWidgets('outline shows unfiled and grouped items and can move a word', (
     tester,
   ) async {
-    const passage = StudyPassage(
-      bookIndex: 0,
-      chapter: 1,
-      verse: 1,
-      note: 'Creation begins',
-    );
-    const studyTheme = StudyTheme(
+    const group = StudyGroup(
       id: 'creation',
       name: 'Creation',
-      headerNote: 'Trace creation language.',
-      passages: [passage],
+      note: 'Trace creation language.',
     );
     const workspace = StudyWorkspace(
       id: 'study',
       name: 'Study',
+      groups: [group],
+      passages: [
+        StudyPassage(
+          bookIndex: 0,
+          chapter: 1,
+          verse: 1,
+          groupId: 'creation',
+          note: 'Creation begins',
+        ),
+      ],
       words: [StudyWord(root: 'ברא', surface: 'בָּרָא', note: 'Create')],
-      themes: [studyTheme],
     );
-    StudyTheme? addedTo;
+    String? bookmarkedIn = 'unset';
+    StudyWord? updatedWord;
+    bool? highlightsEnabled;
 
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: SizedBox(
-            width: 360,
-            height: 720,
+            width: 380,
+            height: 760,
             child: StudyWorkspacePanel(
               workspaces: const [workspace],
               activeWorkspace: workspace,
@@ -97,19 +99,17 @@ void main() {
               onSelect: (_) {},
               onRename: () {},
               onDelete: () {},
-              onToggleHighlights: (_) {},
-              onWordColorChanged: (_) {},
-              onPassageColorChanged: (_) {},
-              onCreateTheme: () {},
-              onEditTheme: (_) {},
-              onDeleteTheme: (_) {},
-              onAddCurrentToTheme: (value) => addedTo = value,
+              onToggleHighlights: (enabled) => highlightsEnabled = enabled,
+              onCreateGroup: (_) {},
+              onEditGroup: (_) {},
+              onDeleteGroup: (_) {},
+              onBookmarkCurrent: (groupId) => bookmarkedIn = groupId,
               onOpenPassage: (_) {},
-              onEditPassage: (_, _) {},
-              onTogglePassage: (_, _) {},
-              onRemovePassage: (_, _) {},
+              onEditPassage: (_) {},
+              onUpdatePassage: (_) {},
+              onRemovePassage: (_) {},
               onEditWord: (_) {},
-              onToggleWord: (_) {},
+              onUpdateWord: (word) => updatedWord = word,
               onRemoveWord: (_) {},
             ),
           ),
@@ -117,13 +117,31 @@ void main() {
       ),
     );
 
+    expect(find.text('Study notes'), findsOneWidget);
     expect(find.text('ברא · בָּרָא'), findsOneWidget);
     expect(find.text('Create'), findsOneWidget);
     expect(find.text('Trace creation language.'), findsOneWidget);
     expect(find.text('Genesis 1:1'), findsOneWidget);
     expect(find.text('Creation begins'), findsOneWidget);
 
-    await tester.tap(find.text('Add current passage'));
-    expect(addedTo?.id, 'creation');
+    await tester.tap(find.byType(Switch));
+    expect(highlightsEnabled, isFalse);
+
+    await tester.tap(find.text('Bookmark current'));
+    expect(bookmarkedIn, isNull);
+
+    await tester.tap(find.byTooltip('Word options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Move to group'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SimpleDialog),
+        matching: find.text('Creation'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(updatedWord?.groupId, 'creation');
   });
 }

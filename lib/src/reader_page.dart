@@ -812,69 +812,67 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _saveStudyState();
   }
 
-  Future<void> _createStudyTheme() async {
+  Future<void> _createStudyGroup(String? parentId) async {
     final workspace = await _ensureStudyWorkspace();
     if (workspace == null || !mounted) return;
     final name = await _askForText(
-      title: 'New passage theme',
+      title: parentId == null ? 'New study group' : 'New subgroup',
       initialValue: '',
-      label: 'Theme name',
+      label: 'Group name',
       confirmLabel: 'Next',
     );
     if (name == null || !mounted) return;
     final note = await _askForText(
       title: name,
       initialValue: '',
-      label: 'Header note (optional)',
+      label: 'Group note (optional)',
       maxLines: 5,
       confirmLabel: 'Create',
     );
     if (note == null || !mounted) return;
     _replaceStudyWorkspace(
-      workspace.putTheme(
-        StudyTheme(
+      workspace.putGroup(
+        StudyGroup(
           id: DateTime.now().microsecondsSinceEpoch.toString(),
           name: name,
-          headerNote: note,
-          passages: [_currentStudyPassage],
+          note: note,
+          parentId: parentId,
         ),
       ),
     );
   }
 
-  Future<void> _editStudyTheme(StudyTheme studyTheme) async {
+  Future<void> _editStudyGroup(StudyGroup group) async {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
     final name = await _askForText(
-      title: 'Edit passage theme',
-      initialValue: studyTheme.name,
-      label: 'Theme name',
+      title: 'Edit study group',
+      initialValue: group.name,
+      label: 'Group name',
       confirmLabel: 'Next',
     );
     if (name == null || !mounted) return;
     final note = await _askForText(
       title: name,
-      initialValue: studyTheme.headerNote,
-      label: 'Header note (optional)',
+      initialValue: group.note,
+      label: 'Group note (optional)',
       maxLines: 5,
     );
     if (note == null || !mounted) return;
     _replaceStudyWorkspace(
-      workspace.putTheme(studyTheme.copyWith(name: name, headerNote: note)),
+      workspace.putGroup(group.copyWith(name: name, note: note)),
     );
   }
 
-  Future<void> _deleteStudyTheme(StudyTheme studyTheme) async {
+  Future<void> _deleteStudyGroup(StudyGroup group) async {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Delete ${studyTheme.name}?'),
-        content: Text(
-          '${studyTheme.passages.length} passage '
-          '${studyTheme.passages.length == 1 ? 'bookmark' : 'bookmarks'} '
-          'will be removed.',
+        title: Text('Delete ${group.name}?'),
+        content: const Text(
+          'Its study items and subgroups will be kept and moved up one level.',
         ),
         actions: [
           TextButton(
@@ -889,22 +887,27 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       ),
     );
     if (confirmed == true && mounted) {
-      _replaceStudyWorkspace(workspace.removeTheme(studyTheme));
+      _replaceStudyWorkspace(workspace.removeGroup(group));
     }
   }
 
-  void _addCurrentPassageToTheme(StudyTheme studyTheme) {
+  void _bookmarkCurrentStudyPassage(String? groupId) {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
+    final current = _currentStudyPassage;
+    final existing = workspace.passageAt(
+      current.bookIndex,
+      current.chapter,
+      current.verse,
+    );
     _replaceStudyWorkspace(
-      workspace.putTheme(studyTheme.putPassage(_currentStudyPassage)),
+      workspace.putPassage(
+        (existing ?? current).copyWith(groupId: () => groupId),
+      ),
     );
   }
 
-  Future<void> _editStudyPassage(
-    StudyTheme studyTheme,
-    StudyPassage passage,
-  ) async {
+  Future<void> _editStudyPassage(StudyPassage passage) async {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
     final note = await _askForText(
@@ -917,29 +920,28 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     );
     if (note != null && mounted) {
       _replaceStudyWorkspace(
-        workspace.putTheme(studyTheme.putPassage(passage.copyWith(note: note))),
+        workspace.putPassage(passage.copyWith(note: note)),
       );
     }
   }
 
-  void _toggleStudyPassage(StudyTheme studyTheme, StudyPassage passage) {
+  void _updateStudyPassage(StudyPassage passage) {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
-    _replaceStudyWorkspace(
-      workspace.putTheme(
-        studyTheme.putPassage(
-          passage.copyWith(highlightEnabled: !passage.highlightEnabled),
-        ),
-      ),
-    );
+    _replaceStudyWorkspace(workspace.putPassage(passage));
   }
 
-  void _removeStudyPassage(StudyTheme studyTheme, StudyPassage passage) {
+  void _removeStudyPassage(StudyPassage passage) {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
-    _replaceStudyWorkspace(
-      workspace.putTheme(studyTheme.removePassage(passage)),
-    );
+    _replaceStudyWorkspace(workspace.removePassage(passage));
+  }
+
+  void _toggleStudyHighlights(bool enabled) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    _replaceStudyWorkspace(workspace.copyWith(highlightsEnabled: enabled));
+    if (enabled) _refreshLoadedChaptersForStudyRoots();
   }
 
   Future<bool> _toggleStudyWordBookmark(String root, String surface) async {
@@ -978,40 +980,17 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _replaceStudyWorkspace(workspace.putWord(word.copyWith(note: note)));
   }
 
-  void _toggleStudyWord(StudyWord word) {
+  void _updateStudyWord(StudyWord word) {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
-    _replaceStudyWorkspace(
-      workspace.putWord(
-        word.copyWith(highlightEnabled: !word.highlightEnabled),
-      ),
-    );
-    if (!word.highlightEnabled) _refreshLoadedChaptersForStudyRoots();
+    _replaceStudyWorkspace(workspace.putWord(word));
+    if (word.highlightEnabled) _refreshLoadedChaptersForStudyRoots();
   }
 
   void _removeStudyWord(StudyWord word) {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
     _replaceStudyWorkspace(workspace.removeWord(word));
-  }
-
-  void _toggleWorkspaceHighlights(bool enabled) {
-    final workspace = _activeStudyWorkspace;
-    if (workspace == null) return;
-    _replaceStudyWorkspace(workspace.copyWith(highlightsEnabled: enabled));
-    if (enabled) _refreshLoadedChaptersForStudyRoots();
-  }
-
-  void _setWorkspaceWordColor(int value) {
-    final workspace = _activeStudyWorkspace;
-    if (workspace == null) return;
-    _replaceStudyWorkspace(workspace.copyWith(wordColorValue: value));
-  }
-
-  void _setWorkspacePassageColor(int value) {
-    final workspace = _activeStudyWorkspace;
-    if (workspace == null) return;
-    _replaceStudyWorkspace(workspace.copyWith(passageColorValue: value));
   }
 
   void _refreshLoadedChaptersForStudyRoots() {
@@ -1063,31 +1042,23 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               setSheetState(() {});
             },
             onToggleHighlights: (enabled) {
-              _toggleWorkspaceHighlights(enabled);
+              _toggleStudyHighlights(enabled);
               setSheetState(() {});
             },
-            onWordColorChanged: (value) {
-              _setWorkspaceWordColor(value);
+            onCreateGroup: (parentId) async {
+              await _createStudyGroup(parentId);
               setSheetState(() {});
             },
-            onPassageColorChanged: (value) {
-              _setWorkspacePassageColor(value);
+            onEditGroup: (group) async {
+              await _editStudyGroup(group);
               setSheetState(() {});
             },
-            onCreateTheme: () async {
-              await _createStudyTheme();
+            onDeleteGroup: (group) async {
+              await _deleteStudyGroup(group);
               setSheetState(() {});
             },
-            onEditTheme: (studyTheme) async {
-              await _editStudyTheme(studyTheme);
-              setSheetState(() {});
-            },
-            onDeleteTheme: (studyTheme) async {
-              await _deleteStudyTheme(studyTheme);
-              setSheetState(() {});
-            },
-            onAddCurrentToTheme: (studyTheme) {
-              _addCurrentPassageToTheme(studyTheme);
+            onBookmarkCurrent: (groupId) {
+              _bookmarkCurrentStudyPassage(groupId);
               setSheetState(() {});
             },
             onOpenPassage: (passage) {
@@ -1098,24 +1069,24 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 verse: passage.verse,
               );
             },
-            onEditPassage: (studyTheme, passage) async {
-              await _editStudyPassage(studyTheme, passage);
+            onEditPassage: (passage) async {
+              await _editStudyPassage(passage);
               setSheetState(() {});
             },
-            onTogglePassage: (studyTheme, passage) {
-              _toggleStudyPassage(studyTheme, passage);
+            onUpdatePassage: (passage) {
+              _updateStudyPassage(passage);
               setSheetState(() {});
             },
-            onRemovePassage: (studyTheme, passage) {
-              _removeStudyPassage(studyTheme, passage);
+            onRemovePassage: (passage) {
+              _removeStudyPassage(passage);
               setSheetState(() {});
             },
             onEditWord: (word) async {
               await _editStudyWord(word);
               setSheetState(() {});
             },
-            onToggleWord: (word) {
-              _toggleStudyWord(word);
+            onUpdateWord: (word) {
+              _updateStudyWord(word);
               setSheetState(() {});
             },
             onRemoveWord: (word) {
@@ -1785,14 +1756,6 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         isStudyBookmarked: (resolvedRoot) =>
             _activeStudyWorkspace?.wordForRoot(resolvedRoot) != null,
         onToggleStudyBookmark: _toggleStudyWordBookmark,
-        onEditStudyNote: (resolvedRoot, surface) async {
-          final workspace = await _ensureStudyWorkspace();
-          if (workspace == null || !mounted) return;
-          final existing = workspace.wordForRoot(resolvedRoot);
-          await _editStudyWord(
-            existing ?? StudyWord(root: resolvedRoot, surface: surface),
-          );
-        },
         onNavigateToPassage: (bi, chapter, verse) {
           Navigator.pop(ctx);
           _navigateTo(bi, chapter, verse: verse);
@@ -1833,20 +1796,18 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     },
     onRename: _renameStudyWorkspace,
     onDelete: _deleteStudyWorkspace,
-    onToggleHighlights: _toggleWorkspaceHighlights,
-    onWordColorChanged: _setWorkspaceWordColor,
-    onPassageColorChanged: _setWorkspacePassageColor,
-    onCreateTheme: _createStudyTheme,
-    onEditTheme: _editStudyTheme,
-    onDeleteTheme: _deleteStudyTheme,
-    onAddCurrentToTheme: _addCurrentPassageToTheme,
+    onToggleHighlights: _toggleStudyHighlights,
+    onCreateGroup: _createStudyGroup,
+    onEditGroup: _editStudyGroup,
+    onDeleteGroup: _deleteStudyGroup,
+    onBookmarkCurrent: _bookmarkCurrentStudyPassage,
     onOpenPassage: (passage) =>
         _navigateTo(passage.bookIndex, passage.chapter, verse: passage.verse),
     onEditPassage: _editStudyPassage,
-    onTogglePassage: _toggleStudyPassage,
+    onUpdatePassage: _updateStudyPassage,
     onRemovePassage: _removeStudyPassage,
     onEditWord: _editStudyWord,
-    onToggleWord: _toggleStudyWord,
+    onUpdateWord: _updateStudyWord,
     onRemoveWord: _removeStudyWord,
   );
 
@@ -1894,18 +1855,6 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 isStudyBookmarked: (root) =>
                     _activeStudyWorkspace?.wordForRoot(root) != null,
                 onToggleStudyBookmark: _toggleStudyWordBookmark,
-                onEditStudyNote: (root, surface) async {
-                  final workspace = await _ensureStudyWorkspace();
-                  if (workspace == null || !mounted) return;
-                  final existing = workspace.wordForRoot(root);
-                  await _editStudyWord(
-                    existing ?? StudyWord(root: root, surface: surface),
-                  );
-                },
-                onClose: () => setState(() {
-                  _selectedWord = null;
-                  _splitShowsWord = false;
-                }),
                 onNavigateToPassage: (book, chapter, verse) {
                   setState(() => _selectedWord = null);
                   _navigateTo(book, chapter, verse: verse);
@@ -2278,27 +2227,14 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 b == _selectedBook &&
                 c == _selectedChapter;
             final workspace = _activeStudyWorkspace;
-            final studyPassages =
-                workspace?.themes
-                    .expand((studyTheme) => studyTheme.passages)
-                    .where(
-                      (passage) =>
-                          passage.bookIndex == b &&
-                          passage.chapter == c &&
-                          passage.verse == entry.verse,
-                    )
-                    .toList() ??
-                const <StudyPassage>[];
-            final studyHighlightsEnabled =
-                workspace?.highlightsEnabled ?? false;
-            final highlightedWordRoots = studyHighlightsEnabled
-                ? workspace!.words
-                      .where(
-                        (word) => word.highlightEnabled && word.root.isNotEmpty,
-                      )
-                      .map((word) => word.root)
-                      .toSet()
-                : const <String>{};
+            final studyPassage = workspace?.passageAt(b, c, entry.verse);
+            final studyWordHighlightColors = <String, Color>{
+              for (final word in workspace?.words ?? const <StudyWord>[])
+                if ((workspace?.highlightsEnabled ?? false) &&
+                    word.highlightEnabled &&
+                    word.root.isNotEmpty)
+                  word.root: Color(word.colorValue),
+            };
             return VerseRow(
               key: section.verseKeys[entry.verse],
               entry: entry,
@@ -2331,18 +2267,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               morphologyInterlinear: _morphologyInterlinear,
               highlightProperNames: _highlightProperNames,
               studyHighlighted:
-                  studyHighlightsEnabled &&
-                  studyPassages.any((passage) => passage.highlightEnabled),
-              studyNote: studyPassages.any(
-                (passage) => passage.note.isNotEmpty,
-              ),
-              highlightedWordRoots: highlightedWordRoots,
-              studyWordHighlightColor: workspace == null
+                  (workspace?.highlightsEnabled ?? false) &&
+                  (studyPassage?.highlightEnabled ?? false),
+              studyNote: studyPassage?.note.isNotEmpty ?? false,
+              studyWordHighlightColors: studyWordHighlightColors,
+              studyPassageHighlightColor: studyPassage == null
                   ? null
-                  : Color(workspace.wordColorValue),
-              studyPassageHighlightColor: workspace == null
-                  ? null
-                  : Color(workspace.passageColorValue),
+                  : Color(studyPassage.colorValue),
               ketivDisplay: _ketivDisplay,
             );
           },

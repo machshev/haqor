@@ -132,7 +132,6 @@ HebrewOccurrence _occurrence({
 Future<_FakeRust> _pumpSheet(
   WidgetTester tester, {
   Future<bool> Function(String root, String surface)? onToggleStudyBookmark,
-  Future<void> Function(String root, String surface)? onEditStudyNote,
 }) async {
   SharedPreferences.setMockInitialValues({
     'occurrence_verse_english_only': false,
@@ -151,7 +150,6 @@ Future<_FakeRust> _pumpSheet(
             sendOccurrencesRequest: rust.onOccurrencesRequest,
             sendVerseTextsRequest: rust.onVerseTextsRequest,
             onToggleStudyBookmark: onToggleStudyBookmark,
-            onEditStudyNote: onEditStudyNote,
           ),
         ),
       ),
@@ -166,19 +164,15 @@ Future<_FakeRust> _pumpSheet(
 }
 
 void main() {
-  testWidgets('a resolved root can be bookmarked and noted from the sheet', (
+  testWidgets('a resolved root can be bookmarked from the sheet', (
     tester,
   ) async {
     (String, String)? bookmarked;
-    (String, String)? noted;
     await _pumpSheet(
       tester,
       onToggleStudyBookmark: (root, surface) async {
         bookmarked = (root, surface);
         return true;
-      },
-      onEditStudyNote: (root, surface) async {
-        noted = (root, surface);
       },
     );
 
@@ -186,10 +180,8 @@ void main() {
     await tester.pump();
     expect(bookmarked, ('אלה', 'אֱלִיעֶזֶר'));
     expect(find.byTooltip('Remove root bookmark'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('Edit study note'));
-    await tester.pump();
-    expect(noted, ('אלה', 'אֱלִיעֶזֶר'));
+    expect(find.byTooltip('Edit study note'), findsNothing);
+    expect(find.byTooltip('Close word study'), findsNothing);
   });
 
   testWidgets('both of a name’s roots are offered, the resolved one selected', (

@@ -3,106 +3,149 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:haqor/src/study_workspace.dart';
 
 void main() {
-  test('study workspaces round-trip root words, themes, notes, and colors', () {
-    const central = StudyPassage(
-      bookIndex: 0,
-      chapter: 12,
-      verse: 3,
-      note: 'The call of Abram',
-    );
+  test('study outline round-trips nested groups and per-item settings', () {
     final workspace = StudyWorkspace(
       id: 'promise-study',
       name: 'Promise study',
-      wordColorValue: 0xffffab91,
-      passageColorValue: 0xff90caf9,
-      themes: const [
-        StudyTheme(
+      highlightsEnabled: false,
+      groups: const [
+        StudyGroup(
           id: 'promise',
           name: 'Promise',
-          headerNote: 'Trace the promise and its seed.',
-          passages: [
-            central,
-            StudyPassage(
-              bookIndex: 47,
-              chapter: 3,
-              verse: 16,
-              note: 'The seed is singular',
-              highlightEnabled: false,
-            ),
-          ],
+          note: 'Trace the promise and its seed.',
+        ),
+        StudyGroup(
+          id: 'fulfilment',
+          name: 'Fulfilment',
+          note: 'The promise in the New Testament.',
+          parentId: 'promise',
+        ),
+      ],
+      passages: const [
+        StudyPassage(
+          bookIndex: 0,
+          chapter: 12,
+          verse: 3,
+          groupId: 'promise',
+          note: 'The call of Abram',
+          colorValue: 0xff90caf9,
+        ),
+        StudyPassage(
+          bookIndex: 47,
+          chapter: 3,
+          verse: 16,
+          groupId: 'fulfilment',
+          note: 'The seed is singular',
+          highlightEnabled: false,
         ),
       ],
       words: const [
         StudyWord(
           root: 'ברך',
           surface: 'וְנִבְרְכוּ',
-          note: 'Compare the verbal form in the connected passage.',
+          groupId: 'promise',
+          note: 'Compare the verbal form.',
+          colorValue: 0xffffab91,
         ),
       ],
     );
 
     final decoded = decodeStudyWorkspaces(encodeStudyWorkspaces([workspace]));
+    final result = decoded.single;
 
-    expect(decoded, hasLength(1));
-    expect(decoded.single.name, 'Promise study');
-    expect(decoded.single.themes.single.headerNote, contains('seed'));
-    expect(
-      decoded.single.themes.single.passages.last.note,
-      'The seed is singular',
-    );
-    expect(
-      decoded.single.themes.single.passages.last.highlightEnabled,
-      isFalse,
-    );
-    expect(decoded.single.words.single.root, 'ברך');
-    expect(decoded.single.wordColorValue, 0xffffab91);
-    expect(decoded.single.passageColorValue, 0xff90caf9);
+    expect(result.childGroups(null).single.name, 'Promise');
+    expect(result.highlightsEnabled, isFalse);
+    expect(result.childGroups('promise').single.name, 'Fulfilment');
+    expect(result.passages.last.note, 'The seed is singular');
+    expect(result.passages.last.highlightEnabled, isFalse);
+    expect(result.passages.first.colorValue, 0xff90caf9);
+    expect(result.words.single.groupId, 'promise');
+    expect(result.words.single.colorValue, 0xffffab91);
   });
 
   test('invalid storage is ignored without losing valid workspaces', () {
     final decoded = decodeStudyWorkspaces('''
       [
-        {"id":"valid","name":"Valid","themes":[]},
-        {"id":"","name":"Broken","themes":[]}
+        {"id":"valid","name":"Valid","groups":[]},
+        {"id":"","name":"Broken","groups":[]}
       ]
       ''');
 
     expect(decoded, hasLength(1));
-    expect(decoded.single.themes, isEmpty);
+    expect(decoded.single.groups, isEmpty);
   });
 
-  test('theme passage updates and root word updates use stable keys', () {
-    const passage = StudyPassage(bookIndex: 0, chapter: 1, verse: 1);
-    const theme = StudyTheme(
-      id: 'creation',
-      name: 'Creation',
-      passages: [passage],
-    );
-    var workspace = const StudyWorkspace(
-      id: 'study',
-      name: 'Study',
-      themes: [theme],
-    );
+  test(
+    'stable item keys update bookmarks and deleting a group promotes them',
+    () {
+      const parent = StudyGroup(id: 'parent', name: 'Parent');
+      const child = StudyGroup(id: 'child', name: 'Child', parentId: 'parent');
+      const passage = StudyPassage(
+        bookIndex: 0,
+        chapter: 1,
+        verse: 1,
+        groupId: 'parent',
+      );
+      var workspace = const StudyWorkspace(
+        id: 'study',
+        name: 'Study',
+        groups: [parent, child],
+        passages: [passage],
+      );
 
-    workspace = workspace
-        .putTheme(theme.putPassage(passage.copyWith(note: 'Opening statement')))
-        .putWord(const StudyWord(root: 'ברא', surface: 'בָּרָא'))
-        .putWord(
-          const StudyWord(
-            root: 'ברא',
-            surface: 'וַיִּבְרָא',
-            note: 'All forms share this bookmark.',
-          ),
-        );
+      workspace = workspace
+          .putPassage(passage.copyWith(note: 'Opening statement'))
+          .putWord(const StudyWord(root: 'ברא', surface: 'בָּרָא'))
+          .putWord(
+            const StudyWord(
+              root: 'ברא',
+              surface: 'וַיִּבְרָא',
+              note: 'All forms share this bookmark.',
+            ),
+          );
 
-    expect(workspace.themes.single.passages, hasLength(1));
-    expect(workspace.themes.single.passages.single.note, 'Opening statement');
-    expect(workspace.words, hasLength(1));
-    expect(workspace.wordForRoot('ברא')?.surface, 'וַיִּבְרָא');
+      expect(workspace.passages, hasLength(1));
+      expect(workspace.passages.single.note, 'Opening statement');
+      expect(workspace.words, hasLength(1));
+
+      workspace = workspace.removeGroup(parent);
+      expect(workspace.groupById('parent'), isNull);
+      expect(workspace.groupById('child')?.parentId, isNull);
+      expect(workspace.passages.single.groupId, isNull);
+    },
+  );
+
+  test('theme-based data migrates to groups with per-item colors', () {
+    final workspace = decodeStudyWorkspaces('''
+      [{
+        "id":"theme-version",
+        "name":"Promise",
+        "highlights":false,
+        "wordColor":4294949721,
+        "passageColor":4286626756,
+        "themes":[{
+          "id":"promise",
+          "name":"Promise",
+          "note":"Header",
+          "passages":[{"book":0,"chapter":12,"verse":3,"note":"Abram"}]
+        }],
+        "words":[{"root":"ברך","surface":"וְנִבְרְכוּ"}]
+      }]
+      ''').single;
+
+    expect(workspace.groups.single.name, 'Promise');
+    expect(workspace.highlightsEnabled, isFalse);
+    expect(workspace.groups.single.note, 'Header');
+    expect(workspace.passages.single.groupId, 'promise');
+    expect(workspace.passages.single.colorValue, 4286626756);
+    expect(workspace.passages.single.highlightEnabled, isTrue);
+    expect(workspace.words.single.groupId, isNull);
+    expect(workspace.words.single.colorValue, 4294949721);
+    expect(workspace.words.single.highlightEnabled, isTrue);
   });
 
-  test('v1 central-passage data migrates into a passage theme', () {
-    final decoded = decodeStudyWorkspaces('''
+  test('old central-passage data migrates without losing legacy words', () {
+    var workspace = decodeStudyWorkspaces('''
       [{
         "id":"legacy",
         "name":"Legacy",
@@ -115,12 +158,10 @@ void main() {
           {"book":0,"chapter":1,"verse":1,"position":0,"surface":"בְּרֵאשִׁית"}
         ]
       }]
-      ''');
+      ''').single;
 
-    var workspace = decoded.single;
-    expect(workspace.themes.single.name, 'Passages');
-    expect(workspace.themes.single.passages, hasLength(2));
-    expect(workspace.words.single.surface, 'בְּרֵאשִׁית');
+    expect(workspace.groups.single.name, 'Passages');
+    expect(workspace.passages, hasLength(2));
     expect(workspace.words.single.root, isEmpty);
 
     workspace = workspace.putWord(

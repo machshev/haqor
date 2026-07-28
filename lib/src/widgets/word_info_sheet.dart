@@ -82,8 +82,6 @@ class WordInfoSheet extends StatefulWidget {
     this.onNavigateToPassage,
     this.isStudyBookmarked,
     this.onToggleStudyBookmark,
-    this.onEditStudyNote,
-    this.onClose,
     this.reportContext,
     this.sendInfoRequest,
     this.sendOccurrencesRequest,
@@ -125,10 +123,6 @@ class WordInfoSheet extends StatefulWidget {
   final bool Function(String root)? isStudyBookmarked;
   final Future<bool> Function(String root, String surface)?
   onToggleStudyBookmark;
-  final Future<void> Function(String root, String surface)? onEditStudyNote;
-
-  /// Optional close action for a docked desktop inspector.
-  final VoidCallback? onClose;
   final Map<String, Object?>? reportContext;
 
   @override
@@ -236,13 +230,6 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     if (callback == null || info.root.isEmpty) return;
     final bookmarked = await callback(info.root, info.word);
     if (mounted) setState(() => _studyBookmarked = bookmarked);
-  }
-
-  Future<void> _editStudyNote(WordInfo info) async {
-    final callback = widget.onEditStudyNote;
-    if (callback == null || info.root.isEmpty) return;
-    await callback(info.root, info.word);
-    if (mounted) setState(() => _studyBookmarked = true);
   }
 
   // Fetch the occurrence lists (full-text root scans). Idempotent via
@@ -588,18 +575,6 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  if (widget.onClose != null) ...[
-                    IconButton(
-                      onPressed: widget.onClose,
-                      icon: const Icon(Icons.close),
-                      tooltip: 'Close word study',
-                      iconSize: 20,
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
                   if (widget.onToggleStudyBookmark != null &&
                       info.root.isNotEmpty) ...[
                     IconButton(
@@ -612,19 +587,6 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                       tooltip: _studyBookmarked
                           ? 'Remove root bookmark'
                           : 'Bookmark this root',
-                      iconSize: 20,
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  if (widget.onEditStudyNote != null &&
-                      info.root.isNotEmpty) ...[
-                    IconButton(
-                      onPressed: () => _editStudyNote(info),
-                      icon: const Icon(Icons.note_alt_outlined),
-                      tooltip: 'Edit study note',
                       iconSize: 20,
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,

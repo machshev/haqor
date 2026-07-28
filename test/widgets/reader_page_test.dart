@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -170,7 +171,7 @@ void main() {
     expect(_verse(1, 8, 1), findsOneWidget);
   });
 
-  testWidgets('three-panel study workspace toggles and stores passage themes', (
+  testWidgets('three-panel study notes toggle and store a grouped passage', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1400, 900);
@@ -190,7 +191,7 @@ void main() {
     rust.deliverAll();
     await tester.pump();
 
-    expect(find.text('Study workspace'), findsNothing);
+    expect(find.text('Study notes'), findsNothing);
     expect(find.text('Word study'), findsNothing);
     expect(
       find.textContaining('Select a Hebrew or Syriac word'),
@@ -201,7 +202,7 @@ void main() {
     rust.deliverAll();
     await tester.pump();
 
-    expect(find.text('Study workspace'), findsOneWidget);
+    expect(find.text('Study notes'), findsOneWidget);
     expect(find.text('Create workspace'), findsOneWidget);
 
     await tester.tap(find.text('Create workspace'));
@@ -209,10 +210,9 @@ void main() {
     await tester.tap(find.text('Create'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Bookmarked words (0)'), findsOneWidget);
-    expect(find.text('Passage themes'), findsOneWidget);
+    expect(find.text('Study items'), findsOneWidget);
 
-    await tester.tap(find.text('New theme'));
+    await tester.tap(find.byTooltip('New group'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField), 'Creation');
     await tester.tap(find.text('Next'));
@@ -223,8 +223,24 @@ void main() {
 
     expect(find.text('Creation'), findsOneWidget);
     expect(find.text('Opening passage'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Group options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add current passage'));
+    await tester.pumpAndSettle();
+
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getString('study_workspaces_v1'), contains('"verse":1'));
+    final stored =
+        jsonDecode(prefs.getString('study_workspaces_v1')!) as List<dynamic>;
+    final savedWorkspace = stored.single as Map<String, dynamic>;
+    final savedGroup =
+        (savedWorkspace['groups'] as List<dynamic>).single
+            as Map<String, dynamic>;
+    final savedPassage =
+        (savedWorkspace['passages'] as List<dynamic>).single
+            as Map<String, dynamic>;
+    expect(savedPassage['verse'], 1);
+    expect(savedPassage['group'], savedGroup['id']);
   });
 
   testWidgets('scrolling persists the first visible verse', (tester) async {

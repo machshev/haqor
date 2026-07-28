@@ -152,8 +152,7 @@ class VerseRow extends StatefulWidget {
     this.highlightProperNames = false,
     this.studyHighlighted = false,
     this.studyNote = false,
-    this.highlightedWordRoots = const {},
-    this.studyWordHighlightColor,
+    this.studyWordHighlightColors = const {},
     this.studyPassageHighlightColor,
     this.ketivDisplay = KetivDisplay.superscript,
   });
@@ -177,8 +176,7 @@ class VerseRow extends StatefulWidget {
   final bool highlightProperNames;
   final bool studyHighlighted;
   final bool studyNote;
-  final Set<String> highlightedWordRoots;
-  final Color? studyWordHighlightColor;
+  final Map<String, Color> studyWordHighlightColors;
   final Color? studyPassageHighlightColor;
   final KetivDisplay ketivDisplay;
 
@@ -375,13 +373,13 @@ class _VerseRowState extends State<VerseRow> {
       final root = lexicalPosition < widget.entry.roots.length
           ? widget.entry.roots[lexicalPosition]
           : '';
-      final highlighted =
-          root.isNotEmpty && widget.highlightedWordRoots.contains(root);
+      final highlightColor = root.isEmpty
+          ? null
+          : widget.studyWordHighlightColors[root];
+      final highlighted = highlightColor != null;
       final baseStyle = highlighted
           ? wordStyle.copyWith(
-              backgroundColor:
-                  widget.studyWordHighlightColor ??
-                  theme.colorScheme.tertiaryContainer,
+              backgroundColor: highlightColor,
               fontWeight: FontWeight.w700,
             )
           : wordStyle;
@@ -391,21 +389,13 @@ class _VerseRowState extends State<VerseRow> {
       // general proper-name flag.
       if (isYahweh(word)) {
         return highlighted
-            ? yahwehStyle.copyWith(
-                backgroundColor:
-                    widget.studyWordHighlightColor ??
-                    theme.colorScheme.tertiaryContainer,
-              )
+            ? yahwehStyle.copyWith(backgroundColor: highlightColor)
             : yahwehStyle;
       }
       return lexicalPosition < widget.entry.names.length &&
               widget.entry.names[lexicalPosition]
           ? highlighted
-                ? properNameStyle.copyWith(
-                    backgroundColor:
-                        widget.studyWordHighlightColor ??
-                        theme.colorScheme.tertiaryContainer,
-                  )
+                ? properNameStyle.copyWith(backgroundColor: highlightColor)
                 : properNameStyle
           : baseStyle;
     }
