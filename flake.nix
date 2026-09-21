@@ -121,15 +121,22 @@
               echo "sdk.dir=${androidSdk}/libexec/android-sdk"
             } > "$PWD/android/local.properties"
 
-            # rinf_cli is not in nixpkgs — install via cargo if missing
-            # The CLI version should match the rinf pub package (currently ^8.6.0)
-            if ! command -v rinf &>/dev/null; then
+            # rinf_cli is not in nixpkgs — install via cargo if missing.
+            # The CLI version should match the rinf pub package (currently ^8.6.0).
+            # Test that it RUNS, not just that it is on PATH: a cargo-installed
+            # binary keeps a hardcoded ELF interpreter, so a Nix GC of the glibc
+            # it was linked against leaves an unrunnable file that `command -v`
+            # still finds. Reinstalling relinks it against the current store.
+            if ! rinf --help &>/dev/null; then
               echo "Installing rinf_cli..."
-              cargo install rinf_cli
+              cargo install rinf_cli --force
             fi
 
-            # Regenerate Dart signal bindings from Rust structs (lib/src/bindings/ is gitignored)
-            rinf gen
+            # Regenerate Dart signal bindings from Rust structs (lib/src/bindings/ is gitignored).
+            # Stale bindings fail the build far from the cause, so surface it here.
+            if ! rinf gen; then
+              echo "warning: 'rinf gen' failed — lib/src/bindings/ may be stale" >&2
+            fi
           '';
 
           # Add precompiled library to rustc search path
