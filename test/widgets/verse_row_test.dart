@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:haqor/src/app_settings.dart';
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/widgets/verse_row.dart';
+import 'package:haqor/src/study_workspace.dart';
 
 void main() {
   test('standalone paseq does not consume an interlinear gloss', () {
@@ -180,6 +181,58 @@ void main() {
     final decoration = container.decoration! as BoxDecoration;
     expect(decoration.color, isNot(Colors.transparent));
   });
+
+  for (final interlinear in [false, true]) {
+    testWidgets(
+      'form color overrides root only for matching forms (interlinear=$interlinear)',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: VerseRow(
+                entry: const VerseEntry(
+                  verse: 1,
+                  text: 'בָּרָ֣א וַיִּבְרָא בָּרָא',
+                  glosses: ['created', 'created', 'other'],
+                  morphologies: [],
+                  names: [],
+                  roots: ['ברא', 'ברא', 'אחר'],
+                  ketivs: [],
+                ),
+                isSelected: false,
+                hebrewNumerals: false,
+                glossInterlinear: interlinear,
+                studyWordHighlightColors: const {'ברא': Colors.amber},
+                studyFormHighlightColors: {
+                  StudyWord.formKey('ברא', 'בָּרָא'): Colors.blue,
+                },
+                onTap: () {},
+                onWordTap: (_, _, _, _) {},
+              ),
+            ),
+          ),
+        );
+        Color? color(String word) {
+          if (interlinear) {
+            return tester.widget<Text>(find.text(word)).style?.backgroundColor;
+          }
+          final spans = tester
+              .widget<SelectableText>(find.byType(SelectableText))
+              .textSpan!
+              .children!
+              .whereType<TextSpan>();
+          return spans
+              .firstWhere((span) => span.text == word)
+              .style
+              ?.backgroundColor;
+        }
+
+        expect(color('בָּרָ֣א'), Colors.blue);
+        expect(color('וַיִּבְרָא'), Colors.amber);
+        expect(color('בָּרָא'), isNull);
+      },
+    );
+  }
 
   testWidgets('morphology sits below the gloss with visible spacing', (
     tester,

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'surface.dart';
+
 const studyWorkspacesKey = 'study_workspaces_v1';
 const activeStudyWorkspaceKey = 'active_study_workspace';
 
@@ -90,11 +92,21 @@ class StudyPassage {
   }
 }
 
+enum StudyWordKind { root, form }
+
+/// Pointed Hebrew forms ignore trope and combining-mark order. Syriac forms
+/// retain their letters and pointing while dropping punctuation.
+String studyFormKey(String surface) =>
+    RegExp(r'[\u0710-\u072F\u074D-\u074F]').hasMatch(surface)
+    ? surface.replaceAll(RegExp(r'[^\u0710-\u074A\u074D-\u074F]'), '')
+    : hebrewSurfaceKey(surface);
+
 @immutable
 class StudyWord {
   const StudyWord({
     required this.root,
     required this.surface,
+    this.kind = StudyWordKind.root,
     this.groupId,
     this.note = '',
     this.highlightEnabled = true,
@@ -102,10 +114,23 @@ class StudyWord {
     this.order = 0,
   });
 
-  /// The resolved consonantal root. This is the bookmark key: every reader
-  /// token carrying the same root is highlighted.
+  /// The resolved consonantal root, or empty for an unresolved legacy word or
+  /// a form saved without lexicon data.
   final String root;
   final String surface;
+  final StudyWordKind kind;
+
+  static String formKey(String root, String surface) =>
+      jsonEncode([root, studyFormKey(surface)]);
+
+  String get key => kind == StudyWordKind.form
+      ? 'word-form-${formKey(root, surface)}'
+      : root.isNotEmpty
+      ? 'word-root-$root'
+      : 'word-surface-$surface';
+
+  String get title =>
+      kind == StudyWordKind.form || root.isEmpty ? surface : root;
   final String? groupId;
   final String note;
   final bool highlightEnabled;
@@ -122,6 +147,7 @@ class StudyWord {
   }) => StudyWord(
     root: root,
     surface: surface ?? this.surface,
+    kind: kind,
     groupId: groupId == null ? this.groupId : groupId(),
     note: note ?? this.note,
     highlightEnabled: highlightEnabled ?? this.highlightEnabled,
@@ -132,6 +158,7 @@ class StudyWord {
   Map<String, Object?> toJson() => {
     'root': root,
     'surface': surface,
+    if (kind != StudyWordKind.root) 'kind': kind.name,
     if (groupId != null) 'group': groupId,
     if (note.isNotEmpty) 'note': note,
     if (!highlightEnabled) 'highlight': false,
@@ -153,6 +180,7 @@ class StudyWord {
     return StudyWord(
       root: root is String ? root : '',
       surface: surface,
+      kind: value['kind'] == 'form' ? StudyWordKind.form : StudyWordKind.root,
       groupId: value['group'] is String ? value['group'] as String : null,
       note: value['note'] is String ? value['note'] as String : '',
       highlightEnabled:
@@ -221,10 +249,7 @@ class StudyItem {
 
   String get key => switch (type) {
     StudyItemType.passage => 'passage-${(value as StudyPassage).locationKey}',
-    StudyItemType.word =>
-      (value as StudyWord).root.isNotEmpty
-          ? 'word-root-${(value as StudyWord).root}'
-          : 'word-surface-${(value as StudyWord).surface}',
+    StudyItemType.word => (value as StudyWord).key,
     StudyItemType.note => 'note-${(value as StudyNote).id}',
     StudyItemType.group => 'group-${(value as StudyGroup).id}',
   };
@@ -325,7 +350,14 @@ class StudyWorkspace {
   StudyWord? wordForRoot(String root) {
     if (root.isEmpty) return null;
     for (final word in words) {
-      if (word.root == root) return word;
+      if (word.kind == StudyWordKind.root && word.root == root) return word;
+    }
+    return null;
+  }
+
+  StudyWord? wordForBookmark(StudyWord bookmark) {
+    for (final word in words) {
+      if (word.key == bookmark.key) return word;
     }
     return null;
   }
@@ -382,13 +414,13 @@ class StudyWorkspace {
 
   StudyWorkspace putWord(StudyWord word) {
     final updated = List<StudyWord>.of(words);
-    var index = updated.indexWhere(
-      (candidate) => candidate.root.isNotEmpty && candidate.root == word.root,
-    );
-    if (index < 0 && word.root.isNotEmpty) {
+    var index = updated.indexWhere((candidate) => candidate.key == word.key);
+    if (index < 0 && word.kind == StudyWordKind.root && word.root.isNotEmpty) {
       index = updated.indexWhere(
         (candidate) =>
-            candidate.root.isEmpty && candidate.surface == word.surface,
+            candidate.kind == StudyWordKind.root &&
+            candidate.root.isEmpty &&
+            candidate.surface == word.surface,
       );
     }
     if (index < 0) {
@@ -402,13 +434,7 @@ class StudyWorkspace {
   }
 
   StudyWorkspace removeWord(StudyWord word) => copyWith(
-    words: words
-        .where(
-          (candidate) => word.root.isNotEmpty
-              ? candidate.root != word.root
-              : candidate.root.isNotEmpty || candidate.surface != word.surface,
-        )
-        .toList(),
+    words: words.where((candidate) => candidate.key != word.key).toList(),
   );
 
   StudyWorkspace putPassage(StudyPassage passage) {

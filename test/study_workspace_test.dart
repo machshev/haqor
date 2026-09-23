@@ -3,6 +3,72 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:haqor/src/study_workspace.dart';
 
 void main() {
+  test('root and specific forms survive edits, moves, storage and removal', () {
+    const root = StudyWord(root: 'ברא', surface: 'בָּרָא');
+    const form = StudyWord(
+      root: 'ברא',
+      surface: 'בָּרָא',
+      kind: StudyWordKind.form,
+    );
+    const other = StudyWord(
+      root: 'ברא',
+      surface: 'וַיִּבְרָא',
+      kind: StudyWordKind.form,
+    );
+    var workspace = const StudyWorkspace(id: 's', name: 'Study')
+        .putGroup(const StudyGroup(id: 'g', name: 'Forms'))
+        .putWord(root)
+        .putWord(form)
+        .putWord(other);
+    expect(workspace.words, hasLength(3));
+    expect(
+      workspace.itemsIn(null).map((item) => item.key).toSet(),
+      hasLength(4),
+    );
+    workspace = workspace.putWord(
+      form.copyWith(
+        surface: 'בָּרָ֣א',
+        note: 'Perfect',
+        colorValue: 0xff90caf9,
+      ),
+    );
+    expect(workspace.words, hasLength(3));
+    final item = workspace
+        .itemsIn(null)
+        .firstWhere((item) => item.key == form.key);
+    workspace = workspace.moveItem(item, 'g');
+    workspace = decodeStudyWorkspaces(
+      encodeStudyWorkspaces([workspace]),
+    ).single;
+    final saved = workspace.wordForBookmark(form)!;
+    expect(saved.kind, StudyWordKind.form);
+    expect(saved.note, 'Perfect');
+    expect(saved.colorValue, 0xff90caf9);
+    expect(saved.groupId, 'g');
+    expect(workspace.wordForRoot('ברא')?.kind, StudyWordKind.root);
+    workspace = workspace.removeWord(root);
+    expect(workspace.wordForRoot('ברא'), isNull);
+    expect(workspace.words, hasLength(2));
+    workspace = workspace.removeWord(form);
+    expect(workspace.words.single.key, other.key);
+  });
+
+  test(
+    'old bookmarks remain roots and form keys retain pointing and roots',
+    () {
+      final old = StudyWord.fromJson({'root': 'ברא', 'surface': 'בָּרָא'})!;
+      expect(old.kind, StudyWordKind.root);
+      expect(old.copyWith(note: 'Existing').kind, StudyWordKind.root);
+      expect(studyFormKey('שָׁלַ֖ח־'), studyFormKey('שָׁלַח'));
+      expect(studyFormKey('שָׁלַח'), isNot(studyFormKey('שִׁלַּח')));
+      expect(
+        StudyWord.formKey('אלה', 'אֵל'),
+        isNot(StudyWord.formKey('אל', 'אֵל')),
+      );
+      expect(studyFormKey('ܟܬܒܐ'), isNot(studyFormKey('ܡܫܝܚܐ')));
+    },
+  );
+
   test('study outline round-trips nested groups and per-item settings', () {
     final workspace = StudyWorkspace(
       id: 'promise-study',

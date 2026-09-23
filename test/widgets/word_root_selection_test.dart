@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/widgets/word_info_sheet.dart';
+import 'package:haqor/src/study_workspace.dart';
 
 /// A name is often built from two roots, not one.
 ///
@@ -131,7 +132,9 @@ HebrewOccurrence _occurrence({
 
 Future<_FakeRust> _pumpSheet(
   WidgetTester tester, {
-  Future<bool> Function(String root, String surface)? onToggleStudyBookmark,
+  Future<bool> Function(StudyWord word)? onToggleStudyBookmark,
+  String root = 'אלה',
+  String? initialRoot,
 }) async {
   SharedPreferences.setMockInitialValues({
     'occurrence_verse_english_only': false,
@@ -144,6 +147,7 @@ Future<_FakeRust> _pumpSheet(
           height: 700,
           child: WordInfoSheet(
             word: 'אֱלִיעֶזֶר',
+            initialRoot: initialRoot,
             syriac: false,
             useEnglishBookNames: true,
             sendInfoRequest: rust.onInfoRequest,
@@ -156,7 +160,7 @@ Future<_FakeRust> _pumpSheet(
     ),
   );
   await tester.pump();
-  rust.deliverEliezer(selected: 'אלה');
+  rust.deliverEliezer(selected: root);
   await tester.pump();
   rust.deliverOccurrences([_occurrence(chapter: 15, verse: 2)]);
   await tester.pumpAndSettle();
@@ -167,21 +171,101 @@ void main() {
   testWidgets('a resolved root can be bookmarked from the sheet', (
     tester,
   ) async {
-    (String, String)? bookmarked;
+    StudyWord? bookmarked;
     await _pumpSheet(
       tester,
-      onToggleStudyBookmark: (root, surface) async {
-        bookmarked = (root, surface);
+      onToggleStudyBookmark: (word) async {
+        bookmarked = word;
         return true;
       },
     );
 
-    await tester.tap(find.byTooltip('Bookmark this root'));
+    await tester.tap(find.byTooltip('Study bookmarks'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.ancestor(
+        of: find.text('Bookmark this root'),
+        matching: find.byType(CheckedPopupMenuItem<StudyWordKind>),
+      ),
+    );
     await tester.pump();
-    expect(bookmarked, ('אלה', 'אֱלִיעֶזֶר'));
-    expect(find.byTooltip('Remove root bookmark'), findsOneWidget);
+    expect(bookmarked?.root, 'אלה');
+    expect(bookmarked?.surface, 'אֱלִיעֶזֶר');
+    expect(bookmarked?.kind, StudyWordKind.root);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Study bookmarks'));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove root bookmark'), findsOneWidget);
+    expect(find.text('Bookmark this form'), findsOneWidget);
     expect(find.byTooltip('Edit study note'), findsNothing);
     expect(find.byTooltip('Close word study'), findsNothing);
+  });
+
+  testWidgets('root and form bookmarks can be toggled independently', (
+    tester,
+  ) async {
+    final saved = <StudyWordKind>{};
+    await _pumpSheet(
+      tester,
+      onToggleStudyBookmark: (word) async {
+        if (!saved.add(word.kind)) saved.remove(word.kind);
+        return saved.contains(word.kind);
+      },
+    );
+    Future<void> choose(String label) async {
+      await tester.tap(find.byTooltip('Study bookmarks'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.ancestor(
+          of: find.text(label),
+          matching: find.byType(CheckedPopupMenuItem<StudyWordKind>),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await choose('Bookmark this root');
+    await choose('Bookmark this form');
+    expect(saved, {StudyWordKind.root, StudyWordKind.form});
+    await choose('Remove root bookmark');
+    expect(saved, {StudyWordKind.form});
+    await tester.tap(find.byTooltip('Study bookmarks'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bookmark this root'), findsOneWidget);
+    expect(find.text('Remove form bookmark'), findsOneWidget);
+  });
+
+  testWidgets('an unresolved root still allows a form bookmark', (
+    tester,
+  ) async {
+    StudyWord? saved;
+    await _pumpSheet(
+      tester,
+      root: '',
+      onToggleStudyBookmark: (word) async {
+        saved = word;
+        return true;
+      },
+    );
+    await tester.tap(find.byTooltip('Study bookmarks'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bookmark this root'), findsNothing);
+    await tester.tap(
+      find.ancestor(
+        of: find.text('Bookmark this form'),
+        matching: find.byType(CheckedPopupMenuItem<StudyWordKind>),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(saved?.kind, StudyWordKind.form);
+    expect(saved?.root, isEmpty);
+    expect(saved?.surface, 'אֱלִיעֶזֶר');
+  });
+
+  testWidgets('reopening a bookmark requests its saved root', (tester) async {
+    final rust = await _pumpSheet(tester, root: 'עזר', initialRoot: 'עזר');
+    expect(rust.infoRequests.single.root, 'עזר');
+    expect(rust.occurrenceRequests.single.root, 'עזר');
   });
 
   testWidgets('both of a name’s roots are offered, the resolved one selected', (

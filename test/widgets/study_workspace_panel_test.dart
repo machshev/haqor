@@ -137,7 +137,7 @@ void main() {
 
     expect(find.text('Study notes'), findsNothing);
     expect(find.text('ברא · בָּרָא'), findsOneWidget);
-    expect(find.text('Create'), findsOneWidget);
+    expect(find.text('Root bookmark · Create'), findsOneWidget);
     expect(find.text('Trace creation language.'), findsOneWidget);
     expect(find.text('Genesis 1:1'), findsOneWidget);
     expect(find.text('Creation begins'), findsOneWidget);

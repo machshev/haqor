@@ -10,6 +10,8 @@ import '../app_settings.dart';
 import '../bindings/bindings.dart';
 import '../bible_data.dart';
 import '../issue_reporting.dart';
+import '../surface.dart';
+import '../study_workspace.dart';
 import '../tutor/progress_sync.dart';
 import 'verse_row.dart' show verseGlossPositions;
 import 'verse_text_cache.dart';
@@ -73,6 +75,7 @@ class WordInfoSheet extends StatefulWidget {
     required this.word,
     required this.syriac,
     this.bdbId,
+    this.initialRoot,
     this.readerGloss,
     this.book,
     this.chapter,
@@ -91,6 +94,7 @@ class WordInfoSheet extends StatefulWidget {
 
   final String word;
   final bool syriac;
+  final String? initialRoot;
 
   /// How the sheet's three requests reach Rust. Injectable so a widget test can
   /// drive the sheet without the native library loaded, as the reader does.
@@ -120,9 +124,8 @@ class WordInfoSheet extends StatefulWidget {
   final bool useEnglishBookNames;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
-  final bool Function(String root)? isStudyBookmarked;
-  final Future<bool> Function(String root, String surface)?
-  onToggleStudyBookmark;
+  final bool Function(StudyWord word)? isStudyBookmarked;
+  final Future<bool> Function(StudyWord word)? onToggleStudyBookmark;
   final Map<String, Object?>? reportContext;
 
   @override
@@ -178,12 +181,14 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   StreamSubscription<RustSignalPack<WordOccurrences>>? _occSub;
   WordOccurrences? _occ;
   bool _occRequested = false;
-  bool _studyBookmarked = false;
+  final Set<StudyWordKind> _studyBookmarks = {};
+  bool _bookmarkPending = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _selectedRoot = widget.initialRoot;
     _requestInfo();
     _loadAdminMode();
     _loadOccurrenceVerseMode();
@@ -195,8 +200,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       if (mounted) {
         setState(() {
           _info = pack.message;
-          _studyBookmarked =
-              widget.isStudyBookmarked?.call(pack.message.root) ?? false;
+          _readStudyBookmarks(pack.message);
         });
         _sub?.cancel();
         // Preload the occurrence scans in the background as soon as the lexicon
@@ -225,12 +229,67 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     }
   }
 
-  Future<void> _toggleStudyBookmark(WordInfo info) async {
-    final callback = widget.onToggleStudyBookmark;
-    if (callback == null || info.root.isEmpty) return;
-    final bookmarked = await callback(info.root, info.word);
-    if (mounted) setState(() => _studyBookmarked = bookmarked);
+  StudyWord _studyWord(WordInfo info, StudyWordKind kind) =>
+      StudyWord(root: info.root, surface: widget.word, kind: kind);
+
+  void _readStudyBookmarks(WordInfo info) {
+    _studyBookmarks.clear();
+    for (final kind in StudyWordKind.values) {
+      if (widget.isStudyBookmarked?.call(_studyWord(info, kind)) ?? false) {
+        _studyBookmarks.add(kind);
+      }
+    }
   }
+
+  @override
+  void didUpdateWidget(covariant WordInfoSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_info != null) _readStudyBookmarks(_info!);
+  }
+
+  Future<void> _toggleStudyBookmark(WordInfo info, StudyWordKind kind) async {
+    final callback = widget.onToggleStudyBookmark;
+    if (callback == null || _bookmarkPending) return;
+    setState(() => _bookmarkPending = true);
+    try {
+      final bookmarked = await callback(_studyWord(info, kind));
+      if (mounted && identical(info, _info)) {
+        setState(() {
+          if (bookmarked) {
+            _studyBookmarks.add(kind);
+          } else {
+            _studyBookmarks.remove(kind);
+          }
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _bookmarkPending = false);
+    }
+  }
+
+  Widget _studyBookmarkMenu(WordInfo info) => PopupMenuButton<StudyWordKind>(
+    tooltip: 'Study bookmarks',
+    enabled: !_bookmarkPending,
+    icon: Icon(
+      _studyBookmarks.isEmpty ? Icons.bookmark_add_outlined : Icons.bookmark,
+    ),
+    iconSize: 20,
+    padding: EdgeInsets.zero,
+    onSelected: (kind) => _toggleStudyBookmark(info, kind),
+    itemBuilder: (_) => [
+      for (final kind in StudyWordKind.values)
+        if (kind == StudyWordKind.form || info.root.isNotEmpty)
+          CheckedPopupMenuItem(
+            value: kind,
+            checked: _studyBookmarks.contains(kind),
+            child: Text(
+              _studyBookmarks.contains(kind)
+                  ? 'Remove ${kind.name} bookmark'
+                  : 'Bookmark this ${kind.name}',
+            ),
+          ),
+    ],
+  );
 
   // Fetch the occurrence lists (full-text root scans). Idempotent via
   // [_occRequested] so the preload can't double-fire.
@@ -518,6 +577,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   ),
                   textDirection: TextDirection.rtl,
                 ),
+                if (widget.onToggleStudyBookmark != null)
+                  _studyBookmarkMenu(info),
                 const SizedBox(height: 8),
                 Text(
                   'Not found in lexicon',
@@ -575,23 +636,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  if (widget.onToggleStudyBookmark != null &&
-                      info.root.isNotEmpty) ...[
-                    IconButton(
-                      onPressed: () => _toggleStudyBookmark(info),
-                      icon: Icon(
-                        _studyBookmarked
-                            ? Icons.bookmark
-                            : Icons.bookmark_add_outlined,
-                      ),
-                      tooltip: _studyBookmarked
-                          ? 'Remove root bookmark'
-                          : 'Bookmark this root',
-                      iconSize: 20,
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
+                  if (widget.onToggleStudyBookmark != null) ...[
+                    _studyBookmarkMenu(info),
                     const SizedBox(width: 8),
                   ],
                   if (_adminMode) ...[
@@ -1855,7 +1901,7 @@ class _OccurrenceRow extends StatelessWidget {
       color: theme.colorScheme.primary,
     );
     final strippedTargets = highlightWords.map(_stripTrope).toSet();
-    final keyTargets = highlightWords.map(_surfaceKey).toSet();
+    final keyTargets = highlightWords.map(hebrewSurfaceKey).toSet();
     // Hebrew mode matches the displayed words themselves. English-only shows
     // glosses, which never match a Hebrew surface, so match on the word each
     // gloss was made from and highlight the English standing in for it.
@@ -1881,7 +1927,7 @@ class _OccurrenceRow extends StatelessWidget {
       final word = useGlosses ? data.sourceWords[i] : tokens[i];
       if (word.isEmpty) return false;
       return strippedTargets.contains(_stripTrope(word)) ||
-          keyTargets.contains(_surfaceKey(word));
+          keyTargets.contains(hebrewSurfaceKey(word));
     }
 
     final spans = <InlineSpan>[];
@@ -2913,79 +2959,6 @@ String _stripTrope(String word) {
           cp == 0x05C6);
     }),
   );
-}
-
-int _hebCombiningClass(int cp) {
-  switch (cp) {
-    case 0x05B0:
-      return 10;
-    case 0x05B1:
-      return 11;
-    case 0x05B2:
-      return 12;
-    case 0x05B3:
-      return 13;
-    case 0x05B4:
-      return 14;
-    case 0x05B5:
-      return 15;
-    case 0x05B6:
-      return 16;
-    case 0x05B7:
-      return 17;
-    case 0x05B8:
-    case 0x05C7:
-      return 18;
-    case 0x05B9:
-      return 19;
-    case 0x05BB:
-      return 20;
-    case 0x05BC:
-      return 21;
-    case 0x05C1:
-      return 24;
-    case 0x05C2:
-      return 25;
-    default:
-      return 0;
-  }
-}
-
-/// Canonical surface key mirroring the Rust `normalize_surface`: keep only
-/// consonants and pointing (dropping cantillation/maqaf/etc.), then stable-sort
-/// each run of combining marks by combining class. Used to match the looked-up
-/// word and verse tokens against the DB's normalised surface forms regardless
-/// of trope or combining-mark order.
-String _surfaceKey(String word) {
-  final kept = word.runes.where((cp) {
-    return (cp >= 0x05D0 && cp <= 0x05EA) ||
-        (cp >= 0x05B0 && cp <= 0x05B9) ||
-        cp == 0x05BB ||
-        cp == 0x05BC ||
-        cp == 0x05C1 ||
-        cp == 0x05C2 ||
-        cp == 0x05C7;
-  }).toList();
-
-  final out = <int>[];
-  var i = 0;
-  while (i < kept.length) {
-    if (_hebCombiningClass(kept[i]) == 0) {
-      out.add(kept[i]);
-      i++;
-    } else {
-      final start = i;
-      while (i < kept.length && _hebCombiningClass(kept[i]) != 0) {
-        i++;
-      }
-      final run = kept.sublist(
-        start,
-        i,
-      )..sort((a, b) => _hebCombiningClass(a).compareTo(_hebCombiningClass(b)));
-      out.addAll(run);
-    }
-  }
-  return String.fromCharCodes(out);
 }
 
 class _LexiconEntryOverrideEditor extends StatefulWidget {

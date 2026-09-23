@@ -529,7 +529,7 @@ class StudyWorkspacePanel extends StatelessWidget {
     StudyWord word, {
     required int depth,
   }) => ListTile(
-    key: ValueKey('word-${word.root}-${word.surface}'),
+    key: ValueKey(word.key),
     dense: true,
     minTileHeight: 32,
     minVerticalPadding: 0,
@@ -541,7 +541,9 @@ class StudyWorkspacePanel extends StatelessWidget {
     title: InkWell(
       onTap: () => onOpenWord(word),
       child: Text(
-        word.root.isEmpty ? word.surface : '${word.root} · ${word.surface}',
+        word.kind == StudyWordKind.form || word.root.isEmpty
+            ? word.surface
+            : '${word.root} · ${word.surface}',
         textDirection: TextDirection.rtl,
         style: TextStyle(
           color: Theme.of(context).colorScheme.primary,
@@ -551,11 +553,14 @@ class StudyWorkspacePanel extends StatelessWidget {
         ),
       ),
     ),
-    subtitle: word.note.isEmpty
-        ? (word.root.isEmpty
-              ? const Text('Open this word again to resolve its root.')
-              : null)
-        : Text(word.note),
+    subtitle: Text(
+      [
+        word.kind == StudyWordKind.form ? 'Form bookmark' : 'Root bookmark',
+        if (word.kind == StudyWordKind.root && word.root.isEmpty)
+          'Open this word again to resolve its root.',
+        if (word.note.isNotEmpty) word.note,
+      ].join(' · '),
+    ),
     trailing: PopupMenuButton<_ItemAction>(
       tooltip: 'Word options',
       iconSize: 18,
@@ -1024,7 +1029,7 @@ class _EmptyWorkspace extends StatelessWidget {
                 const SizedBox(height: 12),
                 const Text(
                   'Build a study or talk from nested groups, passage '
-                  'bookmarks, root words, and notes.',
+                  'passages, roots, specific forms, and notes.',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),

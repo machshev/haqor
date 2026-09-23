@@ -1581,8 +1581,8 @@ class _ReaderSessionState extends State<_ReaderSession>
     if (enabled) _refreshLoadedChaptersForStudyRoots();
   }
 
-  Future<bool> _toggleStudyWordBookmark(String root, String surface) async {
-    if (root.isEmpty) {
+  Future<bool> _toggleStudyWordBookmark(StudyWord bookmark) async {
+    if (bookmark.kind == StudyWordKind.root && bookmark.root.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('This word has no resolved root.')),
@@ -1592,11 +1592,9 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
     final workspace = await _ensureStudyWorkspace();
     if (workspace == null || !mounted) return false;
-    final existing = workspace.wordForRoot(root);
+    final existing = workspace.wordForBookmark(bookmark);
     if (existing == null) {
-      _replaceStudyWorkspace(
-        workspace.putWord(StudyWord(root: root, surface: surface)),
-      );
+      _replaceStudyWorkspace(workspace.putWord(bookmark));
       _refreshLoadedChaptersForStudyRoots();
       return true;
     }
@@ -1608,7 +1606,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
     final note = await _askForText(
-      title: word.root.isEmpty ? word.surface : word.root,
+      title: word.title,
       initialValue: word.note,
       label: 'Word note',
       maxLines: 5,
@@ -1683,9 +1681,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   void _moveStudyItem(StudyItem item, String? groupId, int? index) {
     final workspace = _activeStudyWorkspace;
     if (workspace != null) {
-      _replaceStudyWorkspace(
-        workspace.moveItem(item, groupId, index: index),
-      );
+      _replaceStudyWorkspace(workspace.moveItem(item, groupId, index: index));
     }
   }
 
@@ -2505,6 +2501,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       backgroundColor: Colors.transparent,
       builder: (ctx) => WordInfoSheet(
         word: word,
+        initialRoot: root.isEmpty ? null : root,
         syriac: bookIndex >= 39,
         book: bookIndex + 1,
         chapter: chapter,
@@ -2518,8 +2515,8 @@ class _ReaderSessionState extends State<_ReaderSession>
           'chapter': chapter,
           'verse': verse,
         },
-        isStudyBookmarked: (resolvedRoot) =>
-            _activeStudyWorkspace?.wordForRoot(resolvedRoot) != null,
+        isStudyBookmarked: (bookmark) =>
+            _activeStudyWorkspace?.wordForBookmark(bookmark) != null,
         onToggleStudyBookmark: _toggleStudyWordBookmark,
         onNavigateToPassage: (bi, chapter, verse) {
           Navigator.pop(ctx);
@@ -2640,10 +2637,11 @@ class _ReaderSessionState extends State<_ReaderSession>
             : WordInfoSheet(
                 key: ValueKey(
                   '${selected.bookIndex}:${selected.chapter}:'
-                  '${selected.verse}:${selected.position}:${selected.word}',
+                  '${selected.verse}:${selected.position}:${selected.word}:${selected.root}',
                 ),
                 docked: true,
                 word: selected.word,
+                initialRoot: selected.root.isEmpty ? null : selected.root,
                 syriac: selected.bookIndex >= 39,
                 book: selected.bookIndex + 1,
                 chapter: selected.chapter,
@@ -2657,8 +2655,8 @@ class _ReaderSessionState extends State<_ReaderSession>
                   'chapter': selected.chapter,
                   'verse': selected.verse,
                 },
-                isStudyBookmarked: (root) =>
-                    _activeStudyWorkspace?.wordForRoot(root) != null,
+                isStudyBookmarked: (bookmark) =>
+                    _activeStudyWorkspace?.wordForBookmark(bookmark) != null,
                 onToggleStudyBookmark: _toggleStudyWordBookmark,
                 onNavigateToPassage: (book, chapter, verse) {
                   setState(() => _selectedWord = null);
@@ -2999,6 +2997,7 @@ class _ReaderSessionState extends State<_ReaderSession>
               for (final word in workspace?.words ?? const <StudyWord>[])
                 if ((workspace?.highlightsEnabled ?? false) &&
                     word.highlightEnabled &&
+                    word.kind == StudyWordKind.root &&
                     word.root.isNotEmpty)
                   word.root: Color(word.colorValue),
             };
@@ -3038,6 +3037,15 @@ class _ReaderSessionState extends State<_ReaderSession>
                   (studyPassage?.highlightEnabled ?? false),
               studyNote: studyPassage?.note.isNotEmpty ?? false,
               studyWordHighlightColors: studyWordHighlightColors,
+              studyFormHighlightColors: {
+                for (final word in workspace?.words ?? const <StudyWord>[])
+                  if ((workspace?.highlightsEnabled ?? false) &&
+                      word.highlightEnabled &&
+                      word.kind == StudyWordKind.form)
+                    StudyWord.formKey(word.root, word.surface): Color(
+                      word.colorValue,
+                    ),
+              },
               studyPassageHighlightColor: studyPassage == null
                   ? null
                   : Color(studyPassage.colorValue),

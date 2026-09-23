@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../app_settings.dart';
+import '../study_workspace.dart';
 import '../bindings/bindings.dart';
 import '../tutor/transliterate.dart';
 
@@ -153,6 +154,7 @@ class VerseRow extends StatefulWidget {
     this.studyHighlighted = false,
     this.studyNote = false,
     this.studyWordHighlightColors = const {},
+    this.studyFormHighlightColors = const {},
     this.studyPassageHighlightColor,
     this.ketivDisplay = KetivDisplay.superscript,
   });
@@ -177,6 +179,7 @@ class VerseRow extends StatefulWidget {
   final bool studyHighlighted;
   final bool studyNote;
   final Map<String, Color> studyWordHighlightColors;
+  final Map<String, Color> studyFormHighlightColors;
   final Color? studyPassageHighlightColor;
   final KetivDisplay ketivDisplay;
 
@@ -373,9 +376,11 @@ class _VerseRowState extends State<VerseRow> {
       final root = lexicalPosition < widget.entry.roots.length
           ? widget.entry.roots[lexicalPosition]
           : '';
-      final highlightColor = root.isEmpty
-          ? null
-          : widget.studyWordHighlightColors[root];
+      // A form's more specific color takes precedence over its root's color.
+      final highlightColor =
+          widget.studyFormHighlightColors[StudyWord.formKey(root, word)] ??
+          widget.studyFormHighlightColors[StudyWord.formKey('', word)] ??
+          widget.studyWordHighlightColors[root];
       final highlighted = highlightColor != null;
       final baseStyle = highlighted
           ? wordStyle.copyWith(
