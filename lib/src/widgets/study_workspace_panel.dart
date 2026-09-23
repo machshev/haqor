@@ -545,6 +545,8 @@ class StudyWorkspacePanel extends StatelessWidget {
         textDirection: TextDirection.rtl,
         style: TextStyle(
           color: Theme.of(context).colorScheme.primary,
+          fontFamily: 'Cardo',
+          fontFamilyFallback: const ['Noto Serif Hebrew'],
           decoration: TextDecoration.underline,
         ),
       ),
