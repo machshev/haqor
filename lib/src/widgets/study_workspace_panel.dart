@@ -558,7 +558,7 @@ class StudyWorkspacePanel extends StatelessWidget {
             : 'Form bookmark',
         child: Icon(
           word.kind == StudyWordKind.root
-              ? Icons.account_tree_outlined
+              ? Icons.nature_outlined
               : Icons.text_fields,
           size: 18,
         ),
