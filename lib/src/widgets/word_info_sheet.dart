@@ -105,9 +105,9 @@ class WordInfoSheet extends StatefulWidget {
   /// Renders as a bounded side-panel body instead of a draggable bottom sheet.
   final bool docked;
 
-  /// When set, the sheet shows the BDB entry with this id (a Lexicon
-  /// cross-reference target) rather than parsing [word] as a surface form;
-  /// [word] is then just the target headword for the title.
+  /// When set, opens this specific BDB entry (a lexical form or cross-reference
+  /// target). [word] is then the target headword for the title, not a surface
+  /// form to parse.
   final String? bdbId;
 
   /// The exact gloss currently rendered underneath this token in the reader.
@@ -200,6 +200,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       if (mounted) {
         setState(() {
           _info = pack.message;
+          if (widget.bdbId != null) {
+            final index = pack.message.bdbEntries.indexWhere(
+              (entry) => entry.id == widget.bdbId,
+            );
+            if (index >= 0) _expandedBdb.add(index);
+          }
           _readStudyBookmarks(pack.message);
         });
         _sub?.cancel();
@@ -305,7 +311,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     final request = GetWordOccurrences(
       word: widget.word,
       syriac: widget.syriac,
-      root: _selectedRoot,
+      root: _selectedRoot ?? (widget.bdbId == null ? null : _info?.root),
     );
     final send = widget.sendOccurrencesRequest;
     if (send == null) {
@@ -456,7 +462,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     );
   }
 
-  // Follow a Lexicon cross-reference: open the target BDB entry in a stacked
+  // Open a lexical form or cross-reference target in a stacked
   // sheet. Drilling in keeps the trail (back returns here); navigating to a
   // passage from the target closes both sheets first.
   void _onXrefTap(String bdbId, String headword) {
@@ -469,6 +475,11 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         word: headword,
         syriac: false,
         bdbId: bdbId,
+        sendInfoRequest: widget.sendInfoRequest,
+        sendOccurrencesRequest: widget.sendOccurrencesRequest,
+        sendVerseTextsRequest: widget.sendVerseTextsRequest,
+        isStudyBookmarked: widget.isStudyBookmarked,
+        onToggleStudyBookmark: widget.onToggleStudyBookmark,
         useEnglishBookNames: widget.useEnglishBookNames,
         reportContext: {
           ...?widget.reportContext,
@@ -800,16 +811,23 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   ] else
                     const Spacer(),
                   const SizedBox(width: 8),
-                  Text(
-                    _normalizeHebrewCombining(e.headword),
-                    style: TextStyle(
-                      fontFamily: 'Noto Serif Hebrew',
-                      fontFamilyFallback: const ['Cardo'],
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.onSurface,
+                  TextButton(
+                    onPressed: e.id.isEmpty || e.id == widget.bdbId
+                        ? null
+                        : () => _onXrefTap(e.id, e.headword),
+                    child: Text(
+                      _normalizeHebrewCombining(e.headword),
+                      style: TextStyle(
+                        fontFamily: 'Noto Serif Hebrew',
+                        fontFamilyFallback: const ['Cardo'],
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: e.id.isEmpty || e.id == widget.bdbId
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.primary,
+                      ),
+                      textDirection: TextDirection.rtl,
                     ),
-                    textDirection: TextDirection.rtl,
                   ),
                 ],
               ),

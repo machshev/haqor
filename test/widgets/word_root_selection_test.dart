@@ -43,9 +43,10 @@ class _FakeRust {
         vavCon: false,
         bdbEntries: [
           BdbSummary(
+            id: selected == 'אלה' ? 'god-entry' : 'help-entry',
             headword: selected == 'אלה' ? 'אֵל' : 'עֵזֶר',
             gloss: selected == 'אלה' ? 'god' : 'help; succour',
-            contentJson: '',
+            contentJson: '{"senses":[{"definition":[{"t":"A divine being"}]}]}',
             posCategory: 'noun',
           ),
         ],
@@ -168,6 +169,41 @@ Future<_FakeRust> _pumpSheet(
 }
 
 void main() {
+  testWidgets('a lexical form opens its exact entry and returns to the root', (
+    tester,
+  ) async {
+    final rust = await _pumpSheet(tester);
+    final original = tester.widget<WordInfoSheet>(find.byType(WordInfoSheet));
+    await tester.tap(find.widgetWithText(TextButton, 'אֵל'));
+    await tester.pump();
+
+    expect(rust.infoRequests.last.bdbId, 'god-entry');
+    expect(rust.infoRequests.last.word, 'אֵל');
+    rust.deliverEliezer(selected: 'אלה');
+    await tester.pump();
+    expect(rust.occurrenceRequests.last.root, 'אלה');
+    rust.deliverOccurrences([]);
+    await tester.pumpAndSettle();
+    expect(find.text('A divine being'), findsOneWidget);
+
+    Navigator.of(tester.element(find.text('A divine being'))).pop();
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<WordInfoSheet>(find.byType(WordInfoSheet)),
+      same(original),
+    );
+    expect(find.text('A divine being'), findsNothing);
+    expect(rust.infoRequests, hasLength(2));
+  });
+
+  testWidgets('the lexicon row still expands inline', (tester) async {
+    final rust = await _pumpSheet(tester);
+    await tester.tap(find.text('god').last);
+    await tester.pumpAndSettle();
+    expect(find.text('A divine being'), findsOneWidget);
+    expect(rust.infoRequests, hasLength(1));
+  });
+
   testWidgets('a resolved root can be bookmarked from the sheet', (
     tester,
   ) async {

@@ -259,7 +259,7 @@ pub struct GetWordInfo {
     pub verse: Option<u8>,
     pub position: Option<u32>,
     /// When set, look the entry up by BDB entry id instead of by `word` —
-    /// used to follow a Lexicon cross-reference to its target's root tree.
+    /// used to open a lexical form or follow a Lexicon cross-reference.
     /// `word` then carries only the target headword, for the sheet title.
     pub bdb_id: Option<String>,
     /// Which of the word's roots to show the lexicon of. `None` takes the one the
@@ -310,6 +310,8 @@ pub struct VocabList {
 
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct BdbSummary {
+    /// Stable entry identity for opening a specific lexical form.
+    pub id: String,
     pub headword: String,
     pub gloss: String,
     pub content_json: String,
