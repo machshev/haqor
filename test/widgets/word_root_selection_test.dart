@@ -26,13 +26,13 @@ class _FakeRust {
 
   /// Eliezer as the OT branch answers it: the parse resolves אלה, and both of
   /// the name's roots come back so the sheet knows there is a choice.
-  void deliverEliezer({required String selected}) {
+  void deliverEliezer({required String selected, String word = 'אֱלִיעֶזֶר'}) {
     assignRustSignal['WordInfo']!(
       WordInfo(
         found: true,
-        word: 'אֱלִיעֶזֶר',
+        word: word,
         root: selected,
-        gloss: 'Eliezer',
+        gloss: word == 'אֱלִיעֶזֶר' ? 'Eliezer' : 'god',
         partOfSpeech: 'noun',
         gender: null,
         number: null,
@@ -43,7 +43,6 @@ class _FakeRust {
         vavCon: false,
         bdbEntries: [
           BdbSummary(
-            id: selected == 'אלה' ? 'god-entry' : 'help-entry',
             headword: selected == 'אלה' ? 'אֵל' : 'עֵזֶר',
             gloss: selected == 'אלה' ? 'god' : 'help; succour',
             contentJson: '{"senses":[{"definition":[{"t":"A divine being"}]}]}',
@@ -169,24 +168,37 @@ Future<_FakeRust> _pumpSheet(
 }
 
 void main() {
-  testWidgets('a lexical form opens its exact entry and returns to the root', (
+  testWidgets('a lexical form opens normal word info and returns to the root', (
     tester,
   ) async {
-    final rust = await _pumpSheet(tester);
+    final rust = await _pumpSheet(tester, initialRoot: 'אלה');
     final original = tester.widget<WordInfoSheet>(find.byType(WordInfoSheet));
     await tester.tap(find.widgetWithText(TextButton, 'אֵל'));
     await tester.pump();
 
-    expect(rust.infoRequests.last.bdbId, 'god-entry');
+    expect(rust.infoRequests.last.bdbId, isNull);
+    expect(rust.infoRequests.last.root, isNull);
+    expect(rust.infoRequests.last.syriac, isFalse);
+    expect(rust.infoRequests.last.book, isNull);
+    expect(rust.infoRequests.last.chapter, isNull);
+    expect(rust.infoRequests.last.verse, isNull);
+    expect(rust.infoRequests.last.position, isNull);
     expect(rust.infoRequests.last.word, 'אֵל');
-    rust.deliverEliezer(selected: 'אלה');
+    rust.deliverEliezer(selected: 'אלה', word: 'אֵל');
     await tester.pump();
-    expect(rust.occurrenceRequests.last.root, 'אלה');
+    expect(rust.occurrenceRequests.last.word, 'אֵל');
+    expect(rust.occurrenceRequests.last.root, isNull);
     rust.deliverOccurrences([]);
     await tester.pumpAndSettle();
-    expect(find.text('A divine being'), findsOneWidget);
+    final openedSheet = find.byType(WordInfoSheet).last;
+    expect(tester.widget<WordInfoSheet>(openedSheet).word, 'אֵל');
+    expect(
+      find.descendant(of: openedSheet, matching: find.text('Occurrences')),
+      findsOneWidget,
+    );
+    expect(find.text('A divine being'), findsNothing);
 
-    Navigator.of(tester.element(find.text('A divine being'))).pop();
+    Navigator.of(tester.element(openedSheet)).pop();
     await tester.pumpAndSettle();
     expect(
       tester.widget<WordInfoSheet>(find.byType(WordInfoSheet)),

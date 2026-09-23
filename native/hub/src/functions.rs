@@ -687,17 +687,31 @@ pub async fn get_word_info(bible: SharedBible) {
 
         // A Lexicon cross-reference hands back the target's BDB entry id rather
         // than a surface word (root targets like בטח are never surface forms),
-        // so resolve it straight to that specific dictionary entry.
+        // so resolve it straight to the target entry's root tree.
         if let Some(id) = req.bdb_id.as_deref().filter(|s| !s.is_empty()) {
             match bible.hebrew_bdb_by_id(id) {
                 Ok(Some(entry)) => {
-                    let bdb_entries = vec![BdbSummary {
-                        pos_category: entry.pos_category().to_string(),
-                        id: entry.id.clone(),
-                        headword: entry.headword.clone(),
-                        gloss: entry.gloss.clone(),
-                        content_json: entry.content_json.clone(),
-                    }];
+                    let mut bdb_entries: Vec<BdbSummary> = bible
+                        .hebrew_bdb_by_root(&entry.root)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|e| BdbSummary {
+                            pos_category: e.pos_category().to_string(),
+                            headword: e.headword,
+                            gloss: e.gloss,
+                            content_json: e.content_json,
+                        })
+                        .collect();
+                    // A rootless entry (a particle) isn't reachable by root;
+                    // show the target lexeme on its own.
+                    if bdb_entries.is_empty() {
+                        bdb_entries.push(BdbSummary {
+                            pos_category: entry.pos_category().to_string(),
+                            headword: entry.headword.clone(),
+                            gloss: entry.gloss.clone(),
+                            content_json: entry.content_json.clone(),
+                        });
+                    }
                     WordInfo {
                         found: true,
                         word: entry.headword,
@@ -872,7 +886,6 @@ pub async fn get_word_info(bible: SharedBible) {
                     .into_iter()
                     .map(|e| BdbSummary {
                         pos_category: e.pos_category().to_string(),
-                        id: e.id,
                         headword: e.headword,
                         gloss: e.gloss,
                         content_json: e.content_json,

@@ -105,9 +105,9 @@ class WordInfoSheet extends StatefulWidget {
   /// Renders as a bounded side-panel body instead of a draggable bottom sheet.
   final bool docked;
 
-  /// When set, opens this specific BDB entry (a lexical form or cross-reference
-  /// target). [word] is then the target headword for the title, not a surface
-  /// form to parse.
+  /// When set, the sheet shows the BDB entry with this id (a Lexicon
+  /// cross-reference target) rather than parsing [word] as a surface form;
+  /// [word] is then just the target headword for the title.
   final String? bdbId;
 
   /// The exact gloss currently rendered underneath this token in the reader.
@@ -200,12 +200,6 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       if (mounted) {
         setState(() {
           _info = pack.message;
-          if (widget.bdbId != null) {
-            final index = pack.message.bdbEntries.indexWhere(
-              (entry) => entry.id == widget.bdbId,
-            );
-            if (index >= 0) _expandedBdb.add(index);
-          }
           _readStudyBookmarks(pack.message);
         });
         _sub?.cancel();
@@ -311,7 +305,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     final request = GetWordOccurrences(
       word: widget.word,
       syriac: widget.syriac,
-      root: _selectedRoot ?? (widget.bdbId == null ? null : _info?.root),
+      root: _selectedRoot,
     );
     final send = widget.sendOccurrencesRequest;
     if (send == null) {
@@ -462,18 +456,22 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     );
   }
 
-  // Open a lexical form or cross-reference target in a stacked
-  // sheet. Drilling in keeps the trail (back returns here); navigating to a
-  // passage from the target closes both sheets first.
-  void _onXrefTap(String bdbId, String headword) {
+  void _onXrefTap(String bdbId, String headword) =>
+      _openWordInfo(headword, bdbId: bdbId);
+
+  // A lexical form uses the same surface lookup as a word in the reader.
+  // Only dictionary cross-references supply an entry ID. Do not carry the
+  // original token's root, gloss, or location into the new word's analysis.
+  // Stacking sheets preserves the trail when returning to the original word.
+  void _openWordInfo(String word, {String? bdbId}) {
     showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => WordInfoSheet(
-        word: headword,
-        syriac: false,
+        word: word,
+        syriac: bdbId == null ? widget.syriac : false,
         bdbId: bdbId,
         sendInfoRequest: widget.sendInfoRequest,
         sendOccurrencesRequest: widget.sendOccurrencesRequest,
@@ -483,7 +481,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         useEnglishBookNames: widget.useEnglishBookNames,
         reportContext: {
           ...?widget.reportContext,
-          'crossReference': {'bdbId': bdbId, 'headword': headword},
+          if (bdbId != null)
+            'crossReference': {'bdbId': bdbId, 'headword': word}
+          else
+            'lexicalForm': word,
         },
         onNavigateToPassage: widget.onNavigateToPassage == null
             ? null
@@ -812,9 +813,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                     const Spacer(),
                   const SizedBox(width: 8),
                   TextButton(
-                    onPressed: e.id.isEmpty || e.id == widget.bdbId
+                    onPressed: e.headword.isEmpty
                         ? null
-                        : () => _onXrefTap(e.id, e.headword),
+                        : () => _openWordInfo(e.headword),
                     child: Text(
                       _normalizeHebrewCombining(e.headword),
                       style: TextStyle(
@@ -822,9 +823,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                         fontFamilyFallback: const ['Cardo'],
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: e.id.isEmpty || e.id == widget.bdbId
-                            ? theme.colorScheme.onSurface
-                            : theme.colorScheme.primary,
+                        color: theme.colorScheme.primary,
                       ),
                       textDirection: TextDirection.rtl,
                     ),
