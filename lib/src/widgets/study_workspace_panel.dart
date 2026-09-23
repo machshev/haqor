@@ -300,6 +300,7 @@ class StudyWorkspacePanel extends StatelessWidget {
             index,
             child: Row(
               key: ValueKey(item.key),
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(child: tile),
                 handle,
