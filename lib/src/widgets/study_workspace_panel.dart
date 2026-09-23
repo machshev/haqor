@@ -668,6 +668,7 @@ class StudyWorkspacePanel extends StatelessWidget {
       start: 16 + depth * 12.0,
       end: 0,
     ),
+    leading: const Icon(Icons.notes_outlined, size: 18),
     title: Text(note.text),
     trailing: PopupMenuButton<_NoteAction>(
       tooltip: 'Note options',
