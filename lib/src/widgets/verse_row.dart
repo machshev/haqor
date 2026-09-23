@@ -155,6 +155,7 @@ class VerseRow extends StatefulWidget {
     this.studyNote = false,
     this.studyWordHighlightColors = const {},
     this.studyFormHighlightColors = const {},
+    this.studyPhraseHighlightColors = const {},
     this.studyPassageHighlightColor,
     this.ketivDisplay = KetivDisplay.superscript,
   });
@@ -180,6 +181,9 @@ class VerseRow extends StatefulWidget {
   final bool studyNote;
   final Map<String, Color> studyWordHighlightColors;
   final Map<String, Color> studyFormHighlightColors;
+
+  /// Occurrence-specific phrase colors, keyed by zero-based lexical position.
+  final Map<int, Color> studyPhraseHighlightColors;
   final Color? studyPassageHighlightColor;
   final KetivDisplay ketivDisplay;
 
@@ -376,8 +380,9 @@ class _VerseRowState extends State<VerseRow> {
       final root = lexicalPosition < widget.entry.roots.length
           ? widget.entry.roots[lexicalPosition]
           : '';
-      // A form's more specific color takes precedence over its root's color.
+      // An occurrence-specific phrase takes precedence over form/root colors.
       final highlightColor =
+          widget.studyPhraseHighlightColors[lexicalPosition] ??
           widget.studyFormHighlightColors[StudyWord.formKey(root, word)] ??
           widget.studyFormHighlightColors[StudyWord.formKey('', word)] ??
           widget.studyWordHighlightColors[root];

@@ -106,6 +106,90 @@ Future<void> _deliverExpectingNoShift(
 }
 
 void main() {
+  for (final enabled in [true, false]) {
+    testWidgets(
+      'chapter headings and phrase endpoints highlight independently ($enabled)',
+      (tester) async {
+        final workspace = study.StudyWorkspace(
+          id: 'study',
+          name: 'Study',
+          highlightsEnabled: enabled,
+          passages: const [
+            study.StudyPassage(
+              bookIndex: 0,
+              chapter: 1,
+              verse: 1,
+              wholeChapter: true,
+              colorValue: 0xff112233,
+              note: 'Chapter note',
+            ),
+            study.StudyPassage(
+              bookIndex: 0,
+              chapter: 1,
+              verse: 1,
+              endVerse: 3,
+              startWord: 2,
+              endWord: 1,
+              colorValue: 0xff445566,
+            ),
+            study.StudyPassage(
+              bookIndex: 0,
+              chapter: 1,
+              verse: 4,
+              endVerse: 5,
+              colorValue: 0xff778899,
+            ),
+          ],
+        );
+        SharedPreferences.setMockInitialValues({
+          'book': 0,
+          'chapter': 1,
+          study.studyWorkspacesKey: study.encodeStudyWorkspaces([workspace]),
+          study.activeStudyWorkspaceKey: 'study',
+        });
+        final rust = _FakeRust();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: BibleReaderPage(sendChapterRequest: rust.onRequest),
+          ),
+        );
+        await tester.pump();
+        rust.deliverAll();
+        await tester.pumpAndSettle();
+        final heading = tester.widget<Container>(
+          find.byKey(const ValueKey('chapter-heading-0-1')),
+        );
+        expect(
+          (heading.decoration as BoxDecoration).color,
+          enabled ? const Color(0xff112233).withValues(alpha: 0.55) : null,
+        );
+        final first = tester.widget<VerseRow>(_verse(1, 1, 1));
+        final middle = tester.widget<VerseRow>(_verse(1, 1, 2));
+        final last = tester.widget<VerseRow>(_verse(1, 1, 3));
+        final whole = tester.widget<VerseRow>(_verse(1, 1, 4));
+        expect(first.studyHighlighted, false);
+        expect(middle.studyHighlighted, false);
+        expect(last.studyHighlighted, false);
+        expect(first.studyNote, false); // Chapter notes belong on the heading.
+        expect(
+          first.studyPhraseHighlightColors.keys,
+          enabled ? List.generate(9, (i) => i + 2) : isEmpty,
+        );
+        expect(
+          middle.studyPhraseHighlightColors.keys,
+          enabled ? List.generate(11, (i) => i) : isEmpty,
+        );
+        expect(
+          last.studyPhraseHighlightColors.keys,
+          enabled ? [0, 1] : isEmpty,
+        );
+        expect(whole.studyHighlighted, enabled);
+        expect(whole.studyPhraseHighlightColors, isEmpty);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('initial load shows the requested chapter with its divider', (
     tester,
   ) async {
@@ -740,18 +824,20 @@ void main() {
     await tester.tap(find.text('New group'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField), 'Creation');
-    await tester.tap(find.text('Next'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField), 'Opening passage');
     await tester.tap(find.text('Create'));
     await tester.pumpAndSettle();
 
     expect(find.text('Creation'), findsOneWidget);
-    expect(find.text('Opening passage'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Group options'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add current passage'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Passage note'),
+      'Opening passage',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Bookmark'));
     await tester.pumpAndSettle();
 
     final prefs = await SharedPreferences.getInstance();
@@ -764,8 +850,35 @@ void main() {
     final savedPassage =
         (savedWorkspace['passages'] as List<dynamic>).single
             as Map<String, dynamic>;
+    expect(savedPassage['note'], 'Opening passage');
     expect(savedPassage['verse'], 1);
     expect(savedPassage['group'], savedGroup['id']);
+
+    await tester.tap(find.byTooltip('Passage options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit reference and note'));
+    await tester.pumpAndSettle();
+    final endVerse = find.ancestor(
+      of: find.text('End verse'),
+      matching: find.byType(DropdownButtonFormField<int>),
+    );
+    await tester.tap(endVerse);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    final edited = study
+        .decodeStudyWorkspaces(prefs.getString(study.studyWorkspacesKey))
+        .single
+        .passages
+        .single;
+    expect(edited.reference, '1:1–2');
+    expect(edited.groupId, savedGroup['id']);
+    expect(edited.note, 'Opening passage');
+    expect(find.text('Bereshit 1:1–2'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('scrolling persists the first visible verse', (tester) async {

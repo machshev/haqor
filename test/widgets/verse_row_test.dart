@@ -234,6 +234,66 @@ void main() {
     );
   }
 
+  for (final interlinear in [false, true]) {
+    testWidgets(
+      'phrase colors only selected occurrences, ignoring punctuation ($interlinear)',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: VerseRow(
+                entry: const VerseEntry(
+                  verse: 1,
+                  text: 'אב ׀ גד־ הו זח',
+                  glosses: ['a', 'b', 'c', 'd'],
+                  morphologies: [],
+                  roots: [],
+                  names: [],
+                  ketivs: [],
+                ),
+                isSelected: false,
+                hebrewNumerals: false,
+                glossInterlinear: interlinear,
+                studyPhraseHighlightColors: const {
+                  1: Colors.teal,
+                  2: Colors.teal,
+                },
+                onTap: () {},
+                onWordTap: (_, _, _, _) {},
+              ),
+            ),
+          ),
+        );
+        Color? color(String word) {
+          if (interlinear) {
+            return tester.widget<Text>(find.text(word)).style?.backgroundColor;
+          }
+          return tester
+              .widget<SelectableText>(find.byType(SelectableText))
+              .textSpan!
+              .children!
+              .whereType<TextSpan>()
+              .firstWhere((s) => s.text == word)
+              .style
+              ?.backgroundColor;
+        }
+
+        expect(color('אב'), isNull);
+        expect(color(interlinear ? 'גד' : 'גד־'), Colors.teal);
+        expect(color('הו'), Colors.teal);
+        expect(color('זח'), isNull);
+        expect(color('׀'), isNull);
+        final container = tester.widget<AnimatedContainer>(
+          find.byType(AnimatedContainer),
+        );
+        expect(
+          (container.decoration as BoxDecoration).color,
+          Colors.transparent,
+        );
+      },
+    );
+  }
+
   testWidgets('morphology sits below the gloss with visible spacing', (
     tester,
   ) async {

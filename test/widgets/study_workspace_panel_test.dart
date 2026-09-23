@@ -311,7 +311,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Add study item'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Bookmark current passage'));
+    await tester.tap(find.text('Bookmark passage'));
     await tester.pumpAndSettle();
     expect(bookmarkedIn, isNull);
 

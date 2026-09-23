@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'surface.dart';
+import 'bible_data.dart';
 
 const studyWorkspacesKey = 'study_workspaces_v1';
 const activeStudyWorkspaceKey = 'active_study_workspace';
@@ -17,6 +18,11 @@ class StudyPassage {
     required this.bookIndex,
     required this.chapter,
     required this.verse,
+    this.wholeChapter = false,
+    this.endChapter,
+    this.endVerse,
+    this.startWord,
+    this.endWord,
     this.groupId,
     this.note = '',
     this.highlightEnabled = true,
@@ -27,13 +33,96 @@ class StudyPassage {
   final int bookIndex;
   final int chapter;
   final int verse;
+  final bool wholeChapter;
+  final int? endChapter;
+  final int? endVerse;
+
+  /// Inclusive, zero-based lexical positions, excluding standalone punctuation.
+  /// Both endpoints are present for a phrase, and absent for whole verses.
+  final int? startWord;
+  final int? endWord;
+  int get lastChapter => endChapter ?? chapter;
+  int get lastVerse => endVerse ?? verse;
+  bool get isPhrase => startWord != null;
+
+  bool get isValid =>
+      bookIndex >= 0 &&
+      bookIndex < kBooks.length &&
+      chapter >= 1 &&
+      lastChapter <= kBooks[bookIndex].chapters &&
+      lastChapter >= chapter &&
+      verse >= 1 &&
+      lastVerse >= 1 &&
+      (lastChapter > chapter || lastVerse >= verse) &&
+      ((startWord == null && endWord == null) ||
+          (startWord != null &&
+              endWord != null &&
+              startWord! >= 0 &&
+              endWord! >= 0 &&
+              (lastChapter > chapter ||
+                  lastVerse > verse ||
+                  endWord! >= startWord!))) &&
+      (!wholeChapter ||
+          (verse == 1 && endChapter == null && endVerse == null && !isPhrase));
+
+  bool containsVerse(int book, int ch, int v) =>
+      book == bookIndex &&
+      (wholeChapter
+          ? ch == chapter
+          : (ch > chapter || (ch == chapter && v >= verse)) &&
+                (ch < lastChapter || (ch == lastChapter && v <= lastVerse)));
+
+  bool containsWord(int book, int ch, int v, int position) =>
+      containsVerse(book, ch, v) &&
+      (!isPhrase ||
+          ((ch != chapter || v != verse || position >= startWord!) &&
+              (ch != lastChapter || v != lastVerse || position <= endWord!)));
+
+  String get reference {
+    if (wholeChapter) return '$chapter';
+    final start = '$chapter:$verse';
+    final end = lastChapter == chapter
+        ? '$lastVerse'
+        : '$lastChapter:$lastVerse';
+    if (isPhrase) {
+      if (chapter == lastChapter && verse == lastVerse) {
+        return '$start · words ${startWord! + 1}–${endWord! + 1}';
+      }
+      return '$start word ${startWord! + 1}–$end word ${endWord! + 1}';
+    }
+    return chapter == lastChapter && verse == lastVerse ? start : '$start–$end';
+  }
+
+  /// Change only the reference; retain the outline item and its annotations.
+  StudyPassage withReference(StudyPassage ref) => StudyPassage(
+    bookIndex: ref.bookIndex,
+    chapter: ref.chapter,
+    verse: ref.verse,
+    wholeChapter: ref.wholeChapter,
+    endChapter: ref.endChapter,
+    endVerse: ref.endVerse,
+    startWord: ref.startWord,
+    endWord: ref.endWord,
+    groupId: groupId,
+    note: note,
+    highlightEnabled: highlightEnabled,
+    colorValue: colorValue,
+    order: order,
+  );
   final String? groupId;
   final String note;
   final bool highlightEnabled;
   final int colorValue;
   final int order;
 
-  String get locationKey => '$bookIndex:$chapter:$verse';
+  String get locationKey {
+    if (wholeChapter) return '$bookIndex:$chapter';
+    final start = '$bookIndex:$chapter:$verse';
+    final range = lastChapter == chapter && lastVerse == verse
+        ? start
+        : '$start-$lastChapter:$lastVerse';
+    return isPhrase ? '$range@$startWord-$endWord' : range;
+  }
 
   StudyPassage copyWith({
     String? Function()? groupId,
@@ -45,6 +134,11 @@ class StudyPassage {
     bookIndex: bookIndex,
     chapter: chapter,
     verse: verse,
+    wholeChapter: wholeChapter,
+    endChapter: endChapter,
+    endVerse: endVerse,
+    startWord: startWord,
+    endWord: endWord,
     groupId: groupId == null ? this.groupId : groupId(),
     note: note ?? this.note,
     highlightEnabled: highlightEnabled ?? this.highlightEnabled,
@@ -56,6 +150,11 @@ class StudyPassage {
     'book': bookIndex,
     'chapter': chapter,
     'verse': verse,
+    if (wholeChapter) 'wholeChapter': true,
+    if (endChapter != null) 'endChapter': endChapter,
+    if (endVerse != null) 'endVerse': endVerse,
+    if (startWord != null) 'startWord': startWord,
+    if (endWord != null) 'endWord': endWord,
     if (groupId != null) 'group': groupId,
     if (note.isNotEmpty) 'note': note,
     if (!highlightEnabled) 'highlight': false,
@@ -75,7 +174,18 @@ class StudyPassage {
     final verse = value['verse'];
     if (book is! int || chapter is! int || verse is! int) return null;
     if (book < 0 || chapter < 1 || verse < 1) return null;
-    return StudyPassage(
+    for (final key in ['endChapter', 'endVerse', 'startWord', 'endWord']) {
+      if (value[key] != null && value[key] is! int) return null;
+    }
+    if (value['wholeChapter'] != null && value['wholeChapter'] is! bool) {
+      return null;
+    }
+    final passage = StudyPassage(
+      wholeChapter: value['wholeChapter'] == true,
+      endChapter: value['endChapter'] as int?,
+      endVerse: value['endVerse'] as int?,
+      startWord: value['startWord'] as int?,
+      endWord: value['endWord'] as int?,
       bookIndex: book,
       chapter: chapter,
       verse: verse,
@@ -89,6 +199,7 @@ class StudyPassage {
       colorValue: _storedColor(value['color'], legacyColorValue),
       order: value['order'] is int ? value['order'] as int : 0,
     );
+    return passage.isValid ? passage : null;
   }
 }
 
@@ -369,6 +480,32 @@ class StudyWorkspace {
       if (passage.locationKey == key) return passage;
     }
     return null;
+  }
+
+  Iterable<StudyPassage> passagesAt(int book, int chapter, int verse) =>
+      passages.where((p) => p.containsVerse(book, chapter, verse));
+
+  /// Replace in place, rejecting collisions instead of overwriting another item.
+  StudyWorkspace replacePassage(
+    StudyPassage original,
+    StudyPassage replacement,
+  ) {
+    if (!replacement.isValid ||
+        passages.any(
+          (p) =>
+              p.locationKey != original.locationKey &&
+              p.locationKey == replacement.locationKey,
+        )) {
+      return this;
+    }
+    return copyWith(
+      passages: [
+        for (final p in passages)
+          p.locationKey == original.locationKey
+              ? p.withReference(replacement).copyWith(note: replacement.note)
+              : p,
+      ],
+    );
   }
 
   StudyGroup? groupById(String? id) {

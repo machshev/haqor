@@ -19,6 +19,7 @@ import 'tutor/progress_sync.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
 import 'widgets/study_workspace_panel.dart';
+import 'widgets/study_passage_editor.dart';
 import 'widgets/verse_row.dart';
 import 'widgets/word_info_sheet.dart';
 
@@ -1534,37 +1535,96 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
   }
 
-  void _bookmarkCurrentStudyPassage(String? groupId) {
+  Future<List<VerseEntry>> _loadStudyChapter(int book, int chapter) async {
+    for (final section in _sections) {
+      if (section.bookIndex == book && section.chapter == chapter) {
+        return section.verses;
+      }
+    }
+    final request = GetChapter(
+      book: book + 1,
+      chapter: chapter,
+      syriac: _isSyriac(book),
+      includeGlosses: false,
+      includeMorphology: false,
+      includeNames: false,
+      includeRoots: false,
+    );
+    final result = Completer<List<VerseEntry>>();
+    final subscription = ChapterText.rustSignalStream.listen((pack) {
+      final msg = pack.message;
+      if (msg.book == request.book &&
+          msg.chapter == chapter &&
+          msg.syriac == request.syriac &&
+          !result.isCompleted) {
+        result.complete(msg.verses);
+      }
+    });
+    try {
+      final send = widget.sendChapterRequest;
+      if (send != null) {
+        send(request);
+      } else {
+        request.sendSignalToRust();
+      }
+      return await result.future.timeout(const Duration(seconds: 10));
+    } finally {
+      await subscription.cancel();
+    }
+  }
+
+  Future<StudyPassage?> _askForStudyPassage(
+    StudyWorkspace workspace,
+    StudyPassage passage, {
+    required bool creating,
+  }) => showDialog<StudyPassage>(
+    context: context,
+    builder: (_) => StudyPassageEditor(
+      initial: passage,
+      creating: creating,
+      useEnglishBookNames: _englishBookNames,
+      loadChapter: _loadStudyChapter,
+      isDuplicate: (ref) =>
+          (_studyWorkspaces.where((w) => w.id == workspace.id).firstOrNull ??
+                  workspace)
+              .passages
+              .any(
+                (p) =>
+                    p.locationKey == ref.locationKey &&
+                    (creating || p.locationKey != passage.locationKey),
+              ),
+    ),
+  );
+
+  Future<void> _bookmarkCurrentStudyPassage(String? groupId) async {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
-    final current = _currentStudyPassage;
-    final existing = workspace.passageAt(
-      current.bookIndex,
-      current.chapter,
-      current.verse,
+    final passage = await _askForStudyPassage(
+      workspace,
+      _currentStudyPassage.copyWith(groupId: () => groupId),
+      creating: true,
     );
-    _replaceStudyWorkspace(
-      workspace.putPassage(
-        (existing ?? current).copyWith(groupId: () => groupId),
-      ),
-    );
+    if (passage == null || !mounted) return;
+    final current = _studyWorkspaces
+        .where((w) => w.id == workspace.id)
+        .firstOrNull;
+    if (current != null) _replaceStudyWorkspace(current.putPassage(passage));
   }
 
   Future<void> _editStudyPassage(StudyPassage passage) async {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
-    final note = await _askForText(
-      title:
-          '${bookDisplayName(passage.bookIndex, useEnglish: _englishBookNames)} '
-          '${passage.chapter}:${passage.verse}',
-      initialValue: passage.note,
-      label: 'Passage note',
-      maxLines: 5,
+    final edited = await _askForStudyPassage(
+      workspace,
+      passage,
+      creating: false,
     );
-    if (note != null && mounted) {
-      _replaceStudyWorkspace(
-        workspace.putPassage(passage.copyWith(note: note)),
-      );
+    if (edited == null || !mounted) return;
+    final current = _studyWorkspaces
+        .where((w) => w.id == workspace.id)
+        .firstOrNull;
+    if (current != null) {
+      _replaceStudyWorkspace(current.replacePassage(passage, edited));
     }
   }
 
@@ -1774,21 +1834,21 @@ class _ReaderSessionState extends State<_ReaderSession>
               await _deleteStudyGroup(group);
               setSheetState(() {});
             },
-            onBookmarkCurrent: (groupId) {
-              _bookmarkCurrentStudyPassage(groupId);
-              setSheetState(() {});
+            onBookmarkCurrent: (groupId) async {
+              await _bookmarkCurrentStudyPassage(groupId);
+              if (sheetContext.mounted) setSheetState(() {});
             },
             onOpenPassage: (passage) {
               Navigator.pop(sheetContext);
               _navigateTo(
                 passage.bookIndex,
                 passage.chapter,
-                verse: passage.verse,
+                verse: passage.wholeChapter ? null : passage.verse,
               );
             },
             onEditPassage: (passage) async {
               await _editStudyPassage(passage);
-              setSheetState(() {});
+              if (sheetContext.mounted) setSheetState(() {});
             },
             onUpdatePassage: (passage) {
               _updateStudyPassage(passage);
@@ -2578,8 +2638,11 @@ class _ReaderSessionState extends State<_ReaderSession>
     onEditGroup: _editStudyGroup,
     onDeleteGroup: _deleteStudyGroup,
     onBookmarkCurrent: _bookmarkCurrentStudyPassage,
-    onOpenPassage: (passage) =>
-        _navigateTo(passage.bookIndex, passage.chapter, verse: passage.verse),
+    onOpenPassage: (passage) => _navigateTo(
+      passage.bookIndex,
+      passage.chapter,
+      verse: passage.wholeChapter ? null : passage.verse,
+    ),
     onEditPassage: _editStudyPassage,
     onUpdatePassage: _updateStudyPassage,
     onRemovePassage: _removeStudyPassage,
@@ -3039,6 +3102,15 @@ class _ReaderSessionState extends State<_ReaderSession>
   }) {
     final b = section.bookIndex;
     final c = section.chapter;
+    final workspace = _activeStudyWorkspace;
+    final chapterBookmarks =
+        workspace?.passages
+            .where((p) => p.wholeChapter && p.bookIndex == b && p.chapter == c)
+            .toList() ??
+        const <StudyPassage>[];
+    final chapterHighlight = (workspace?.highlightsEnabled ?? false)
+        ? chapterBookmarks.where((p) => p.highlightEnabled).lastOrNull
+        : null;
     return [
       SliverToBoxAdapter(
         key: ValueKey('divider-$b-$c'),
@@ -3046,6 +3118,10 @@ class _ReaderSessionState extends State<_ReaderSession>
           key: section.key,
           bookIndex: b,
           chapter: c,
+          highlightColor: chapterHighlight == null
+              ? null
+              : Color(chapterHighlight.colorValue),
+          studyNote: chapterBookmarks.any((p) => p.note.isNotEmpty),
           useEnglishBookNames: _englishBookNames,
         ),
       ),
@@ -3067,7 +3143,18 @@ class _ReaderSessionState extends State<_ReaderSession>
                 b == _selectedBook &&
                 c == _selectedChapter;
             final workspace = _activeStudyWorkspace;
-            final studyPassage = workspace?.passageAt(b, c, entry.verse);
+            final studyPassages =
+                workspace
+                    ?.passagesAt(b, c, entry.verse)
+                    .where((p) => !p.wholeChapter)
+                    .toList() ??
+                const <StudyPassage>[];
+            final studyPassage = studyPassages
+                .where((p) => !p.isPhrase && p.highlightEnabled)
+                .lastOrNull;
+            final lexicalPositions = verseGlossPositions(
+              entry.text.split(' ').where((w) => w.isNotEmpty).toList(),
+            );
             final studyWordHighlightColors = <String, Color>{
               for (final word in workspace?.words ?? const <StudyWord>[])
                 if ((workspace?.highlightsEnabled ?? false) &&
@@ -3110,7 +3197,15 @@ class _ReaderSessionState extends State<_ReaderSession>
               studyHighlighted:
                   (workspace?.highlightsEnabled ?? false) &&
                   (studyPassage?.highlightEnabled ?? false),
-              studyNote: studyPassage?.note.isNotEmpty ?? false,
+              studyNote: studyPassages.any((p) => p.note.isNotEmpty),
+              studyPhraseHighlightColors: {
+                if (workspace?.highlightsEnabled ?? false)
+                  for (final p in studyPassages)
+                    if (p.isPhrase && p.highlightEnabled)
+                      for (final position in lexicalPositions.whereType<int>())
+                        if (p.containsWord(b, c, entry.verse, position))
+                          position: Color(p.colorValue),
+              },
               studyWordHighlightColors: studyWordHighlightColors,
               studyFormHighlightColors: {
                 for (final word in workspace?.words ?? const <StudyWord>[])
@@ -3407,12 +3502,16 @@ class _ChapterDivider extends StatelessWidget {
   final int bookIndex;
   final int chapter;
   final bool useEnglishBookNames;
+  final Color? highlightColor;
+  final bool studyNote;
 
   const _ChapterDivider({
     super.key,
     required this.bookIndex,
     required this.chapter,
     required this.useEnglishBookNames,
+    this.highlightColor,
+    this.studyNote = false,
   });
 
   @override
@@ -3424,10 +3523,17 @@ class _ChapterDivider extends StatelessWidget {
       child: Row(
         children: [
           const Expanded(child: Divider()),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+          Container(
+            key: ValueKey('chapter-heading-$bookIndex-$chapter'),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: highlightColor?.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: Column(
               children: [
+                if (studyNote)
+                  const Icon(Icons.sticky_note_2_outlined, size: 12),
                 Text(
                   book.hebrew,
                   style: TextStyle(

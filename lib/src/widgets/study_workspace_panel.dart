@@ -65,7 +65,7 @@ class StudyWorkspacePanel extends StatelessWidget {
 
   String _reference(StudyPassage passage) =>
       '${bookDisplayName(passage.bookIndex, useEnglish: useEnglishBookNames)} '
-      '${passage.chapter}:${passage.verse}';
+      '${passage.reference}';
 
   Future<int?> _pickColor(
     BuildContext context, {
@@ -503,7 +503,7 @@ class StudyWorkspacePanel extends StatelessWidget {
           value: _ItemAction.note,
           child: ListTile(
             leading: Icon(Icons.note_alt_outlined),
-            title: Text('Edit note'),
+            title: Text('Edit reference and note'),
           ),
         ),
         PopupMenuItem(
@@ -843,13 +843,6 @@ class StudyWorkspacePanel extends StatelessWidget {
                           workspace,
                           null,
                           child: _OutlineHeader(
-                            currentIsBookmarked:
-                                workspace.passageAt(
-                                  currentPassage.bookIndex,
-                                  currentPassage.chapter,
-                                  currentPassage.verse,
-                                ) !=
-                                null,
                             onBookmarkCurrent: () => onBookmarkCurrent(null),
                             onCreateGroup: () => onCreateGroup(null),
                             onCreateNote: () => onCreateNote(null),
@@ -979,13 +972,11 @@ class _OutlineDragHandleState extends State<_OutlineDragHandle>
 
 class _OutlineHeader extends StatelessWidget {
   const _OutlineHeader({
-    required this.currentIsBookmarked,
     required this.onBookmarkCurrent,
     required this.onCreateGroup,
     required this.onCreateNote,
   });
 
-  final bool currentIsBookmarked;
   final VoidCallback onBookmarkCurrent;
   final VoidCallback onCreateGroup;
   final VoidCallback onCreateNote;
@@ -1019,14 +1010,9 @@ class _OutlineHeader extends StatelessWidget {
           itemBuilder: (_) => [
             PopupMenuItem(
               value: _OutlineAction.bookmarkPassage,
-              enabled: !currentIsBookmarked,
               child: ListTile(
                 leading: const Icon(Icons.bookmark_add_outlined),
-                title: Text(
-                  currentIsBookmarked
-                      ? 'Current passage is bookmarked'
-                      : 'Bookmark current passage',
-                ),
+                title: const Text('Bookmark passage'),
               ),
             ),
             const PopupMenuItem(
