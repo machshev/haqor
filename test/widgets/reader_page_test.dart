@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/reader_page.dart';
+import 'package:haqor/src/study_workspace.dart' as study;
 import 'package:haqor/src/widgets/verse_row.dart';
 
 /// Answers [GetChapter] requests the way the Rust side would, but only when
@@ -349,6 +351,93 @@ void main() {
       expect(find.byKey(const ValueKey('reader:primary')), findsOneWidget);
     },
   );
+
+  testWidgets('tiled study reordering updates visible rows immediately', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1366, 744);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const workspace = study.StudyWorkspace(
+      id: 'study',
+      name: 'Study',
+      groups: [
+        study.StudyGroup(id: 'first', name: 'First group', order: 0),
+        study.StudyGroup(id: 'second', name: 'Second group', order: 1),
+      ],
+    );
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      'reader_tabs': ['primary', 'two'],
+      'reader_active_tab': 'primary',
+      'reader_tabs_tiled': true,
+      'study_workspace_visible': true,
+      study.studyWorkspacesKey: study.encodeStudyWorkspaces([workspace]),
+      study.activeStudyWorkspaceKey: 'study',
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('study-word-panel')), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('First group')).dy,
+      lessThan(tester.getTopLeft(find.text('Second group')).dy),
+    );
+
+    Future<void> dragSecondOntoFirst() async {
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey('drag-group-second'))),
+        kind: PointerDeviceKind.mouse,
+      );
+      await gesture.moveBy(const Offset(0, -20));
+      await tester.pump();
+      await gesture.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('drag-group-first'))),
+      );
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    await dragSecondOntoFirst();
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      study
+          .decodeStudyWorkspaces(prefs.getString(study.studyWorkspacesKey))
+          .single
+          .childGroups(null)
+          .map((group) => group.id),
+      ['second', 'first'],
+    );
+    expect(
+      tester.getTopLeft(find.text('Second group')).dy,
+      lessThan(tester.getTopLeft(find.text('First group')).dy),
+    );
+
+    // A second drag uses the refreshed outline, without reopening the panel.
+    await dragSecondOntoFirst();
+    expect(
+      tester.getTopLeft(find.text('First group')).dy,
+      lessThan(tester.getTopLeft(find.text('Second group')).dy),
+    );
+    expect(
+      study
+          .decodeStudyWorkspaces(prefs.getString(study.studyWorkspacesKey))
+          .single
+          .childGroups(null)
+          .map((group) => group.id),
+      ['first', 'second'],
+    );
+    // Drain the sync debounce only after verifying the immediate visual updates.
+    await tester.pump(const Duration(seconds: 3));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('resizes and persists the reader side panel', (tester) async {
     tester.view.physicalSize = const Size(1100, 800);

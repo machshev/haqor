@@ -1333,6 +1333,9 @@ class _ReaderSessionState extends State<_ReaderSession>
   }
 
   Future<void> _saveStudyState() async {
+    // The tiled study panel is built by the outer workspace, outside this
+    // session's setState scope. Refresh it immediately after a study edit.
+    widget.onWorkspaceTilesChanged();
     final prefs = await SharedPreferences.getInstance();
     await saveStudyWorkspaces(prefs, _studyWorkspaces, _activeStudyWorkspaceId);
     SaveStudyState(
