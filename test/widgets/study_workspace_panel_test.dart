@@ -142,7 +142,7 @@ void main() {
     expect(find.text('Genesis 1:1'), findsOneWidget);
     expect(find.text('Creation begins'), findsOneWidget);
     expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.nature_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.park_outlined), findsOneWidget);
     expect(find.byTooltip('Root bookmark'), findsOneWidget);
     expect(find.byIcon(Icons.drag_handle), findsNWidgets(4));
     expect(find.byType(Switch), findsNothing);
