@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -291,6 +292,36 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
       }
+
+      Future<void> dragGroupOntoHandle(String sourceId, String targetId) async {
+        final source = find.byKey(ValueKey('drag-group-$sourceId'));
+        final target = find.byKey(ValueKey('drag-group-$targetId'));
+        final gesture = await tester.startGesture(
+          tester.getCenter(source),
+          kind: PointerDeviceKind.mouse,
+        );
+        await gesture.moveBy(const Offset(0, -20));
+        await tester.pump();
+        await gesture.moveTo(tester.getCenter(target));
+        await tester.pump();
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      }
+
+      // A normal vertical mouse drag lands on another row, not a narrow gap.
+      await dragGroupOntoHandle('b', 'a');
+      expect(workspace.itemsIn(null).map((item) => item.key), [
+        'note-note',
+        'group-b',
+        'group-a',
+      ]);
+      await dragGroupOntoHandle('b', 'a');
+      expect(workspace.itemsIn(null).map((item) => item.key), [
+        'note-note',
+        'group-a',
+        'group-b',
+      ]);
 
       // Groups can move above and below ordinary items.
       await drag('group-b', 'top-0');

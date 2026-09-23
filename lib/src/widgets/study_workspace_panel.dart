@@ -173,6 +173,57 @@ class StudyWorkspacePanel extends StatelessWidget {
     ),
   );
 
+  Widget _rowDropTarget(
+    StudyWorkspace workspace,
+    StudyItem target,
+    int targetIndex, {
+    required Widget child,
+  }) {
+    int insertionIndex(StudyItem dragged) {
+      final siblings = workspace.itemsIn(target.groupId);
+      final sourceIndex = siblings.indexWhere(
+        (item) => item.key == dragged.key,
+      );
+      // Dropping on a row while moving down places the item after that row;
+      // moving up places it before. Explicit gaps still allow exact insertion.
+      return sourceIndex >= 0 && sourceIndex < targetIndex
+          ? targetIndex + 1
+          : targetIndex;
+    }
+
+    return DragTarget<StudyItem>(
+      key: ValueKey('reorder-${target.key}'),
+      onWillAcceptWithDetails: (details) =>
+          details.data.key != target.key &&
+          workspace.canMoveItem(details.data, target.groupId),
+      onAcceptWithDetails: (details) => onMoveItem(
+        details.data,
+        target.groupId,
+        insertionIndex(details.data),
+      ),
+      builder: (context, candidates, rejected) {
+        final below =
+            candidates.isNotEmpty &&
+            insertionIndex(candidates.first!) > targetIndex;
+        final indicator = BorderSide(
+          width: 2,
+          color: candidates.isEmpty
+              ? Colors.transparent
+              : Theme.of(context).colorScheme.primary,
+        );
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(
+              top: below ? BorderSide.none : indicator,
+              bottom: below ? indicator : BorderSide.none,
+            ),
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
   String _itemLabel(StudyItem item) => switch (item.type) {
     StudyItemType.passage => _reference(item.value as StudyPassage),
     StudyItemType.word => (item.value as StudyWord).surface,
@@ -200,7 +251,7 @@ class StudyWorkspacePanel extends StatelessWidget {
           workspace,
           groupId,
           index: index,
-          child: const SizedBox(height: 12, width: double.infinity),
+          child: const SizedBox(height: 4, width: double.infinity),
         ),
       );
       final handle = _OutlineDragHandle(item: item, label: _itemLabel(item));
@@ -214,6 +265,8 @@ class StudyWorkspacePanel extends StatelessWidget {
             depth: depth,
             ancestors: {...ancestors, group.id},
             handle: handle,
+            item: item,
+            index: index,
           ),
         );
       } else {
@@ -239,12 +292,17 @@ class StudyWorkspacePanel extends StatelessWidget {
           StudyItemType.group => throw StateError('Group rendered above'),
         };
         children.add(
-          Row(
-            key: ValueKey(item.key),
-            children: [
-              Expanded(child: tile),
-              handle,
-            ],
+          _rowDropTarget(
+            workspace,
+            item,
+            index,
+            child: Row(
+              key: ValueKey(item.key),
+              children: [
+                Expanded(child: tile),
+                handle,
+              ],
+            ),
           ),
         );
       }
@@ -254,7 +312,7 @@ class StudyWorkspacePanel extends StatelessWidget {
         workspace,
         groupId,
         index: items.length,
-        child: const SizedBox(height: 12, width: double.infinity),
+        child: const SizedBox(height: 4, width: double.infinity),
       ),
     );
     return children;
@@ -267,11 +325,15 @@ class StudyWorkspacePanel extends StatelessWidget {
     required int depth,
     required Set<String> ancestors,
     required Widget handle,
+    required StudyItem item,
+    required int index,
   }) => Padding(
     padding: EdgeInsetsDirectional.only(start: depth * 12.0),
     child: ExpansionTile(
       key: PageStorageKey((workspace.id, group.id)),
       initiallyExpanded: true,
+      dense: true,
+      visualDensity: VisualDensity.compact,
       tilePadding: const EdgeInsetsDirectional.only(end: 0),
       childrenPadding: EdgeInsets.zero,
       controlAffinity: ListTileControlAffinity.leading,
@@ -279,7 +341,7 @@ class StudyWorkspacePanel extends StatelessWidget {
         workspace,
         group.id,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 4),
           child: Text(
             group.name,
             style: Theme.of(
@@ -288,65 +350,70 @@ class StudyWorkspacePanel extends StatelessWidget {
           ),
         ),
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          PopupMenuButton<_GroupAction>(
-            tooltip: 'Group options',
-            onSelected: (action) {
-              switch (action) {
-                case _GroupAction.addPassage:
-                  onBookmarkCurrent(group.id);
-                case _GroupAction.addNote:
-                  onCreateNote(group.id);
-                case _GroupAction.addGroup:
-                  onCreateGroup(group.id);
-                case _GroupAction.edit:
-                  onEditGroup(group);
-                case _GroupAction.delete:
-                  onDeleteGroup(group);
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: _GroupAction.addNote,
-                child: ListTile(
-                  leading: Icon(Icons.note_add_outlined),
-                  title: Text('Add note'),
+      trailing: _rowDropTarget(
+        workspace,
+        item,
+        index,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PopupMenuButton<_GroupAction>(
+              tooltip: 'Group options',
+              onSelected: (action) {
+                switch (action) {
+                  case _GroupAction.addPassage:
+                    onBookmarkCurrent(group.id);
+                  case _GroupAction.addNote:
+                    onCreateNote(group.id);
+                  case _GroupAction.addGroup:
+                    onCreateGroup(group.id);
+                  case _GroupAction.edit:
+                    onEditGroup(group);
+                  case _GroupAction.delete:
+                    onDeleteGroup(group);
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: _GroupAction.addNote,
+                  child: ListTile(
+                    leading: Icon(Icons.note_add_outlined),
+                    title: Text('Add note'),
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: _GroupAction.addPassage,
-                child: ListTile(
-                  leading: Icon(Icons.bookmark_add_outlined),
-                  title: Text('Add current passage'),
+                PopupMenuItem(
+                  value: _GroupAction.addPassage,
+                  child: ListTile(
+                    leading: Icon(Icons.bookmark_add_outlined),
+                    title: Text('Add current passage'),
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: _GroupAction.addGroup,
-                child: ListTile(
-                  leading: Icon(Icons.create_new_folder_outlined),
-                  title: Text('Add subgroup'),
+                PopupMenuItem(
+                  value: _GroupAction.addGroup,
+                  child: ListTile(
+                    leading: Icon(Icons.create_new_folder_outlined),
+                    title: Text('Add subgroup'),
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: _GroupAction.edit,
-                child: ListTile(
-                  leading: Icon(Icons.edit_note),
-                  title: Text('Edit group'),
+                PopupMenuItem(
+                  value: _GroupAction.edit,
+                  child: ListTile(
+                    leading: Icon(Icons.edit_note),
+                    title: Text('Edit group'),
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: _GroupAction.delete,
-                child: ListTile(
-                  leading: Icon(Icons.delete_outline),
-                  title: Text('Delete group'),
+                PopupMenuItem(
+                  value: _GroupAction.delete,
+                  child: ListTile(
+                    leading: Icon(Icons.delete_outline),
+                    title: Text('Delete group'),
+                  ),
                 ),
-              ),
-            ],
-          ),
-          handle,
-        ],
+              ],
+            ),
+            handle,
+          ],
+        ),
       ),
       children: [
         ..._itemsAt(
