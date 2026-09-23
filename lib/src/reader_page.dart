@@ -2601,8 +2601,11 @@ class _ReaderSessionState extends State<_ReaderSession>
               ),
             ],
             selected: {_splitShowsWord},
-            onSelectionChanged: (selection) =>
-                setState(() => _splitShowsWord = selection.single),
+            onSelectionChanged: (selection) {
+              setState(() => _splitShowsWord = selection.single);
+              // This panel is built by the outer tiled workspace.
+              widget.onWorkspaceTilesChanged();
+            },
           ),
         ),
         const Divider(height: 1),

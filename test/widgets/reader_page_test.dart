@@ -10,6 +10,8 @@ import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/reader_page.dart';
 import 'package:haqor/src/study_workspace.dart' as study;
 import 'package:haqor/src/widgets/verse_row.dart';
+import 'package:haqor/src/widgets/study_workspace_panel.dart';
+import 'package:haqor/src/widgets/word_info_sheet.dart';
 
 /// Answers [GetChapter] requests the way the Rust side would, but only when
 /// the test asks for it, so tests can observe the exact frame where a chapter
@@ -351,6 +353,60 @@ void main() {
       expect(find.byKey(const ValueKey('reader:primary')), findsOneWidget);
     },
   );
+
+  testWidgets('tiled panel switches between Study and Word immediately', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1366, 744);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      'reader_tabs': ['primary', 'two'],
+      'reader_active_tab': 'primary',
+      'reader_tabs_tiled': true,
+      'study_workspace_visible': true,
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    expect(find.byType(StudyWorkspacePanel), findsOneWidget);
+
+    tester
+        .widget<VerseRow>(find.byType(VerseRow).first)
+        .onWordTap('מלה', null, 0, '');
+    await tester.pump();
+    expect(find.byType(WordInfoSheet), findsOneWidget);
+    expect(find.byType(StudyWorkspacePanel), findsNothing);
+
+    final switcher = find.byType(SegmentedButton<bool>);
+    await tester.tap(
+      find.descendant(of: switcher, matching: find.text('Study')),
+    );
+    await tester.pump();
+    expect(find.byType(StudyWorkspacePanel), findsOneWidget);
+    expect(find.byType(WordInfoSheet), findsNothing);
+    expect(tester.widget<SegmentedButton<bool>>(switcher).selected, {false});
+
+    await tester.tap(
+      find.descendant(of: switcher, matching: find.text('Word')),
+    );
+    await tester.pump();
+    expect(find.byType(WordInfoSheet), findsOneWidget);
+    expect(find.byType(StudyWorkspacePanel), findsNothing);
+    expect(
+      tester.widget<WordInfoSheet>(find.byType(WordInfoSheet)).word,
+      'מלה',
+    );
+    expect(tester.widget<SegmentedButton<bool>>(switcher).selected, {true});
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('tiled study reordering updates visible rows immediately', (
     tester,
