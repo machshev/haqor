@@ -209,7 +209,7 @@ class StudyNote {
   }
 }
 
-enum StudyItemType { passage, word, note }
+enum StudyItemType { passage, word, note, group }
 
 @immutable
 class StudyItem {
@@ -218,27 +218,55 @@ class StudyItem {
   final StudyItemType type;
   final Object value;
   final int order;
+
+  String get key => switch (type) {
+    StudyItemType.passage => 'passage-${(value as StudyPassage).locationKey}',
+    StudyItemType.word =>
+      (value as StudyWord).root.isNotEmpty
+          ? 'word-root-${(value as StudyWord).root}'
+          : 'word-surface-${(value as StudyWord).surface}',
+    StudyItemType.note => 'note-${(value as StudyNote).id}',
+    StudyItemType.group => 'group-${(value as StudyGroup).id}',
+  };
+
+  String? get groupId => switch (type) {
+    StudyItemType.passage => (value as StudyPassage).groupId,
+    StudyItemType.word => (value as StudyWord).groupId,
+    StudyItemType.note => (value as StudyNote).groupId,
+    StudyItemType.group => (value as StudyGroup).parentId,
+  };
 }
 
 @immutable
 class StudyGroup {
-  const StudyGroup({required this.id, required this.name, this.parentId});
+  const StudyGroup({
+    required this.id,
+    required this.name,
+    this.parentId,
+    this.order = 0,
+  });
 
   final String id;
   final String name;
   final String? parentId;
+  final int order;
 
-  StudyGroup copyWith({String? name, String? Function()? parentId}) =>
-      StudyGroup(
-        id: id,
-        name: name ?? this.name,
-        parentId: parentId == null ? this.parentId : parentId(),
-      );
+  StudyGroup copyWith({
+    String? name,
+    String? Function()? parentId,
+    int? order,
+  }) => StudyGroup(
+    id: id,
+    name: name ?? this.name,
+    parentId: parentId == null ? this.parentId : parentId(),
+    order: order ?? this.order,
+  );
 
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
     if (parentId != null) 'parent': parentId,
+    'order': order,
   };
 
   static StudyGroup? fromJson(Object? value) {
@@ -252,6 +280,7 @@ class StudyGroup {
       id: id,
       name: name,
       parentId: value['parent'] is String ? value['parent'] as String : null,
+      order: value['order'] is int ? value['order'] as int : 0,
     );
   }
 }
@@ -317,8 +346,9 @@ class StudyWorkspace {
     return null;
   }
 
-  List<StudyGroup> childGroups(String? parentId) => groups
-      .where((group) => group.parentId == parentId)
+  List<StudyGroup> childGroups(String? parentId) => itemsIn(parentId)
+      .where((item) => item.type == StudyItemType.group)
+      .map((item) => item.value as StudyGroup)
       .toList(growable: false);
 
   List<StudyItem> itemsIn(String? groupId) {
@@ -332,8 +362,16 @@ class StudyWorkspace {
       for (final note in notes)
         if (note.groupId == groupId)
           StudyItem._(StudyItemType.note, note, note.order),
+      for (final group in groups)
+        if (group.parentId == groupId)
+          StudyItem._(StudyItemType.group, group, group.order),
     ];
-    items.sort((a, b) => a.order.compareTo(b.order));
+    // Retain the original list order for legacy items with tied order values.
+    final positions = {for (var i = 0; i < items.length; i++) items[i]: i};
+    items.sort((a, b) {
+      final order = a.order.compareTo(b.order);
+      return order != 0 ? order : positions[a]!.compareTo(positions[b]!);
+    });
     return items;
   }
 
@@ -414,38 +452,92 @@ class StudyWorkspace {
   StudyWorkspace reorderItems(String? groupId, int oldIndex, int newIndex) {
     final items = itemsIn(groupId);
     if (oldIndex < 0 || oldIndex >= items.length) return this;
-    if (newIndex > oldIndex) newIndex--;
-    if (newIndex < 0 || newIndex >= items.length) return this;
-    final moved = items.removeAt(oldIndex);
-    items.insert(newIndex, moved);
-    var updated = this;
-    for (var index = 0; index < items.length; index++) {
-      final item = items[index];
-      switch (item.type) {
-        case StudyItemType.passage:
-          updated = updated.putPassage(
-            (item.value as StudyPassage).copyWith(order: index),
-          );
-        case StudyItemType.word:
-          updated = updated.putWord(
-            (item.value as StudyWord).copyWith(order: index),
-          );
-        case StudyItemType.note:
-          updated = updated.putNote(
-            (item.value as StudyNote).copyWith(order: index),
-          );
+    return moveItem(items[oldIndex], groupId, index: newIndex);
+  }
+
+  bool canMoveItem(StudyItem item, String? groupId) {
+    if (groupId != null && groupById(groupId) == null) return false;
+    if (!itemsIn(item.groupId).any((candidate) => candidate.key == item.key)) {
+      return false;
+    }
+    if (item.type == StudyItemType.group) {
+      final visited = <String>{(item.value as StudyGroup).id};
+      var ancestor = groupId;
+      while (ancestor != null) {
+        if (!visited.add(ancestor)) return false;
+        ancestor = groupById(ancestor)?.parentId;
       }
+    }
+    return true;
+  }
+
+  /// Move to a sibling insertion position, or append when no index is given.
+  /// Positions refer to the destination outline before removing the source.
+  StudyWorkspace moveItem(StudyItem item, String? groupId, {int? index}) {
+    if (!canMoveItem(item, groupId)) return this;
+    final source = itemsIn(item.groupId);
+    final current = source.firstWhere((candidate) => candidate.key == item.key);
+    final destination = itemsIn(groupId);
+    var position = index ?? destination.length;
+    if (position < 0 || position > destination.length) return this;
+    if (item.groupId == groupId) {
+      final oldIndex = destination.indexWhere((entry) => entry.key == item.key);
+      destination.removeAt(oldIndex);
+      if (position > oldIndex) position--;
+    }
+    destination.insert(position, current);
+    var updated = this;
+    for (var i = 0; i < destination.length; i++) {
+      updated = updated._placeItem(destination[i], groupId, i);
     }
     return updated;
   }
+
+  StudyWorkspace _placeItem(StudyItem item, String? groupId, int order) =>
+      switch (item.type) {
+        StudyItemType.passage => copyWith(
+          passages: [
+            for (final passage in passages)
+              passage.locationKey == (item.value as StudyPassage).locationKey
+                  ? passage.copyWith(groupId: () => groupId, order: order)
+                  : passage,
+          ],
+        ),
+        StudyItemType.word => copyWith(
+          words: [
+            for (final word in words)
+              StudyItem._(StudyItemType.word, word, word.order).key == item.key
+                  ? word.copyWith(groupId: () => groupId, order: order)
+                  : word,
+          ],
+        ),
+        StudyItemType.note => copyWith(
+          notes: [
+            for (final note in notes)
+              note.id == (item.value as StudyNote).id
+                  ? note.copyWith(groupId: () => groupId, order: order)
+                  : note,
+          ],
+        ),
+        StudyItemType.group => copyWith(
+          groups: [
+            for (final group in groups)
+              group.id == (item.value as StudyGroup).id
+                  ? group.copyWith(parentId: () => groupId, order: order)
+                  : group,
+          ],
+        ),
+      };
 
   StudyWorkspace putGroup(StudyGroup group) {
     final updated = List<StudyGroup>.of(groups);
     final index = updated.indexWhere((candidate) => candidate.id == group.id);
     if (index < 0) {
-      updated.add(group);
+      updated.add(group.copyWith(order: nextOrder(group.parentId)));
     } else {
-      updated[index] = group;
+      updated[index] = updated[index].parentId == group.parentId
+          ? group
+          : group.copyWith(order: nextOrder(group.parentId));
     }
     return copyWith(groups: updated);
   }
@@ -680,6 +772,38 @@ class StudyWorkspace {
     } else {
       words = validWords;
     }
+
+    // Before groups were orderable, every level displayed its items first,
+    // followed by its groups in storage order. Preserve that layout on load.
+    final storedGroupOrders = <String, int>{
+      for (final raw in value['groups'] is List ? value['groups'] as List : [])
+        if (raw is Map && raw['id'] is String && raw['order'] is int)
+          raw['id'] as String: raw['order'] as int,
+    };
+    final nextOrders = <String?, int>{};
+    void accountFor(String? parent, int order) {
+      if (order >= (nextOrders[parent] ?? 0)) nextOrders[parent] = order + 1;
+    }
+
+    for (final passage in passages) {
+      accountFor(passage.groupId, passage.order);
+    }
+    for (final word in words) {
+      accountFor(word.groupId, word.order);
+    }
+    for (final note in notes) {
+      accountFor(note.groupId, note.order);
+    }
+    for (final group in groups) {
+      final order = storedGroupOrders[group.id];
+      if (order != null) accountFor(group.parentId, order);
+    }
+    groups = groups.map((group) {
+      if (storedGroupOrders.containsKey(group.id)) return group;
+      final order = nextOrders[group.parentId] ?? 0;
+      nextOrders[group.parentId] = order + 1;
+      return group.copyWith(order: order);
+    }).toList();
 
     return StudyWorkspace(
       id: id,

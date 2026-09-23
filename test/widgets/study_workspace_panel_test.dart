@@ -46,7 +46,7 @@ void main() {
                 onEditNote: (_) {},
                 onUpdateNote: (_) {},
                 onRemoveNote: (_) {},
-                onReorderItems: (_, _, _) {},
+                onMoveItem: (_, _, _) {},
               ),
             ),
           ),
@@ -127,7 +127,7 @@ void main() {
               onEditNote: (_) {},
               onUpdateNote: (_) {},
               onRemoveNote: (_) {},
-              onReorderItems: (_, _, _) {},
+              onMoveItem: (_, _, _) {},
             ),
           ),
         ),
@@ -142,8 +142,7 @@ void main() {
     expect(find.text('Creation begins'), findsOneWidget);
     expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
     expect(find.byIcon(Icons.translate_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.drag_handle), findsNWidgets(3));
-    expect(find.byType(ReorderableListView), findsNWidgets(2));
+    expect(find.byIcon(Icons.drag_handle), findsNWidgets(4));
     expect(find.byType(Switch), findsNothing);
     expect(find.byIcon(Icons.highlight), findsNothing);
     expect(find.byIcon(Icons.folder_outlined), findsNothing);
@@ -209,5 +208,211 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(updatedWord?.groupId, 'creation');
+  });
+  testWidgets(
+    'dragging reorders groups and moves items through nested groups',
+    (tester) async {
+      tester.view.physicalSize = const Size(1366, 744);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var workspace = const StudyWorkspace(id: 'drag-study', name: 'Drag study')
+          .putNote(const StudyNote(id: 'note', text: 'Opening note'))
+          .putGroup(const StudyGroup(id: 'a', name: 'First group'))
+          .putGroup(const StudyGroup(id: 'b', name: 'Second group'))
+          .putGroup(
+            const StudyGroup(id: 'nested', name: 'Nested group', parentId: 'a'),
+          );
+      var moves = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 380,
+                child: StatefulBuilder(
+                  builder: (context, setState) => StudyWorkspacePanel(
+                    workspaces: [workspace],
+                    activeWorkspace: workspace,
+                    currentPassage: const StudyPassage(
+                      bookIndex: 0,
+                      chapter: 1,
+                      verse: 1,
+                    ),
+                    useEnglishBookNames: true,
+                    onCreate: () {},
+                    onSelect: (_) {},
+                    onRename: () {},
+                    onDelete: () {},
+                    onToggleHighlights: (_) {},
+                    onCreateGroup: (_) {},
+                    onEditGroup: (_) {},
+                    onDeleteGroup: (_) {},
+                    onBookmarkCurrent: (_) {},
+                    onOpenPassage: (_) {},
+                    onEditPassage: (_) {},
+                    onUpdatePassage: (_) {},
+                    onRemovePassage: (_) {},
+                    onEditWord: (_) {},
+                    onUpdateWord: (_) {},
+                    onRemoveWord: (_) {},
+                    onOpenWord: (_) {},
+                    onCreateNote: (_) {},
+                    onEditNote: (_) {},
+                    onUpdateNote: (_) {},
+                    onRemoveNote: (_) {},
+                    onMoveItem: (item, groupId, index) => setState(() {
+                      workspace = workspace.moveItem(
+                        item,
+                        groupId,
+                        index: index,
+                      );
+                      moves++;
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      Future<void> drag(String item, String target) async {
+        final source = find.byKey(ValueKey('drag-$item'));
+        final destination = find.byKey(ValueKey('drop-$target'));
+        final gesture = await tester.startGesture(tester.getCenter(source));
+        await gesture.moveBy(const Offset(-20, 0));
+        await tester.pump();
+        await gesture.moveTo(tester.getCenter(destination));
+        await tester.pump();
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      }
+
+      // Groups can move above and below ordinary items.
+      await drag('group-b', 'top-0');
+      expect(workspace.itemsIn(null).map((item) => item.key), [
+        'group-b',
+        'note-note',
+        'group-a',
+      ]);
+      await drag('group-b', 'top-3');
+      expect(workspace.itemsIn(null).map((item) => item.key), [
+        'note-note',
+        'group-a',
+        'group-b',
+      ]);
+
+      // A collapsed group remains a drop destination and reopens normally.
+      await tester.tap(find.text('First group'));
+      await tester.pumpAndSettle();
+      await drag('note-note', 'a-inside');
+      expect(workspace.notes.single.groupId, 'a');
+      expect(find.text('Opening note'), findsNothing);
+      await tester.tap(find.text('First group'));
+      await tester.pumpAndSettle();
+      expect(find.text('Opening note'), findsOneWidget);
+      await drag('note-note', 'nested-inside');
+      expect(workspace.notes.single.groupId, 'nested');
+      await drag('note-note', 'top-inside');
+      expect(workspace.notes.single.groupId, isNull);
+
+      // Invalid descendant drops leave the outline intact.
+      final previousMoves = moves;
+      await drag('group-a', 'nested-inside');
+      expect(moves, previousMoves);
+      expect(workspace.groupById('a')!.parentId, isNull);
+      await drag('group-b', 'nested-inside');
+      expect(workspace.groupById('b')!.parentId, 'nested');
+      await drag('group-b', 'top-inside');
+      expect(workspace.groupById('b')!.parentId, isNull);
+    },
+  );
+  testWidgets('dragging near the edge scrolls to an offscreen group', (
+    tester,
+  ) async {
+    final workspace = StudyWorkspace(
+      id: 'long',
+      name: 'Long outline',
+      notes: [
+        for (var i = 0; i < 25; i++)
+          StudyNote(id: '$i', text: 'Note $i', order: i),
+      ],
+      groups: const [StudyGroup(id: 'last', name: 'Last group', order: 25)],
+    );
+    String? destination;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 380,
+            height: 440,
+            child: StudyWorkspacePanel(
+              workspaces: [workspace],
+              activeWorkspace: workspace,
+              currentPassage: const StudyPassage(
+                bookIndex: 0,
+                chapter: 1,
+                verse: 1,
+              ),
+              useEnglishBookNames: true,
+              onCreate: () {},
+              onSelect: (_) {},
+              onRename: () {},
+              onDelete: () {},
+              onToggleHighlights: (_) {},
+              onCreateGroup: (_) {},
+              onEditGroup: (_) {},
+              onDeleteGroup: (_) {},
+              onBookmarkCurrent: (_) {},
+              onOpenPassage: (_) {},
+              onEditPassage: (_) {},
+              onUpdatePassage: (_) {},
+              onRemovePassage: (_) {},
+              onEditWord: (_) {},
+              onUpdateWord: (_) {},
+              onRemoveWord: (_) {},
+              onOpenWord: (_) {},
+              onCreateNote: (_) {},
+              onEditNote: (_) {},
+              onUpdateNote: (_) {},
+              onRemoveNote: (_) {},
+              onMoveItem: (item, groupId, index) => destination = groupId,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final scrollable = tester.state<ScrollableState>(
+      find.byType(Scrollable).last,
+    );
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('drag-note-0'))),
+    );
+    await gesture.moveBy(const Offset(-20, 0));
+    await tester.pump();
+    final viewport = tester.getRect(find.byType(ListView));
+    await gesture.moveTo(Offset(viewport.center.dx, viewport.bottom - 2));
+    for (
+      var i = 0;
+      i < 120 &&
+          scrollable.position.pixels < scrollable.position.maxScrollExtent;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(scrollable.position.pixels, greaterThan(0));
+    final target = find.byKey(const ValueKey('drop-last-inside'));
+    expect(target.hitTestable(), findsOneWidget);
+    await gesture.moveTo(tester.getCenter(target));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(destination, 'last');
+    expect(tester.takeException(), isNull);
   });
 }

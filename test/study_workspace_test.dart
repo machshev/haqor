@@ -196,4 +196,112 @@ void main() {
       StudyItemType.word,
     ]);
   });
+  test('legacy groups follow items at every level and keep their order', () {
+    final workspace = StudyWorkspace.fromJson({
+      'id': 'legacy',
+      'name': 'Legacy',
+      'ordered': true,
+      'groups': [
+        {'id': 'a', 'name': 'A'},
+        {'id': 'b', 'name': 'B'},
+        {'id': 'child', 'name': 'Child', 'parent': 'a'},
+      ],
+      'notes': [
+        {'id': 'top', 'text': 'Top', 'order': 5},
+        {'id': 'nested', 'text': 'Nested', 'group': 'a', 'order': 2},
+      ],
+    })!;
+    expect(workspace.itemsIn(null).map((item) => item.key), [
+      'note-top',
+      'group-a',
+      'group-b',
+    ]);
+    expect(workspace.itemsIn('a').map((item) => item.key), [
+      'note-nested',
+      'group-child',
+    ]);
+    final restored = decodeStudyWorkspaces(
+      encodeStudyWorkspaces([workspace]),
+    ).single;
+    expect(restored.toJson(), workspace.toJson());
+  });
+
+  test('groups reorder among items and retain subtrees after moving', () {
+    var workspace = const StudyWorkspace(id: 'study', name: 'Study')
+        .putNote(const StudyNote(id: 'intro', text: 'Introduction'))
+        .putGroup(const StudyGroup(id: 'a', name: 'A'))
+        .putGroup(const StudyGroup(id: 'b', name: 'B'))
+        .putGroup(const StudyGroup(id: 'child', name: 'Child', parentId: 'a'))
+        .putNote(
+          const StudyNote(id: 'nested', text: 'Nested', groupId: 'child'),
+        );
+    workspace = workspace.reorderItems(null, 2, 0);
+    expect(workspace.itemsIn(null).map((item) => item.key), [
+      'group-b',
+      'note-intro',
+      'group-a',
+    ]);
+    workspace = workspace.reorderItems(null, 0, 3);
+    expect(workspace.itemsIn(null).map((item) => item.key), [
+      'note-intro',
+      'group-a',
+      'group-b',
+    ]);
+    workspace = workspace.moveItem(workspace.itemsIn(null)[1], 'b');
+    expect(workspace.groupById('a')!.parentId, 'b');
+    expect(workspace.groupById('child')!.parentId, 'a');
+    expect(workspace.notes.last.groupId, 'child');
+    final restored = decodeStudyWorkspaces(
+      encodeStudyWorkspaces([workspace]),
+    ).single;
+    expect(restored.toJson(), workspace.toJson());
+  });
+
+  test(
+    'moves preserve every item and reject missing targets and group cycles',
+    () {
+      var workspace = const StudyWorkspace(id: 'study', name: 'Study')
+          .putGroup(const StudyGroup(id: 'a', name: 'A'))
+          .putGroup(const StudyGroup(id: 'child', name: 'Child', parentId: 'a'))
+          .putPassage(
+            const StudyPassage(
+              bookIndex: 0,
+              chapter: 1,
+              verse: 1,
+              note: 'Opening',
+            ),
+          )
+          .putWord(
+            const StudyWord(
+              root: 'ברא',
+              surface: 'בָּרָא',
+              highlightEnabled: false,
+            ),
+          )
+          .putNote(const StudyNote(id: 'note', text: 'A note'));
+      final group = workspace.itemsIn(null).first;
+      for (final invalid in ['a', 'child', 'missing']) {
+        expect(workspace.canMoveItem(group, invalid), isFalse);
+        expect(workspace.moveItem(group, invalid), same(workspace));
+      }
+      for (final item in workspace.itemsIn(null).skip(1).toList()) {
+        workspace = workspace.moveItem(item, 'child', index: 0);
+      }
+      expect(workspace.itemsIn('child').map((item) => item.type), [
+        StudyItemType.note,
+        StudyItemType.word,
+        StudyItemType.passage,
+      ]);
+      expect(workspace.passages.single.note, 'Opening');
+      expect(workspace.words.single.highlightEnabled, isFalse);
+      for (final item in workspace.itemsIn('child').toList()) {
+        workspace = workspace.moveItem(item, null);
+      }
+      expect(workspace.itemsIn('child'), isEmpty);
+      expect(workspace.itemsIn(null), hasLength(4));
+      expect(workspace.passages.single.groupId, isNull);
+      expect(workspace.words.single.groupId, isNull);
+      expect(workspace.notes.single.groupId, isNull);
+    },
+  );
 }

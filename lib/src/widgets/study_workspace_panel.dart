@@ -31,7 +31,7 @@ class StudyWorkspacePanel extends StatelessWidget {
     required this.onEditNote,
     required this.onUpdateNote,
     required this.onRemoveNote,
-    required this.onReorderItems,
+    required this.onMoveItem,
   });
 
   final List<StudyWorkspace> workspaces;
@@ -59,8 +59,7 @@ class StudyWorkspacePanel extends StatelessWidget {
   final ValueChanged<StudyNote> onEditNote;
   final ValueChanged<StudyNote> onUpdateNote;
   final ValueChanged<StudyNote> onRemoveNote;
-  final void Function(String? groupId, int oldIndex, int newIndex)
-  onReorderItems;
+  final void Function(StudyItem item, String? groupId, int? index) onMoveItem;
 
   String _reference(StudyPassage passage) =>
       '${bookDisplayName(passage.bookIndex, useEnglish: useEnglishBookNames)} '
@@ -148,6 +147,39 @@ class StudyWorkspacePanel extends StatelessWidget {
     return names.join(' / ');
   }
 
+  Widget _dropTarget(
+    StudyWorkspace workspace,
+    String? groupId, {
+    int? index,
+    required Widget child,
+  }) => DragTarget<StudyItem>(
+    key: ValueKey('drop-${groupId ?? 'top'}-${index ?? 'inside'}'),
+    onWillAcceptWithDetails: (details) =>
+        workspace.canMoveItem(details.data, groupId),
+    onAcceptWithDetails: (details) => onMoveItem(details.data, groupId, index),
+    builder: (context, candidates, rejected) => DecoratedBox(
+      decoration: BoxDecoration(
+        color: candidates.isEmpty
+            ? Colors.transparent
+            : Theme.of(context).colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: candidates.isEmpty
+              ? Colors.transparent
+              : Theme.of(context).colorScheme.primary,
+        ),
+      ),
+      child: child,
+    ),
+  );
+
+  String _itemLabel(StudyItem item) => switch (item.type) {
+    StudyItemType.passage => _reference(item.value as StudyPassage),
+    StudyItemType.word => (item.value as StudyWord).surface,
+    StudyItemType.note => (item.value as StudyNote).text,
+    StudyItemType.group => (item.value as StudyGroup).name,
+  };
+
   List<Widget> _itemsAt(
     BuildContext context,
     StudyWorkspace workspace,
@@ -157,77 +189,76 @@ class StudyWorkspacePanel extends StatelessWidget {
   }) {
     final children = <Widget>[];
     final items = workspace.itemsIn(groupId);
-    if (items.isNotEmpty) {
+    for (var index = 0; index < items.length; index++) {
+      final item = items[index];
+      if (item.type == StudyItemType.group &&
+          ancestors.contains((item.value as StudyGroup).id)) {
+        continue;
+      }
       children.add(
-        ReorderableListView.builder(
-          // Keep scroll offsets separate from the enclosing tile's expansion state.
-          key: PageStorageKey('items-${groupId ?? 'top'}'),
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          buildDefaultDragHandles: false,
-          itemCount: items.length,
-          onReorder: (oldIndex, newIndex) =>
-              onReorderItems(groupId, oldIndex, newIndex),
-          itemBuilder: (context, index) {
-            final item = items[index];
-            final tile = switch (item.type) {
-              StudyItemType.passage => _passageTile(
-                context,
-                workspace,
-                item.value as StudyPassage,
-                depth: depth,
-              ),
-              StudyItemType.word => _wordTile(
-                context,
-                workspace,
-                item.value as StudyWord,
-                depth: depth,
-              ),
-              StudyItemType.note => _noteTile(
-                context,
-                workspace,
-                item.value as StudyNote,
-                depth: depth,
-              ),
-            };
-            return Row(
-              key: ValueKey('${item.type.name}-${_itemKey(item)}'),
-              children: [
-                Expanded(child: tile),
-                ReorderableDragStartListener(
-                  index: index,
-                  child: const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Icon(Icons.drag_handle, size: 20),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-    }
-    for (final group in workspace.childGroups(groupId)) {
-      if (ancestors.contains(group.id)) continue;
-      children.add(
-        _groupTile(
-          context,
+        _dropTarget(
           workspace,
-          group,
-          depth: depth,
-          ancestors: {...ancestors, group.id},
+          groupId,
+          index: index,
+          child: const SizedBox(height: 12, width: double.infinity),
         ),
       );
+      final handle = _OutlineDragHandle(item: item, label: _itemLabel(item));
+      if (item.type == StudyItemType.group) {
+        final group = item.value as StudyGroup;
+        children.add(
+          _groupTile(
+            context,
+            workspace,
+            group,
+            depth: depth,
+            ancestors: {...ancestors, group.id},
+            handle: handle,
+          ),
+        );
+      } else {
+        final tile = switch (item.type) {
+          StudyItemType.passage => _passageTile(
+            context,
+            workspace,
+            item.value as StudyPassage,
+            depth: depth,
+          ),
+          StudyItemType.word => _wordTile(
+            context,
+            workspace,
+            item.value as StudyWord,
+            depth: depth,
+          ),
+          StudyItemType.note => _noteTile(
+            context,
+            workspace,
+            item.value as StudyNote,
+            depth: depth,
+          ),
+          StudyItemType.group => throw StateError('Group rendered above'),
+        };
+        children.add(
+          Row(
+            key: ValueKey(item.key),
+            children: [
+              Expanded(child: tile),
+              handle,
+            ],
+          ),
+        );
+      }
     }
+    children.add(
+      _dropTarget(
+        workspace,
+        groupId,
+        index: items.length,
+        child: const SizedBox(height: 12, width: double.infinity),
+      ),
+    );
     return children;
   }
-
-  String _itemKey(StudyItem item) => switch (item.type) {
-    StudyItemType.passage => (item.value as StudyPassage).locationKey,
-    StudyItemType.word =>
-      '${(item.value as StudyWord).root}-${(item.value as StudyWord).surface}',
-    StudyItemType.note => (item.value as StudyNote).id,
-  };
 
   Widget _groupTile(
     BuildContext context,
@@ -235,72 +266,86 @@ class StudyWorkspacePanel extends StatelessWidget {
     StudyGroup group, {
     required int depth,
     required Set<String> ancestors,
+    required Widget handle,
   }) => Padding(
     padding: EdgeInsetsDirectional.only(start: depth * 12.0),
     child: ExpansionTile(
-      key: PageStorageKey(group.id),
+      key: PageStorageKey((workspace.id, group.id)),
       initiallyExpanded: true,
       tilePadding: const EdgeInsetsDirectional.only(end: 0),
       childrenPadding: EdgeInsets.zero,
       controlAffinity: ListTileControlAffinity.leading,
-      title: Text(
-        group.name,
-        style: Theme.of(
-          context,
-        ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+      title: _dropTarget(
+        workspace,
+        group.id,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text(
+            group.name,
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
       ),
-      trailing: PopupMenuButton<_GroupAction>(
-        tooltip: 'Group options',
-        onSelected: (action) {
-          switch (action) {
-            case _GroupAction.addPassage:
-              onBookmarkCurrent(group.id);
-            case _GroupAction.addNote:
-              onCreateNote(group.id);
-            case _GroupAction.addGroup:
-              onCreateGroup(group.id);
-            case _GroupAction.edit:
-              onEditGroup(group);
-            case _GroupAction.delete:
-              onDeleteGroup(group);
-          }
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(
-            value: _GroupAction.addNote,
-            child: ListTile(
-              leading: Icon(Icons.note_add_outlined),
-              title: Text('Add note'),
-            ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PopupMenuButton<_GroupAction>(
+            tooltip: 'Group options',
+            onSelected: (action) {
+              switch (action) {
+                case _GroupAction.addPassage:
+                  onBookmarkCurrent(group.id);
+                case _GroupAction.addNote:
+                  onCreateNote(group.id);
+                case _GroupAction.addGroup:
+                  onCreateGroup(group.id);
+                case _GroupAction.edit:
+                  onEditGroup(group);
+                case _GroupAction.delete:
+                  onDeleteGroup(group);
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: _GroupAction.addNote,
+                child: ListTile(
+                  leading: Icon(Icons.note_add_outlined),
+                  title: Text('Add note'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _GroupAction.addPassage,
+                child: ListTile(
+                  leading: Icon(Icons.bookmark_add_outlined),
+                  title: Text('Add current passage'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _GroupAction.addGroup,
+                child: ListTile(
+                  leading: Icon(Icons.create_new_folder_outlined),
+                  title: Text('Add subgroup'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _GroupAction.edit,
+                child: ListTile(
+                  leading: Icon(Icons.edit_note),
+                  title: Text('Edit group'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _GroupAction.delete,
+                child: ListTile(
+                  leading: Icon(Icons.delete_outline),
+                  title: Text('Delete group'),
+                ),
+              ),
+            ],
           ),
-          PopupMenuItem(
-            value: _GroupAction.addPassage,
-            child: ListTile(
-              leading: Icon(Icons.bookmark_add_outlined),
-              title: Text('Add current passage'),
-            ),
-          ),
-          PopupMenuItem(
-            value: _GroupAction.addGroup,
-            child: ListTile(
-              leading: Icon(Icons.create_new_folder_outlined),
-              title: Text('Add subgroup'),
-            ),
-          ),
-          PopupMenuItem(
-            value: _GroupAction.edit,
-            child: ListTile(
-              leading: Icon(Icons.edit_note),
-              title: Text('Edit group'),
-            ),
-          ),
-          PopupMenuItem(
-            value: _GroupAction.delete,
-            child: ListTile(
-              leading: Icon(Icons.delete_outline),
-              title: Text('Delete group'),
-            ),
-          ),
+          handle,
         ],
       ),
       children: [
@@ -645,19 +690,24 @@ class StudyWorkspacePanel extends StatelessWidget {
               child: workspace == null
                   ? _EmptyWorkspace(onCreate: onCreate)
                   : ListView(
+                      key: PageStorageKey('study-outline-${workspace.id}'),
                       padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
                       children: [
-                        _OutlineHeader(
-                          currentIsBookmarked:
-                              workspace.passageAt(
-                                currentPassage.bookIndex,
-                                currentPassage.chapter,
-                                currentPassage.verse,
-                              ) !=
-                              null,
-                          onBookmarkCurrent: () => onBookmarkCurrent(null),
-                          onCreateGroup: () => onCreateGroup(null),
-                          onCreateNote: () => onCreateNote(null),
+                        _dropTarget(
+                          workspace,
+                          null,
+                          child: _OutlineHeader(
+                            currentIsBookmarked:
+                                workspace.passageAt(
+                                  currentPassage.bookIndex,
+                                  currentPassage.chapter,
+                                  currentPassage.verse,
+                                ) !=
+                                null,
+                            onBookmarkCurrent: () => onBookmarkCurrent(null),
+                            onCreateGroup: () => onCreateGroup(null),
+                            onCreateNote: () => onCreateNote(null),
+                          ),
                         ),
                         ..._itemsAt(
                           context,
@@ -678,6 +728,103 @@ class StudyWorkspacePanel extends StatelessWidget {
                     ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One drag gesture supports ordering and moving between groups. All handles
+/// scroll the enclosing outline, including handles inside nested groups.
+class _OutlineDragHandle extends StatefulWidget {
+  const _OutlineDragHandle({required this.item, required this.label});
+
+  final StudyItem item;
+  final String label;
+
+  @override
+  State<_OutlineDragHandle> createState() => _OutlineDragHandleState();
+}
+
+class _OutlineDragHandleState extends State<_OutlineDragHandle>
+    with AutomaticKeepAliveClientMixin {
+  bool _dragging = false;
+
+  @override
+  bool get wantKeepAlive => _dragging;
+  EdgeDraggingAutoScroller? _autoScroller;
+  Offset? _dragPosition;
+
+  void _scrollAtPointer() {
+    final position = _dragPosition;
+    if (position != null) {
+      _autoScroller?.startAutoScrollIfNecessary(
+        Rect.fromCenter(center: position, width: 40, height: 80),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _dragPosition = null;
+    _autoScroller?.stopAutoScroll();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return Draggable<StudyItem>(
+      key: ValueKey('drag-${widget.item.key}'),
+      data: widget.item,
+      maxSimultaneousDrags: 1,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      onDragStarted: () {
+        _dragging = true;
+        updateKeepAlive();
+        _autoScroller = EdgeDraggingAutoScroller(
+          Scrollable.of(context),
+          velocityScalar: 12,
+          onScrollViewScrolled: _scrollAtPointer,
+        );
+      },
+      onDragUpdate: (details) {
+        _dragPosition = details.globalPosition;
+        _scrollAtPointer();
+      },
+      onDragEnd: (_) {
+        _dragPosition = null;
+        _autoScroller?.stopAutoScroll();
+        _dragging = false;
+        updateKeepAlive();
+      },
+      feedback: Material(
+        elevation: 6,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 220,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              widget.label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ),
+      childWhenDragging: const Padding(
+        padding: EdgeInsets.all(10),
+        child: Icon(Icons.drag_handle, size: 20, color: Colors.grey),
+      ),
+      child: Tooltip(
+        message: 'Drag to reorder or move into a group',
+        child: MouseRegion(
+          cursor: SystemMouseCursors.grab,
+          child: const Padding(
+            padding: EdgeInsets.all(10),
+            child: Icon(Icons.drag_handle, size: 20),
+          ),
         ),
       ),
     );

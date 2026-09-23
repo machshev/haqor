@@ -11,7 +11,7 @@ import 'about_page.dart';
 import 'app_settings.dart';
 import 'bible_data.dart';
 import 'christadelphian_readings.dart';
-import 'bindings/bindings.dart';
+import 'bindings/bindings.dart' hide StudyItem;
 import 'issue_reporting.dart';
 import 'study_workspace.dart';
 import 'tutor/onboarding.dart';
@@ -1677,11 +1677,11 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
   }
 
-  void _reorderStudyItems(String? groupId, int oldIndex, int newIndex) {
+  void _moveStudyItem(StudyItem item, String? groupId, int? index) {
     final workspace = _activeStudyWorkspace;
     if (workspace != null) {
       _replaceStudyWorkspace(
-        workspace.reorderItems(groupId, oldIndex, newIndex),
+        workspace.moveItem(item, groupId, index: index),
       );
     }
   }
@@ -1818,8 +1818,8 @@ class _ReaderSessionState extends State<_ReaderSession>
               _removeStudyNote(note);
               setSheetState(() {});
             },
-            onReorderItems: (groupId, oldIndex, newIndex) {
-              _reorderStudyItems(groupId, oldIndex, newIndex);
+            onMoveItem: (item, groupId, index) {
+              _moveStudyItem(item, groupId, index);
               setSheetState(() {});
             },
           ),
@@ -2576,7 +2576,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     onEditNote: _editStudyNote,
     onUpdateNote: _updateStudyNote,
     onRemoveNote: _removeStudyNote,
-    onReorderItems: _reorderStudyItems,
+    onMoveItem: _moveStudyItem,
   );
 
   Widget _tiledAuxiliaryPanel() {
