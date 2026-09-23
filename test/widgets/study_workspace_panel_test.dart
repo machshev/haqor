@@ -6,6 +6,130 @@ import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/study_workspace_panel.dart';
 
 void main() {
+  testWidgets('word menu switches type and explains unavailable conversions', (
+    tester,
+  ) async {
+    const root = StudyWord(root: 'ברא', surface: 'בָּרָא', note: 'Creation');
+    var workspace = const StudyWorkspace(id: 's', name: 'Study', words: [root]);
+    late StateSetter rebuild;
+    var switches = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 380,
+            height: 760,
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                rebuild = setState;
+                return StudyWorkspacePanel(
+                  workspaces: [workspace],
+                  activeWorkspace: workspace,
+                  currentPassage: const StudyPassage(
+                    bookIndex: 0,
+                    chapter: 1,
+                    verse: 1,
+                  ),
+                  useEnglishBookNames: true,
+                  onCreate: () {},
+                  onSelect: (_) {},
+                  onRename: () {},
+                  onDelete: () {},
+                  onToggleHighlights: (_) {},
+                  onCreateGroup: (_) {},
+                  onEditGroup: (_) {},
+                  onDeleteGroup: (_) {},
+                  onBookmarkCurrent: (_) {},
+                  onOpenPassage: (_) {},
+                  onEditPassage: (_) {},
+                  onUpdatePassage: (_) {},
+                  onRemovePassage: (_) {},
+                  onEditWord: (_) {},
+                  onUpdateWord: (_) {},
+                  onRemoveWord: (_) {},
+                  onOpenWord: (_) {},
+                  onCreateNote: (_) {},
+                  onEditNote: (_) {},
+                  onUpdateNote: (_) {},
+                  onRemoveNote: (_) {},
+                  onMoveItem: (_, _, _) {},
+                  onSwitchWordKind: (word) => setState(() {
+                    workspace = workspace.switchWordKind(word);
+                    switches++;
+                  }),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    for (final kind in [StudyWordKind.form, StudyWordKind.root]) {
+      await tester.tap(find.byTooltip('Word options'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          kind == StudyWordKind.form ? 'Highlight root' : 'Highlight form',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Switch to ${kind.name} bookmark'));
+      await tester.pumpAndSettle();
+      expect(workspace.words.single.kind, kind);
+      expect(find.text('Creation'), findsOneWidget);
+      expect(
+        find.byTooltip(
+          kind == StudyWordKind.form ? 'Form bookmark' : 'Root bookmark',
+        ),
+        findsOneWidget,
+      );
+    }
+    expect(switches, 2);
+
+    for (final unresolved in [false, true]) {
+      rebuild(() {
+        workspace = workspace.copyWith(
+          words: unresolved
+              ? [
+                  const StudyWord(
+                    root: '',
+                    surface: 'בָּרָא',
+                    kind: StudyWordKind.form,
+                  ),
+                ]
+              : [root, root.copyWith(kind: StudyWordKind.form)],
+        );
+      });
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Word options').first);
+      await tester.pumpAndSettle();
+      final label = unresolved
+          ? 'Switch to root bookmark'
+          : 'Switch to form bookmark';
+      final item = tester.widget<PopupMenuItem>(
+        find
+            .ancestor(
+              of: find.text(label),
+              matching: find.byWidgetPredicate(
+                (widget) => widget is PopupMenuItem,
+              ),
+            )
+            .first,
+      );
+      expect(item.enabled, isFalse);
+      expect(
+        find.text(unresolved ? 'Root not resolved' : 'Already bookmarked'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+      expect(switches, 2);
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('empty workspace state scrolls at constrained heights', (
     tester,
   ) async {
@@ -41,6 +165,7 @@ void main() {
                 onRemovePassage: (_) {},
                 onEditWord: (_) {},
                 onUpdateWord: (_) {},
+                onSwitchWordKind: (_) {},
                 onRemoveWord: (_) {},
                 onOpenWord: (_) {},
                 onCreateNote: (_) {},
@@ -122,6 +247,7 @@ void main() {
               onRemovePassage: (_) {},
               onEditWord: (_) {},
               onUpdateWord: (word) => updatedWord = word,
+              onSwitchWordKind: (_) {},
               onRemoveWord: (_) {},
               onOpenWord: (word) => openedWord = word,
               onCreateNote: (_) {},
@@ -258,6 +384,7 @@ void main() {
                     onRemovePassage: (_) {},
                     onEditWord: (_) {},
                     onUpdateWord: (_) {},
+                    onSwitchWordKind: (_) {},
                     onRemoveWord: (_) {},
                     onOpenWord: (_) {},
                     onCreateNote: (_) {},
@@ -406,6 +533,7 @@ void main() {
               onRemovePassage: (_) {},
               onEditWord: (_) {},
               onUpdateWord: (_) {},
+              onSwitchWordKind: (_) {},
               onRemoveWord: (_) {},
               onOpenWord: (_) {},
               onCreateNote: (_) {},

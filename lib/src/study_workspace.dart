@@ -138,6 +138,7 @@ class StudyWord {
   final int order;
 
   StudyWord copyWith({
+    StudyWordKind? kind,
     String? surface,
     String? Function()? groupId,
     String? note,
@@ -147,7 +148,7 @@ class StudyWord {
   }) => StudyWord(
     root: root,
     surface: surface ?? this.surface,
-    kind: kind,
+    kind: kind ?? this.kind,
     groupId: groupId == null ? this.groupId : groupId(),
     note: note ?? this.note,
     highlightEnabled: highlightEnabled ?? this.highlightEnabled,
@@ -431,6 +432,37 @@ class StudyWorkspace {
           : word.copyWith(order: nextOrder(word.groupId));
     }
     return copyWith(words: updated);
+  }
+
+  bool canSwitchWordKind(StudyWord word) {
+    final existing = wordForBookmark(word);
+    if (existing == null ||
+        (existing.kind == StudyWordKind.form && existing.root.isEmpty)) {
+      return false;
+    }
+    final target = existing.copyWith(
+      kind: existing.kind == StudyWordKind.root
+          ? StudyWordKind.form
+          : StudyWordKind.root,
+    );
+    return wordForBookmark(target) == null;
+  }
+
+  StudyWorkspace switchWordKind(StudyWord word) {
+    if (!canSwitchWordKind(word)) return this;
+    return copyWith(
+      words: [
+        for (final existing in words)
+          if (existing.key == word.key)
+            existing.copyWith(
+              kind: existing.kind == StudyWordKind.root
+                  ? StudyWordKind.form
+                  : StudyWordKind.root,
+            )
+          else
+            existing,
+      ],
+    );
   }
 
   StudyWorkspace removeWord(StudyWord word) => copyWith(

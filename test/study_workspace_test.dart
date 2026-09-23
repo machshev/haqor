@@ -3,6 +3,93 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:haqor/src/study_workspace.dart';
 
 void main() {
+  test(
+    'switching bookmark type preserves its place and settings through storage',
+    () {
+      const word = StudyWord(
+        root: 'ברא',
+        surface: 'בָּרָא',
+        groupId: 'g',
+        order: 7,
+        note: 'Creation',
+        colorValue: 0xff90caf9,
+        highlightEnabled: false,
+      );
+      const other = StudyWord(root: 'אמר', surface: 'אָמַר', order: 8);
+      var workspace = const StudyWorkspace(
+        id: 's',
+        name: 'Study',
+        groups: [StudyGroup(id: 'g', name: 'Group')],
+        words: [word, other],
+      );
+      for (final kind in [StudyWordKind.form, StudyWordKind.root]) {
+        final previous = workspace.words.first;
+        expect(workspace.canSwitchWordKind(previous), isTrue);
+        workspace = workspace.switchWordKind(previous);
+        expect(workspace.wordForBookmark(previous), isNull);
+        workspace = decodeStudyWorkspaces(
+          encodeStudyWorkspaces([workspace]),
+        ).single;
+        expect(workspace.words, hasLength(2));
+        expect(
+          workspace.words.first.toJson(),
+          word.copyWith(kind: kind).toJson(),
+        );
+        expect(workspace.words.last.toJson(), other.toJson());
+      }
+    },
+  );
+
+  test(
+    'switching cannot overwrite an existing root or normalized form bookmark',
+    () {
+      const root = StudyWord(root: 'ברא', surface: 'בָּרָא', note: 'Root note');
+      const form = StudyWord(
+        root: 'ברא',
+        surface: 'בָּרָ֣א',
+        kind: StudyWordKind.form,
+        note: 'Form note',
+        groupId: 'g',
+      );
+      const workspace = StudyWorkspace(
+        id: 's',
+        name: 'Study',
+        words: [root, form],
+      );
+      for (final word in workspace.words) {
+        expect(workspace.canSwitchWordKind(word), isFalse);
+        expect(workspace.switchWordKind(word), same(workspace));
+      }
+    },
+  );
+
+  test(
+    'switching unresolved forms to roots and missing bookmarks is blocked',
+    () {
+      const form = StudyWord(
+        root: '',
+        surface: 'בָּרָא',
+        kind: StudyWordKind.form,
+      );
+      const legacy = StudyWord(root: '', surface: 'אָמַר');
+      const missing = StudyWord(root: 'ברא', surface: 'בָּרָא');
+      const workspace = StudyWorkspace(
+        id: 's',
+        name: 'Study',
+        words: [form, legacy],
+      );
+      for (final word in [form, missing]) {
+        expect(workspace.canSwitchWordKind(word), isFalse);
+        expect(workspace.switchWordKind(word), same(workspace));
+      }
+      expect(workspace.canSwitchWordKind(legacy), isTrue);
+      expect(
+        workspace.switchWordKind(legacy).words.last.kind,
+        StudyWordKind.form,
+      );
+    },
+  );
+
   test('root and specific forms survive edits, moves, storage and removal', () {
     const root = StudyWord(root: 'ברא', surface: 'בָּרָא');
     const form = StudyWord(

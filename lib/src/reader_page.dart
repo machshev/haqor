@@ -1628,6 +1628,13 @@ class _ReaderSessionState extends State<_ReaderSession>
     if (word.highlightEnabled) _refreshLoadedChaptersForStudyRoots();
   }
 
+  void _switchStudyWordKind(StudyWord word) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null || !workspace.canSwitchWordKind(word)) return;
+    _replaceStudyWorkspace(workspace.switchWordKind(word));
+    if (word.highlightEnabled) _refreshLoadedChaptersForStudyRoots();
+  }
+
   void _removeStudyWord(StudyWord word) {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
@@ -1797,6 +1804,10 @@ class _ReaderSessionState extends State<_ReaderSession>
             },
             onUpdateWord: (word) {
               _updateStudyWord(word);
+              setSheetState(() {});
+            },
+            onSwitchWordKind: (word) {
+              _switchStudyWordKind(word);
               setSheetState(() {});
             },
             onRemoveWord: (word) {
@@ -2574,6 +2585,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     onRemovePassage: _removeStudyPassage,
     onEditWord: _editStudyWord,
     onUpdateWord: _updateStudyWord,
+    onSwitchWordKind: _switchStudyWordKind,
     onRemoveWord: _removeStudyWord,
     onOpenWord: _openStudyWord,
     onCreateNote: _createStudyNote,

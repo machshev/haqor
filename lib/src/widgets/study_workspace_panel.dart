@@ -25,6 +25,7 @@ class StudyWorkspacePanel extends StatelessWidget {
     required this.onRemovePassage,
     required this.onEditWord,
     required this.onUpdateWord,
+    required this.onSwitchWordKind,
     required this.onRemoveWord,
     required this.onOpenWord,
     required this.onCreateNote,
@@ -53,6 +54,7 @@ class StudyWorkspacePanel extends StatelessWidget {
   final ValueChanged<StudyPassage> onRemovePassage;
   final ValueChanged<StudyWord> onEditWord;
   final ValueChanged<StudyWord> onUpdateWord;
+  final ValueChanged<StudyWord> onSwitchWordKind;
   final ValueChanged<StudyWord> onRemoveWord;
   final ValueChanged<StudyWord> onOpenWord;
   final ValueChanged<String?> onCreateNote;
@@ -540,6 +542,8 @@ class StudyWorkspacePanel extends StatelessWidget {
         'Open this word again to resolve its root.',
       if (word.note.isNotEmpty) word.note,
     ].join(' · ');
+    final isRoot = word.kind == StudyWordKind.root;
+    final canSwitchKind = workspace.canSwitchWordKind(word);
     return ListTile(
       key: ValueKey(word.key),
       dense: true,
@@ -580,7 +584,7 @@ class StudyWorkspacePanel extends StatelessWidget {
         ),
       ),
       subtitle: subtitle.isEmpty ? null : Text(subtitle),
-      trailing: PopupMenuButton<_ItemAction>(
+      trailing: PopupMenuButton<_WordAction>(
         tooltip: 'Word options',
         iconSize: 18,
         padding: const EdgeInsets.all(6),
@@ -591,18 +595,20 @@ class StudyWorkspacePanel extends StatelessWidget {
         ),
         onSelected: (action) async {
           switch (action) {
-            case _ItemAction.highlight:
+            case _WordAction.highlight:
               onUpdateWord(
                 word.copyWith(highlightEnabled: !word.highlightEnabled),
               );
-            case _ItemAction.note:
+            case _WordAction.switchKind:
+              onSwitchWordKind(word);
+            case _WordAction.note:
               onEditWord(word);
-            case _ItemAction.move:
+            case _WordAction.move:
               final destination = await _chooseDestination(context, workspace);
               if (destination != _cancelledChoice) {
                 onUpdateWord(word.copyWith(groupId: () => destination));
               }
-            case _ItemAction.color:
+            case _WordAction.color:
               final color = await _pickColor(
                 context,
                 selected: word.colorValue,
@@ -611,39 +617,57 @@ class StudyWorkspacePanel extends StatelessWidget {
               if (color != null) {
                 onUpdateWord(word.copyWith(colorValue: color));
               }
-            case _ItemAction.remove:
+            case _WordAction.remove:
               onRemoveWord(word);
           }
         },
         itemBuilder: (_) => [
           CheckedPopupMenuItem(
-            value: _ItemAction.highlight,
+            value: _WordAction.highlight,
             checked: word.highlightEnabled,
-            child: const Text('Highlight root'),
+            child: Text(isRoot ? 'Highlight root' : 'Highlight form'),
           ),
           PopupMenuItem(
-            value: _ItemAction.note,
+            value: _WordAction.switchKind,
+            enabled: canSwitchKind,
+            child: ListTile(
+              enabled: canSwitchKind,
+              leading: Icon(isRoot ? Icons.text_fields : Icons.park_outlined),
+              title: Text(
+                isRoot ? 'Switch to form bookmark' : 'Switch to root bookmark',
+              ),
+              subtitle: canSwitchKind
+                  ? null
+                  : Text(
+                      !isRoot && word.root.isEmpty
+                          ? 'Root not resolved'
+                          : 'Already bookmarked',
+                    ),
+            ),
+          ),
+          PopupMenuItem(
+            value: _WordAction.note,
             child: ListTile(
               leading: Icon(Icons.note_alt_outlined),
               title: Text('Edit note'),
             ),
           ),
           PopupMenuItem(
-            value: _ItemAction.move,
+            value: _WordAction.move,
             child: ListTile(
               leading: Icon(Icons.drive_file_move_outline),
               title: Text('Move to group'),
             ),
           ),
           PopupMenuItem(
-            value: _ItemAction.color,
+            value: _WordAction.color,
             child: ListTile(
               leading: Icon(Icons.palette_outlined),
               title: Text('Highlight color'),
             ),
           ),
           PopupMenuItem(
-            value: _ItemAction.remove,
+            value: _WordAction.remove,
             child: ListTile(
               leading: Icon(Icons.bookmark_remove_outlined),
               title: Text('Remove'),
@@ -1106,5 +1130,7 @@ enum _OutlineAction { bookmarkPassage, createNote, createGroup }
 enum _GroupAction { addPassage, addNote, addGroup, edit, delete }
 
 enum _ItemAction { highlight, note, move, color, remove }
+
+enum _WordAction { highlight, switchKind, note, move, color, remove }
 
 enum _NoteAction { edit, move, remove }
