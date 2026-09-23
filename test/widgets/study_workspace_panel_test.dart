@@ -148,6 +148,21 @@ void main() {
     expect(find.byIcon(Icons.highlight), findsNothing);
     expect(find.byIcon(Icons.folder_outlined), findsNothing);
 
+    for (var cycle = 0; cycle < 2; cycle++) {
+      await tester.tap(find.text('Creation'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Trace creation language.'), findsNothing);
+      expect(find.text('Genesis 1:1'), findsNothing);
+      expect(find.text('ברא · בָּרָא'), findsOneWidget);
+
+      await tester.tap(find.text('Creation'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Trace creation language.'), findsOneWidget);
+      expect(find.text('Genesis 1:1'), findsOneWidget);
+    }
+
     await tester.tap(find.text('ברא · בָּרָא'));
     expect(openedWord?.root, 'ברא');
 

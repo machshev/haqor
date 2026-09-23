@@ -160,7 +160,8 @@ class StudyWorkspacePanel extends StatelessWidget {
     if (items.isNotEmpty) {
       children.add(
         ReorderableListView.builder(
-          key: ValueKey('items-${groupId ?? 'top'}'),
+          // Keep scroll offsets separate from the enclosing tile's expansion state.
+          key: PageStorageKey('items-${groupId ?? 'top'}'),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           buildDefaultDragHandles: false,
