@@ -251,7 +251,7 @@ class StudyWorkspacePanel extends StatelessWidget {
           workspace,
           groupId,
           index: index,
-          child: const SizedBox(height: 4, width: double.infinity),
+          child: const SizedBox(height: 2, width: double.infinity),
         ),
       );
       final handle = _OutlineDragHandle(item: item, label: _itemLabel(item));
@@ -312,7 +312,7 @@ class StudyWorkspacePanel extends StatelessWidget {
         workspace,
         groupId,
         index: items.length,
-        child: const SizedBox(height: 4, width: double.infinity),
+        child: const SizedBox(height: 2, width: double.infinity),
       ),
     );
     return children;
@@ -440,6 +440,8 @@ class StudyWorkspacePanel extends StatelessWidget {
   }) => ListTile(
     key: ValueKey('passage-${passage.locationKey}'),
     dense: true,
+    minTileHeight: 32,
+    minVerticalPadding: 0,
     contentPadding: EdgeInsetsDirectional.only(
       start: 16 + depth * 12.0,
       end: 0,
@@ -450,6 +452,13 @@ class StudyWorkspacePanel extends StatelessWidget {
     onTap: () => onOpenPassage(passage),
     trailing: PopupMenuButton<_ItemAction>(
       tooltip: 'Passage options',
+      iconSize: 18,
+      padding: const EdgeInsets.all(6),
+      style: const ButtonStyle(
+        minimumSize: WidgetStatePropertyAll(Size(32, 32)),
+        maximumSize: WidgetStatePropertyAll(Size(32, 32)),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
       onSelected: (action) async {
         switch (action) {
           case _ItemAction.highlight:
@@ -522,6 +531,8 @@ class StudyWorkspacePanel extends StatelessWidget {
   }) => ListTile(
     key: ValueKey('word-${word.root}-${word.surface}'),
     dense: true,
+    minTileHeight: 32,
+    minVerticalPadding: 0,
     contentPadding: EdgeInsetsDirectional.only(
       start: 16 + depth * 12.0,
       end: 0,
@@ -545,6 +556,13 @@ class StudyWorkspacePanel extends StatelessWidget {
         : Text(word.note),
     trailing: PopupMenuButton<_ItemAction>(
       tooltip: 'Word options',
+      iconSize: 18,
+      padding: const EdgeInsets.all(6),
+      style: const ButtonStyle(
+        minimumSize: WidgetStatePropertyAll(Size(32, 32)),
+        maximumSize: WidgetStatePropertyAll(Size(32, 32)),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
       onSelected: (action) async {
         switch (action) {
           case _ItemAction.highlight:
@@ -617,6 +635,8 @@ class StudyWorkspacePanel extends StatelessWidget {
   }) => ListTile(
     key: ValueKey('note-${note.id}'),
     dense: true,
+    minTileHeight: 32,
+    minVerticalPadding: 0,
     contentPadding: EdgeInsetsDirectional.only(
       start: 16 + depth * 12.0,
       end: 0,
@@ -624,6 +644,13 @@ class StudyWorkspacePanel extends StatelessWidget {
     title: Text(note.text),
     trailing: PopupMenuButton<_NoteAction>(
       tooltip: 'Note options',
+      iconSize: 18,
+      padding: const EdgeInsets.all(6),
+      style: const ButtonStyle(
+        minimumSize: WidgetStatePropertyAll(Size(32, 32)),
+        maximumSize: WidgetStatePropertyAll(Size(32, 32)),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
       onSelected: (action) async {
         switch (action) {
           case _NoteAction.edit:
@@ -881,7 +908,7 @@ class _OutlineDragHandleState extends State<_OutlineDragHandle>
         ),
       ),
       childWhenDragging: const Padding(
-        padding: EdgeInsets.all(10),
+        padding: EdgeInsets.all(6),
         child: Icon(Icons.drag_handle, size: 20, color: Colors.grey),
       ),
       child: Tooltip(
@@ -889,7 +916,7 @@ class _OutlineDragHandleState extends State<_OutlineDragHandle>
         child: MouseRegion(
           cursor: SystemMouseCursors.grab,
           child: const Padding(
-            padding: EdgeInsets.all(10),
+            padding: EdgeInsets.all(6),
             child: Icon(Icons.drag_handle, size: 20),
           ),
         ),
