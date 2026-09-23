@@ -178,9 +178,22 @@ const _workspaceMinimumTileWidth = 260.0;
 const _workspacePanelDividerWidth = 9.0;
 
 class BibleReaderPage extends StatefulWidget {
-  const BibleReaderPage({super.key, this.sendChapterRequest});
+  const BibleReaderPage({
+    super.key,
+    this.sendChapterRequest,
+    this.sendStudyStateRequest,
+    this.saveStudyState,
+    this.sendWordInfoRequest,
+    this.sendWordOccurrencesRequest,
+    this.sendVerseTextsRequest,
+  });
 
   final void Function(GetChapter request)? sendChapterRequest;
+  final void Function(GetStudyState request)? sendStudyStateRequest;
+  final void Function(SaveStudyState request)? saveStudyState;
+  final void Function(GetWordInfo request)? sendWordInfoRequest;
+  final void Function(GetWordOccurrences request)? sendWordOccurrencesRequest;
+  final void Function(GetVerseTexts request)? sendVerseTextsRequest;
 
   @override
   State<BibleReaderPage> createState() => _BibleReaderPageState();
@@ -367,6 +380,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _setMobileBarHidden(hidden);
     },
     sendChapterRequest: widget.sendChapterRequest,
+    sendStudyStateRequest: widget.sendStudyStateRequest,
+    saveStudyState: widget.saveStudyState,
+    sendWordInfoRequest: widget.sendWordInfoRequest,
+    sendWordOccurrencesRequest: widget.sendWordOccurrencesRequest,
+    sendVerseTextsRequest: widget.sendVerseTextsRequest,
     onPassageChanged: () {
       if (mounted) setState(() {});
     },
@@ -745,6 +763,11 @@ class _ReaderSession extends StatefulWidget {
     required this.tiled,
     required this.onWorkspaceTilesChanged,
     this.sendChapterRequest,
+    this.sendStudyStateRequest,
+    this.saveStudyState,
+    this.sendWordInfoRequest,
+    this.sendWordOccurrencesRequest,
+    this.sendVerseTextsRequest,
   });
 
   final String sessionId;
@@ -757,6 +780,11 @@ class _ReaderSession extends StatefulWidget {
   /// the real rinf signal; widget tests substitute a stub that answers via
   /// `assignRustSignal['ChapterText']`.
   final void Function(GetChapter request)? sendChapterRequest;
+  final void Function(GetStudyState request)? sendStudyStateRequest;
+  final void Function(SaveStudyState request)? saveStudyState;
+  final void Function(GetWordInfo request)? sendWordInfoRequest;
+  final void Function(GetWordOccurrences request)? sendWordOccurrencesRequest;
+  final void Function(GetVerseTexts request)? sendVerseTextsRequest;
 
   static Future<void> seedNavigation(
     String sessionId,
@@ -930,11 +958,12 @@ class _ReaderSessionState extends State<_ReaderSession>
         final prefs = await SharedPreferences.getInstance();
         final legacyJson = prefs.getString(studyWorkspacesKey);
         if (legacyJson != null && legacyJson.isNotEmpty) {
-          SaveStudyState(
-            workspacesJson: legacyJson,
-            activeWorkspaceId: prefs.getString(activeStudyWorkspaceKey) ?? '',
-          ).sendSignalToRust();
-          scheduleProgressSync();
+          _sendStudyState(
+            SaveStudyState(
+              workspacesJson: legacyJson,
+              activeWorkspaceId: prefs.getString(activeStudyWorkspaceKey) ?? '',
+            ),
+          );
         }
         return;
       }
@@ -1166,7 +1195,13 @@ class _ReaderSessionState extends State<_ReaderSession>
         }
       }
     });
-    GetStudyState().sendSignalToRust();
+    final request = GetStudyState();
+    final send = widget.sendStudyStateRequest;
+    if (send != null) {
+      send(request);
+    } else {
+      request.sendSignalToRust();
+    }
     final rawHistory = prefs.getStringList(_sessionKey(_kHistory)) ?? [];
     final savedIndex = prefs.getInt(_sessionKey(_kHistoryIndex)) ?? -1;
     if (rawHistory.isNotEmpty &&
@@ -1339,17 +1374,29 @@ class _ReaderSessionState extends State<_ReaderSession>
     );
   }
 
+  // Tests substitute persistence and sync together, without a native library.
+  void _sendStudyState(SaveStudyState request) {
+    final save = widget.saveStudyState;
+    if (save != null) {
+      save(request);
+    } else {
+      request.sendSignalToRust();
+      scheduleProgressSync();
+    }
+  }
+
   Future<void> _saveStudyState() async {
     // The tiled study panel is built by the outer workspace, outside this
     // session's setState scope. Refresh it immediately after a study edit.
     widget.onWorkspaceTilesChanged();
     final prefs = await SharedPreferences.getInstance();
     await saveStudyWorkspaces(prefs, _studyWorkspaces, _activeStudyWorkspaceId);
-    SaveStudyState(
-      workspacesJson: encodeStudyWorkspaces(_studyWorkspaces),
-      activeWorkspaceId: _activeStudyWorkspaceId ?? '',
-    ).sendSignalToRust();
-    scheduleProgressSync();
+    _sendStudyState(
+      SaveStudyState(
+        workspacesJson: encodeStudyWorkspaces(_studyWorkspaces),
+        activeWorkspaceId: _activeStudyWorkspaceId ?? '',
+      ),
+    );
   }
 
   void _replaceStudyWorkspace(StudyWorkspace updated) {
@@ -2575,6 +2622,9 @@ class _ReaderSessionState extends State<_ReaderSession>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => WordInfoSheet(
+        sendInfoRequest: widget.sendWordInfoRequest,
+        sendOccurrencesRequest: widget.sendWordOccurrencesRequest,
+        sendVerseTextsRequest: widget.sendVerseTextsRequest,
         word: word,
         initialRoot: root.isEmpty ? null : root,
         syriac: bookIndex >= 39,
@@ -2798,6 +2848,9 @@ class _ReaderSessionState extends State<_ReaderSession>
                   if (showNavigation) _wordNavigationToolbar(),
                   Expanded(
                     child: WordInfoSheet(
+                      sendInfoRequest: widget.sendWordInfoRequest,
+                      sendOccurrencesRequest: widget.sendWordOccurrencesRequest,
+                      sendVerseTextsRequest: widget.sendVerseTextsRequest,
                       key: ValueKey(
                         '${selected.bookIndex}:${selected.chapter}:'
                         '${selected.verse}:${selected.position}:${selected.word}:${selected.root}:${selected.bdbId}',

@@ -18,6 +18,19 @@ import 'package:haqor/src/widgets/word_info_sheet.dart';
 /// lands in the sliver tree.
 class _FakeRust {
   final List<GetChapter> pending = [];
+  final List<GetStudyState> studyRequests = [];
+  final List<SaveStudyState> studySaves = [];
+  final List<GetWordInfo> wordRequests = [];
+  final List<GetWordOccurrences> occurrenceRequests = [];
+  final List<GetVerseTexts> verseTextRequests = [];
+
+  void onWordInfo(GetWordInfo request) => wordRequests.add(request);
+  void onOccurrences(GetWordOccurrences request) =>
+      occurrenceRequests.add(request);
+  void onVerseTexts(GetVerseTexts request) => verseTextRequests.add(request);
+
+  void onStudyRequest(GetStudyState request) => studyRequests.add(request);
+  void onStudySave(SaveStudyState request) => studySaves.add(request);
 
   void onRequest(GetChapter request) => pending.add(request);
 
@@ -79,7 +92,16 @@ Future<_FakeRust> _pumpReader(
   });
   final rust = _FakeRust();
   await tester.pumpWidget(
-    MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+    MaterialApp(
+      home: BibleReaderPage(
+        sendChapterRequest: rust.onRequest,
+        sendStudyStateRequest: rust.onStudyRequest,
+        saveStudyState: rust.onStudySave,
+        sendWordInfoRequest: rust.onWordInfo,
+        sendWordOccurrencesRequest: rust.onOccurrences,
+        sendVerseTextsRequest: rust.onVerseTexts,
+      ),
+    ),
   );
   await tester.pump();
   rust.deliverAll();
@@ -150,7 +172,14 @@ void main() {
         final rust = _FakeRust();
         await tester.pumpWidget(
           MaterialApp(
-            home: BibleReaderPage(sendChapterRequest: rust.onRequest),
+            home: BibleReaderPage(
+              sendChapterRequest: rust.onRequest,
+              sendStudyStateRequest: rust.onStudyRequest,
+              saveStudyState: rust.onStudySave,
+              sendWordInfoRequest: rust.onWordInfo,
+              sendWordOccurrencesRequest: rust.onOccurrences,
+              sendVerseTextsRequest: rust.onVerseTexts,
+            ),
           ),
         );
         await tester.pump();
@@ -194,6 +223,7 @@ void main() {
     tester,
   ) async {
     final rust = await _pumpReader(tester, chapter: 5);
+    expect(rust.studyRequests, hasLength(1));
     expect(_verse(1, 5, 1), findsOneWidget);
     expect(find.text('Bereshit 5'), findsOneWidget);
     rust.deliverAll(); // prefetched neighbours
@@ -373,7 +403,16 @@ void main() {
     });
     final rust = _FakeRust();
     await tester.pumpWidget(
-      MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+          sendWordInfoRequest: rust.onWordInfo,
+          sendWordOccurrencesRequest: rust.onOccurrences,
+          sendVerseTextsRequest: rust.onVerseTexts,
+        ),
+      ),
     );
     await tester.pump();
     rust.deliverAll();
@@ -413,7 +452,16 @@ void main() {
       });
       final rust = _FakeRust();
       await tester.pumpWidget(
-        MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+        MaterialApp(
+          home: BibleReaderPage(
+            sendChapterRequest: rust.onRequest,
+            sendStudyStateRequest: rust.onStudyRequest,
+            saveStudyState: rust.onStudySave,
+            sendWordInfoRequest: rust.onWordInfo,
+            sendWordOccurrencesRequest: rust.onOccurrences,
+            sendVerseTextsRequest: rust.onVerseTexts,
+          ),
+        ),
       );
       await tester.pump();
       rust.deliverAll();
@@ -457,7 +505,16 @@ void main() {
       });
       final rust = _FakeRust();
       await tester.pumpWidget(
-        MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+        MaterialApp(
+          home: BibleReaderPage(
+            sendChapterRequest: rust.onRequest,
+            sendStudyStateRequest: rust.onStudyRequest,
+            saveStudyState: rust.onStudySave,
+            sendWordInfoRequest: rust.onWordInfo,
+            sendWordOccurrencesRequest: rust.onOccurrences,
+            sendVerseTextsRequest: rust.onVerseTexts,
+          ),
+        ),
       );
       await tester.pump();
       rust.deliverAll();
@@ -500,6 +557,7 @@ void main() {
       original.onOpenWord!('יָעַד', null);
       await tester.pump();
       expect(current().word, 'יָעַד');
+      expect(rust.wordRequests.last.word, 'יָעַד');
       expect(current().docked, isTrue);
       expect(current().book, isNull);
       expect(current().chapter, isNull);
@@ -575,7 +633,16 @@ void main() {
     });
     final rust = _FakeRust();
     await tester.pumpWidget(
-      MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+          sendWordInfoRequest: rust.onWordInfo,
+          sendWordOccurrencesRequest: rust.onOccurrences,
+          sendVerseTextsRequest: rust.onVerseTexts,
+        ),
+      ),
     );
     await tester.pump();
     rust.deliverAll();
@@ -639,7 +706,16 @@ void main() {
     });
     final rust = _FakeRust();
     await tester.pumpWidget(
-      MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+          sendWordInfoRequest: rust.onWordInfo,
+          sendWordOccurrencesRequest: rust.onOccurrences,
+          sendVerseTextsRequest: rust.onVerseTexts,
+        ),
+      ),
     );
     await tester.pump();
     rust.deliverAll();
@@ -667,6 +743,12 @@ void main() {
 
     await dragSecondOntoFirst();
     final prefs = await SharedPreferences.getInstance();
+    expect(rust.studySaves, hasLength(1));
+    expect(rust.studySaves.single.activeWorkspaceId, 'study');
+    expect(
+      rust.studySaves.single.workspacesJson,
+      prefs.getString(study.studyWorkspacesKey),
+    );
     expect(
       study
           .decodeStudyWorkspaces(prefs.getString(study.studyWorkspacesKey))
@@ -712,7 +794,16 @@ void main() {
     });
     final rust = _FakeRust();
     await tester.pumpWidget(
-      MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+          sendWordInfoRequest: rust.onWordInfo,
+          sendWordOccurrencesRequest: rust.onOccurrences,
+          sendVerseTextsRequest: rust.onVerseTexts,
+        ),
+      ),
     );
     await tester.pump();
     rust.deliverAll();
@@ -792,7 +883,16 @@ void main() {
     });
     final rust = _FakeRust();
     await tester.pumpWidget(
-      MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+          sendWordInfoRequest: rust.onWordInfo,
+          sendWordOccurrencesRequest: rust.onOccurrences,
+          sendVerseTextsRequest: rust.onVerseTexts,
+        ),
+      ),
     );
     await tester.pump();
     rust.deliverAll();

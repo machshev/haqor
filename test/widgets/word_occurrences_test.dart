@@ -304,16 +304,10 @@ void main() {
       of: find.byTooltip('Earlier books'),
       matching: find.byType(IconButton),
     );
-    expect(
-      tester.widget<IconButton>(earlierButton).onPressed,
-      isNull,
-    );
+    expect(tester.widget<IconButton>(earlierButton).onPressed, isNull);
     await tester.tap(find.byTooltip('Later books'));
     await tester.pumpAndSettle();
-    expect(
-      tester.widget<IconButton>(earlierButton).onPressed,
-      isNotNull,
-    );
+    expect(tester.widget<IconButton>(earlierButton).onPressed, isNotNull);
     expect(find.text('Genesis (1)'), findsOneWidget);
     expect(find.text('Exodus (1)'), findsOneWidget);
     expect(find.text('Torah  תּוֹרָה'), findsOneWidget);

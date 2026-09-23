@@ -11,6 +11,11 @@ import 'package:haqor/src/reader_page.dart';
 /// finishes its initial load and the app bar (with the reader menu) appears.
 class _FakeRust {
   final List<GetChapter> pending = [];
+  final List<GetStudyState> studyRequests = [];
+  final List<SaveStudyState> studySaves = [];
+
+  void onStudyRequest(GetStudyState request) => studyRequests.add(request);
+  void onStudySave(SaveStudyState request) => studySaves.add(request);
 
   void onRequest(GetChapter request) => pending.add(request);
 
@@ -59,7 +64,13 @@ Future<void> _openPlanSheet(
   });
   final rust = _FakeRust();
   await tester.pumpWidget(
-    MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+    MaterialApp(
+      home: BibleReaderPage(
+        sendChapterRequest: rust.onRequest,
+        sendStudyStateRequest: rust.onStudyRequest,
+        saveStudyState: rust.onStudySave,
+      ),
+    ),
   );
   await tester.pump();
   rust.deliverAll();
@@ -73,7 +84,7 @@ Future<void> _openPlanSheet(
   if (inline.evaluate().isNotEmpty) {
     await tester.tap(inline);
   } else {
-    await tester.tap(find.byTooltip('More reader options'));
+    await tester.tap(find.byTooltip('Reader options'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Reading plan'));
   }
@@ -95,15 +106,21 @@ void main() {
     SharedPreferences.setMockInitialValues({'book': 0, 'chapter': 1});
     final rust = _FakeRust();
     await tester.pumpWidget(
-      MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+        ),
+      ),
     );
     await tester.pump();
     rust.deliverAll();
     await tester.pump();
 
     expect(find.byTooltip('Reading plan'), findsNothing);
-    expect(find.byTooltip('More reader options'), findsOneWidget);
-    await tester.tap(find.byTooltip('More reader options'));
+    expect(find.byTooltip('Reader options'), findsOneWidget);
+    await tester.tap(find.byTooltip('Reader options'));
     await tester.pumpAndSettle();
     expect(find.text('Reading plan'), findsOneWidget);
   });
