@@ -135,6 +135,7 @@ Future<_FakeRust> _pumpSheet(
   Future<bool> Function(StudyWord word)? onToggleStudyBookmark,
   String root = 'אלה',
   String? initialRoot,
+  void Function(String word, String? bdbId)? onOpenWord,
 }) async {
   SharedPreferences.setMockInitialValues({
     'occurrence_verse_english_only': false,
@@ -148,6 +149,7 @@ Future<_FakeRust> _pumpSheet(
           child: WordInfoSheet(
             word: 'אֱלִיעֶזֶר',
             initialRoot: initialRoot,
+            onOpenWord: onOpenWord,
             syriac: false,
             useEnglishBookNames: true,
             sendInfoRequest: rust.onInfoRequest,
@@ -168,6 +170,22 @@ Future<_FakeRust> _pumpSheet(
 }
 
 void main() {
+  testWidgets('a docked lexical click delegates to the reader inspector', (
+    tester,
+  ) async {
+    (String, String?)? opened;
+    final rust = await _pumpSheet(
+      tester,
+      onOpenWord: (word, id) => opened = (word, id),
+    );
+    await tester.tap(find.widgetWithText(TextButton, 'אֵל'));
+    await tester.pumpAndSettle();
+    expect(opened, ('אֵל', null));
+    expect(find.byType(WordInfoSheet), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(rust.infoRequests, hasLength(1));
+  });
+
   testWidgets('a lexical form opens normal word info and returns to the root', (
     tester,
   ) async {

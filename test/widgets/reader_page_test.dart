@@ -354,6 +354,126 @@ void main() {
     },
   );
 
+  for (final tiled in [false, true]) {
+    testWidgets('sidebar word history shares the toolbar (tiled: $tiled)', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(tiled ? 1366 : 1000, 744);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({
+        'book': 0,
+        'chapter': 1,
+        'reader_tabs': ['primary', 'two'],
+        'reader_active_tab': 'primary',
+        'reader_tabs_tiled': tiled,
+        'study_workspace_visible': true,
+        'reader_side_panel_width': 280.0,
+      });
+      final rust = _FakeRust();
+      await tester.pumpWidget(
+        MaterialApp(home: BibleReaderPage(sendChapterRequest: rust.onRequest)),
+      );
+      await tester.pump();
+      rust.deliverAll();
+      await tester.pumpAndSettle();
+      tester
+          .widget<VerseRow>(find.byType(VerseRow).first)
+          .onWordTap('מלה', 'original gloss', 3, 'מלל');
+      await tester.pump();
+
+      WordInfoSheet current() =>
+          tester.widget<WordInfoSheet>(find.byType(WordInfoSheet));
+      final original = current();
+      final back = find.byWidgetPredicate(
+        (w) => w is IconButton && w.tooltip == 'Back to previous word',
+      );
+      final forward = find.byWidgetPredicate(
+        (w) => w is IconButton && w.tooltip == 'Forward to next word',
+      );
+      final switcher = find.byType(SegmentedButton<bool>);
+      expect(tester.widget<IconButton>(back).onPressed, isNull);
+      expect(tester.widget<IconButton>(forward).onPressed, isNull);
+      expect(
+        tester.getCenter(back).dy,
+        closeTo(tester.getCenter(switcher).dy, 1),
+      );
+      expect(
+        tester.getCenter(forward).dy,
+        closeTo(tester.getCenter(switcher).dy, 1),
+      );
+
+      expect(
+        tester.getCenter(back).dx,
+        greaterThan(tester.getCenter(switcher).dx),
+      );
+      expect(
+        tester.getCenter(forward).dx,
+        greaterThan(tester.getCenter(back).dx),
+      );
+
+      original.onOpenWord!('יָעַד', null);
+      await tester.pump();
+      expect(current().word, 'יָעַד');
+      expect(current().docked, isTrue);
+      expect(current().book, isNull);
+      expect(current().chapter, isNull);
+      expect(current().verse, isNull);
+      expect(current().position, isNull);
+      expect(current().readerGloss, isNull);
+      expect(current().initialRoot, isNull);
+      expect(find.byType(BottomSheet), findsNothing);
+
+      current().onOpenWord!('מוֹעֵד', null);
+      await tester.pump();
+      await tester.tap(back);
+      await tester.pump();
+      expect(current().word, 'יָעַד');
+      await tester.tap(back);
+      await tester.pump();
+      expect(current().word, original.word);
+      expect(current().book, original.book);
+      expect(current().chapter, original.chapter);
+      expect(current().verse, original.verse);
+      expect(current().position, 3);
+      expect(current().readerGloss, 'original gloss');
+      expect(current().initialRoot, 'מלל');
+      expect(tester.widget<IconButton>(back).onPressed, isNull);
+
+      await tester.tap(forward);
+      await tester.pump();
+      expect(current().word, 'יָעַד');
+      await tester.tap(forward);
+      await tester.pump();
+      expect(current().word, 'מוֹעֵד');
+      expect(tester.widget<IconButton>(forward).onPressed, isNull);
+
+      await tester.tap(back);
+      await tester.pump();
+      current().onOpenWord!('בָּרָא', null);
+      await tester.pump();
+      expect(current().word, 'בָּרָא');
+      expect(tester.widget<IconButton>(forward).onPressed, isNull);
+      await tester.tap(
+        find.descendant(of: switcher, matching: find.text('Study')),
+      );
+      await tester.pump();
+      expect(find.byType(StudyWorkspacePanel), findsOneWidget);
+      expect(back, findsNothing);
+      expect(forward, findsNothing);
+      await tester.tap(
+        find.descendant(of: switcher, matching: find.text('Word')),
+      );
+      await tester.pump();
+      await tester.tap(back);
+      await tester.pump();
+      expect(current().word, 'יָעַד');
+      expect(tester.widget<SegmentedButton<bool>>(switcher).selected, {true});
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('tiled panel switches between Study and Word immediately', (
     tester,
   ) async {

@@ -83,6 +83,7 @@ class WordInfoSheet extends StatefulWidget {
     this.position,
     this.useEnglishBookNames = false,
     this.onNavigateToPassage,
+    this.onOpenWord,
     this.isStudyBookmarked,
     this.onToggleStudyBookmark,
     this.reportContext,
@@ -95,6 +96,10 @@ class WordInfoSheet extends StatefulWidget {
   final String word;
   final bool syriac;
   final String? initialRoot;
+
+  /// Lets the reader replace a docked inspector and retain its word history.
+  /// A null entry ID requests normal surface word info.
+  final void Function(String word, String? bdbId)? onOpenWord;
 
   /// How the sheet's three requests reach Rust. Injectable so a widget test can
   /// drive the sheet without the native library loaded, as the reader does.
@@ -464,6 +469,11 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   // original token's root, gloss, or location into the new word's analysis.
   // Stacking sheets preserves the trail when returning to the original word.
   void _openWordInfo(String word, {String? bdbId}) {
+    final open = widget.onOpenWord;
+    if (open != null) {
+      open(word, bdbId);
+      return;
+    }
     showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
