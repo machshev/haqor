@@ -534,111 +534,124 @@ class StudyWorkspacePanel extends StatelessWidget {
     StudyWorkspace workspace,
     StudyWord word, {
     required int depth,
-  }) => ListTile(
-    key: ValueKey(word.key),
-    dense: true,
-    minTileHeight: 32,
-    minVerticalPadding: 0,
-    contentPadding: EdgeInsetsDirectional.only(
-      start: 16 + depth * 12.0,
-      end: 0,
-    ),
-    leading: const Icon(Icons.translate_outlined, size: 18),
-    title: InkWell(
-      onTap: () => onOpenWord(word),
-      child: Text(
-        word.kind == StudyWordKind.form || word.root.isEmpty
-            ? word.surface
-            : '${word.root} · ${word.surface}',
-        textDirection: TextDirection.rtl,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.primary,
-          fontFamily: 'Cardo',
-          fontFamilyFallback: const ['Noto Serif Hebrew'],
-          decoration: TextDecoration.underline,
+  }) {
+    final subtitle = [
+      if (word.kind == StudyWordKind.root && word.root.isEmpty)
+        'Open this word again to resolve its root.',
+      if (word.note.isNotEmpty) word.note,
+    ].join(' · ');
+    return ListTile(
+      key: ValueKey(word.key),
+      dense: true,
+      titleAlignment: subtitle.isEmpty
+          ? ListTileTitleAlignment.center
+          : ListTileTitleAlignment.top,
+      minTileHeight: 32,
+      minVerticalPadding: 0,
+      contentPadding: EdgeInsetsDirectional.only(
+        start: 16 + depth * 12.0,
+        end: 0,
+      ),
+      leading: Tooltip(
+        message: word.kind == StudyWordKind.root
+            ? 'Root bookmark'
+            : 'Form bookmark',
+        child: Icon(
+          word.kind == StudyWordKind.root
+              ? Icons.account_tree_outlined
+              : Icons.text_fields,
+          size: 18,
         ),
       ),
-    ),
-    subtitle: Text(
-      [
-        word.kind == StudyWordKind.form ? 'Form bookmark' : 'Root bookmark',
-        if (word.kind == StudyWordKind.root && word.root.isEmpty)
-          'Open this word again to resolve its root.',
-        if (word.note.isNotEmpty) word.note,
-      ].join(' · '),
-    ),
-    trailing: PopupMenuButton<_ItemAction>(
-      tooltip: 'Word options',
-      iconSize: 18,
-      padding: const EdgeInsets.all(6),
-      style: const ButtonStyle(
-        minimumSize: WidgetStatePropertyAll(Size(32, 32)),
-        maximumSize: WidgetStatePropertyAll(Size(32, 32)),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      title: InkWell(
+        onTap: () => onOpenWord(word),
+        child: Text(
+          word.kind == StudyWordKind.form || word.root.isEmpty
+              ? word.surface
+              : '${word.root} · ${word.surface}',
+          textDirection: TextDirection.rtl,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.primary,
+            fontFamily: 'Cardo',
+            fontFamilyFallback: const ['Noto Serif Hebrew'],
+            decoration: TextDecoration.underline,
+          ),
+        ),
       ),
-      onSelected: (action) async {
-        switch (action) {
-          case _ItemAction.highlight:
-            onUpdateWord(
-              word.copyWith(highlightEnabled: !word.highlightEnabled),
-            );
-          case _ItemAction.note:
-            onEditWord(word);
-          case _ItemAction.move:
-            final destination = await _chooseDestination(context, workspace);
-            if (destination != _cancelledChoice) {
-              onUpdateWord(word.copyWith(groupId: () => destination));
-            }
-          case _ItemAction.color:
-            final color = await _pickColor(
-              context,
-              selected: word.colorValue,
-              title: 'Word highlight color',
-            );
-            if (color != null) {
-              onUpdateWord(word.copyWith(colorValue: color));
-            }
-          case _ItemAction.remove:
-            onRemoveWord(word);
-        }
-      },
-      itemBuilder: (_) => [
-        CheckedPopupMenuItem(
-          value: _ItemAction.highlight,
-          checked: word.highlightEnabled,
-          child: const Text('Highlight root'),
+      subtitle: subtitle.isEmpty ? null : Text(subtitle),
+      trailing: PopupMenuButton<_ItemAction>(
+        tooltip: 'Word options',
+        iconSize: 18,
+        padding: const EdgeInsets.all(6),
+        style: const ButtonStyle(
+          minimumSize: WidgetStatePropertyAll(Size(32, 32)),
+          maximumSize: WidgetStatePropertyAll(Size(32, 32)),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
-        PopupMenuItem(
-          value: _ItemAction.note,
-          child: ListTile(
-            leading: Icon(Icons.note_alt_outlined),
-            title: Text('Edit note'),
+        onSelected: (action) async {
+          switch (action) {
+            case _ItemAction.highlight:
+              onUpdateWord(
+                word.copyWith(highlightEnabled: !word.highlightEnabled),
+              );
+            case _ItemAction.note:
+              onEditWord(word);
+            case _ItemAction.move:
+              final destination = await _chooseDestination(context, workspace);
+              if (destination != _cancelledChoice) {
+                onUpdateWord(word.copyWith(groupId: () => destination));
+              }
+            case _ItemAction.color:
+              final color = await _pickColor(
+                context,
+                selected: word.colorValue,
+                title: 'Word highlight color',
+              );
+              if (color != null) {
+                onUpdateWord(word.copyWith(colorValue: color));
+              }
+            case _ItemAction.remove:
+              onRemoveWord(word);
+          }
+        },
+        itemBuilder: (_) => [
+          CheckedPopupMenuItem(
+            value: _ItemAction.highlight,
+            checked: word.highlightEnabled,
+            child: const Text('Highlight root'),
           ),
-        ),
-        PopupMenuItem(
-          value: _ItemAction.move,
-          child: ListTile(
-            leading: Icon(Icons.drive_file_move_outline),
-            title: Text('Move to group'),
+          PopupMenuItem(
+            value: _ItemAction.note,
+            child: ListTile(
+              leading: Icon(Icons.note_alt_outlined),
+              title: Text('Edit note'),
+            ),
           ),
-        ),
-        PopupMenuItem(
-          value: _ItemAction.color,
-          child: ListTile(
-            leading: Icon(Icons.palette_outlined),
-            title: Text('Highlight color'),
+          PopupMenuItem(
+            value: _ItemAction.move,
+            child: ListTile(
+              leading: Icon(Icons.drive_file_move_outline),
+              title: Text('Move to group'),
+            ),
           ),
-        ),
-        PopupMenuItem(
-          value: _ItemAction.remove,
-          child: ListTile(
-            leading: Icon(Icons.bookmark_remove_outlined),
-            title: Text('Remove'),
+          PopupMenuItem(
+            value: _ItemAction.color,
+            child: ListTile(
+              leading: Icon(Icons.palette_outlined),
+              title: Text('Highlight color'),
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+          PopupMenuItem(
+            value: _ItemAction.remove,
+            child: ListTile(
+              leading: Icon(Icons.bookmark_remove_outlined),
+              title: Text('Remove'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _noteTile(
     BuildContext context,
