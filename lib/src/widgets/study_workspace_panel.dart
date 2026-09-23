@@ -440,6 +440,9 @@ class StudyWorkspacePanel extends StatelessWidget {
   }) => ListTile(
     key: ValueKey('passage-${passage.locationKey}'),
     dense: true,
+    titleAlignment: passage.note.isEmpty
+        ? ListTileTitleAlignment.center
+        : ListTileTitleAlignment.top,
     minTileHeight: 32,
     minVerticalPadding: 0,
     contentPadding: EdgeInsetsDirectional.only(
@@ -447,7 +450,10 @@ class StudyWorkspacePanel extends StatelessWidget {
       end: 0,
     ),
     leading: const Icon(Icons.menu_book_outlined, size: 18),
-    title: Text(_reference(passage)),
+    title: Text(
+      _reference(passage),
+      style: const TextStyle(fontWeight: FontWeight.bold),
+    ),
     subtitle: passage.note.isEmpty ? null : Text(passage.note),
     onTap: () => onOpenPassage(passage),
     trailing: PopupMenuButton<_ItemAction>(
