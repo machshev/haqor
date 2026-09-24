@@ -217,6 +217,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   static const _kActiveTab = 'reader_active_tab';
   static const _kTiled = 'reader_tabs_tiled';
   static const _kTiledPanelWidth = 'reader_tiled_panel_width';
+  static const _kSidePanelWidth = 'reader_side_panel_width';
 
   final List<_ReaderTab> _tabs = [const _ReaderTab('primary')];
   final Map<String, GlobalKey<_ReaderSessionState>> _readerKeys = {
@@ -230,6 +231,16 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   String _activeTabId = 'primary';
   bool _tiled = false;
   double _tiledPanelWidth = 360;
+  // The inspector belongs to the workspace, including while reader pages
+  // are switched, removed, or rearranged by the responsive layout.
+  final GlobalKey _wordInspectorKey = GlobalKey();
+  _SelectedWord? _selectedWord;
+  final List<_SelectedWord> _wordHistory = [];
+  int _wordHistoryIndex = -1;
+  bool get _canGoBackWord => _wordHistoryIndex > 0;
+  bool get _canGoForwardWord => _wordHistoryIndex < _wordHistory.length - 1;
+  bool _splitShowsWord = false;
+  double _sidePanelWidth = 360;
   bool _loaded = false;
   bool _mobileBarHidden = false;
   Timer? _mobileBarTransitionTimer;
@@ -242,8 +253,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   int get _readerPageOffset => _mobileLayout == true ? 1 : 0;
 
-  bool get _hasWordPage =>
-      _mobileLayout == true && _activeReader?._selectedWord != null;
+  bool get _hasWordPage => _mobileLayout == true && _selectedWord != null;
 
   int get _wordPageIndex => _tabs.length + _readerPageOffset;
 
@@ -286,8 +296,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   Future<void> _showPage(int index) async {
     final controller = _pageController;
     if (!controller.hasClients) return;
-    // Passing another reader during an animation must not change the reader
-    // associated with the study or word-info page.
+    // Passing another reader during an animation must not change the active
+    // reader used by study actions and passage links.
     _pageTarget = index;
     await controller.animateToPage(
       index,
@@ -320,6 +330,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _activeTabId = ids.contains(active) ? active! : ids.first;
       _tiled = prefs.getBool(_kTiled) ?? false;
       _tiledPanelWidth = prefs.getDouble(_kTiledPanelWidth) ?? 360;
+      _sidePanelWidth = (prefs.getDouble(_kSidePanelWidth) ?? 360).clamp(
+        280,
+        600,
+      );
       _loaded = true;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -335,6 +349,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       prefs.setString(_kActiveTab, _activeTabId),
       prefs.setBool(_kTiled, _tiled),
       prefs.setDouble(_kTiledPanelWidth, _tiledPanelWidth),
+      prefs.setDouble(_kSidePanelWidth, _sidePanelWidth),
     ]);
   }
 
@@ -396,11 +411,20 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       if (_activeTabId == id) {
         _activeTabId = _tabs[math.min(index, _tabs.length - 1)].id;
       }
+      // Reader removal shifts page indices, but must leave a global page open.
+      _pageTarget = _studyPageSelected
+          ? 0
+          : _wordPageSelected
+          ? _wordPageIndex
+          : _activeReaderPage;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _pageController.hasClients) {
-        _pageController.jumpToPage(_activeReaderPage);
+        final target = _pageTarget ?? _activeReaderPage;
+        _pageController.jumpToPage(target);
+        _selectPage(target);
       }
+      _pageTarget = null;
     });
     _saveWorkspace();
   }
@@ -430,22 +454,16 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       setState(() {
         if (_tiled && _mobileLayout == false) _activeTabId = tab.id;
       });
-      if (_wordPageSelected && !_hasWordPage) {
-        // Keep removal of the last page from selecting a different reader.
-        _wordPageSelected = false;
-        _pageTarget = _activeReaderPage;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _showReaderPage();
-        });
-      }
       if (_tiled && _mobileLayout == false) _saveWorkspace();
     },
-    onWordInfoRequested: () {
-      if (!mounted || _mobileLayout != true) return;
+    onWordInfoRequested: (selected) {
       setState(() => _activeTabId = tab.id);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _hasWordPage) _showPage(_wordPageIndex);
-      });
+      _selectInspectorWord(selected);
+      if (_mobileLayout == true) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _hasWordPage) _showPage(_wordPageIndex);
+        });
+      }
     },
     onScrollChromeChanged: (hidden) {
       if (_studyPageSelected ||
@@ -460,21 +478,289 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     sendChapterRequest: widget.sendChapterRequest,
     sendStudyStateRequest: widget.sendStudyStateRequest,
     saveStudyState: widget.saveStudyState,
-    sendWordInfoRequest: widget.sendWordInfoRequest,
-    sendWordOccurrencesRequest: widget.sendWordOccurrencesRequest,
-    sendVerseTextsRequest: widget.sendVerseTextsRequest,
     onPassageChanged: () {
       if (mounted) setState(() {});
     },
   );
 
+  bool get _studyWorkspaceVisible =>
+      _activeReader?._studyWorkspaceVisible ?? false;
+
+  Widget _studyWorkspacePanel() =>
+      _activeReader?._studyWorkspacePanel() ?? const SizedBox.shrink();
+
   Widget? _tiledAuxiliaryPanel() {
-    final state = _activeReader;
-    if (state == null ||
-        (!state._studyWorkspaceVisible && state._selectedWord == null)) {
-      return null;
+    if (!_studyWorkspaceVisible && _selectedWord == null) return null;
+    if (!_studyWorkspaceVisible) return _wordInspector();
+    if (_selectedWord == null) return _studyWorkspacePanel();
+    return Column(
+      children: [
+        _wordNavigationToolbar(showSwitcher: true),
+        const Divider(height: 1),
+        Expanded(
+          child: _splitShowsWord
+              ? _wordInspector(showNavigation: false)
+              : _studyWorkspacePanel(),
+        ),
+      ],
+    );
+  }
+
+  void _selectInspectorWord(_SelectedWord selected) {
+    setState(() {
+      if (_canGoForwardWord) {
+        _wordHistory.removeRange(_wordHistoryIndex + 1, _wordHistory.length);
+      }
+      _wordHistory.add(selected);
+      _wordHistoryIndex = _wordHistory.length - 1;
+      _selectedWord = selected;
+      _splitShowsWord = true;
+    });
+  }
+
+  void _openInspectorWord(String word, String? bdbId) {
+    final current = _selectedWord;
+    if (current == null) return;
+    _selectInspectorWord(
+      _SelectedWord(
+        word: word,
+        bookIndex: bdbId == null ? current.bookIndex : 0,
+        chapter: null,
+        verse: null,
+        position: null,
+        root: '',
+        bdbId: bdbId,
+      ),
+    );
+  }
+
+  void _moveInspectorHistory(int delta) {
+    final index = _wordHistoryIndex + delta;
+    if (index < 0 || index >= _wordHistory.length) return;
+    setState(() {
+      _wordHistoryIndex = index;
+      _selectedWord = _wordHistory[index];
+      _splitShowsWord = true;
+    });
+  }
+
+  Widget _wordNavigationToolbar({bool showSwitcher = false}) => Padding(
+    padding: const EdgeInsets.all(8),
+    child: Row(
+      children: [
+        if (showSwitcher)
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SegmentedButton<bool>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  padding: WidgetStatePropertyAll(
+                    EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
+                segments: const [
+                  ButtonSegment(
+                    value: false,
+                    icon: Icon(Icons.account_tree_outlined),
+                    label: Text('Study'),
+                  ),
+                  ButtonSegment(
+                    value: true,
+                    icon: Icon(Icons.menu_book_outlined),
+                    label: Text('Word'),
+                  ),
+                ],
+                selected: {_splitShowsWord},
+                onSelectionChanged: (selection) {
+                  setState(() => _splitShowsWord = selection.single);
+                },
+              ),
+            ),
+          )
+        else
+          const Spacer(),
+        if (!showSwitcher || _splitShowsWord) ...[
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _canGoBackWord ? () => _moveInspectorHistory(-1) : null,
+            tooltip: 'Back to previous word',
+            visualDensity: VisualDensity.compact,
+          ),
+          IconButton(
+            icon: const Icon(Icons.arrow_forward),
+            onPressed: _canGoForwardWord
+                ? () => _moveInspectorHistory(1)
+                : null,
+            tooltip: 'Forward to next word',
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ],
+    ),
+  );
+
+  Widget _wordInspector({bool showNavigation = true}) {
+    final theme = Theme.of(context);
+    final selected = _selectedWord;
+    return Material(
+      key: _wordInspectorKey,
+      color: theme.colorScheme.surface,
+      child: SafeArea(
+        top: false,
+        child: selected == null
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'Select a Hebrew or Syriac word to keep its lexicon '
+                    'and occurrences beside the passage.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              )
+            : Column(
+                children: [
+                  if (showNavigation) _wordNavigationToolbar(),
+                  Expanded(
+                    child: WordInfoSheet(
+                      sendInfoRequest: widget.sendWordInfoRequest,
+                      sendOccurrencesRequest: widget.sendWordOccurrencesRequest,
+                      sendVerseTextsRequest: widget.sendVerseTextsRequest,
+                      key: ValueKey(
+                        '${selected.bookIndex}:${selected.chapter}:'
+                        '${selected.verse}:${selected.position}:${selected.word}:${selected.root}:${selected.bdbId}',
+                      ),
+                      docked: true,
+                      word: selected.word,
+                      bdbId: selected.bdbId,
+                      onOpenWord: _openInspectorWord,
+                      initialRoot: selected.root.isEmpty ? null : selected.root,
+                      syriac: selected.bookIndex >= 39,
+                      book: selected.chapter == null
+                          ? null
+                          : selected.bookIndex + 1,
+                      chapter: selected.chapter,
+                      verse: selected.verse,
+                      position: selected.position,
+                      readerGloss: selected.readerGloss,
+                      useEnglishBookNames:
+                          _activeReader?._englishBookNames ?? false,
+                      reportContext: {
+                        if (selected.chapter != null) ...{
+                          'bookIndex': selected.bookIndex,
+                          'book': kBooks[selected.bookIndex].transliteration,
+                          'chapter': selected.chapter,
+                          'verse': selected.verse,
+                        },
+                      },
+                      isStudyBookmarked: (bookmark) =>
+                          _activeReader?._activeStudyWorkspace?.wordForBookmark(
+                            bookmark,
+                          ) !=
+                          null,
+                      onToggleStudyBookmark: (bookmark) async {
+                        return await _activeReader?._toggleStudyWordBookmark(
+                              bookmark,
+                            ) ??
+                            false;
+                      },
+                      onNavigateToPassage: (book, chapter, verse) {
+                        _activeReader?._navigateTo(book, chapter, verse: verse);
+                        if (_mobileLayout == true) _showReaderPage();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  double _resolvedSidePanelWidth(double availableWidth) =>
+      _sidePanelWidth.clamp(280, math.max(280, availableWidth - 420));
+
+  Widget _sidePanelResizeHandle(double availableWidth) => MouseRegion(
+    cursor: SystemMouseCursors.resizeColumn,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragUpdate: (details) {
+        setState(() {
+          _sidePanelWidth = (_sidePanelWidth - details.delta.dx).clamp(
+            280,
+            math.max(280, availableWidth - 420),
+          );
+        });
+      },
+      onHorizontalDragEnd: (_) => _saveWorkspace(),
+      child: Tooltip(
+        message: 'Drag to resize side panel',
+        child: SizedBox(
+          width: 9,
+          child: Center(
+            child: Container(
+              width: 2,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  Widget _responsiveWorkspaceBody(Widget reader) {
+    if (_mobileLayout == true) return reader;
+    final layout =
+        _activeReader?._resolveReaderLayout(MediaQuery.sizeOf(context).width) ??
+        _ResolvedReaderLayout.focus;
+    switch (layout) {
+      case _ResolvedReaderLayout.focus:
+      case _ResolvedReaderLayout.split:
+        if (!_studyWorkspaceVisible && _selectedWord == null) {
+          return reader;
+        }
+        return LayoutBuilder(
+          builder: (context, constraints) => Row(
+            children: [
+              Expanded(child: reader),
+              _sidePanelResizeHandle(constraints.maxWidth),
+              SizedBox(
+                width: _resolvedSidePanelWidth(constraints.maxWidth),
+                child: _tiledAuxiliaryPanel(),
+              ),
+            ],
+          ),
+        );
+      case _ResolvedReaderLayout.threePanel:
+        return LayoutBuilder(
+          builder: (context, constraints) => Row(
+            children: [
+              if (_studyWorkspaceVisible) ...[
+                SizedBox(width: 300, child: _studyWorkspacePanel()),
+                const VerticalDivider(width: 1),
+              ],
+              Expanded(child: reader),
+              _sidePanelResizeHandle(
+                constraints.maxWidth - (_studyWorkspaceVisible ? 301 : 0),
+              ),
+              SizedBox(
+                width: _resolvedSidePanelWidth(
+                  constraints.maxWidth - (_studyWorkspaceVisible ? 301 : 0),
+                ),
+                child: _wordInspector(),
+              ),
+            ],
+          ),
+        );
     }
-    return state._tiledAuxiliaryPanel();
   }
 
   _ReaderSessionState? get _activeReader =>
@@ -562,6 +848,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     if (action == _ReaderMenuAction.settings) {
       _showSharedReaderSettings();
       return;
+    }
+    if (action == _ReaderMenuAction.studyWorkspace) {
+      setState(() => _splitShowsWord = false);
     }
     _activeReader?._handleReaderMenuAction(action);
   }
@@ -718,36 +1007,39 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                         },
                         onAuxiliaryPanelResizeEnd: _saveWorkspace,
                       )
-                    : PageView(
-                        key: ValueKey(mobile),
-                        controller: _pageController,
-                        onPageChanged: (index) {
-                          if (_pageTarget == null) _selectPage(index);
-                        },
-                        children: [
-                          if (mobile)
-                            Material(
-                              key: const ValueKey('study-workspace-page'),
-                              child:
-                                  _activeReader?._studyWorkspacePanel(
-                                    onOpenReader: _showReaderPage,
-                                  ) ??
-                                  const SizedBox.shrink(),
-                            ),
-                          for (final tab in _tabs) _reader(tab, tiled: false),
-                          if (_hasWordPage)
-                            KeyedSubtree(
-                              key: const ValueKey('word-info-page'),
-                              // Leave a swipe margin outside the inspector's
-                              // text selection and lexicon/occurrence tabs.
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                ),
-                                child: _activeReader!._wordInspector(),
+                    : _responsiveWorkspaceBody(
+                        PageView(
+                          key: ValueKey(mobile),
+                          controller: _pageController,
+                          onPageChanged: (index) {
+                            if (_pageTarget == null) _selectPage(index);
+                          },
+                          children: [
+                            if (mobile)
+                              Material(
+                                key: const ValueKey('study-workspace-page'),
+                                child:
+                                    _activeReader?._studyWorkspacePanel(
+                                      onOpenReader: _showReaderPage,
+                                    ) ??
+                                    const SizedBox.shrink(),
                               ),
-                            ),
-                        ],
+                            for (final tab in _tabs) _reader(tab, tiled: false),
+                            if (_hasWordPage)
+                              _WordInfoPage(
+                                key: const ValueKey('word-info-page'),
+                                active: _wordPageSelected,
+                                // Leave a swipe margin outside the inspector's
+                                // text selection and lexicon/occurrence tabs.
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
+                                  child: _wordInspector(),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
               ),
             ),
@@ -755,6 +1047,30 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         ),
       ),
     );
+  }
+}
+
+// Keep lexicon/occurrence tabs, filters, and loaded results when swiping back
+// to a reader. Reader sessions have their own independent keep-alive state.
+class _WordInfoPage extends StatefulWidget {
+  const _WordInfoPage({super.key, required this.child, required this.active});
+
+  final Widget child;
+  final bool active;
+
+  @override
+  State<_WordInfoPage> createState() => _WordInfoPageState();
+}
+
+class _WordInfoPageState extends State<_WordInfoPage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return TickerMode(enabled: widget.active, child: widget.child);
   }
 }
 
@@ -877,9 +1193,6 @@ class _ReaderSession extends StatefulWidget {
     this.sendChapterRequest,
     this.sendStudyStateRequest,
     this.saveStudyState,
-    this.sendWordInfoRequest,
-    this.sendWordOccurrencesRequest,
-    this.sendVerseTextsRequest,
   });
 
   final String sessionId;
@@ -887,7 +1200,7 @@ class _ReaderSession extends StatefulWidget {
   final ValueChanged<bool> onScrollChromeChanged;
   final bool tiled;
   final VoidCallback onWorkspaceTilesChanged;
-  final VoidCallback onWordInfoRequested;
+  final ValueChanged<_SelectedWord> onWordInfoRequested;
 
   /// Test seam: how a [GetChapter] request reaches the Rust side. Defaults to
   /// the real rinf signal; widget tests substitute a stub that answers via
@@ -895,9 +1208,6 @@ class _ReaderSession extends StatefulWidget {
   final void Function(GetChapter request)? sendChapterRequest;
   final void Function(GetStudyState request)? sendStudyStateRequest;
   final void Function(SaveStudyState request)? saveStudyState;
-  final void Function(GetWordInfo request)? sendWordInfoRequest;
-  final void Function(GetWordOccurrences request)? sendWordOccurrencesRequest;
-  final void Function(GetVerseTexts request)? sendVerseTextsRequest;
 
   static Future<void> seedNavigation(
     String sessionId,
@@ -940,7 +1250,6 @@ class _ReaderSessionState extends State<_ReaderSession>
   static const _kReadingPlans = 'reading_plans';
   static const _kReaderLayoutMode = 'reader_layout_mode';
   static const _kStudyWorkspaceVisible = 'study_workspace_visible';
-  static const _kSidePanelWidth = 'reader_side_panel_width';
 
   static const _fontFamilies = ['Cardo', 'David Libre', 'Frank Ruhl Libre'];
 
@@ -1003,13 +1312,6 @@ class _ReaderSessionState extends State<_ReaderSession>
   List<_ReadingPlan> _readingPlans = [];
   List<StudyWorkspace> _studyWorkspaces = [];
   String? _activeStudyWorkspaceId;
-  _SelectedWord? _selectedWord;
-  final List<_SelectedWord> _wordHistory = [];
-  int _wordHistoryIndex = -1;
-  bool get _canGoBackWord => _wordHistoryIndex > 0;
-  bool get _canGoForwardWord => _wordHistoryIndex < _wordHistory.length - 1;
-  bool _splitShowsWord = false;
-  double _sidePanelWidth = 360;
   double _chromeScrollDelta = 0;
   double? _lastChromeScrollPixels;
   Timer? _positionSaveTimer;
@@ -1258,10 +1560,6 @@ class _ReaderSessionState extends State<_ReaderSession>
       _morphologyInterlinear = prefs.getBool(_kMorphologyInterlinear) ?? false;
       _highlightProperNames = prefs.getBool(_kHighlightProperNames) ?? false;
       _studyWorkspaceVisible = prefs.getBool(_kStudyWorkspaceVisible) ?? false;
-      _sidePanelWidth = (prefs.getDouble(_kSidePanelWidth) ?? 360).clamp(
-        280,
-        600,
-      );
       _ketivDisplay = KetivDisplay.values.firstWhere(
         (option) => option.name == prefs.getString(_kKetivDisplay),
         orElse: () => KetivDisplay.superscript,
@@ -1380,7 +1678,6 @@ class _ReaderSessionState extends State<_ReaderSession>
       prefs.setBool(_kMorphologyInterlinear, _morphologyInterlinear),
       prefs.setBool(_kHighlightProperNames, _highlightProperNames),
       prefs.setBool(_kStudyWorkspaceVisible, _studyWorkspaceVisible),
-      prefs.setDouble(_kSidePanelWidth, _sidePanelWidth),
       prefs.setString(_kKetivDisplay, _ketivDisplay.name),
       prefs.setString(_kReaderLayoutMode, _readerLayoutMode.name),
     ]);
@@ -1941,7 +2238,6 @@ class _ReaderSessionState extends State<_ReaderSession>
     final enabled = !_studyWorkspaceVisible;
     setState(() {
       _studyWorkspaceVisible = enabled;
-      if (enabled) _splitShowsWord = false;
     });
     widget.onWorkspaceTilesChanged();
     _savePrefs();
@@ -2264,9 +2560,6 @@ class _ReaderSessionState extends State<_ReaderSession>
     setState(() {
       _pendingVerse = verse;
       _visibleVerse = verse ?? 1;
-      _selectedWord = null;
-      _wordHistory.clear();
-      _wordHistoryIndex = -1;
     });
     widget.onWorkspaceTilesChanged();
     _startAt(bookIndex, chapter);
@@ -2723,48 +3016,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       root: root,
       readerGloss: readerGloss,
     );
-    final layout = widget.tiled
-        ? _ResolvedReaderLayout.split
-        : _resolveReaderLayout(MediaQuery.sizeOf(context).width);
-    final mobile = MediaQuery.sizeOf(context).width < 900;
-    if (mobile || widget.tiled || layout != _ResolvedReaderLayout.focus) {
-      _selectInspectorWord(selected);
-      if (mobile) widget.onWordInfoRequested();
-      return;
-    }
-    showModalBottomSheet<void>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => WordInfoSheet(
-        sendInfoRequest: widget.sendWordInfoRequest,
-        sendOccurrencesRequest: widget.sendWordOccurrencesRequest,
-        sendVerseTextsRequest: widget.sendVerseTextsRequest,
-        word: word,
-        initialRoot: root.isEmpty ? null : root,
-        syriac: bookIndex >= 39,
-        book: bookIndex + 1,
-        chapter: chapter,
-        verse: verse,
-        position: position,
-        readerGloss: readerGloss,
-        useEnglishBookNames: _englishBookNames,
-        reportContext: {
-          'bookIndex': bookIndex,
-          'book': kBooks[bookIndex].transliteration,
-          'chapter': chapter,
-          'verse': verse,
-        },
-        isStudyBookmarked: (bookmark) =>
-            _activeStudyWorkspace?.wordForBookmark(bookmark) != null,
-        onToggleStudyBookmark: _toggleStudyWordBookmark,
-        onNavigateToPassage: (bi, chapter, verse) {
-          Navigator.pop(ctx);
-          _navigateTo(bi, chapter, verse: verse);
-        },
-      ),
-    );
+    widget.onWordInfoRequested(selected);
   }
 
   _ResolvedReaderLayout _resolveReaderLayout(double width) {
@@ -2831,190 +3083,6 @@ class _ReaderSessionState extends State<_ReaderSession>
         onMoveItem: _moveStudyItem,
       );
 
-  Widget _tiledAuxiliaryPanel() {
-    if (!_studyWorkspaceVisible) return _wordInspector();
-    if (_selectedWord == null) return _studyWorkspacePanel();
-    return Column(
-      children: [
-        _wordNavigationToolbar(showSwitcher: true),
-        const Divider(height: 1),
-        Expanded(
-          child: _splitShowsWord
-              ? _wordInspector(showNavigation: false)
-              : _studyWorkspacePanel(),
-        ),
-      ],
-    );
-  }
-
-  void _selectInspectorWord(_SelectedWord selected) {
-    setState(() {
-      if (_canGoForwardWord) {
-        _wordHistory.removeRange(_wordHistoryIndex + 1, _wordHistory.length);
-      }
-      _wordHistory.add(selected);
-      _wordHistoryIndex = _wordHistory.length - 1;
-      _selectedWord = selected;
-      _splitShowsWord = true;
-    });
-    widget.onWorkspaceTilesChanged();
-  }
-
-  void _openInspectorWord(String word, String? bdbId) {
-    final current = _selectedWord;
-    if (current == null) return;
-    _selectInspectorWord(
-      _SelectedWord(
-        word: word,
-        bookIndex: bdbId == null ? current.bookIndex : 0,
-        chapter: null,
-        verse: null,
-        position: null,
-        root: '',
-        bdbId: bdbId,
-      ),
-    );
-  }
-
-  void _moveInspectorHistory(int delta) {
-    final index = _wordHistoryIndex + delta;
-    if (index < 0 || index >= _wordHistory.length) return;
-    setState(() {
-      _wordHistoryIndex = index;
-      _selectedWord = _wordHistory[index];
-      _splitShowsWord = true;
-    });
-    widget.onWorkspaceTilesChanged();
-  }
-
-  Widget _wordNavigationToolbar({bool showSwitcher = false}) => Padding(
-    padding: const EdgeInsets.all(8),
-    child: Row(
-      children: [
-        if (showSwitcher)
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: SegmentedButton<bool>(
-                showSelectedIcon: false,
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  padding: WidgetStatePropertyAll(
-                    EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                ),
-                segments: const [
-                  ButtonSegment(
-                    value: false,
-                    icon: Icon(Icons.account_tree_outlined),
-                    label: Text('Study'),
-                  ),
-                  ButtonSegment(
-                    value: true,
-                    icon: Icon(Icons.menu_book_outlined),
-                    label: Text('Word'),
-                  ),
-                ],
-                selected: {_splitShowsWord},
-                onSelectionChanged: (selection) {
-                  setState(() => _splitShowsWord = selection.single);
-                  widget.onWorkspaceTilesChanged();
-                },
-              ),
-            ),
-          )
-        else
-          const Spacer(),
-        if (!showSwitcher || _splitShowsWord) ...[
-          IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: _canGoBackWord ? () => _moveInspectorHistory(-1) : null,
-            tooltip: 'Back to previous word',
-            visualDensity: VisualDensity.compact,
-          ),
-          IconButton(
-            icon: const Icon(Icons.arrow_forward),
-            onPressed: _canGoForwardWord
-                ? () => _moveInspectorHistory(1)
-                : null,
-            tooltip: 'Forward to next word',
-            visualDensity: VisualDensity.compact,
-          ),
-        ],
-      ],
-    ),
-  );
-
-  Widget _wordInspector({bool showNavigation = true}) {
-    final theme = Theme.of(context);
-    final selected = _selectedWord;
-    return Material(
-      color: theme.colorScheme.surface,
-      child: SafeArea(
-        top: false,
-        child: selected == null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'Select a Hebrew or Syriac word to keep its lexicon '
-                    'and occurrences beside the passage.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              )
-            : Column(
-                children: [
-                  if (showNavigation) _wordNavigationToolbar(),
-                  Expanded(
-                    child: WordInfoSheet(
-                      sendInfoRequest: widget.sendWordInfoRequest,
-                      sendOccurrencesRequest: widget.sendWordOccurrencesRequest,
-                      sendVerseTextsRequest: widget.sendVerseTextsRequest,
-                      key: ValueKey(
-                        '${selected.bookIndex}:${selected.chapter}:'
-                        '${selected.verse}:${selected.position}:${selected.word}:${selected.root}:${selected.bdbId}',
-                      ),
-                      docked: true,
-                      word: selected.word,
-                      bdbId: selected.bdbId,
-                      onOpenWord: _openInspectorWord,
-                      initialRoot: selected.root.isEmpty ? null : selected.root,
-                      syriac: selected.bookIndex >= 39,
-                      book: selected.chapter == null
-                          ? null
-                          : selected.bookIndex + 1,
-                      chapter: selected.chapter,
-                      verse: selected.verse,
-                      position: selected.position,
-                      readerGloss: selected.readerGloss,
-                      useEnglishBookNames: _englishBookNames,
-                      reportContext: {
-                        if (selected.chapter != null) ...{
-                          'bookIndex': selected.bookIndex,
-                          'book': kBooks[selected.bookIndex].transliteration,
-                          'chapter': selected.chapter,
-                          'verse': selected.verse,
-                        },
-                      },
-                      isStudyBookmarked: (bookmark) =>
-                          _activeStudyWorkspace?.wordForBookmark(bookmark) !=
-                          null,
-                      onToggleStudyBookmark: _toggleStudyWordBookmark,
-                      onNavigateToPassage: (book, chapter, verse) {
-                        _navigateTo(book, chapter, verse: verse);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-      ),
-    );
-  }
-
   Widget _readerSurface() {
     if (_initialLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -3043,92 +3111,6 @@ class _ReaderSessionState extends State<_ReaderSession>
         ],
       ),
     );
-  }
-
-  double _resolvedSidePanelWidth(double availableWidth) =>
-      _sidePanelWidth.clamp(280, math.max(280, availableWidth - 420));
-
-  Widget _sidePanelResizeHandle(double availableWidth) => MouseRegion(
-    cursor: SystemMouseCursors.resizeColumn,
-    child: GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onHorizontalDragUpdate: (details) {
-        setState(() {
-          _sidePanelWidth = (_sidePanelWidth - details.delta.dx).clamp(
-            280,
-            math.max(280, availableWidth - 420),
-          );
-        });
-      },
-      onHorizontalDragEnd: (_) => _savePrefs(),
-      child: Tooltip(
-        message: 'Drag to resize side panel',
-        child: SizedBox(
-          width: 9,
-          child: Center(
-            child: Container(
-              width: 2,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.outlineVariant,
-                borderRadius: BorderRadius.circular(1),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-
-  Widget _responsiveReaderBody(_ResolvedReaderLayout layout) {
-    final reader = _readerSurface();
-    if (widget.tiled) return reader;
-    switch (layout) {
-      case _ResolvedReaderLayout.focus:
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900),
-            child: reader,
-          ),
-        );
-      case _ResolvedReaderLayout.split:
-        if (!_studyWorkspaceVisible && _selectedWord == null) {
-          return reader;
-        }
-        return LayoutBuilder(
-          builder: (context, constraints) => Row(
-            children: [
-              Expanded(child: reader),
-              _sidePanelResizeHandle(constraints.maxWidth),
-              SizedBox(
-                width: _resolvedSidePanelWidth(constraints.maxWidth),
-                child: _tiledAuxiliaryPanel(),
-              ),
-            ],
-          ),
-        );
-      case _ResolvedReaderLayout.threePanel:
-        return LayoutBuilder(
-          builder: (context, constraints) => Row(
-            children: [
-              if (_studyWorkspaceVisible) ...[
-                SizedBox(width: 300, child: _studyWorkspacePanel()),
-                const VerticalDivider(width: 1),
-              ],
-              Expanded(child: reader),
-              _sidePanelResizeHandle(
-                constraints.maxWidth - (_studyWorkspaceVisible ? 301 : 0),
-              ),
-              SizedBox(
-                width: _resolvedSidePanelWidth(
-                  constraints.maxWidth - (_studyWorkspaceVisible ? 301 : 0),
-                ),
-                child: _wordInspector(),
-              ),
-            ],
-          ),
-        );
-    }
   }
 
   void _handleReaderMenuAction(_ReaderMenuAction action) {
@@ -3162,7 +3144,6 @@ class _ReaderSessionState extends State<_ReaderSession>
     super.build(context);
     final book = kBooks[_bookIndex];
     final theme = Theme.of(context);
-    final layout = _resolveReaderLayout(MediaQuery.sizeOf(context).width);
     return Scaffold(
       appBar: AppBar(
         backgroundColor: theme.colorScheme.surface,
@@ -3230,7 +3211,12 @@ class _ReaderSessionState extends State<_ReaderSession>
           ),
         ],
       ),
-      body: _responsiveReaderBody(layout),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: _readerSurface(),
+        ),
+      ),
     );
   }
 
