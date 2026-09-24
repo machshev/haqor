@@ -382,9 +382,168 @@ void main() {
     chips = tester.widgetList<InputChip>(find.byType(InputChip)).toList();
     expect(chips[0].selected, isTrue);
 
+    await tester.ensureVisible(find.byTooltip('Close reader tab').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Close reader tab').last);
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.byType(InputChip), findsNothing);
+  });
+
+  testWidgets('mobile study is a swipeable page with a pinned toolbar action', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final rust = await _pumpReader(tester, chapter: 5);
+    await tester.pumpAndSettle();
+
+    final studyButton = find.byWidgetPredicate(
+      (widget) => widget is IconButton && widget.tooltip == 'Study workspace',
+    );
+    expect(studyButton.hitTestable(), findsOneWidget);
+    expect(find.byType(StudyWorkspacePanel).hitTestable(), findsNothing);
+    await tester.tap(find.byTooltip('Reader options'));
+    await tester.pumpAndSettle();
+    expect(find.text('Study workspace'), findsNothing);
+    await tester.tapAt(const Offset(10, 400));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Settings'), findsNothing);
+    expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 1);
+    // Start in the reader margin, outside selectable verse text.
+    await tester.dragFrom(const Offset(5, 400), const Offset(300, 0));
+    await tester.pumpAndSettle();
+    expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 0);
+    await tester.pumpAndSettle();
+    expect(find.byType(StudyWorkspacePanel), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(tester.getSize(find.byType(StudyWorkspacePanel)).width, 360);
+    expect(tester.getTopLeft(find.byType(StudyWorkspacePanel)).dy, 48);
+    expect(tester.widget<IconButton>(studyButton).isSelected, isTrue);
+
+    await tester.tap(find.text('Create workspace'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), 'Mobile study');
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mobile study'), findsOneWidget);
+    expect(rust.studySaves, isNotEmpty);
+
+    // Incoming core updates must also refresh the study page while it is open.
+    const passage = study.StudyPassage(bookIndex: 0, chapter: 7, verse: 1);
+    const workspace = study.StudyWorkspace(
+      id: 'synced',
+      name: 'Synced study',
+      passages: [passage],
+    );
+    final response = StudyState(
+      found: true,
+      workspacesJson: study.encodeStudyWorkspaces([workspace]),
+      activeWorkspaceId: workspace.id,
+    );
+    assignRustSignal['StudyState']!(response.bincodeSerialize(), Uint8List(0));
+    await tester.pumpAndSettle();
+    expect(find.text('Synced study'), findsOneWidget);
+    await tester.tap(
+      find.byKey(ValueKey('passage-${passage.locationKey}')).last,
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    expect(tester.widget<IconButton>(studyButton).isSelected, isFalse);
+    expect(find.byType(StudyWorkspacePanel).hitTestable(), findsNothing);
+    expect(_verse(1, 7, 1), findsOneWidget);
+
+    await tester.tap(studyButton);
+    await tester.pumpAndSettle();
+    expect(find.byType(StudyWorkspacePanel), findsOneWidget);
+    await tester.drag(find.byType(PageView), const Offset(-300, 0));
+    await tester.pumpAndSettle();
+    expect(_verse(1, 7, 1), findsOneWidget);
+    expect(tester.widget<IconButton>(studyButton).isSelected, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('study paging preserves the active reader across window sizes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(500, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      'reader_tabs': ['primary', 'two'],
+      'reader_active_tab': 'two',
+      'reader_session_two_book': 0,
+      'reader_session_two_chapter': 7,
+      'study_workspace_visible': true,
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    expect(
+      tester.widgetList<InputChip>(find.byType(InputChip)).last.selected,
+      isTrue,
+    );
+
+    await tester.tap(find.byTooltip('Study workspace'));
+    // Exercise the intermediate animation frames between the second reader
+    // and study, so they cannot silently change the study's source reader.
+    for (var i = 0; i < 15; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(
+      tester
+          .widget<StudyWorkspacePanel>(find.byType(StudyWorkspacePanel))
+          .currentPassage
+          .chapter,
+      7,
+    );
+    await tester.tap(find.byTooltip('Study workspace'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widgetList<InputChip>(find.byType(InputChip)).last.selected,
+      isTrue,
+    );
+
+    for (final width in [1200.0, 500.0, 1400.0, 500.0]) {
+      tester.view.physicalSize = Size(width, 800);
+      await tester.pumpAndSettle();
+      rust.deliverAll();
+      await tester.pumpAndSettle();
+      expect(
+        tester.widgetList<InputChip>(find.byType(InputChip)).last.selected,
+        isTrue,
+      );
+      expect(_verse(1, 7, 1).hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+
+    await tester.tap(find.byTooltip('Study workspace'));
+    await tester.pumpAndSettle();
+    tester.view.physicalSize = const Size(1200, 800);
+    await tester.pumpAndSettle();
+    expect(find.byType(StudyWorkspacePanel), findsOneWidget);
+    expect(
+      tester.widgetList<InputChip>(find.byType(InputChip)).last.selected,
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('shows only the reader tiles that fit their minimum width', (

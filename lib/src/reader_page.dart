@@ -222,7 +222,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   final Map<String, GlobalKey<_ReaderSessionState>> _readerKeys = {
     'primary': GlobalKey<_ReaderSessionState>(),
   };
-  final PageController _pageController = PageController();
+  late PageController _pageController;
+  bool? _mobileLayout;
+  bool _studyPageSelected = false;
+  int? _pageTarget;
   String _activeTabId = 'primary';
   bool _tiled = false;
   double _tiledPanelWidth = 360;
@@ -235,6 +238,62 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     super.initState();
     _loadWorkspace();
   }
+
+  int get _readerPageOffset => _mobileLayout == true ? 1 : 0;
+
+  int get _activeReaderPage =>
+      _tabs.indexWhere((tab) => tab.id == _activeTabId) + _readerPageOffset;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final mobile = MediaQuery.sizeOf(context).width < 900;
+    if (_mobileLayout == mobile) return;
+    if (_mobileLayout != null) {
+      final previousController = _pageController;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        previousController.dispose();
+      });
+    }
+    _mobileLayout = mobile;
+    _studyPageSelected = false;
+    _pageTarget = null;
+    _pageController = PageController(
+      initialPage: _activeReaderPage,
+      keepPage: false,
+    );
+  }
+
+  void _selectPage(int index) {
+    setState(() {
+      _studyPageSelected = _mobileLayout == true && index == 0;
+      if (!_studyPageSelected) {
+        _activeTabId = _tabs[index - _readerPageOffset].id;
+      }
+      _mobileBarHidden = false;
+    });
+    _saveWorkspace();
+  }
+
+  Future<void> _showPage(int index) async {
+    final controller = _pageController;
+    if (!controller.hasClients) return;
+    // Passing another reader during an animation must not change the reader
+    // associated with the study page.
+    _pageTarget = index;
+    await controller.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+    if (!mounted || controller != _pageController || _pageTarget != index) {
+      return;
+    }
+    _pageTarget = null;
+    if (controller.hasClients) _selectPage(controller.page!.round());
+  }
+
+  void _showReaderPage() => _showPage(_activeReaderPage);
 
   Future<void> _loadWorkspace() async {
     final prefs = await SharedPreferences.getInstance();
@@ -257,9 +316,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_pageController.hasClients) return;
-      _pageController.jumpToPage(
-        _tabs.indexWhere((tab) => tab.id == _activeTabId),
-      );
+      _pageController.jumpToPage(_activeReaderPage);
     });
   }
 
@@ -293,11 +350,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _pageController.hasClients) {
-        _pageController.animateToPage(
-          _tabs.length - 1,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-        );
+        _showReaderPage();
       }
     });
     _saveWorkspace();
@@ -338,9 +391,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _pageController.hasClients) {
-        _pageController.jumpToPage(
-          _tabs.indexWhere((tab) => tab.id == _activeTabId),
-        );
+        _pageController.jumpToPage(_activeReaderPage);
       }
     });
     _saveWorkspace();
@@ -367,10 +418,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     sessionId: tab.id,
     tiled: tiled,
     onWorkspaceTilesChanged: () {
-      if (mounted && _tiled) {
-        setState(() => _activeTabId = tab.id);
-        _saveWorkspace();
-      }
+      if (!mounted) return;
+      setState(() {
+        if (_tiled && _mobileLayout == false) _activeTabId = tab.id;
+      });
+      if (_tiled && _mobileLayout == false) _saveWorkspace();
     },
     onScrollChromeChanged: (hidden) {
       if (MediaQuery.sizeOf(context).width >= 900 ||
@@ -444,7 +496,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     final (icon, label) = _workspaceActionPresentation(action);
     final studySelected =
         action == _ReaderMenuAction.studyWorkspace &&
-        (_activeReader?._studyWorkspaceVisible ?? false);
+        (_mobileLayout == true
+            ? _studyPageSelected
+            : (_activeReader?._studyWorkspaceVisible ?? false));
     return IconButton(
       isSelected: studySelected,
       selectedIcon: action == _ReaderMenuAction.studyWorkspace
@@ -475,6 +529,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   }
 
   void _handleWorkspaceMenuAction(_ReaderMenuAction action) {
+    if (action == _ReaderMenuAction.studyWorkspace && _mobileLayout == true) {
+      _showPage(_studyPageSelected ? _activeReaderPage : 0);
+      return;
+    }
     if (action == _ReaderMenuAction.settings) {
       _showSharedReaderSettings();
       return;
@@ -520,7 +578,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                           : 0.0;
                       final fixedWidth = 48.0 + (canTile ? 48 : 0) + 48;
                       final directActionCount = mobile
-                          ? 0
+                          ? 1
                           : ((constraints.maxWidth - tabWidth - fixedWidth) ~/
                                     48)
                                 .clamp(0, actions.length);
@@ -543,16 +601,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                                       final tab = _tabs[index];
                                       return InputChip(
                                         label: _tabLabel(tab),
-                                        selected: tab.id == _activeTabId,
+                                        selected:
+                                            !_studyPageSelected &&
+                                            tab.id == _activeTabId,
                                         onPressed: () {
                                           setState(() => _activeTabId = tab.id);
-                                          _pageController.animateToPage(
-                                            index,
-                                            duration: const Duration(
-                                              milliseconds: 220,
-                                            ),
-                                            curve: Curves.easeOut,
-                                          );
+                                          _showReaderPage();
                                           _saveWorkspace();
                                         },
                                         onDeleted: _tabs.length > 1
@@ -626,15 +680,21 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                         onAuxiliaryPanelResizeEnd: _saveWorkspace,
                       )
                     : PageView(
+                        key: ValueKey(mobile),
                         controller: _pageController,
                         onPageChanged: (index) {
-                          setState(() {
-                            _activeTabId = _tabs[index].id;
-                            _mobileBarHidden = false;
-                          });
-                          _saveWorkspace();
+                          if (_pageTarget == null) _selectPage(index);
                         },
                         children: [
+                          if (mobile)
+                            Material(
+                              key: const ValueKey('study-workspace-page'),
+                              child:
+                                  _activeReader?._studyWorkspacePanel(
+                                    onOpenReader: _showReaderPage,
+                                  ) ??
+                                  const SizedBox.shrink(),
+                            ),
                           for (final tab in _tabs) _reader(tab, tiled: false),
                         ],
                       ),
@@ -980,6 +1040,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         _studyWorkspaces = workspaces;
         _activeStudyWorkspaceId = activeId;
       });
+      widget.onPassageChanged();
       final prefs = await SharedPreferences.getInstance();
       await saveStudyWorkspaces(prefs, workspaces, activeId);
     });
@@ -1386,8 +1447,8 @@ class _ReaderSessionState extends State<_ReaderSession>
   }
 
   Future<void> _saveStudyState() async {
-    // The tiled study panel is built by the outer workspace, outside this
-    // session's setState scope. Refresh it immediately after a study edit.
+    // Study pages and tiled panels are built by the outer workspace, outside
+    // this session's setState scope. Refresh them after a study edit.
     widget.onWorkspaceTilesChanged();
     final prefs = await SharedPreferences.getInstance();
     await saveStudyWorkspaces(prefs, _studyWorkspaces, _activeStudyWorkspaceId);
@@ -2670,43 +2731,50 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
   }
 
-  Widget _studyWorkspacePanel() => StudyWorkspacePanel(
-    workspaces: _studyWorkspaces,
-    activeWorkspace: _activeStudyWorkspace,
-    currentPassage: _currentStudyPassage,
-    useEnglishBookNames: _englishBookNames,
-    onCreate: _createStudyWorkspace,
-    onSelect: (id) {
-      setState(() => _activeStudyWorkspaceId = id);
-      _saveStudyState();
-      _refreshLoadedChaptersForStudyRoots();
-    },
-    onRename: _renameStudyWorkspace,
-    onDelete: _deleteStudyWorkspace,
-    onToggleHighlights: _toggleStudyHighlights,
-    onCreateGroup: _createStudyGroup,
-    onEditGroup: _editStudyGroup,
-    onDeleteGroup: _deleteStudyGroup,
-    onBookmarkCurrent: _bookmarkCurrentStudyPassage,
-    onOpenPassage: (passage) => _navigateTo(
-      passage.bookIndex,
-      passage.chapter,
-      verse: passage.wholeChapter ? null : passage.verse,
-    ),
-    onEditPassage: _editStudyPassage,
-    onUpdatePassage: _updateStudyPassage,
-    onRemovePassage: _removeStudyPassage,
-    onEditWord: _editStudyWord,
-    onUpdateWord: _updateStudyWord,
-    onSwitchWordKind: _switchStudyWordKind,
-    onRemoveWord: _removeStudyWord,
-    onOpenWord: _openStudyWord,
-    onCreateNote: _createStudyNote,
-    onEditNote: _editStudyNote,
-    onUpdateNote: _updateStudyNote,
-    onRemoveNote: _removeStudyNote,
-    onMoveItem: _moveStudyItem,
-  );
+  Widget _studyWorkspacePanel({VoidCallback? onOpenReader}) =>
+      StudyWorkspacePanel(
+        workspaces: _studyWorkspaces,
+        activeWorkspace: _activeStudyWorkspace,
+        currentPassage: _currentStudyPassage,
+        useEnglishBookNames: _englishBookNames,
+        onCreate: _createStudyWorkspace,
+        onSelect: (id) {
+          setState(() => _activeStudyWorkspaceId = id);
+          _saveStudyState();
+          _refreshLoadedChaptersForStudyRoots();
+        },
+        onRename: _renameStudyWorkspace,
+        onDelete: _deleteStudyWorkspace,
+        onToggleHighlights: _toggleStudyHighlights,
+        onCreateGroup: _createStudyGroup,
+        onEditGroup: _editStudyGroup,
+        onDeleteGroup: _deleteStudyGroup,
+        onBookmarkCurrent: _bookmarkCurrentStudyPassage,
+        onOpenPassage: (passage) {
+          _navigateTo(
+            passage.bookIndex,
+            passage.chapter,
+            verse: passage.wholeChapter ? null : passage.verse,
+          );
+          onOpenReader?.call();
+        },
+        onEditPassage: _editStudyPassage,
+        onUpdatePassage: _updateStudyPassage,
+        onRemovePassage: _removeStudyPassage,
+        onEditWord: _editStudyWord,
+        onUpdateWord: _updateStudyWord,
+        onSwitchWordKind: _switchStudyWordKind,
+        onRemoveWord: _removeStudyWord,
+        onOpenWord: (word) {
+          onOpenReader?.call();
+          _openStudyWord(word);
+        },
+        onCreateNote: _createStudyNote,
+        onEditNote: _editStudyNote,
+        onUpdateNote: _updateStudyNote,
+        onRemoveNote: _removeStudyNote,
+        onMoveItem: _moveStudyItem,
+      );
 
   Widget _tiledAuxiliaryPanel() {
     if (!_studyWorkspaceVisible) return _wordInspector();
