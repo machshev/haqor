@@ -225,6 +225,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   late PageController _pageController;
   bool? _mobileLayout;
   bool _studyPageSelected = false;
+  bool _wordPageSelected = false;
   int? _pageTarget;
   String _activeTabId = 'primary';
   bool _tiled = false;
@@ -240,6 +241,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   }
 
   int get _readerPageOffset => _mobileLayout == true ? 1 : 0;
+
+  bool get _hasWordPage =>
+      _mobileLayout == true && _activeReader?._selectedWord != null;
+
+  int get _wordPageIndex => _tabs.length + _readerPageOffset;
 
   int get _activeReaderPage =>
       _tabs.indexWhere((tab) => tab.id == _activeTabId) + _readerPageOffset;
@@ -257,6 +263,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     }
     _mobileLayout = mobile;
     _studyPageSelected = false;
+    _wordPageSelected = false;
     _pageTarget = null;
     _pageController = PageController(
       initialPage: _activeReaderPage,
@@ -267,7 +274,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   void _selectPage(int index) {
     setState(() {
       _studyPageSelected = _mobileLayout == true && index == 0;
-      if (!_studyPageSelected) {
+      _wordPageSelected = _hasWordPage && index == _wordPageIndex;
+      if (!_studyPageSelected && !_wordPageSelected) {
         _activeTabId = _tabs[index - _readerPageOffset].id;
       }
       _mobileBarHidden = false;
@@ -279,7 +287,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     final controller = _pageController;
     if (!controller.hasClients) return;
     // Passing another reader during an animation must not change the reader
-    // associated with the study page.
+    // associated with the study or word-info page.
     _pageTarget = index;
     await controller.animateToPage(
       index,
@@ -422,10 +430,28 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       setState(() {
         if (_tiled && _mobileLayout == false) _activeTabId = tab.id;
       });
+      if (_wordPageSelected && !_hasWordPage) {
+        // Keep removal of the last page from selecting a different reader.
+        _wordPageSelected = false;
+        _pageTarget = _activeReaderPage;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showReaderPage();
+        });
+      }
       if (_tiled && _mobileLayout == false) _saveWorkspace();
     },
+    onWordInfoRequested: () {
+      if (!mounted || _mobileLayout != true) return;
+      setState(() => _activeTabId = tab.id);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _hasWordPage) _showPage(_wordPageIndex);
+      });
+    },
     onScrollChromeChanged: (hidden) {
-      if (MediaQuery.sizeOf(context).width >= 900 ||
+      if (_studyPageSelected ||
+          _wordPageSelected ||
+          tab.id != _activeTabId ||
+          MediaQuery.sizeOf(context).width >= 900 ||
           _mobileBarHidden == hidden) {
         return;
       }
@@ -603,6 +629,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                                         label: _tabLabel(tab),
                                         selected:
                                             !_studyPageSelected &&
+                                            !_wordPageSelected &&
                                             tab.id == _activeTabId,
                                         onPressed: () {
                                           setState(() => _activeTabId = tab.id);
@@ -621,6 +648,18 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                           ),
                           for (final action in directActions)
                             _workspaceActionButton(action),
+                          if (_hasWordPage)
+                            IconButton(
+                              isSelected: _wordPageSelected,
+                              selectedIcon: const Icon(Icons.menu_book),
+                              icon: const Icon(Icons.menu_book_outlined),
+                              tooltip: 'Word info',
+                              onPressed: () => _showPage(
+                                _wordPageSelected
+                                    ? _activeReaderPage
+                                    : _wordPageIndex,
+                              ),
+                            ),
                           IconButton(
                             icon: const Icon(Icons.add),
                             tooltip: 'New reader tab',
@@ -696,6 +735,18 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                                   const SizedBox.shrink(),
                             ),
                           for (final tab in _tabs) _reader(tab, tiled: false),
+                          if (_hasWordPage)
+                            KeyedSubtree(
+                              key: const ValueKey('word-info-page'),
+                              // Leave a swipe margin outside the inspector's
+                              // text selection and lexicon/occurrence tabs.
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                child: _activeReader!._wordInspector(),
+                              ),
+                            ),
                         ],
                       ),
               ),
@@ -822,6 +873,7 @@ class _ReaderSession extends StatefulWidget {
     required this.onScrollChromeChanged,
     required this.tiled,
     required this.onWorkspaceTilesChanged,
+    required this.onWordInfoRequested,
     this.sendChapterRequest,
     this.sendStudyStateRequest,
     this.saveStudyState,
@@ -835,6 +887,7 @@ class _ReaderSession extends StatefulWidget {
   final ValueChanged<bool> onScrollChromeChanged;
   final bool tiled;
   final VoidCallback onWorkspaceTilesChanged;
+  final VoidCallback onWordInfoRequested;
 
   /// Test seam: how a [GetChapter] request reaches the Rust side. Defaults to
   /// the real rinf signal; widget tests substitute a stub that answers via
@@ -2673,8 +2726,10 @@ class _ReaderSessionState extends State<_ReaderSession>
     final layout = widget.tiled
         ? _ResolvedReaderLayout.split
         : _resolveReaderLayout(MediaQuery.sizeOf(context).width);
-    if (widget.tiled || layout != _ResolvedReaderLayout.focus) {
+    final mobile = MediaQuery.sizeOf(context).width < 900;
+    if (mobile || widget.tiled || layout != _ResolvedReaderLayout.focus) {
       _selectInspectorWord(selected);
+      if (mobile) widget.onWordInfoRequested();
       return;
     }
     showModalBottomSheet<void>(

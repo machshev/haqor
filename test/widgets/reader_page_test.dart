@@ -546,6 +546,178 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('active mobile word info is a swipeable page with history', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final rust = await _pumpReader(tester, chapter: 5);
+    await tester.pumpAndSettle();
+
+    // Word requests deliberately remain pending; advance page animations
+    // without waiting for the inspector's loading indicator to settle.
+    Future<void> finishNavigation() async {
+      await tester.pump();
+      for (var i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+    }
+
+    double page() =>
+        tester.widget<PageView>(find.byType(PageView).first).controller!.page!;
+    WordInfoSheet current() =>
+        tester.widget<WordInfoSheet>(find.byType(WordInfoSheet));
+    expect(find.byTooltip('Word info'), findsNothing);
+    tester
+        .widget<VerseRow>(find.byType(VerseRow).first)
+        .onWordTap('מלה', 'original gloss', 3, 'מלל');
+    await finishNavigation();
+    expect(page(), 2);
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byTooltip('Word info').hitTestable(), findsOneWidget);
+    expect(find.byTooltip('Study workspace').hitTestable(), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('word-info-page'))).width,
+      360,
+    );
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('word-info-page'))).dy,
+      48,
+    );
+    expect(current().docked, isTrue);
+    expect(current().chapter, 5);
+    expect(current().position, 3);
+    expect(current().readerGloss, 'original gloss');
+    expect(current().initialRoot, 'מלל');
+
+    current().onOpenWord!('יָעַד', null);
+    await tester.pump();
+    expect(current().word, 'יָעַד');
+    expect(rust.wordRequests.last.word, 'יָעַד');
+    await tester.tap(find.byTooltip('Back to previous word'));
+    await tester.pump();
+    expect(current().word, 'מלה');
+    expect(current().position, 3);
+    await tester.tap(find.byTooltip('Forward to next word'));
+    await tester.pump();
+    expect(current().word, 'יָעַד');
+
+    final info = WordInfo(
+      found: true,
+      word: current().word,
+      root: '',
+      gloss: 'appoint',
+      article: false,
+      vavCon: false,
+      bdbEntries: const [],
+      sedraEntries: const [],
+      roots: const [],
+    );
+    assignRustSignal['WordInfo']!(info.bincodeSerialize(), Uint8List(0));
+    await tester.pump();
+    expect(find.text('Lexicon'), findsOneWidget);
+    // Swipe outside text selection and the inspector's own tab gestures.
+    await tester.dragFrom(const Offset(5, 400), const Offset(300, 0));
+    await finishNavigation();
+    expect(page(), 1);
+    await tester.dragFrom(const Offset(355, 400), const Offset(-300, 0));
+    await finishNavigation();
+    expect(page(), 2);
+    expect(current().word, 'יָעַד');
+
+    await tester.tap(find.byTooltip('Word info'));
+    await finishNavigation();
+    expect(page(), 1);
+    await tester.tap(find.byTooltip('Word info'));
+    await finishNavigation();
+    expect(page(), 2);
+    current().onNavigateToPassage!(0, 7, 1);
+    await finishNavigation();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    expect(page(), 1);
+    expect(find.byTooltip('Word info'), findsNothing);
+    expect(find.byKey(const ValueKey('word-info-page')), findsNothing);
+    expect(_verse(1, 7, 1), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mobile word page keeps its reader across tabs and resizing', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(500, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final rust = await _pumpReader(tester, chapter: 5);
+    await tester.tap(find.byTooltip('New reader tab'));
+    await tester.pump();
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(InputChip).first);
+    await tester.pumpAndSettle();
+
+    Future<void> finishNavigation() async {
+      await tester.pump();
+      for (var i = 0; i < 15; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+    }
+
+    tester
+        .widget<VerseRow>(find.byType(VerseRow).first)
+        .onWordTap('מלה', null, 0, '');
+    await finishNavigation();
+    WordInfoSheet current() =>
+        tester.widget<WordInfoSheet>(find.byType(WordInfoSheet));
+    expect(current().word, 'מלה');
+    expect(
+      tester
+          .widgetList<InputChip>(find.byType(InputChip))
+          .every((chip) => !chip.selected),
+      isTrue,
+    );
+
+    await tester.tap(find.byTooltip('Study workspace'));
+    await finishNavigation();
+    await tester.tap(find.byTooltip('Word info'));
+    await finishNavigation();
+    expect(current().word, 'מלה');
+
+    for (final width in [1200.0, 500.0]) {
+      tester.view.physicalSize = Size(width, 800);
+      await finishNavigation();
+      rust.deliverAll();
+      await tester.pump();
+      expect(
+        tester.widgetList<InputChip>(find.byType(InputChip)).first.selected,
+        isTrue,
+      );
+      if (width < 900) {
+        await tester.tap(find.byTooltip('Word info'));
+        await finishNavigation();
+      }
+      expect(current().word, 'מלה');
+      expect(tester.takeException(), isNull);
+    }
+
+    // Removing word info must return to its source reader, not the last tab.
+    current().onNavigateToPassage!(0, 7, 1);
+    await finishNavigation();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    expect(
+      tester.widgetList<InputChip>(find.byType(InputChip)).first.selected,
+      isTrue,
+    );
+    expect(_verse(1, 7, 1), findsOneWidget);
+    expect(find.byTooltip('Word info'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('shows only the reader tiles that fit their minimum width', (
     tester,
   ) async {
