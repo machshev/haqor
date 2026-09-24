@@ -1481,6 +1481,85 @@ void main() {
     expect(history?.last, '0,5,${prefs.getInt('verse')}');
   });
 
+  for (final width in [500.0, 1200.0]) {
+    testWidgets('chapter header updates the title at width $width', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final rust = await _pumpReader(tester, chapter: 5);
+      rust.deliverAll();
+      await tester.pump();
+      final scroll = find.byType(CustomScrollView);
+      final controller = tester.widget<CustomScrollView>(scroll).controller!;
+      final heading = find.byKey(const ValueKey('chapter-heading-0-6'));
+      final indicator = find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(Chip),
+      );
+
+      // Approach the boundary while the last verse of chapter 5 is visible.
+      for (var i = 0; i < 40; i++) {
+        final viewportTop = tester.getTopLeft(scroll).dy;
+        if (heading.evaluate().isNotEmpty &&
+            tester.getTopLeft(heading).dy < viewportTop + 200) {
+          break;
+        }
+        controller.jumpTo(controller.offset + 100);
+        await tester.pump();
+        rust.deliverAll();
+        await tester.pump();
+      }
+      expect(
+        find.descendant(of: indicator, matching: find.text('5')),
+        findsOneWidget,
+      );
+
+      // Put the chapter divider at the top, before verse 1 reaches it.
+      // The heading has 24 pixels of padding above it.
+      controller.jumpTo(
+        controller.offset +
+            tester.getTopLeft(heading).dy -
+            tester.getTopLeft(scroll).dy -
+            24,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        tester.getTopLeft(heading).dy,
+        closeTo(tester.getTopLeft(scroll).dy + 24, 0.01),
+      );
+      if (_verse(1, 5, 20).evaluate().isNotEmpty) {
+        expect(
+          tester.getBottomLeft(_verse(1, 5, 20)).dy,
+          lessThanOrEqualTo(tester.getTopLeft(scroll).dy),
+        );
+      }
+      expect(
+        tester.getTopLeft(_verse(1, 6, 1)).dy,
+        greaterThan(tester.getTopLeft(heading).dy),
+      );
+      expect(
+        find.descendant(of: indicator, matching: find.text('6')),
+        findsOneWidget,
+      );
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('chapter'), 6);
+      expect(prefs.getInt('verse'), 1);
+
+      // Scrolling back to the preceding verse restores the previous chapter.
+      controller.jumpTo(controller.offset - 100);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.descendant(of: indicator, matching: find.text('5')),
+        findsOneWidget,
+      );
+    });
+  }
+
   testWidgets('chapter indicator stays on 1 Samuel after crossing books', (
     tester,
   ) async {

@@ -1315,6 +1315,8 @@ class _ReaderSessionState extends State<_ReaderSession>
   double _chromeScrollDelta = 0;
   double? _lastChromeScrollPixels;
   Timer? _positionSaveTimer;
+  final _scrollViewKey = GlobalKey();
+  bool _passageUpdateScheduled = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -2761,7 +2763,15 @@ class _ReaderSessionState extends State<_ReaderSession>
   }
 
   void _onScroll() {
-    _updateCurrentPassage();
+    // Scroll listeners run before layout; measure the final visible content
+    // once the frame has laid out, including any changes to the reader chrome.
+    if (!_passageUpdateScheduled) {
+      _passageUpdateScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _passageUpdateScheduled = false;
+        _updateCurrentPassage();
+      });
+    }
     if (!_scrollController.hasClients || _sections.isEmpty) return;
     final position = _scrollController.position;
     final previousPixels = _lastChromeScrollPixels;
@@ -2889,8 +2899,10 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   void _updateCurrentPassage() {
     if (!mounted || _sections.isEmpty) return;
-    final appBarBottom = kToolbarHeight + MediaQuery.of(context).padding.top;
-    final readingLine = appBarBottom + 8;
+    final viewport =
+        _scrollViewKey.currentContext?.findRenderObject() as RenderBox?;
+    if (viewport == null || !viewport.attached) return;
+    final readingLine = viewport.localToGlobal(Offset.zero).dy + 8;
     _Section? visibleSection;
     for (int i = _sections.length - 1; i >= 0; i--) {
       final ctx = _sections[i].key.currentContext;
@@ -3238,6 +3250,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   Widget _buildScrollView() {
     final bottomPadding = MediaQuery.viewPaddingOf(context).bottom;
     return CustomScrollView(
+      key: _scrollViewKey,
       controller: _scrollController,
       // Anchoring on a zero-height center sliver lets sections above it grow
       // into negative scroll offsets: prepending a chapter extends
