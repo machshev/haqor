@@ -59,6 +59,26 @@ const dataSourceCredits = <DataSourceCredit>[
     url: 'https://github.com/openscriptures/HebrewLexicon',
   ),
   DataSourceCredit(
+    title: 'Klein Etymological Dictionary',
+    description:
+        'Ernest Klein, A Comprehensive Etymological Dictionary of the Hebrew '
+        'Language for Readers of English (Carta Jerusalem, 1987), digitised '
+        'by Sefaria. Haqor carries the entries reachable from the Hebrew '
+        'Bible and the Peshitta, reformatted but with the wording unchanged.',
+    licence: 'CC BY-NC — not for commercial redistribution.',
+    url: 'https://www.sefaria.org/Klein_Dictionary',
+  ),
+  DataSourceCredit(
+    title: 'Jastrow Dictionary',
+    description:
+        'Marcus Jastrow, A Dictionary of the Targumim, the Talmud Babli and '
+        'Yerushalmi, and the Midrashic Literature (Luzac, London, 1903), '
+        'digitised by Sefaria. Haqor carries its biblical and Aramaic '
+        'entries, reformatted but with the wording unchanged.',
+    licence: 'Public domain',
+    url: 'https://www.sefaria.org/Jastrow',
+  ),
+  DataSourceCredit(
     title: 'STEP Bible TAHOT',
     description: 'Context-sensitive interlinear translations.',
     licence: 'CC BY 4.0',

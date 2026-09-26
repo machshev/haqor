@@ -36,4 +36,18 @@ void main() {
     expect(sedra.note, contains('George A. Kiraz'));
     expect(sedra.note, contains('Syriac Computing Institute'));
   });
+
+  test(
+    'Klein credit names its author, digitiser and non-commercial licence',
+    () {
+      // CC BY-NC is conditional on this credit, so it has to survive edits for
+      // as long as haqor.db carries Klein's entries.
+      final klein = dataSourceCredits.firstWhere(
+        (c) => c.title == 'Klein Etymological Dictionary',
+      );
+      expect(klein.description, contains('Ernest Klein'));
+      expect(klein.description, contains('Sefaria'));
+      expect(klein.licence, contains('CC BY-NC'));
+    },
+  );
 }

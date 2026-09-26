@@ -264,6 +264,18 @@ Codex*, which is in the public domain.
 bridging them, released CC BY 4.0 — credit the Open Scriptures Hebrew Bible
 Project — over public-domain BDB and Strong's text.
 
+**Etymological dictionary** — Ernest Klein, *A Comprehensive Etymological
+Dictionary of the Hebrew Language for Readers of English* (Carta Jerusalem,
+1987), in the [digitisation by Sefaria](https://www.sefaria.org/Klein_Dictionary),
+licensed CC BY-NC. Haqor carries the entries reachable from the Hebrew Bible and
+the Peshitta, reformatted with the wording unchanged. The non-commercial terms
+apply to this data wherever Haqor is redistributed.
+
+**Rabbinic and Aramaic dictionary** — Marcus Jastrow, *A Dictionary of the
+Targumim, the Talmud Babli and Yerushalmi, and the Midrashic Literature*
+(Luzac, London, 1903), in the public domain, from the
+[digitisation by Sefaria](https://www.sefaria.org/Jastrow).
+
 **Interlinear translations** — STEP Bible's
 [TAHOT dataset](https://github.com/STEPBible/STEPBible-Data), licensed CC BY
 4.0.
