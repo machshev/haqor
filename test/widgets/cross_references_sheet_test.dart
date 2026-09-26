@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/widgets/cross_references_sheet.dart';
@@ -87,6 +88,7 @@ Future<_FakeRust> _pump(
   ValueChanged<double>? onMinScoreChanged,
   void Function(int, int, int)? onNavigate,
 }) async {
+  SharedPreferences.setMockInitialValues({});
   final rust = _FakeRust();
   await tester.pumpWidget(
     MaterialApp(
@@ -96,7 +98,7 @@ Future<_FakeRust> _pump(
           child: CrossReferencesPanel(
             book: 40,
             chapter: 1,
-            verse: verse,
+            target: verse == null ? null : (book: 40, chapter: 1, verse: verse),
             useEnglishBookNames: true,
             minScore: minScore,
             onMinScoreChanged: onMinScoreChanged,
@@ -130,6 +132,7 @@ Map<String, List<String>> _highlighted(WidgetTester tester) {
 void main() {
   overviewTests();
   strengthTests();
+  dockedTests();
 
   testWidgets('asks for the verse and lists its links with matched words', (
     tester,
@@ -371,5 +374,68 @@ void strengthTests() {
     rust.deliverVerseTexts();
     await tester.pumpAndSettle();
     expect(find.textContaining('Isaiah 8:8'), findsOneWidget);
+  });
+}
+
+void dockedTests() {
+  testWidgets('the verse text switch asks for English and remembers it', (
+    tester,
+  ) async {
+    final rust = await _pump(tester, verse: null);
+    rust.deliverQuotations(1, [
+      _quote(verse: 23, otherBook: 12, otherChapter: 7, otherVerse: 14),
+    ]);
+    await tester.pump();
+    expect(rust.verseRequests.last.englishOnly, isFalse);
+
+    await tester.tap(find.byTooltip('Show English-only verse text'));
+    await tester.pump();
+    expect(rust.verseRequests.last.englishOnly, isTrue);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('occurrence_verse_english_only'), isTrue);
+  });
+
+  testWidgets('docked, it follows the reader and reopens asked-for verses', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final rust = _FakeRust();
+    var closed = 0;
+    Widget panel(int chapter, int request) => MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          height: 600,
+          child: CrossReferencesPanel(
+            book: 40,
+            chapter: chapter,
+            target: request == 0 ? null : (book: 40, chapter: 2, verse: 15),
+            targetRequest: request,
+            useEnglishBookNames: true,
+            onClose: () => closed++,
+            sendRequest: rust.requests.add,
+            sendQuotationsRequest: rust.quotationRequests.add,
+            sendVerseTextsRequest: rust.verseRequests.add,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(panel(1, 0));
+    expect(rust.quotationRequests.single.firstChapter, 1);
+
+    // The reader scrolls on: the chapter overview follows it.
+    await tester.pumpWidget(panel(2, 0));
+    expect(rust.quotationRequests.last.firstChapter, 2);
+
+    // A marker is tapped: that verse opens, and after going back, the same
+    // verse asked for again opens again.
+    await tester.pumpWidget(panel(2, 1));
+    expect(rust.requests.single.verse, 15);
+    await tester.tap(find.byTooltip('All cross references'));
+    await tester.pump();
+    await tester.pumpWidget(panel(2, 2));
+    expect(rust.requests, hasLength(2));
+
+    await tester.tap(find.byTooltip('Close cross references'));
+    expect(closed, 1);
   });
 }

@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/reader_page.dart';
 import 'package:haqor/src/study_workspace.dart' as study;
+import 'package:haqor/src/widgets/cross_references_sheet.dart';
 import 'package:haqor/src/widgets/verse_row.dart';
 import 'package:haqor/src/widgets/study_workspace_panel.dart';
 import 'package:haqor/src/widgets/word_info_sheet.dart';
@@ -23,6 +24,8 @@ class _FakeRust {
   final List<GetWordInfo> wordRequests = [];
   final List<GetWordOccurrences> occurrenceRequests = [];
   final List<GetVerseTexts> verseTextRequests = [];
+  final List<GetCrossReferences> crossReferenceRequests = [];
+  final List<GetQuotations> quotationRequests = [];
 
   void onWordInfo(GetWordInfo request) => wordRequests.add(request);
   void onOccurrences(GetWordOccurrences request) =>
@@ -129,6 +132,8 @@ Future<void> _deliverExpectingNoShift(
 }
 
 void main() {
+  crossReferenceDockTests();
+
   for (final enabled in [true, false]) {
     testWidgets(
       'chapter headings and phrase endpoints highlight independently ($enabled)',
@@ -1012,7 +1017,7 @@ void main() {
       final forward = find.byWidgetPredicate(
         (w) => w is IconButton && w.tooltip == 'Forward to next word',
       );
-      final switcher = find.byType(SegmentedButton<bool>);
+      final switcher = find.byKey(const ValueKey('side-panel-switcher'));
       expect(tester.widget<IconButton>(back).onPressed, isNull);
       expect(tester.widget<IconButton>(forward).onPressed, isNull);
       expect(
@@ -1090,7 +1095,7 @@ void main() {
       await tester.tap(back);
       await tester.pump();
       expect(current().word, 'יָעַד');
-      expect(tester.widget<SegmentedButton<bool>>(switcher).selected, {true});
+      expect(_sidePanelShown(tester, switcher), 'word');
       expect(tester.takeException(), isNull);
     });
   }
@@ -1135,14 +1140,14 @@ void main() {
     expect(find.byType(WordInfoSheet), findsOneWidget);
     expect(find.byType(StudyWorkspacePanel), findsNothing);
 
-    final switcher = find.byType(SegmentedButton<bool>);
+    final switcher = find.byKey(const ValueKey('side-panel-switcher'));
     await tester.tap(
       find.descendant(of: switcher, matching: find.text('Study')),
     );
     await tester.pump();
     expect(find.byType(StudyWorkspacePanel), findsOneWidget);
     expect(find.byType(WordInfoSheet), findsNothing);
-    expect(tester.widget<SegmentedButton<bool>>(switcher).selected, {false});
+    expect(_sidePanelShown(tester, switcher), 'study');
 
     await tester.tap(
       find.descendant(of: switcher, matching: find.text('Word')),
@@ -1154,7 +1159,7 @@ void main() {
       tester.widget<WordInfoSheet>(find.byType(WordInfoSheet)).word,
       'מלה',
     );
-    expect(tester.widget<SegmentedButton<bool>>(switcher).selected, {true});
+    expect(_sidePanelShown(tester, switcher), 'word');
     expect(tester.takeException(), isNull);
   });
 
@@ -1709,5 +1714,104 @@ void main() {
     expect(find.text('Remove root bookmark'), findsOneWidget);
     expect(find.text('Bookmark this form'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+}
+
+/// Which view the side panel's switcher has selected, by name.
+String _sidePanelShown(WidgetTester tester, Finder switcher) => tester
+    .widget<SegmentedButton<Object?>>(switcher)
+    .selected
+    .single
+    .toString()
+    .split('.')
+    .last;
+
+Future<_FakeRust> _pumpWorkspace(WidgetTester tester, Size size) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  SharedPreferences.setMockInitialValues({'book': 0, 'chapter': 1});
+  final rust = _FakeRust();
+  await tester.pumpWidget(
+    MaterialApp(
+      home: BibleReaderPage(
+        sendChapterRequest: rust.onRequest,
+        sendStudyStateRequest: rust.onStudyRequest,
+        saveStudyState: rust.onStudySave,
+        sendWordInfoRequest: rust.onWordInfo,
+        sendWordOccurrencesRequest: rust.onOccurrences,
+        sendVerseTextsRequest: rust.onVerseTexts,
+        sendCrossReferencesRequest: rust.crossReferenceRequests.add,
+        sendQuotationsRequest: rust.quotationRequests.add,
+      ),
+    ),
+  );
+  await tester.pump();
+  rust.deliverAll();
+  await tester.pumpAndSettle();
+  return rust;
+}
+
+void crossReferenceDockTests() {
+  testWidgets('cross references dock beside the reader from the toolbar', (
+    tester,
+  ) async {
+    final rust = await _pumpWorkspace(tester, const Size(1366, 744));
+    expect(find.byType(CrossReferencesPanel), findsNothing);
+
+    await tester.tap(find.byTooltip('Cross references'));
+    await tester.pump();
+    expect(find.byType(CrossReferencesPanel), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing, reason: 'docked');
+    final request = rust.quotationRequests.single;
+    expect((request.book, request.firstChapter), (1, 1));
+
+    await tester.tap(find.byTooltip('Cross references'));
+    await tester.pump();
+    expect(find.byType(CrossReferencesPanel), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a verse marker opens its links beside an open word', (
+    tester,
+  ) async {
+    final rust = await _pumpWorkspace(tester, const Size(1366, 744));
+    final row = tester.widget<VerseRow>(find.byType(VerseRow).first);
+    row.onWordTap('מלה', null, 0, '');
+    await tester.pump();
+    expect(find.byType(WordInfoSheet), findsOneWidget);
+
+    row.onCrossReferences!();
+    await tester.pump();
+    final switcher = find.byKey(const ValueKey('side-panel-switcher'));
+    expect(_sidePanelShown(tester, switcher), 'crossReferences');
+    expect(find.byType(CrossReferencesPanel), findsOneWidget);
+    final request = rust.crossReferenceRequests.single;
+    expect((request.book, request.chapter, request.verse), (1, 1, 1));
+
+    await tester.tap(
+      find.descendant(of: switcher, matching: find.text('Word')),
+    );
+    await tester.pump();
+    expect(find.byType(WordInfoSheet), findsOneWidget);
+    expect(find.byType(CrossReferencesPanel), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('on a phone cross references open as a sheet', (tester) async {
+    final rust = await _pumpWorkspace(tester, const Size(420, 800));
+    tester.widget<VerseRow>(find.byType(VerseRow).first).onCrossReferences!();
+    // The sheet opens on its loading spinner, which never settles.
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(CrossReferencesPanel),
+      ),
+      findsOneWidget,
+    );
+    expect(rust.crossReferenceRequests.single.verse, 1);
   });
 }

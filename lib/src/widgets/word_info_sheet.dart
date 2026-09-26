@@ -1400,7 +1400,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                     tooltip: _occurrenceVerseEnglishOnly
                         ? 'Show Hebrew verse text'
                         : 'Show English-only verse text',
-                    icon: _VerseModeIcon(
+                    icon: VerseModeIcon(
                       englishOnly: _occurrenceVerseEnglishOnly,
                     ),
                     onPressed: () {
@@ -2054,7 +2054,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                     tooltip: _occurrenceVerseEnglishOnly
                         ? 'Show Hebrew verse text'
                         : 'Show English-only verse text',
-                    icon: _VerseModeIcon(
+                    icon: VerseModeIcon(
                       englishOnly: _occurrenceVerseEnglishOnly,
                     ),
                     onPressed: () {
@@ -2568,8 +2568,9 @@ class _FormScopeToggle extends StatelessWidget {
   }
 }
 
-class _VerseModeIcon extends StatelessWidget {
-  const _VerseModeIcon({required this.englishOnly});
+/// The Hebrew / English verse-text switch icon, shared by the verse lists.
+class VerseModeIcon extends StatelessWidget {
+  const VerseModeIcon({super.key, required this.englishOnly});
 
   final bool englishOnly;
 

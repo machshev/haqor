@@ -3,10 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
+import '../app_settings.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import 'verse_text_cache.dart';
-import 'word_info_sheet.dart' show OccurrenceVerseRow;
+import 'word_info_sheet.dart' show OccurrenceVerseRow, VerseModeIcon;
 
 /// The strength filter's settings: the minimum score each keeps, and its name.
 /// The database holds a deliberately loose set, echoes and allusions
@@ -32,6 +33,28 @@ String crossReferenceStrength(double score) {
 
 String _words(int n) => n == 1 ? '1 word' : '$n words';
 
+/// The header buttons both views share: the Hebrew / English verse switch, as
+/// in the word sheet's occurrence lists, and a docked panel's close button.
+List<Widget> _headerActions({
+  required bool englishOnly,
+  required VoidCallback onToggleEnglishOnly,
+  VoidCallback? onClose,
+}) => [
+  IconButton(
+    tooltip: englishOnly
+        ? 'Show Hebrew verse text'
+        : 'Show English-only verse text',
+    icon: VerseModeIcon(englishOnly: englishOnly),
+    onPressed: onToggleEnglishOnly,
+  ),
+  if (onClose != null)
+    IconButton(
+      tooltip: 'Close cross references',
+      icon: const Icon(Icons.close),
+      onPressed: onClose,
+    ),
+];
+
 /// Which part of the book the overview lists.
 enum CrossReferenceScope { chapter, book }
 
@@ -47,8 +70,10 @@ class CrossReferencesPanel extends StatefulWidget {
     super.key,
     required this.book,
     required this.chapter,
-    this.verse,
+    this.target,
+    this.targetRequest = 0,
     required this.useEnglishBookNames,
+    this.onClose,
     this.minScore = 0,
     this.onMinScoreChanged,
     this.onNavigateToPassage,
@@ -57,13 +82,20 @@ class CrossReferencesPanel extends StatefulWidget {
     this.sendVerseTextsRequest,
   });
 
-  /// 1-based book number and chapter the overview starts on.
+  /// 1-based book number and chapter the overview shows. Docked beside the
+  /// reader these follow its position, and the overview follows them with
+  /// its filters kept.
   final int book;
   final int chapter;
 
-  /// Opens straight onto this verse's links when given.
-  final int? verse;
+  /// A verse (1-based book) whose links to open: at once, and again whenever
+  /// [targetRequest] changes — so asking for the same verse twice reopens it.
+  final ({int book, int chapter, int verse})? target;
+  final int targetRequest;
   final bool useEnglishBookNames;
+
+  /// Closes a docked panel; shown as a close button when given.
+  final VoidCallback? onClose;
 
   /// The strength filter the panel opens with (one of
   /// [crossReferenceStrengths]), and where a change to it is reported — the
@@ -86,6 +118,7 @@ class CrossReferencesPanel extends StatefulWidget {
 
 /// A verse whose links are shown, and the link to focus first.
 typedef _VerseView = ({
+  int book,
   int chapter,
   int verse,
   ({int book, int chapter, int verse})? focus,
@@ -107,6 +140,10 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   bool _byReference = true;
   late double _minScore = widget.minScore;
 
+  /// Verse text as Hebrew, or as the English reader glosses: the same setting
+  /// as the word sheet's occurrence lists.
+  bool _englishOnly = false;
+
   int _requestId = 0;
   bool _loading = true;
   int _total = 0;
@@ -118,9 +155,10 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   @override
   void initState() {
     super.initState();
-    if (widget.verse case final verse?) {
-      _view = (chapter: widget.chapter, verse: verse, focus: null);
-    }
+    _openTarget();
+    occurrenceVerseEnglishOnlyEnabled().then((enabled) {
+      if (mounted) setState(() => _englishOnly = enabled);
+    });
     _sub = Quotations.rustSignalStream.listen((pack) {
       final reply = pack.message;
       if (reply.requestId != _requestId || !mounted) return;
@@ -131,6 +169,37 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
       });
     });
     _requestOverview();
+  }
+
+  @override
+  void didUpdateWidget(CrossReferencesPanel old) {
+    super.didUpdateWidget(old);
+    if (widget.targetRequest != old.targetRequest) _openTarget();
+    // Docked, the panel follows the reader: a new book resets the chapter
+    // range to the whole of it, and the overview is asked for again with the
+    // other filters kept.
+    final newBook = widget.book != old.book;
+    if (newBook) {
+      _firstChapter = 1;
+      _lastChapter = _chapterCount;
+    }
+    if (newBook ||
+        (widget.chapter != old.chapter &&
+            _scope == CrossReferenceScope.chapter)) {
+      _overviewOffset = 0;
+      _requestOverview();
+    }
+  }
+
+  void _openTarget() {
+    final target = widget.target;
+    if (target == null) return;
+    _view = (
+      book: target.book,
+      chapter: target.chapter,
+      verse: target.verse,
+      focus: null,
+    );
   }
 
   @override
@@ -174,6 +243,11 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
     });
   }
 
+  void _toggleEnglishOnly() {
+    setState(() => _englishOnly = !_englishOnly);
+    setOccurrenceVerseEnglishOnlyEnabled(_englishOnly);
+  }
+
   String _ref(int book, int chapter, int verse) =>
       '${bookDisplayName(book - 1, useEnglish: widget.useEnglishBookNames)} '
       '$chapter:$verse';
@@ -183,15 +257,18 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
     final view = _view;
     if (view != null) {
       return _VerseLinks(
-        key: ValueKey('${view.chapter}:${view.verse}'),
+        key: ValueKey('${view.book}:${view.chapter}:${view.verse}'),
         cache: _verseTexts,
-        book: widget.book,
+        book: view.book,
         chapter: view.chapter,
         verse: view.verse,
         focus: view.focus,
         minScore: _minScore,
         useEnglishBookNames: widget.useEnglishBookNames,
+        englishOnly: _englishOnly,
+        onToggleEnglishOnly: _toggleEnglishOnly,
         onBack: () => setState(() => _view = null),
+        onClose: widget.onClose,
         onNavigateToPassage: widget.onNavigateToPassage,
         sendRequest: widget.sendRequest,
       );
@@ -211,18 +288,32 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+          child: Row(
             children: [
-              Text('Cross references', style: theme.textTheme.titleMedium),
-              Text(
-                fromNt
-                    ? '$bookName quoting the OT'
-                    : '$bookName quoted in the NT',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Cross references',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    Text(
+                      fromNt
+                          ? '$bookName quoting the OT'
+                          : '$bookName quoted in the NT',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+              ..._headerActions(
+                englishOnly: _englishOnly,
+                onToggleEnglishOnly: _toggleEnglishOnly,
+                onClose: widget.onClose,
               ),
             ],
           ),
@@ -378,6 +469,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   void _openVerse(QuotationEntry entry, {bool focusLink = true}) {
     setState(() {
       _view = (
+        book: widget.book,
         chapter: entry.chapter,
         verse: entry.verse,
         focus: focusLink
@@ -456,7 +548,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
               verse: entry.otherVerse,
               highlightWords: const [],
               positions: entry.otherPositions,
-              englishOnly: false,
+              englishOnly: _englishOnly,
               useEnglishBookNames: widget.useEnglishBookNames,
               onTap: () => _openVerse(entry),
             ),
@@ -480,7 +572,10 @@ class _VerseLinks extends StatefulWidget {
     required this.focus,
     required this.minScore,
     required this.useEnglishBookNames,
+    required this.englishOnly,
+    required this.onToggleEnglishOnly,
     required this.onBack,
+    this.onClose,
     this.onNavigateToPassage,
     this.sendRequest,
   });
@@ -495,7 +590,10 @@ class _VerseLinks extends StatefulWidget {
   /// are fetched, so widening costs no round-trip.
   final double minScore;
   final bool useEnglishBookNames;
+  final bool englishOnly;
+  final VoidCallback onToggleEnglishOnly;
   final VoidCallback onBack;
+  final VoidCallback? onClose;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
   final void Function(GetCrossReferences)? sendRequest;
@@ -581,7 +679,7 @@ class _VerseLinksState extends State<_VerseLinks> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(4, 0, 16, 8),
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
           child: Row(
             children: [
               IconButton(
@@ -603,6 +701,11 @@ class _VerseLinksState extends State<_VerseLinks> {
                     ),
                   ],
                 ),
+              ),
+              ..._headerActions(
+                englishOnly: widget.englishOnly,
+                onToggleEnglishOnly: widget.onToggleEnglishOnly,
+                onClose: widget.onClose,
               ),
             ],
           ),
@@ -627,7 +730,7 @@ class _VerseLinksState extends State<_VerseLinks> {
               positions: entries[_focused.clamp(0, entries.length - 1)]
                   .sourcePositions,
               isCurrent: true,
-              englishOnly: false,
+              englishOnly: widget.englishOnly,
               useEnglishBookNames: widget.useEnglishBookNames,
             ),
           ),
@@ -719,7 +822,7 @@ class _VerseLinksState extends State<_VerseLinks> {
           verse: entry.verse,
           highlightWords: const [],
           positions: entry.positions,
-          englishOnly: false,
+          englishOnly: widget.englishOnly,
           useEnglishBookNames: widget.useEnglishBookNames,
           onTap: navigate == null
               ? null
