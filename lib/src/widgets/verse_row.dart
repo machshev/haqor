@@ -146,6 +146,7 @@ class VerseRow extends StatefulWidget {
     required this.onTap,
     required this.onWordTap,
     this.onWordMenu,
+    this.onCrossReferences,
     this.fontSize = 20.0,
     this.fontFamily = 'Cardo',
     this.showCantillation = true,
@@ -183,6 +184,10 @@ class VerseRow extends StatefulWidget {
     Offset globalPosition,
   )?
   onWordMenu;
+
+  /// Opens the verse's cross references. Its marker shows only when the
+  /// verse has any (`entry.crossReferences`).
+  final VoidCallback? onCrossReferences;
   final double fontSize;
   final String fontFamily;
   final bool showCantillation;
@@ -661,10 +666,51 @@ class _VerseRowState extends State<VerseRow> {
                       size: 12,
                       color: theme.colorScheme.secondary,
                     ),
+                  if (widget.entry.crossReferences > 0 &&
+                      widget.onCrossReferences != null)
+                    _CrossReferenceMarker(
+                      count: widget.entry.crossReferences,
+                      onTap: widget.onCrossReferences!,
+                    ),
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The margin mark of a verse linked to the other testament by a quotation.
+/// Its own tap target, larger than the glyph, so it opens the cross
+/// references rather than selecting the verse around it.
+class _CrossReferenceMarker extends StatelessWidget {
+  const _CrossReferenceMarker({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = count == 1 ? '1 cross reference' : '$count cross references';
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        label: label,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 16,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(
+              Icons.link,
+              size: 14,
+              color: theme.colorScheme.tertiary,
+            ),
+          ),
         ),
       ),
     );

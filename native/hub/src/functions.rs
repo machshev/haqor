@@ -1,17 +1,18 @@
 #[cfg(target_arch = "wasm32")]
 use crate::signals::ProgressSnapshot;
 use crate::signals::{
-    BdbSummary, BuildInfo, CalibrationProbe, ChapterText, FinishCalibration, GetBuildInfo,
-    GetCalibrationProbe, GetChapter, GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts,
-    GetStudyState, GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText,
-    GetVerseTexts, GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard,
-    HebrewOccurrence, IssueReportStatus, KetivEntry, LexiconEntryOverrideStatus, OccurrenceParse,
-    OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, RootChoice,
-    SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState, SaveTutorGloss, SedraOccurrence,
-    SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem,
-    StudyState, SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress,
-    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry,
-    VerseTexts, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence, WordOccurrences,
+    BdbSummary, BuildInfo, CalibrationProbe, ChapterText, CrossReferenceEntry, CrossReferences,
+    FinishCalibration, GetBuildInfo, GetCalibrationProbe, GetChapter, GetCrossReferences,
+    GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts, GetStudyState,
+    GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts,
+    GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence,
+    IssueReportStatus, KetivEntry, LexiconEntryOverrideStatus, OccurrenceParse, OnboardingStatus,
+    OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, RootChoice, SaveIssueReport,
+    SaveLexiconEntryOverride, SaveStudyState, SaveTutorGloss, SedraOccurrence, SedraSummary,
+    SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, StudyState,
+    SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings,
+    TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry,
+    VocabList, WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -527,6 +528,10 @@ pub async fn get_chapter_text(bible: SharedBible) {
                         req.include_roots,
                     )
                     .unwrap_or_default();
+                let cross_references: std::collections::HashMap<u8, u32> = bible_guard
+                    .chapter_cross_reference_counts(req.book, req.chapter)
+                    .map(|counts| counts.into_iter().collect())
+                    .unwrap_or_default();
                 let verses = raw
                     .into_iter()
                     .map(|(verse, text)| {
@@ -559,6 +564,9 @@ pub async fn get_chapter_text(bible: SharedBible) {
                                         .collect()
                                 })
                                 .unwrap_or_default(),
+                            cross_references: cross_references
+                                .get(&verse)
+                                .map_or(0, |&n| n.min(u16::MAX as u32) as u16),
                         }
                     })
                     .collect();
@@ -1474,5 +1482,47 @@ pub async fn finish_calibration(bible: SharedBible) {
         } else {
             persist_browser_progress(&bible_guard);
         }
+    }
+}
+
+pub async fn get_cross_references(bible: SharedBible) {
+    let receiver = GetCrossReferences::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let quotations = lock(&bible)
+            .cross_references(req.book, req.chapter, req.verse)
+            .unwrap_or_else(|e| {
+                debug_print!("get_cross_references error: {:?}", e);
+                Vec::new()
+            });
+        // The requested verse is one side of each quotation; send the other.
+        let from_nt = req.book >= 40;
+        let entries = quotations
+            .into_iter()
+            .map(|q| {
+                let (other, positions, source_positions) = if from_nt {
+                    (q.ot, q.ot_positions, q.nt_positions)
+                } else {
+                    (q.nt, q.nt_positions, q.ot_positions)
+                };
+                CrossReferenceEntry {
+                    rank: q.rank,
+                    score: q.score,
+                    book: other.book,
+                    chapter: other.chapter,
+                    verse: other.verse,
+                    positions,
+                    source_positions,
+                }
+            })
+            .collect();
+        CrossReferences {
+            book: req.book,
+            chapter: req.chapter,
+            verse: req.verse,
+            entries,
+        }
+        .send_signal_to_dart();
     }
 }

@@ -18,6 +18,7 @@ import 'tutor/onboarding.dart';
 import 'tutor/progress_sync.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
+import 'widgets/cross_references_sheet.dart';
 import 'widgets/study_workspace_panel.dart';
 import 'widgets/study_passage_editor.dart';
 import 'widgets/verse_row.dart';
@@ -2365,6 +2366,30 @@ class _ReaderSessionState extends State<_ReaderSession>
     if (enabled) _refreshLoadedChaptersForStudyRoots();
   }
 
+  /// The quotations linking a verse to the other testament, as a sheet over
+  /// the reader; tapping a linked verse closes it and opens that verse.
+  Future<void> _showCrossReferences(int bookIndex, int chapter, int verse) {
+    return showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.sizeOf(sheetContext).height * 0.7,
+        child: CrossReferencesSheet(
+          book: bookIndex + 1,
+          chapter: chapter,
+          verse: verse,
+          useEnglishBookNames: _englishBookNames,
+          onNavigateToPassage: (book, chapter, verse) {
+            Navigator.pop(sheetContext);
+            _navigateTo(book, chapter, verse: verse);
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _showStudyWorkspaceSheet() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -3621,6 +3646,7 @@ class _ReaderSessionState extends State<_ReaderSession>
                     position: position,
                     root: root,
                   ),
+              onCrossReferences: () => _showCrossReferences(b, c, entry.verse),
               fontSize: _fontSize,
               fontFamily: _fontFamily,
               showCantillation: _showCantillation,

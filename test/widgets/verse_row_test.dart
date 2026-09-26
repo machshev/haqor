@@ -38,6 +38,43 @@ void main() {
     expect(isYahweh('חָכְמָה'), isFalse);
   });
 
+  testWidgets('a linked verse is marked and the mark opens its cross refs', (
+    tester,
+  ) async {
+    var selected = 0;
+    var opened = 0;
+    Widget row(int crossReferences) => MaterialApp(
+      home: Scaffold(
+        body: VerseRow(
+          entry: VerseEntry(
+            verse: 23,
+            text: 'הִנֵּה הָעַלְמָה',
+            glosses: const [],
+            morphologies: const [],
+            names: const [],
+            roots: const [],
+            ketivs: const [],
+            crossReferences: crossReferences,
+          ),
+          isSelected: false,
+          hebrewNumerals: false,
+          onTap: () => selected++,
+          onWordTap: (_, _, _, _) {},
+          onCrossReferences: () => opened++,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(row(0));
+    expect(find.byIcon(Icons.link), findsNothing);
+
+    await tester.pumpWidget(row(3));
+    expect(find.byTooltip('3 cross references'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.link));
+    expect(opened, 1);
+    expect(selected, 0, reason: 'the mark must not also select the verse');
+  });
+
   testWidgets('standalone punctuation cannot shift Yahweh highlighting', (
     tester,
   ) async {
@@ -53,6 +90,7 @@ void main() {
               names: [],
               roots: [],
               ketivs: [],
+              crossReferences: 0,
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -89,6 +127,7 @@ void main() {
               names: [],
               roots: [],
               ketivs: [],
+              crossReferences: 0,
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -120,6 +159,7 @@ void main() {
               names: [],
               roots: ['דבר', 'יהוה'],
               ketivs: [],
+              crossReferences: 0,
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -154,6 +194,7 @@ void main() {
               names: [],
               roots: ['דבר'],
               ketivs: [],
+              crossReferences: 0,
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -209,6 +250,7 @@ void main() {
               names: [],
               roots: ['דבר', 'יהוה'],
               ketivs: [],
+              crossReferences: 0,
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -242,6 +284,7 @@ void main() {
               names: [],
               roots: ['מלל', 'מלל'],
               ketivs: [],
+              crossReferences: 0,
             ),
             isSelected: false,
             hebrewNumerals: false,
@@ -290,6 +333,7 @@ void main() {
                   names: [],
                   roots: ['ברא', 'ברא', 'אחר'],
                   ketivs: [],
+                  crossReferences: 0,
                 ),
                 isSelected: false,
                 hebrewNumerals: false,
@@ -342,6 +386,7 @@ void main() {
                   roots: [],
                   names: [],
                   ketivs: [],
+                  crossReferences: 0,
                 ),
                 isSelected: false,
                 hebrewNumerals: false,
@@ -401,6 +446,7 @@ void main() {
               names: [],
               roots: [],
               ketivs: [],
+              crossReferences: 0,
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -456,6 +502,7 @@ void main() {
                 names: const [],
                 roots: const [],
                 ketivs: const [],
+                crossReferences: 0,
               ),
               isSelected: false,
               hebrewNumerals: true,
@@ -499,6 +546,7 @@ void main() {
       names: const [],
       roots: const [],
       ketivs: ketivs,
+      crossReferences: 0,
     );
 
     Future<void> pump(

@@ -233,6 +233,9 @@ pub struct VerseEntry {
     /// The verse's ketiv readings, where it has any — empty for almost every
     /// verse, as the OT carries about 1,250 in total.
     pub ketivs: Vec<KetivEntry>,
+    /// How many verses of the other testament this one is linked to by a
+    /// quotation ([`GetCrossReferences`] fetches them). Zero for most verses.
+    pub cross_references: u16,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
@@ -245,6 +248,42 @@ pub struct ChapterText {
     pub include_names: bool,
     pub include_roots: bool,
     pub verses: Vec<VerseEntry>,
+}
+
+/// Ask for the quotations linking one verse to the other testament: the NT
+/// verses quoting an OT verse, or the OT verses an NT verse quotes.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetCrossReferences {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+}
+
+/// One linked verse of a [`CrossReferences`] reply.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct CrossReferenceEntry {
+    /// Position in the global quotation ranking, 1 being the strongest.
+    pub rank: u32,
+    pub score: f32,
+    /// The linked verse, in the other testament.
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    /// Lexical positions of the matched words in the linked verse.
+    pub positions: Vec<u16>,
+    /// Lexical positions of the same words in the requested verse, pairwise
+    /// with `positions`.
+    pub source_positions: Vec<u16>,
+}
+
+/// Reply to [`GetCrossReferences`], strongest link first. Echoes the request so
+/// a listener can ignore replies for a verse it is no longer showing.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct CrossReferences {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub entries: Vec<CrossReferenceEntry>,
 }
 
 #[derive(Debug, Deserialize, DartSignal)]

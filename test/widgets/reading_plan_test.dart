@@ -41,6 +41,7 @@ class _FakeRust {
               names: const [],
               roots: const [],
               ketivs: const [],
+              crossReferences: 0,
             ),
         ],
       );

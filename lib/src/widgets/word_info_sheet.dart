@@ -2030,7 +2030,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         ? bookDisplayName(bookIndex, useEnglish: widget.useEnglishBookNames)
         : 'Book ${v.book}';
     final key = ValueKey('${v.book}:${v.chapter}:${v.verse}');
-    final row = _OccurrenceRow(
+    final row = OccurrenceVerseRow(
       key: v.passageStart ? null : key,
       cache: _verseTexts,
       displayRef: '$bookName ${v.chapter}:${v.verse}',
@@ -2396,8 +2396,8 @@ class _VerseModeIcon extends StatelessWidget {
 /// Stateless: the verse text comes from the shared [VerseTextCache], so a row
 /// scrolling into view costs a slot in the next batched request rather than a
 /// round-trip and a stream listener of its own.
-class _OccurrenceRow extends StatelessWidget {
-  const _OccurrenceRow({
+class OccurrenceVerseRow extends StatelessWidget {
+  const OccurrenceVerseRow({
     super.key,
     required this.cache,
     required this.displayRef,
