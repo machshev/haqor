@@ -70,6 +70,16 @@ const Map<String, int> _kBdbBookToIndex = {
   return (bookIndex: bookIndex, chapter: chapter, verse: verse);
 }
 
+/// How long a sheet stays open on its Lexicon tab before it preloads the
+/// word's occurrences. Long enough that a glance at a gloss costs no root scan,
+/// short enough that the list is normally ready when the tab is opened.
+const occurrencePrefetchDelay = Duration(milliseconds: 400);
+
+// Ids for word-info and occurrence requests, shared by every sheet so no two
+// open panes ever wait on the same id. Wraps as the u32 it is sent as.
+int _lastRequestId = 0;
+int _nextRequestId() => _lastRequestId = (_lastRequestId + 1) & 0xffffffff;
+
 class WordInfoSheet extends StatefulWidget {
   const WordInfoSheet({
     super.key,
@@ -191,12 +201,20 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   // Shared across both occurrences tabs: false shows Hebrew verse text, true
   // shows the aligned English reader glosses instead.
   bool _occurrenceVerseEnglishOnly = false;
-  // Occurrence lists are fetched lazily (full-text root scans) the first time
-  // the Occurrences tab is opened, so the sheet pops up on the lexicon data
-  // alone. Null until that fetch completes.
+  // Occurrence lists are full-text root scans, and Rust answers requests one at
+  // a time with no way to cancel one, so a scan nobody looks at still holds up
+  // the chapter the reader turns to next. They are fetched when the
+  // Occurrences tab is opened, or once the sheet has stayed open for
+  // [occurrencePrefetchDelay]. Null until that fetch completes.
   StreamSubscription<RustSignalPack<WordOccurrences>>? _occSub;
   WordOccurrences? _occ;
   bool _occRequested = false;
+  Timer? _occPrefetch;
+  // The ids of this sheet's outstanding requests. Replies name the request
+  // they answer, and any other reply — an earlier root's, or another open
+  // pane's — is not this sheet's to show.
+  int? _infoRequestId;
+  int? _occRequestId;
   final Set<StudyWordKind> _studyBookmarks = {};
   bool _bookmarkPending = false;
   ProximitySource? _proximitySource;
@@ -205,7 +223,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.animation?.addListener(_onTabAnimation);
     _selectedRoot = widget.initialRoot;
+    _sub = WordInfo.rustSignalStream.listen(_onWordInfo);
+    _occSub = WordOccurrences.rustSignalStream.listen(_onWordOccurrences);
     _requestInfo();
     _loadAdminMode();
     _loadOccurrenceVerseMode();
@@ -232,24 +253,49 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   /// proximity search it takes part in.
   void _occurrenceFilterChanged() => widget.proximity?.changed();
 
-  void _requestInfo() {
-    _sub?.cancel();
-    _sub = WordInfo.rustSignalStream.listen((pack) {
-      if (mounted) {
-        setState(() {
-          _info = pack.message;
-          _readStudyBookmarks(pack.message);
-        });
-        _sub?.cancel();
-        // Preload the occurrence scans in the background as soon as the lexicon
-        // data lands, so the Occurrences tab is already populated (or at least
-        // loading) by the time the user switches to it. Fetched even when the
-        // lexicon lookup failed: an unparsed word is still a surface form of
-        // the text, and its occurrences are the one thing we can always show.
-        _fetchOccurrences();
+  void _onWordInfo(RustSignalPack<WordInfo> pack) {
+    final info = pack.message;
+    if (!mounted || info.requestId != _infoRequestId) return;
+    _infoRequestId = null;
+    setState(() {
+      _info = info;
+      _readStudyBookmarks(info);
+    });
+    // An unparsed word shows nothing but its occurrences, so it needs them
+    // now. Otherwise preload them only if the reader stays on this word: the
+    // Occurrences tab is then populated (or at least loading) by the time
+    // they switch to it, without a glance at a gloss costing a root scan.
+    if (!info.found || _tabController.index == 1) {
+      _fetchOccurrences();
+    } else if (!_occRequested) {
+      _occPrefetch?.cancel();
+      _occPrefetch = Timer(occurrencePrefetchDelay, _fetchOccurrences);
+    }
+  }
+
+  void _onWordOccurrences(RustSignalPack<WordOccurrences> pack) {
+    final occ = pack.message;
+    if (!mounted || occ.requestId != _occRequestId) return;
+    _occRequestId = null;
+    setState(() {
+      _occ = occ;
+      final exact = _exactFormKey();
+      if (exact != null && _otForms.isEmpty && _otParse.isEmpty) {
+        _otForms.add(exact);
       }
     });
+    _occurrenceFilterChanged();
+  }
+
+  /// Heading for the Occurrences tab fetches its lists at once.
+  void _onTabAnimation() {
+    if ((_tabController.animation?.value ?? 0) > 0) _fetchOccurrences();
+  }
+
+  void _requestInfo() {
+    final id = _infoRequestId = _nextRequestId();
     final request = GetWordInfo(
+      requestId: id,
       word: widget.word,
       syriac: widget.syriac,
       bdbId: widget.bdbId,
@@ -330,24 +376,15 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   );
 
   // Fetch the occurrence lists (full-text root scans). Idempotent via
-  // [_occRequested] so the preload can't double-fire.
+  // [_occRequested] so the preload and the tab can't both fire it.
   void _fetchOccurrences() {
-    if (_occRequested) return;
+    _occPrefetch?.cancel();
+    _occPrefetch = null;
+    if (_occRequested || !mounted) return;
     _occRequested = true;
-    _occSub = WordOccurrences.rustSignalStream.listen((pack) {
-      if (mounted) {
-        setState(() {
-          _occ = pack.message;
-          final exact = _exactFormKey();
-          if (exact != null && _otForms.isEmpty && _otParse.isEmpty) {
-            _otForms.add(exact);
-          }
-        });
-        _occSub?.cancel();
-        _occurrenceFilterChanged();
-      }
-    });
+    final id = _occRequestId = _nextRequestId();
     final request = GetWordOccurrences(
+      requestId: id,
       word: widget.word,
       syriac: widget.syriac,
       root: _selectedRoot,
@@ -375,7 +412,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       _occ = null;
       _occRequested = false;
     });
-    _occSub?.cancel();
+    // Replies still on their way for the previous root are ignored: the
+    // requests below take new ids.
     _occurrenceFilterChanged();
     _requestInfo();
     _fetchOccurrences();
@@ -385,11 +423,16 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   /// root's occurrences. Null otherwise — a headword that is never attested,
   /// or a root the word was switched away from — and the exact-match toggle is
   /// then not offered, since it could only show an empty list.
-  String? _exactFormKey() {
+  ///
+  /// It and [_tappedParse] depend on nothing but the loaded lists, so each is
+  /// worked out once per reply rather than rescanned on every rebuild.
+  String? _exactFormKey() => _exactFormMemo.get([_occ], () {
     final key = hebrewSurfaceKey(widget.word);
     final all = _occ?.hebrewOccurrences ?? const <HebrewOccurrence>[];
     return all.any((o) => o.surface == key) ? key : null;
-  }
+  });
+  final _exactFormMemo = _Memo<String?>();
+  final _tappedParseMemo = _Memo<Map<_ParseDimension, String>?>();
 
   /// The tapped token's own morphology, one value per dimension it carries —
   /// what the Same parse scope sets as the parse filter.
@@ -398,7 +441,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   /// so an ambiguous spelling gives the analysis of *this* token. Without a
   /// location the surface's most common analysis stands in. Null when neither
   /// is there, or the token carries no parse at all.
-  Map<_ParseDimension, String>? _tappedParse() {
+  Map<_ParseDimension, String>? _tappedParse() =>
+      _tappedParseMemo.get([_occ], _computeTappedParse);
+
+  Map<_ParseDimension, String>? _computeTappedParse() {
     final key = hebrewSurfaceKey(widget.word);
     final own = [
       for (final o in _occ?.hebrewOccurrences ?? const <HebrewOccurrence>[])
@@ -588,6 +634,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
 
   @override
   void dispose() {
+    _occPrefetch?.cancel();
+    _tabController.animation?.removeListener(_onTabAnimation);
     _tabController.dispose();
     _dockedScrollController.dispose();
     _sub?.cancel();
@@ -678,7 +726,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         color: theme.colorScheme.surface,
         child: SelectionArea(
           child: info == null
-              ? const Center(child: CircularProgressIndicator())
+              ? _buildLoading(context)
               : _buildContent(context, _dockedScrollController, info),
         ),
       );
@@ -712,7 +760,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               Expanded(
                 child: SelectionArea(
                   child: info == null
-                      ? const Center(child: CircularProgressIndicator())
+                      ? _buildLoading(context)
                       : _buildContent(context, scrollController, info),
                 ),
               ),
@@ -720,6 +768,50 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           ),
         );
       },
+    );
+  }
+
+  /// What the sheet shows before the lexicon reply lands: the tapped word and
+  /// the gloss the reader already had, in the places the reply will fill, so
+  /// the sheet is readable at once even when Rust is busy with earlier work.
+  Widget _buildLoading(BuildContext context) {
+    final theme = Theme.of(context);
+    final gloss = widget.readerGloss ?? '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Expanded(
+                child: Text(
+                  gloss,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                widget.word,
+                style: TextStyle(
+                  fontFamily: 'Noto Serif Hebrew',
+                  fontFamilyFallback: const ['Cardo'],
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurface,
+                ),
+                textDirection: TextDirection.rtl,
+              ),
+            ],
+          ),
+        ),
+        const LinearProgressIndicator(minHeight: 2),
+      ],
     );
   }
 
@@ -735,15 +827,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       // show its occurrences so the sheet stays useful (and the reader can
       // study the word in its other contexts).
       final occ = _occ;
-      final occurrences = [
-        for (final o in occ?.occurrences ?? const <WordOccurrence>[])
-          _VerseOccurrence(
-            book: o.book,
-            chapter: o.chapter,
-            verse: o.verse,
-            words: [widget.word],
-          ),
-      ];
+      final occurrences = occ == null
+          ? const <_VerseOccurrence>[]
+          : _flatVerses(occ);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1196,19 +1282,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     // Older/edge data (e.g. a word with no readable root) has no per-token
     // tagging — fall back to a flat list of the surface's own verses.
     if (occ.hebrewOccurrences.isEmpty) {
-      final flat = [
-        for (final o in occ.occurrences)
-          _VerseOccurrence(
-            book: o.book,
-            chapter: o.chapter,
-            verse: o.verse,
-            words: [widget.word],
-          ),
-      ];
-      return _occurrenceVerseList(flat, bottomPad: bottomPad);
+      return _occurrenceVerseList(_flatVerses(occ), bottomPad: bottomPad);
     }
-
-    final all = occ.hebrewOccurrences;
 
     final forms = _otForms;
 
@@ -1216,49 +1291,36 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     // admit, so a number says what selecting that entry would actually yield.
     // The bar is counted here; the sheet counts forms and parses itself, since
     // those have to move as selections change inside it.
-    final inScope = all.where((o) => _passesOtBook(o.book)).toList();
-    // Each scope replaces the form and parse filters but keeps the book one, so
-    // its count is taken over the books in view: what tapping it would list.
+    //
+    // A common root runs to thousands of tokens, and this tab is rebuilt for
+    // every toggle, so each derived list is memoised on what it depends on.
     final exactForm = _exactFormKey();
     final tappedParse = _tappedParse();
-    final scopeCounts = {for (final scope in _FormScope.values) scope: 0};
-    for (final o in inScope) {
-      scopeCounts[_FormScope.all] = scopeCounts[_FormScope.all]! + 1;
-      if (o.surface == exactForm) {
-        scopeCounts[_FormScope.exact] = scopeCounts[_FormScope.exact]! + 1;
-      }
-      if (tappedParse != null &&
-          tappedParse.entries.every((e) => e.key.of(o) == e.value)) {
-        scopeCounts[_FormScope.parse] = scopeCounts[_FormScope.parse]! + 1;
-      }
-    }
+    final (:inScope, :scopeCounts) = _hebrewScope(occ);
     final scopes = [
       if (exactForm != null) _FormScope.exact,
       if (tappedParse != null) _FormScope.parse,
       _FormScope.all,
     ];
-    final matching = all.where(_passesOtFormAndParse).toList();
-    final proximity = _proximityResult(_mergeHebrewTokens(matching).verses);
-    final bookCounts = <int, int>{};
+    final proximity = _proximityResult();
+    final Map<int, int> bookCounts;
     final List<_VerseOccurrence> verses;
     final int hits;
     if (proximity == null) {
-      for (final o in matching) {
-        bookCounts[o.book] = (bookCounts[o.book] ?? 0) + 1;
-      }
-      // Apply every filter, then merge tokens standing in the same verse so it
-      // appears once with all its matches highlighted.
-      final merged = _mergeHebrewTokens(
-        matching.where((o) => _passesOtBook(o.book)),
-      );
-      verses = merged.verses;
-      hits = merged.hits;
+      bookCounts = _hebrewMatches(occ).bookCounts;
+      final shown = _hebrewShown(occ);
+      verses = shown.verses;
+      hits = shown.hits;
     } else {
       // The distribution counts the combined results, and the book filter
       // narrows them, as it narrows the word's own list.
-      for (final v in proximity.verses) {
-        bookCounts[v.book] = (bookCounts[v.book] ?? 0) + 1;
-      }
+      bookCounts = _proximityBookCounts.get([proximity], () {
+        final counts = <int, int>{};
+        for (final v in proximity.verses) {
+          counts[v.book] = (counts[v.book] ?? 0) + 1;
+        }
+        return counts;
+      });
       verses = _markPassageStarts(
         proximity.verses.where((v) => _passesOtBook(v.book)).toList(),
       );
@@ -1394,16 +1456,115 @@ class _WordInfoSheetState extends State<WordInfoSheet>
 
   bool _passesOtBook(int book) => _otBooks.isEmpty || _otBooks.contains(book);
 
+  /// The form and parse filters as a value, for memo keys: the sets are
+  /// mutated in place, so their identity says nothing about their contents.
+  String get _formParseKey => [
+    (_otForms.toList()..sort()).join('\u0001'),
+    for (final dimension in _ParseDimension.values)
+      ((_otParse[dimension] ?? const <String>{}).toList()..sort()).join(
+        '\u0001',
+      ),
+  ].join('\u0002');
+
+  /// The book filter as a value, as [_formParseKey] is.
+  String get _booksKey => (_otBooks.toList()..sort()).join(',');
+
+  /// The NT lexeme filter as a value, as [_formParseKey] is.
+  String get _lexemesKey =>
+      '${(_effectiveLexemes().toList()..sort()).join(',')}|$_otSelected';
+
+  final _hebrewMatchesMemo =
+      _Memo<
+        ({
+          List<HebrewOccurrence> matching,
+          ({List<_VerseOccurrence> verses, int hits}) merged,
+          Map<int, int> bookCounts,
+        })
+      >();
+  final _hebrewScopeMemo =
+      _Memo<
+        ({List<HebrewOccurrence> inScope, Map<_FormScope, int> scopeCounts})
+      >();
+  final _hebrewShownMemo = _Memo<({List<_VerseOccurrence> verses, int hits})>();
+  final _sedraVersesMemo = _Memo<List<_VerseOccurrence>>();
+  final _sedraCountsMemo = _Memo<Map<int, int>>();
+  final _flatVersesMemo = _Memo<List<_VerseOccurrence>>();
+  final _proximityHitsMemo = _Memo<List<ProximityHit>?>();
+  final _proximityResultMemo = _Memo<_ProximityResult>();
+  final _proximityBookCounts = _Memo<Map<int, int>>();
+
+  /// The tokens the form and parse filters admit, merged by verse, with their
+  /// per-book token counts for the distribution bar.
+  ({
+    List<HebrewOccurrence> matching,
+    ({List<_VerseOccurrence> verses, int hits}) merged,
+    Map<int, int> bookCounts,
+  })
+  _hebrewMatches(WordOccurrences occ) =>
+      _hebrewMatchesMemo.get([occ, _formParseKey], () {
+        final matching = occ.hebrewOccurrences
+            .where(_passesOtFormAndParse)
+            .toList();
+        final bookCounts = <int, int>{};
+        for (final o in matching) {
+          bookCounts[o.book] = (bookCounts[o.book] ?? 0) + 1;
+        }
+        return (
+          matching: matching,
+          merged: _mergeHebrewTokens(matching),
+          bookCounts: bookCounts,
+        );
+      });
+
+  /// The tokens the book filter admits, and what each scope would list among
+  /// them: a scope replaces the form and parse filters but keeps the book one.
+  ({List<HebrewOccurrence> inScope, Map<_FormScope, int> scopeCounts})
+  _hebrewScope(WordOccurrences occ) =>
+      _hebrewScopeMemo.get([occ, _booksKey], () {
+        final exactForm = _exactFormKey();
+        final tappedParse = _tappedParse();
+        final inScope = occ.hebrewOccurrences
+            .where((o) => _passesOtBook(o.book))
+            .toList();
+        final scopeCounts = {for (final scope in _FormScope.values) scope: 0};
+        for (final o in inScope) {
+          scopeCounts[_FormScope.all] = scopeCounts[_FormScope.all]! + 1;
+          if (o.surface == exactForm) {
+            scopeCounts[_FormScope.exact] = scopeCounts[_FormScope.exact]! + 1;
+          }
+          if (tappedParse != null &&
+              tappedParse.entries.every((e) => e.key.of(o) == e.value)) {
+            scopeCounts[_FormScope.parse] = scopeCounts[_FormScope.parse]! + 1;
+          }
+        }
+        return (inScope: inScope, scopeCounts: scopeCounts);
+      });
+
+  /// The OT list as shown: every filter applied, merged by verse so a verse
+  /// appears once with all its matches highlighted.
+  ({List<_VerseOccurrence> verses, int hits}) _hebrewShown(
+    WordOccurrences occ,
+  ) {
+    final matches = _hebrewMatches(occ);
+    if (_otBooks.isEmpty) return matches.merged;
+    return _hebrewShownMemo.get(
+      [matches.matching, _booksKey],
+      () => _mergeHebrewTokens(
+        matches.matching.where((o) => _passesOtBook(o.book)),
+      ),
+    );
+  }
+
   /// Tokens merged by verse, in canonical order, so a verse appears once with
   /// all its matches highlighted; [hits] counts the tokens.
   ({List<_VerseOccurrence> verses, int hits}) _mergeHebrewTokens(
     Iterable<HebrewOccurrence> tokens,
   ) {
-    final byVerse = <String, _VerseOccurrence>{};
+    final byVerse = <int, _VerseOccurrence>{};
     var hits = 0;
     for (final o in tokens) {
       hits++;
-      final key = '${o.book}:${o.chapter}:${o.verse}';
+      final key = _verseKey(o.book, o.chapter, o.verse);
       final existing = byVerse[key];
       if (existing == null) {
         byVerse[key] = _VerseOccurrence(
@@ -1420,6 +1581,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     }
     return (verses: _sortCanonically(byVerse.values.toList()), hits: hits);
   }
+
+  static int _verseKey(int book, int chapter, int verse) =>
+      (book << 16) | (chapter << 8) | verse;
 
   static List<_VerseOccurrence> _sortCanonically(
     List<_VerseOccurrence> verses,
@@ -1441,12 +1605,15 @@ class _WordInfoSheetState extends State<WordInfoSheet>
 
   /// The NT list: the selected lexemes' verses, merged by verse, with the OT
   /// cognate verses folded in when those are switched on.
-  List<_VerseOccurrence> _sedraVerses(WordOccurrences occ) {
+  List<_VerseOccurrence> _sedraVerses(WordOccurrences occ) =>
+      _sedraVersesMemo.get([occ, _lexemesKey], () => _computeSedraVerses(occ));
+
+  List<_VerseOccurrence> _computeSedraVerses(WordOccurrences occ) {
     final selected = _effectiveLexemes();
-    final byVerse = <String, _VerseOccurrence>{};
+    final byVerse = <int, _VerseOccurrence>{};
     for (final o in occ.sedraOccurrences) {
       if (selected.isNotEmpty && !selected.contains(o.lexemeIndex)) continue;
-      final key = '${o.book}:${o.chapter}:${o.verse}';
+      final key = _verseKey(o.book, o.chapter, o.verse);
       final existing = byVerse[key];
       if (existing == null) {
         byVerse[key] = _VerseOccurrence(
@@ -1479,29 +1646,44 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   /// The verses this word contributes to a proximity search: what its own
   /// list shows under its form, parse, or lexeme filters, before any book
   /// filter. Null until the occurrences have loaded.
+  ///
+  /// Memoised on the verses it is made from, so every pane reading it gets the
+  /// same list back until this word's filters change — which is also what
+  /// lets [_proximityResult] tell that nothing needs recombining.
   List<ProximityHit>? _proximityHits() {
     final occ = _occ;
     if (occ == null) return null;
-    final List<_VerseOccurrence> verses;
-    if (widget.syriac && occ.sedraOccurrences.isNotEmpty) {
-      verses = _sedraVerses(occ);
-    } else if (occ.hebrewOccurrences.isNotEmpty) {
-      verses = _mergeHebrewTokens(
-        occ.hebrewOccurrences.where(_passesOtFormAndParse),
-      ).verses;
-    } else {
-      verses = [
-        for (final o in occ.occurrences)
-          _VerseOccurrence(
-            book: o.book,
-            chapter: o.chapter,
-            verse: o.verse,
-            words: [widget.word],
-          ),
-      ];
-    }
-    return [for (final v in verses) v.toHit()];
+    final verses = _ownVerses(occ);
+    return _proximityHitsMemo.get([verses], () {
+      return [for (final v in verses) v.toHit()];
+    });
   }
+
+  /// This word's own list under its form, parse, or lexeme filters, before
+  /// any book filter.
+  List<_VerseOccurrence> _ownVerses(WordOccurrences occ) {
+    if (widget.syriac && occ.sedraOccurrences.isNotEmpty) {
+      return _sedraVerses(occ);
+    }
+    if (occ.hebrewOccurrences.isNotEmpty) {
+      return _hebrewMatches(occ).merged.verses;
+    }
+    return _flatVerses(occ);
+  }
+
+  /// The surface's own verses, for data with no per-token tagging.
+  List<_VerseOccurrence> _flatVerses(WordOccurrences occ) =>
+      _flatVersesMemo.get([occ], () {
+        return [
+          for (final o in occ.occurrences)
+            _VerseOccurrence(
+              book: o.book,
+              chapter: o.chapter,
+              verse: o.verse,
+              words: [widget.word],
+            ),
+        ];
+      });
 
   /// A proximity search can only be offered with another word pane open.
   bool get _proximityAvailable {
@@ -1512,9 +1694,13 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         proximity.sources.any((source) => source.id != id);
   }
 
-  /// The combined results when the proximity search is on: [own] (this
-  /// word's list) against every other included pane. Null when it is off.
-  _ProximityResult? _proximityResult(List<_VerseOccurrence> own) {
+  /// The combined results when the proximity search is on: this word's list
+  /// against every other included pane. Null when it is off.
+  ///
+  /// Every pane's hits are memoised, so the combination is recomputed only
+  /// when one of them, or the distance, actually changes — not on each of the
+  /// rebuilds a filter tap in any pane sets off in all of them.
+  _ProximityResult? _proximityResult() {
     final proximity = widget.proximity;
     if (proximity == null || !proximity.enabled || !_proximityAvailable) {
       return null;
@@ -1525,33 +1711,39 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           source,
     ];
     if (others.isEmpty) return const _ProximityResult.noPartners();
-    final terms = [
-      [for (final v in own) v.toHit()],
-    ];
+    final own = _proximityHits();
+    if (own == null) return const _ProximityResult.loading();
+    final terms = [own];
     for (final source in others) {
       final hits = source.hits();
       if (hits == null) return const _ProximityResult.loading();
       terms.add(hits);
     }
-    return _ProximityResult([
-      for (final match in proximityMatches(terms, proximity.distance))
-        _VerseOccurrence(
-          book: match.book,
-          chapter: match.chapter,
-          verse: match.verse,
-          words: match.words,
-          positions: match.positions,
-          passage: match.passage,
-        ),
-    ]);
+    return _proximityResultMemo.get([proximity.distance, ...terms], () {
+      return _ProximityResult([
+        for (final match in proximityMatches(terms, proximity.distance))
+          _VerseOccurrence(
+            book: match.book,
+            chapter: match.chapter,
+            verse: match.verse,
+            words: match.words,
+            positions: match.positions,
+            passage: match.passage,
+          ),
+      ]);
+    });
   }
 
   /// Marks where each passage of a verse-window or chapter search begins, so
   /// the list separates them. Verses are passages of their own otherwise.
+  ///
+  /// The verses are the memoised result's own rows, so every flag is set
+  /// afresh: the book filter may have put a different verse first.
   List<_VerseOccurrence> _markPassageStarts(List<_VerseOccurrence> verses) {
     if (widget.proximity?.distance == ProximityDistance.sameVerse) {
       return verses;
     }
+    if (verses.isNotEmpty) verses.first.passageStart = false;
     for (var i = 1; i < verses.length; i++) {
       verses[i].passageStart = verses[i].passage != verses[i - 1].passage;
     }
@@ -1766,15 +1958,18 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     final showAll = selected.isEmpty;
 
     // Distinct-verse counts per lexeme index, for the chip labels.
-    final counts = <int, int>{};
-    for (final o in occ.sedraOccurrences) {
-      counts[o.lexemeIndex] = (counts[o.lexemeIndex] ?? 0) + 1;
-    }
+    final counts = _sedraCountsMemo.get([occ], () {
+      final counts = <int, int>{};
+      for (final o in occ.sedraOccurrences) {
+        counts[o.lexemeIndex] = (counts[o.lexemeIndex] ?? 0) + 1;
+      }
+      return counts;
+    });
 
     // Apply the filter, merging rows that fall on the same verse so a verse
     // appears once with all matched word forms highlighted.
     final own = _sedraVerses(occ);
-    final proximity = _proximityResult(own);
+    final proximity = _proximityResult();
     final verses = proximity == null
         ? own
         : _markPassageStarts(proximity.verses);
@@ -2210,6 +2405,36 @@ enum _ParseDimension {
     _ParseDimension.number => o.parse.number,
     _ParseDimension.state => o.parse.state,
   };
+}
+
+/// One remembered result, recomputed only when its keys change.
+///
+/// Keys compare by identity, except for plain values (strings, numbers,
+/// booleans, and [ProximityDistance]), which compare by value. Identity is the
+/// point for the rest: a signal message's generated `==` compares every row,
+/// which would cost as much as the work the memo saves.
+class _Memo<T> {
+  List<Object?>? _keys;
+  late T _value;
+
+  T get(List<Object?> keys, T Function() compute) {
+    final previous = _keys;
+    if (previous != null && previous.length == keys.length) {
+      var same = true;
+      for (var i = 0; i < keys.length && same; i++) {
+        same = _sameKey(previous[i], keys[i]);
+      }
+      if (same) return _value;
+    }
+    _value = compute();
+    _keys = keys;
+    return _value;
+  }
+
+  static bool _sameKey(Object? a, Object? b) =>
+      identical(a, b) ||
+      ((a is String || a is num || a is bool || a is ProximityDistance) &&
+          a == b);
 }
 
 /// A proximity search's combined verses, or why there are none yet.
@@ -3044,12 +3269,35 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
       entry.key: {...entry.value},
   };
   final _search = TextEditingController();
+  // The search the lists are filtered by. It trails the field by
+  // [_searchDebounce], so typing a word re-sorts the lists once rather than
+  // on every keystroke.
+  String _query = '';
+  Timer? _searchTimer;
+  static const _searchDebounce = Duration(milliseconds: 150);
+  // Entry keys with their points stripped, for matching a typed search; the
+  // same few hundred keys are matched on every search.
+  final Map<String, String> _strippedKeys = {};
 
   @override
   void dispose() {
+    _searchTimer?.cancel();
     _tabs.dispose();
     _search.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String text) {
+    _searchTimer?.cancel();
+    _searchTimer = Timer(_searchDebounce, () {
+      if (mounted) setState(() => _query = text.trim());
+    });
+  }
+
+  void _clearSearch() {
+    _searchTimer?.cancel();
+    _search.clear();
+    setState(() => _query = '');
   }
 
   void _apply(VoidCallback change) {
@@ -3063,53 +3311,73 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
   Set<String> _selected(_ParseDimension dimension) =>
       _parse[dimension] ?? const {};
 
-  /// Whether a token passes every parse dimension *except* [ignoring] — the
-  /// basis for a faceted count, which has to answer "what would I get if I
-  /// changed only this dimension".
-  bool _passesParse(HebrewOccurrence o, {_ParseDimension? ignoring}) {
-    for (final dimension in _ParseDimension.values) {
-      if (dimension == ignoring) continue;
-      final selected = _selected(dimension);
-      if (selected.isNotEmpty && !selected.contains(dimension.of(o))) {
-        return false;
+  final _facetsMemo =
+      _Memo<
+        ({Map<_ParseDimension, Map<String, int>> parse, Map<String, int> forms})
+      >();
+
+  /// Every facet's values and counts, each over the tokens the *other*
+  /// filters admit, so a number says what changing only that one would yield.
+  ///
+  /// Values the analysis does not carry are left out of the parse facets: a
+  /// dimension only lists what can actually be selected, and a token with no
+  /// value there is simply excluded once that dimension is used.
+  ///
+  /// One pass over the tokens serves all of them — a token failing no parse
+  /// dimension counts in every facet, one failing exactly one counts only in
+  /// that one — and the result is kept until a selection changes, since the
+  /// search box re-renders the lists far more often than that.
+  ({Map<_ParseDimension, Map<String, int>> parse, Map<String, int> forms})
+  _facets() {
+    final key = [
+      (_forms.toList()..sort()).join('\u0001'),
+      for (final dimension in _ParseDimension.values)
+        (_selected(dimension).toList()..sort()).join('\u0001'),
+    ].join('\u0002');
+    return _facetsMemo.get([widget.occurrences, key], () {
+      final parse = {
+        for (final dimension in _ParseDimension.values)
+          dimension: <String, int>{},
+      };
+      final forms = <String, int>{};
+      final active = [
+        for (final dimension in _ParseDimension.values)
+          if (_selected(dimension).isNotEmpty) dimension,
+      ];
+      for (final o in widget.occurrences) {
+        _ParseDimension? failed;
+        var failures = 0;
+        for (final dimension in active) {
+          if (!_selected(dimension).contains(dimension.of(o))) {
+            failed = dimension;
+            if (++failures > 1) break;
+          }
+        }
+        if (failures > 1) continue;
+        if (failures == 0) {
+          forms[o.surface] = (forms[o.surface] ?? 0) + 1;
+        }
+        if (_forms.isNotEmpty && !_forms.contains(o.surface)) continue;
+        for (final dimension in _ParseDimension.values) {
+          if (failures == 1 && dimension != failed) continue;
+          final value = dimension.of(o);
+          if (value.isEmpty) continue;
+          final counts = parse[dimension]!;
+          counts[value] = (counts[value] ?? 0) + 1;
+        }
       }
-    }
-    return true;
-  }
-
-  bool _passesForm(HebrewOccurrence o) =>
-      _forms.isEmpty || _forms.contains(o.surface);
-
-  /// Values and counts for one parse dimension, over the tokens every other
-  /// filter admits. Values the analysis does not carry are left out: a dimension
-  /// only lists what can actually be selected, and a token with no value there
-  /// is simply excluded once that dimension is used.
-  Map<String, int> _parseFacet(_ParseDimension dimension) {
-    final counts = <String, int>{};
-    for (final o in widget.occurrences) {
-      if (!_passesForm(o) || !_passesParse(o, ignoring: dimension)) continue;
-      final value = dimension.of(o);
-      if (value.isEmpty) continue;
-      counts[value] = (counts[value] ?? 0) + 1;
-    }
-    return counts;
-  }
-
-  Map<String, int> _formFacet() {
-    final counts = <String, int>{};
-    for (final o in widget.occurrences) {
-      if (!_passesParse(o)) continue;
-      counts[o.surface] = (counts[o.surface] ?? 0) + 1;
-    }
-    return counts;
+      return (parse: parse, forms: forms);
+    });
   }
 
   bool _matchesSearch(String key) {
-    final query = _search.text.trim();
+    final query = _query;
     if (query.isEmpty) return true;
     // Hebrew is matched ignoring points, so a reader can type consonants.
     return key.contains(query) ||
-        _stripTrope(key).contains(_stripTrope(query)) ||
+        _strippedKeys
+            .putIfAbsent(key, () => _stripTrope(key))
+            .contains(_stripTrope(query)) ||
         key.toLowerCase().contains(query.toLowerCase());
   }
 
@@ -3177,21 +3445,26 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: TextField(
-                controller: _search,
-                onChanged: (_) => setState(() {}),
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  isDense: true,
-                  prefixIcon: const Icon(Icons.search, size: 18),
-                  hintText: 'Search',
-                  border: const OutlineInputBorder(),
-                  suffixIcon: _search.text.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () => setState(_search.clear),
-                        ),
+              // Only the field follows each keystroke (for its clear button);
+              // the lists wait for the debounced [_query].
+              child: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _search,
+                builder: (context, value, _) => TextField(
+                  controller: _search,
+                  onChanged: _onSearchChanged,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    hintText: 'Search',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: value.text.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: _clearSearch,
+                          ),
+                  ),
                 ),
               ),
             ),
@@ -3213,7 +3486,7 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
     // stem, verbs no state, and an empty heading is just noise.
     final sections = <(_ParseDimension, Map<String, int>, List<String>)>[];
     for (final dimension in _ParseDimension.values) {
-      final counts = _parseFacet(dimension);
+      final counts = _facets().parse[dimension]!;
       final entries = _entries(counts);
       // Kept when a search hides its entries but a selection of it is live, so
       // the reader can always see and undo what is filtering the list.
@@ -3314,7 +3587,7 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
   }
 
   Widget _formTab(BuildContext context) {
-    final counts = _formFacet();
+    final counts = _facets().forms;
     final entries = _entries(counts);
     final formStyle = const TextStyle(
       fontFamily: 'Cardo',
@@ -3388,16 +3661,34 @@ class _BdbContent extends StatelessWidget {
   final void Function(String href) onBibleRefTap;
   final void Function(String bdbId, String headword) onXrefTap;
 
+  // Decoded entries, most recently shown last. A large entry (אמר, עשׂה) is
+  // tens of kilobytes of JSON, and the sheet rebuilds every expanded entry on
+  // each change anywhere in it, so each is decoded once and kept.
+  static final Map<String, List<dynamic>?> _decoded = {};
+  static const _decodedLimit = 32;
+
+  /// The entry's senses, or null when its JSON is unreadable.
+  static List<dynamic>? _senses(String contentJson) {
+    if (_decoded.containsKey(contentJson)) {
+      // Move it to the most recent end.
+      return _decoded[contentJson] = _decoded.remove(contentJson);
+    }
+    List<dynamic>? senses;
+    try {
+      final data = jsonDecode(contentJson) as Map<String, dynamic>;
+      senses = data['senses'] as List<dynamic>? ?? [];
+    } catch (_) {
+      senses = null;
+    }
+    if (_decoded.length >= _decodedLimit) _decoded.remove(_decoded.keys.first);
+    return _decoded[contentJson] = senses;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final Map<String, dynamic> data;
-    try {
-      data = jsonDecode(contentJson) as Map<String, dynamic>;
-    } catch (_) {
-      return const SizedBox.shrink();
-    }
-    final senses = data['senses'] as List<dynamic>? ?? [];
+    final senses = _senses(contentJson);
+    if (senses == null) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(

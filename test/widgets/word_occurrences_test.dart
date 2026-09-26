@@ -24,13 +24,18 @@ class _FakeRust {
 
   void onVerseTextsRequest(GetVerseTexts request) => verseRequests.add(request);
 
-  void onInfoRequest(GetWordInfo request) {}
+  final List<GetWordInfo> infoRequests = [];
+  final List<GetWordOccurrences> occurrenceRequests = [];
 
-  void onOccurrencesRequest(GetWordOccurrences request) {}
+  void onInfoRequest(GetWordInfo request) => infoRequests.add(request);
+
+  void onOccurrencesRequest(GetWordOccurrences request) =>
+      occurrenceRequests.add(request);
 
   void deliverWordInfo({required String word, required String root}) {
     assignRustSignal['WordInfo']!(
       WordInfo(
+        requestId: infoRequests.last.requestId,
         found: true,
         word: word,
         root: root,
@@ -58,6 +63,7 @@ class _FakeRust {
   void deliverOccurrences(List<HebrewOccurrence> occurrences) {
     assignRustSignal['WordOccurrences']!(
       WordOccurrences(
+        requestId: occurrenceRequests.last.requestId,
         found: true,
         occurrences: const [],
         rootOccurrences: const [],
@@ -168,7 +174,7 @@ Future<_FakeRust> _pumpOccurrences(
   );
   await tester.pump();
   rust.deliverWordInfo(word: word, root: 'ברא');
-  await tester.pump();
+  await tester.pump(occurrencePrefetchDelay);
   rust.deliverOccurrences(occurrences);
   await tester.pumpAndSettle();
   // Switch to the Occurrences tab.

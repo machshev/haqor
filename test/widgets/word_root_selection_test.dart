@@ -29,6 +29,7 @@ class _FakeRust {
   void deliverEliezer({required String selected, String word = 'אֱלִיעֶזֶר'}) {
     assignRustSignal['WordInfo']!(
       WordInfo(
+        requestId: infoRequests.last.requestId,
         found: true,
         word: word,
         root: selected,
@@ -70,6 +71,7 @@ class _FakeRust {
   void deliverOccurrences(List<HebrewOccurrence> occurrences) {
     assignRustSignal['WordOccurrences']!(
       WordOccurrences(
+        requestId: occurrenceRequests.last.requestId,
         found: true,
         occurrences: const [],
         rootOccurrences: const [],
@@ -163,7 +165,7 @@ Future<_FakeRust> _pumpSheet(
   );
   await tester.pump();
   rust.deliverEliezer(selected: root);
-  await tester.pump();
+  await tester.pump(occurrencePrefetchDelay);
   rust.deliverOccurrences([_occurrence(chapter: 15, verse: 2)]);
   await tester.pumpAndSettle();
   return rust;
@@ -203,7 +205,7 @@ void main() {
     expect(rust.infoRequests.last.position, isNull);
     expect(rust.infoRequests.last.word, 'אֵל');
     rust.deliverEliezer(selected: 'אלה', word: 'אֵל');
-    await tester.pump();
+    await tester.pump(occurrencePrefetchDelay);
     expect(rust.occurrenceRequests.last.word, 'אֵל');
     expect(rust.occurrenceRequests.last.root, isNull);
     rust.deliverOccurrences([]);

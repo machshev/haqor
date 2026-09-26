@@ -236,25 +236,31 @@ class WordProximity extends ChangeNotifier {
   /// place so a pane keeps its position while it moves through its history.
   void register(ProximitySource source) {
     _sources[source.id] = source;
-    changed();
+    _scheduleNotify();
   }
 
   /// Removes [source], unless its pane has already registered a successor.
   void unregister(ProximitySource source) {
     if (!identical(_sources[source.id], source)) return;
     _sources.remove(source.id);
-    changed();
+    _scheduleNotify();
   }
 
   /// Forgets a closed pane, including whether it was toggled off.
   void forget(String id) {
     _excluded.remove(id);
-    if (_sources.remove(id) != null) changed();
+    if (_sources.remove(id) != null) _scheduleNotify();
   }
 
-  /// A source's hits have changed. Notified after the current frame, since
-  /// panes register and load while the tree is being built.
+  /// A source's hits have changed. Only a running search reads hits, so with
+  /// it off no pane needs rebuilding; turning it on notifies every pane anyway.
   void changed() {
+    if (_enabled) _scheduleNotify();
+  }
+
+  /// Notified after the current frame, since panes register and load while the
+  /// tree is being built.
+  void _scheduleNotify() {
     if (_notifyScheduled || _disposed) return;
     _notifyScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {

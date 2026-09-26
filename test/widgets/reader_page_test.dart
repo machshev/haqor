@@ -606,6 +606,7 @@ void main() {
     expect(current().word, 'יָעַד');
 
     final info = WordInfo(
+      requestId: rust.wordRequests.last.requestId,
       found: true,
       word: current().word,
       root: '',

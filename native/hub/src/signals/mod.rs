@@ -288,6 +288,10 @@ pub struct CrossReferences {
 
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetWordInfo {
+    /// Echoed in the [`WordInfo`] reply. Replies carry nothing else that says
+    /// which request they answer, so a sheet whose root changed, or one of
+    /// several open word panes, tells its own reply apart by this id.
+    pub request_id: u32,
     pub word: String,
     pub syriac: bool,
     /// Optional OT reader location. When complete, morphology is resolved from
@@ -313,6 +317,8 @@ pub struct GetWordInfo {
 /// first opened rather than computed up-front with the lexicon data.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetWordOccurrences {
+    /// Echoed in the [`WordOccurrences`] reply, as in [`GetWordInfo::request_id`].
+    pub request_id: u32,
     pub word: String,
     pub syriac: bool,
     /// Which root to list occurrences of, as in [`GetWordInfo::root`]. The
@@ -437,6 +443,8 @@ pub struct RootChoice {
 
 #[derive(Debug, Serialize, RustSignal)]
 pub struct WordInfo {
+    /// The [`GetWordInfo::request_id`] this answers.
+    pub request_id: u32,
     pub found: bool,
     pub word: String,
     /// The root the entries below belong to — the resolved one, or whichever the
@@ -469,6 +477,8 @@ pub struct WordInfo {
 /// lists come from full-text scans of the root across the corpus.
 #[derive(Debug, Serialize, RustSignal)]
 pub struct WordOccurrences {
+    /// The [`GetWordOccurrences::request_id`] this answers.
+    pub request_id: u32,
     pub found: bool,
     pub occurrences: Vec<WordOccurrence>,
     /// NT only. The OT side reads its verse list off the distinct references in

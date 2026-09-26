@@ -721,6 +721,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         });
                     }
                     WordInfo {
+                        request_id: req.request_id,
                         found: true,
                         word: entry.headword,
                         root: entry.root,
@@ -746,6 +747,7 @@ pub async fn get_word_info(bible: SharedBible) {
                 _ => {
                     debug_print!("get_word_info: no BDB entry for id {:?}", id);
                     WordInfo {
+                        request_id: req.request_id,
                         found: false,
                         word: req.word.clone(),
                         root: String::new(),
@@ -793,6 +795,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         .collect();
                     let gloss = first.meanings.first().cloned().unwrap_or_default();
                     WordInfo {
+                        request_id: req.request_id,
                         found: true,
                         word: first.word.clone(),
                         root: first.root.clone(),
@@ -820,6 +823,7 @@ pub async fn get_word_info(bible: SharedBible) {
                 None => {
                     debug_print!("get_word_info: no SEDRA match for {:?}", lookup);
                     WordInfo {
+                        request_id: req.request_id,
                         found: false,
                         word: req.word,
                         root: String::new(),
@@ -905,6 +909,7 @@ pub async fn get_word_info(bible: SharedBible) {
                     // morphology here (לָמַיִם → "to the water").
                     let gloss = inflected_gloss(&info);
                     WordInfo {
+                        request_id: req.request_id,
                         found: true,
                         word: info.word,
                         root: selected,
@@ -930,6 +935,7 @@ pub async fn get_word_info(bible: SharedBible) {
                 None => {
                     debug_print!("get_word_info: no OT parse for {:?}", lookup);
                     WordInfo {
+                        request_id: req.request_id,
                         found: false,
                         word: req.word,
                         root: String::new(),
@@ -972,6 +978,7 @@ pub async fn get_word_occurrences(bible: SharedBible) {
             let words = bible.sedra_word_info(&lookup).unwrap_or_default();
             match words.first() {
                 Some(first) => WordOccurrences {
+                    request_id: req.request_id,
                     found: true,
                     occurrences: to_signal_occurrences(
                         bible
@@ -996,7 +1003,7 @@ pub async fn get_word_occurrences(bible: SharedBible) {
                     hebrew_occurrences: Vec::new(),
                 }
                 .send_signal_to_dart(),
-                None => empty_word_occurrences().send_signal_to_dart(),
+                None => empty_word_occurrences(req.request_id).send_signal_to_dart(),
             }
         } else {
             match bible.hebrew_word_info(&req.word) {
@@ -1009,6 +1016,7 @@ pub async fn get_word_occurrences(bible: SharedBible) {
                         .filter(|root| !root.is_empty())
                         .unwrap_or(&info.root);
                     WordOccurrences {
+                        request_id: req.request_id,
                         found: true,
                         occurrences: to_signal_occurrences(
                             bible
@@ -1039,6 +1047,7 @@ pub async fn get_word_occurrences(bible: SharedBible) {
                             .unwrap_or_default(),
                     );
                     WordOccurrences {
+                        request_id: req.request_id,
                         found: !occurrences.is_empty(),
                         occurrences,
                         root_occurrences: Vec::new(),
@@ -1053,8 +1062,9 @@ pub async fn get_word_occurrences(bible: SharedBible) {
     }
 }
 
-fn empty_word_occurrences() -> WordOccurrences {
+fn empty_word_occurrences(request_id: u32) -> WordOccurrences {
     WordOccurrences {
+        request_id,
         found: false,
         occurrences: Vec::new(),
         root_occurrences: Vec::new(),
