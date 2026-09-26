@@ -1922,12 +1922,16 @@ class _ReaderSessionState extends State<_ReaderSession>
     // Study pages and tiled panels are built by the outer workspace, outside
     // this session's setState scope. Refresh them after a study edit.
     widget.onWorkspaceTilesChanged();
+    // Encoded once, for both the local copy and Rust's.
+    final workspaces = _studyWorkspaces;
+    final activeId = _activeStudyWorkspaceId;
+    final encoded = encodeStudyWorkspaces(workspaces);
     final prefs = await SharedPreferences.getInstance();
-    await saveStudyWorkspaces(prefs, _studyWorkspaces, _activeStudyWorkspaceId);
+    await saveStudyWorkspaces(prefs, workspaces, activeId, encoded: encoded);
     _sendStudyState(
       SaveStudyState(
-        workspacesJson: encodeStudyWorkspaces(_studyWorkspaces),
-        activeWorkspaceId: _activeStudyWorkspaceId ?? '',
+        workspacesJson: encoded,
+        activeWorkspaceId: activeId ?? '',
       ),
     );
   }

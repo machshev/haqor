@@ -545,9 +545,27 @@ class StudyWorkspace {
     return items;
   }
 
+  /// One past the highest order among [groupId]'s items — the last of
+  /// [itemsIn], found without building and sorting that list.
   int nextOrder(String? groupId) {
-    final items = itemsIn(groupId);
-    return items.isEmpty ? 0 : items.last.order + 1;
+    int? highest;
+    void consider(int order) {
+      if (highest == null || order > highest!) highest = order;
+    }
+
+    for (final passage in passages) {
+      if (passage.groupId == groupId) consider(passage.order);
+    }
+    for (final word in words) {
+      if (word.groupId == groupId) consider(word.order);
+    }
+    for (final note in notes) {
+      if (note.groupId == groupId) consider(note.order);
+    }
+    for (final group in groups) {
+      if (group.parentId == groupId) consider(group.order);
+    }
+    return highest == null ? 0 : highest! + 1;
   }
 
   StudyWorkspace putWord(StudyWord word) {
@@ -1032,12 +1050,18 @@ List<StudyWorkspace> decodeStudyWorkspaces(String? value) {
 String encodeStudyWorkspaces(List<StudyWorkspace> workspaces) =>
     jsonEncode(workspaces.map((workspace) => workspace.toJson()).toList());
 
+/// Stores [workspaces]; pass [encoded] when the caller has already encoded
+/// them (to send them to Rust as well), so the JSON is built only once.
 Future<void> saveStudyWorkspaces(
   SharedPreferences prefs,
   List<StudyWorkspace> workspaces,
-  String? activeWorkspaceId,
-) async {
-  await prefs.setString(studyWorkspacesKey, encodeStudyWorkspaces(workspaces));
+  String? activeWorkspaceId, {
+  String? encoded,
+}) async {
+  await prefs.setString(
+    studyWorkspacesKey,
+    encoded ?? encodeStudyWorkspaces(workspaces),
+  );
   if (activeWorkspaceId == null) {
     await prefs.remove(activeStudyWorkspaceKey);
   } else {
