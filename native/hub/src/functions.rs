@@ -2,18 +2,18 @@
 use crate::signals::ProgressSnapshot;
 use crate::signals::{
     BdbSummary, BuildInfo, CalibrationProbe, ChapterText, CrossReferenceEntry, CrossReferences,
-    FinishCalibration, GetBuildInfo, GetCalibrationProbe, GetChapter, GetCrossReferences,
-    GetNextStudyItem, GetOnboardingStatus, GetQuotations, GetSeenConcepts, GetStudyState,
-    GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts,
-    GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence,
-    IssueReportStatus, KetivEntry, LexiconEntryOverrideStatus, OccurrenceParse, OnboardingStatus,
-    OptimizeTutorGlossOverrides, ProgressSyncStatus, QuotationEntry, Quotations, ResetTutor,
-    RootChoice, SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState, SaveTutorGloss,
-    SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings,
-    StudyItem, StudyState, SubmitMisreads, SubmitReview, SuffixCard, SyncProgress,
-    TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard, VerseEntry,
-    VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry, VocabList, WordCard, WordInfo,
-    WordOccurrence, WordOccurrences,
+    DictionaryEntry, FinishCalibration, GetBuildInfo, GetCalibrationProbe, GetChapter,
+    GetCrossReferences, GetDictionaryEntry, GetNextStudyItem, GetOnboardingStatus, GetQuotations,
+    GetSeenConcepts, GetStudyState, GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats,
+    GetVerseText, GetVerseTexts, GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard,
+    HebrewOccurrence, IssueReportStatus, KetivEntry, LexiconEntryOverrideStatus, OccurrenceParse,
+    OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus, QuotationEntry, Quotations,
+    ResetTutor, RootChoice, SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState,
+    SaveTutorGloss, SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown,
+    SetTutorSettings, StudyItem, StudyState, SubmitMisreads, SubmitReview, SuffixCard,
+    SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard,
+    VerseEntry, VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry, VocabList, WordCard,
+    WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -24,7 +24,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use haqor_core::bible::{BdbEntry, Bible, QuotationFilter, QuotationScope, inflected_gloss};
+use haqor_core::bible::{
+    BdbEntry, Bible, LexiconEntry, LexiconSource, QuotationFilter, QuotationScope, inflected_gloss,
+};
 use haqor_core::tutor::{self, Grade, Track};
 use rinf::{DartSignal, RustSignal, debug_print};
 
@@ -53,15 +55,45 @@ fn lexicon_rows(
             Vec::new()
         })
         .into_iter()
-        .map(|e| BdbSummary {
-            pos_category: e.pos_category.to_string(),
-            source: e.source.as_str().to_string(),
-            lang: e.lang,
-            headword: e.headword,
-            gloss: e.gloss,
-            content_json: e.content_json,
-        })
+        .map(lexicon_summary)
         .collect()
+}
+
+fn lexicon_summary(e: LexiconEntry) -> BdbSummary {
+    BdbSummary {
+        pos_category: e.pos_category.to_string(),
+        source: e.source.as_str().to_string(),
+        lang: e.lang,
+        headword: e.headword,
+        gloss: e.gloss,
+        content_json: e.content_json,
+    }
+}
+
+/// Answer the previews of Klein and Jastrow links: one entry by its key.
+pub async fn get_dictionary_entry(bible: SharedBible) {
+    let receiver = GetDictionaryEntry::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        let entry = LexiconSource::parse(&req.source).and_then(|source| {
+            lock(&bible)
+                .dictionary_entry(source, &req.key)
+                .unwrap_or_else(|e| {
+                    debug_print!(
+                        "dictionary_entry({:?}, {:?}) error: {e:?}",
+                        req.source,
+                        req.key
+                    );
+                    None
+                })
+        });
+        DictionaryEntry {
+            request_id: req.request_id,
+            found: entry.is_some(),
+            entry: entry.map(lexicon_summary),
+        }
+        .send_signal_to_dart();
+    }
 }
 
 /// Browser SQLite lives in the WASM heap.  Save it after every successful

@@ -426,6 +426,27 @@ pub struct BdbSummary {
     pub lang: String,
 }
 
+/// Ask for one Klein or Jastrow entry by its key: the target of a `dref` link
+/// inside another entry of the same source.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetDictionaryEntry {
+    /// Echoed in [`DictionaryEntry::request_id`], so a preview can tell its
+    /// own reply from another's.
+    pub request_id: u32,
+    /// `klein` or `jastrow` — the source of the entry the link sits in.
+    pub source: String,
+    pub key: String,
+}
+
+#[derive(Debug, Serialize, RustSignal)]
+pub struct DictionaryEntry {
+    /// The [`GetDictionaryEntry::request_id`] this answers.
+    pub request_id: u32,
+    pub found: bool,
+    /// The entry, when `found`.
+    pub entry: Option<BdbSummary>,
+}
+
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct SedraSummary {
     pub lexeme: String,

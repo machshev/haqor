@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -47,6 +48,7 @@ Future<void> _pumpSheet(
   WidgetTester tester, {
   required bool syriac,
   List<SedraSummary> sedraEntries = const [],
+  void Function(GetDictionaryEntry)? onDictionaryRequest,
 }) async {
   SharedPreferences.setMockInitialValues({
     'occurrence_verse_english_only': false,
@@ -64,6 +66,7 @@ Future<void> _pumpSheet(
             sendInfoRequest: requests.add,
             sendOccurrencesRequest: (_) {},
             sendVerseTextsRequest: (_) {},
+            sendDictionaryRequest: onDictionaryRequest,
           ),
         ),
       ),
@@ -98,6 +101,25 @@ Future<void> _pumpSheet(
   await tester.pumpAndSettle();
 }
 
+/// Tap the linked span reading [text]. Entry bodies are [SelectableText], whose
+/// spans the text-range finders cannot reach, so the span's own recognizer is
+/// fired — the last match, being the topmost preview's.
+void tapLink(WidgetTester tester, String text) {
+  TapGestureRecognizer? found;
+  for (final widget in tester.widgetList<SelectableText>(
+    find.byType(SelectableText),
+  )) {
+    widget.textSpan?.visitChildren((span) {
+      if (span is TextSpan && span.text == text && span.recognizer != null) {
+        found = span.recognizer! as TapGestureRecognizer;
+      }
+      return true;
+    });
+  }
+  expect(found, isNotNull, reason: 'no link reading $text');
+  found!.onTap!();
+}
+
 void main() {
   testWidgets('each entry is badged with the lexicon it comes from', (
     tester,
@@ -124,6 +146,76 @@ void main() {
     expect(find.textContaining('Etymology'), findsOneWidget);
     expect(find.textContaining('shalāmu'), findsOneWidget);
     expect(find.textContaining('Derivatives'), findsOneWidget);
+  });
+
+  testWidgets('a Klein link opens the entry it names, and so on from there', (
+    tester,
+  ) async {
+    final asked = <GetDictionaryEntry>[];
+    await _pumpSheet(tester, syriac: false, onDictionaryRequest: asked.add);
+    await tester.tap(find.text('well-being, welfare'));
+    await tester.pumpAndSettle();
+
+    tapLink(tester, 'שׁלם');
+    await tester.pump();
+    expect(asked, hasLength(1));
+    expect(asked.single.source, 'klein');
+    expect(asked.single.key, 'U01167');
+    // The link's own text heads the preview while the entry is on its way.
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    assignRustSignal['DictionaryEntry']!(
+      DictionaryEntry(
+        requestId: asked.single.requestId,
+        found: true,
+        entry: const BdbSummary(
+          headword: 'שׁלם',
+          gloss: 'to be complete',
+          contentJson:
+              '{"senses":[{"form":"Qal","senses":[{"definition":'
+              '[{"t":"was whole."}]}]}],"derivatives":[{"t":" "},'
+              '{"t":"שָׁלֵם","rtl":true,"dref":"U01168"}]}',
+          posCategory: 'verb',
+          source: 'klein',
+          lang: '',
+        ),
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    final preview = find.byType(AlertDialog);
+    expect(
+      find.descendant(of: preview, matching: find.text('to be complete')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: preview, matching: find.textContaining('was whole.')),
+      findsOneWidget,
+    );
+
+    // The preview's own links open a further preview over it.
+    tapLink(tester, 'שָׁלֵם');
+    await tester.pump();
+    expect(asked.last.key, 'U01168');
+    expect(asked.last.requestId, isNot(asked.first.requestId));
+    assignRustSignal['DictionaryEntry']!(
+      DictionaryEntry(
+        requestId: asked.last.requestId,
+        found: false,
+        entry: null,
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNWidgets(2));
+    expect(
+      find.text('This entry is not in the installed dictionary.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Close').last);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
   });
 
   testWidgets('an NT word shows the other lexicons above its SEDRA tree', (

@@ -102,6 +102,7 @@ class WordInfoSheet extends StatefulWidget {
     this.sendInfoRequest,
     this.sendOccurrencesRequest,
     this.sendVerseTextsRequest,
+    this.sendDictionaryRequest,
     this.docked = false,
     this.proximity,
     this.proximityId,
@@ -115,11 +116,12 @@ class WordInfoSheet extends StatefulWidget {
   /// A null entry ID requests normal surface word info.
   final void Function(String word, String? bdbId)? onOpenWord;
 
-  /// How the sheet's three requests reach Rust. Injectable so a widget test can
+  /// How the sheet's requests reach Rust. Injectable so a widget test can
   /// drive the sheet without the native library loaded, as the reader does.
   final void Function(GetWordInfo)? sendInfoRequest;
   final void Function(GetWordOccurrences)? sendOccurrencesRequest;
   final void Function(GetVerseTexts)? sendVerseTextsRequest;
+  final void Function(GetDictionaryEntry)? sendDictionaryRequest;
 
   /// Renders as a bounded side-panel body instead of a draggable bottom sheet.
   final bool docked;
@@ -676,6 +678,30 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   void _onXrefTap(String bdbId, String headword) =>
       _openWordInfo(headword, bdbId: bdbId);
 
+  /// A Klein or Jastrow link opens its target in a preview over the sheet, as
+  /// a Bible reference does. The target's own links open further previews
+  /// on top, so a chain of derivations can be followed and walked back.
+  void _onDictionaryLinkTap(
+    BuildContext context,
+    String source,
+    String key,
+    String text,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => _DictionaryEntryPreviewDialog(
+        source: source,
+        entryKey: key,
+        linkText: text,
+        send: widget.sendDictionaryRequest,
+        onBibleRefTap: (href) => _onBibleRefTap(context, href),
+        onXrefTap: _onXrefTap,
+        onDictionaryLinkTap: (source, key, text) =>
+            _onDictionaryLinkTap(ctx, source, key, text),
+      ),
+    );
+  }
+
   // A lexical form uses the same surface lookup as a word in the reader.
   // Only dictionary cross-references supply an entry ID. Do not carry the
   // original token's root, gloss, or location into the new word's analysis.
@@ -698,6 +724,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         sendInfoRequest: widget.sendInfoRequest,
         sendOccurrencesRequest: widget.sendOccurrencesRequest,
         sendVerseTextsRequest: widget.sendVerseTextsRequest,
+        sendDictionaryRequest: widget.sendDictionaryRequest,
         isStudyBookmarked: widget.isStudyBookmarked,
         onToggleStudyBookmark: widget.onToggleStudyBookmark,
         useEnglishBookNames: widget.useEnglishBookNames,
@@ -1102,8 +1129,11 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               padding: const EdgeInsets.only(bottom: 8),
               child: _BdbContent(
                 contentJson: e.contentJson,
+                source: e.source,
                 onBibleRefTap: (href) => _onBibleRefTap(context, href),
                 onXrefTap: _onXrefTap,
+                onDictionaryLinkTap: (source, key, text) =>
+                    _onDictionaryLinkTap(context, source, key, text),
               ),
             ),
         ],
@@ -3661,13 +3691,21 @@ class _VersePlaceholder extends StatelessWidget {
 class _BdbContent extends StatelessWidget {
   const _BdbContent({
     required this.contentJson,
+    required this.source,
     required this.onBibleRefTap,
     required this.onXrefTap,
+    required this.onDictionaryLinkTap,
   });
 
   final String contentJson;
+
+  /// The lexicon the entry is from, which is also where its `dref` links
+  /// point: Klein links only to Klein, Jastrow only to Jastrow.
+  final String source;
   final void Function(String href) onBibleRefTap;
   final void Function(String bdbId, String headword) onXrefTap;
+  final void Function(String source, String key, String text)
+  onDictionaryLinkTap;
 
   // Decoded entries, most recently shown last. A large entry (אמר, עשׂה) is
   // tens of kilobytes of JSON, and the sheet rebuilds every expanded entry on
@@ -3822,7 +3860,9 @@ class _BdbContent extends StatelessWidget {
       final href = span['href'] as String?;
       // A <w src> cross-reference: tappable, navigates to the target entry.
       final xref = span['xref'] as String?;
-      final isLink = href != null || xref != null;
+      // A Klein or Jastrow link to another entry of the same lexicon.
+      final dref = span['dref'] as String?;
+      final isLink = href != null || xref != null || dref != null;
 
       TextStyle style = (baseStyle ?? const TextStyle()).copyWith(
         fontWeight: bold ? FontWeight.bold : null,
@@ -3844,6 +3884,12 @@ class _BdbContent extends StatelessWidget {
       if (xref != null) {
         final recognizer = TapGestureRecognizer()
           ..onTap = () => onXrefTap(xref, text);
+        return TextSpan(text: text, style: style, recognizer: recognizer);
+      }
+
+      if (dref != null) {
+        final recognizer = TapGestureRecognizer()
+          ..onTap = () => onDictionaryLinkTap(source, dref, text);
         return TextSpan(text: text, style: style, recognizer: recognizer);
       }
 
@@ -4059,6 +4105,134 @@ class _LexiconEntryOverrideEditorState
       ),
     ),
   );
+}
+
+/// One Klein or Jastrow entry, fetched by key when a link to it is tapped.
+class _DictionaryEntryPreviewDialog extends StatefulWidget {
+  const _DictionaryEntryPreviewDialog({
+    required this.source,
+    required this.entryKey,
+    required this.linkText,
+    required this.send,
+    required this.onBibleRefTap,
+    required this.onXrefTap,
+    required this.onDictionaryLinkTap,
+  });
+
+  final String source;
+  final String entryKey;
+
+  /// The link's own text, shown as the title until the entry arrives.
+  final String linkText;
+  final void Function(GetDictionaryEntry)? send;
+  final void Function(String href) onBibleRefTap;
+  final void Function(String bdbId, String headword) onXrefTap;
+  final void Function(String source, String key, String text)
+  onDictionaryLinkTap;
+
+  @override
+  State<_DictionaryEntryPreviewDialog> createState() =>
+      _DictionaryEntryPreviewDialogState();
+}
+
+class _DictionaryEntryPreviewDialogState
+    extends State<_DictionaryEntryPreviewDialog> {
+  // Replies are broadcast to every open preview; the id picks out this one's.
+  static int _nextRequestId = 1;
+  late final int _requestId = _nextRequestId++;
+  StreamSubscription<RustSignalPack<DictionaryEntry>>? _sub;
+  DictionaryEntry? _reply;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = DictionaryEntry.rustSignalStream.listen((pack) {
+      if (!mounted || pack.message.requestId != _requestId) return;
+      setState(() => _reply = pack.message);
+      _sub?.cancel();
+    });
+    final request = GetDictionaryEntry(
+      requestId: _requestId,
+      source: widget.source,
+      key: widget.entryKey,
+    );
+    final send = widget.send;
+    if (send == null) {
+      request.sendSignalToRust();
+    } else {
+      send(request);
+    }
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final entry = _reply?.entry;
+    final lang = entry == null ? null : LexiconPeriodLabel.of(entry.lang);
+    return AlertDialog(
+      title: Row(
+        children: [
+          LexiconSourceBadge(source: widget.source),
+          if (lang != null) ...[const SizedBox(width: 4), lang],
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _normalizeHebrewCombining(entry?.headword ?? widget.linkText),
+                  style: TextStyle(
+                    fontFamily: 'Noto Serif Hebrew',
+                    fontFamilyFallback: const ['Cardo'],
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
+                  textDirection: TextDirection.rtl,
+                ),
+                if (entry != null && entry.gloss.isNotEmpty)
+                  Text(entry.gloss, style: theme.textTheme.bodyMedium),
+              ],
+            ),
+          ),
+        ],
+      ),
+      content: switch (_reply) {
+        null => const SizedBox(
+          height: 60,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+        DictionaryEntry(entry: final entry?) => SingleChildScrollView(
+          child: _BdbContent(
+            contentJson: entry.contentJson,
+            source: entry.source,
+            onBibleRefTap: widget.onBibleRefTap,
+            onXrefTap: widget.onXrefTap,
+            onDictionaryLinkTap: widget.onDictionaryLinkTap,
+          ),
+        ),
+        _ => Text(
+          'This entry is not in the installed dictionary.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      },
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
 }
 
 class _BibleRefPreviewDialog extends StatefulWidget {
