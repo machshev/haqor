@@ -317,6 +317,63 @@ void main() {
     expect(decoration.color, isNot(Colors.transparent));
   });
 
+  testWidgets('study highlights stay dark enough for dark-theme text', (
+    tester,
+  ) async {
+    final theme = ThemeData(brightness: Brightness.dark);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: theme,
+        home: Scaffold(
+          body: VerseRow(
+            entry: const VerseEntry(
+              verse: 4,
+              text: 'מִלָּה',
+              glosses: [],
+              morphologies: [],
+              names: [],
+              roots: ['מלל'],
+              ketivs: [],
+              crossReferences: 0,
+            ),
+            isSelected: false,
+            hebrewNumerals: false,
+            studyHighlighted: true,
+            studyWordHighlightColors: const {'מלל': Color(0xffffd54f)},
+            studyPassageHighlightColor: const Color(0xff80cbc4),
+            onTap: () {},
+            onWordTap: (_, _, _, _) {},
+          ),
+        ),
+      ),
+    );
+
+    double contrast(Color a, Color b) {
+      final la = a.computeLuminance(), lb = b.computeLuminance();
+      return (max(la, lb) + 0.05) / (min(la, lb) + 0.05);
+    }
+
+    final word = tester
+        .widget<SelectableText>(find.byType(SelectableText))
+        .textSpan!
+        .children!
+        .whereType<TextSpan>()
+        .firstWhere((span) => span.text == 'מִלָּה');
+    expect(
+      contrast(word.style!.color!, word.style!.backgroundColor!),
+      greaterThanOrEqualTo(4.5),
+    );
+    final decoration =
+        tester
+                .widget<AnimatedContainer>(find.byType(AnimatedContainer))
+                .decoration!
+            as BoxDecoration;
+    expect(
+      contrast(theme.colorScheme.onSurface, decoration.color!),
+      greaterThanOrEqualTo(4.5),
+    );
+  });
+
   for (final interlinear in [false, true]) {
     testWidgets(
       'form color overrides root only for matching forms (interlinear=$interlinear)',

@@ -97,7 +97,7 @@ class StudyWorkspacePanel extends StatelessWidget {
                   ),
                 ),
                 child: value == selected
-                    ? const Icon(Icons.check, size: 20)
+                    ? const Icon(Icons.check, size: 20, color: Colors.black87)
                     : null,
               ),
             ),

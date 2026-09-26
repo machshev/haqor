@@ -28,6 +28,30 @@ Future<void> setOccurrenceVerseEnglishOnlyEnabled(bool enabled) async =>
       enabled,
     );
 
+const _themeModeKey = 'theme_mode';
+
+/// The app's light/dark choice, which [Haqor] listens to.
+///
+/// Held outside the widget tree because it applies to the whole app, not to
+/// any one reader. [loadThemeMode] fills it before the first frame so a saved
+/// choice never flashes the other theme.
+final themeMode = ValueNotifier(ThemeMode.system);
+
+Future<void> loadThemeMode() async {
+  final stored = (await SharedPreferences.getInstance()).getString(
+    _themeModeKey,
+  );
+  themeMode.value = ThemeMode.values.asNameMap()[stored] ?? ThemeMode.system;
+}
+
+Future<void> setThemeMode(ThemeMode mode) async {
+  themeMode.value = mode;
+  await (await SharedPreferences.getInstance()).setString(
+    _themeModeKey,
+    mode.name,
+  );
+}
+
 /// How the reader shows a *ketiv* — what the consonantal text writes where the
 /// running text gives the *qere* the Masoretes read in its place.
 ///
@@ -268,6 +292,34 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
                 ],
               ),
               const SizedBox(height: 20),
+              const _SectionLabel('Appearance'),
+              ValueListenableBuilder(
+                valueListenable: themeMode,
+                builder: (context, mode, _) => SegmentedButton<ThemeMode>(
+                  segments: const [
+                    ButtonSegment(
+                      value: ThemeMode.system,
+                      icon: Icon(Icons.brightness_auto_outlined),
+                      label: Text('System'),
+                    ),
+                    ButtonSegment(
+                      value: ThemeMode.light,
+                      icon: Icon(Icons.light_mode_outlined),
+                      label: Text('Light'),
+                    ),
+                    ButtonSegment(
+                      value: ThemeMode.dark,
+                      icon: Icon(Icons.dark_mode_outlined),
+                      label: Text('Dark'),
+                    ),
+                  ],
+                  showSelectedIcon: false,
+                  selected: {mode},
+                  onSelectionChanged: (selection) =>
+                      setThemeMode(selection.single),
+                ),
+              ),
+              const SizedBox(height: 24),
               const _SectionLabel('Reading'),
               Text('Large-screen layout', style: theme.textTheme.labelLarge),
               const SizedBox(height: 8),

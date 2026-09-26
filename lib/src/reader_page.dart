@@ -4010,7 +4010,11 @@ class _ChapterDivider extends StatelessWidget {
             key: ValueKey('chapter-heading-$bookIndex-$chapter'),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: highlightColor?.withValues(alpha: 0.55),
+              color: highlightColor == null
+                  ? null
+                  : theme.brightness == Brightness.dark
+                  ? studyHighlightBackground(highlightColor!, theme)
+                  : highlightColor!.withValues(alpha: 0.55),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(

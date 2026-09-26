@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'src/app_runtime.dart';
+import 'src/app_settings.dart';
 import 'src/boot_status.dart';
 
 Future<void> main() async {
@@ -20,6 +21,7 @@ Future<void> main() async {
     );
     rethrow;
   }
+  await loadThemeMode();
   runApp(Haqor(home: home));
   // The boot screen stays up until something has actually been drawn; taking it
   // down any earlier trades a described wait for a blank one.
@@ -33,24 +35,28 @@ class Haqor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'הָקוֹר',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2D5A27),
-          brightness: Brightness.light,
+    return ValueListenableBuilder(
+      valueListenable: themeMode,
+      builder: (context, mode, _) => MaterialApp(
+        title: 'הָקוֹר',
+        debugShowCheckedModeBanner: false,
+        themeMode: mode,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF2D5A27),
+            brightness: Brightness.light,
+          ),
+          useMaterial3: true,
         ),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2D5A27),
-          brightness: Brightness.dark,
+        darkTheme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF2D5A27),
+            brightness: Brightness.dark,
+          ),
+          useMaterial3: true,
         ),
-        useMaterial3: true,
+        home: home,
       ),
-      home: home,
     );
   }
 }

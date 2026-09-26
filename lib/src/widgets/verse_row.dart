@@ -48,6 +48,16 @@ String compactInterlinearMorphology(String morphology) {
 bool isYahweh(String word) =>
     _yahwehWithPrefixes.hasMatch(word.replaceAll(_hebrewMarks, ''));
 
+/// The on-screen colour for a study highlight behind reader text.
+///
+/// Study colours are light pastels, which suit dark text in the light theme.
+/// Dark themes draw light text, so there the colour is mixed into the surface
+/// to keep its hue while leaving the text readable.
+Color studyHighlightBackground(Color color, ThemeData theme) =>
+    theme.brightness == Brightness.dark
+    ? Color.alphaBlend(color.withValues(alpha: 0.35), theme.colorScheme.surface)
+    : color;
+
 /// Splits a maqaf from its neighbouring word for interlinear display.
 ///
 /// The Bible text preserves the printed convention of a trailing maqaf followed
@@ -456,11 +466,14 @@ class _VerseRowState extends State<VerseRow> {
           ? widget.entry.roots[lexicalPosition]
           : '';
       // An occurrence-specific phrase takes precedence over form/root colors.
-      final highlightColor =
+      final storedColor =
           widget.studyPhraseHighlightColors[lexicalPosition] ??
           widget.studyFormHighlightColors[StudyWord.formKey(root, word)] ??
           widget.studyFormHighlightColors[StudyWord.formKey('', word)] ??
           widget.studyWordHighlightColors[root];
+      final highlightColor = storedColor == null
+          ? null
+          : studyHighlightBackground(storedColor, theme);
       final highlighted = highlightColor != null;
       final baseStyle = highlighted
           ? wordStyle.copyWith(
@@ -474,7 +487,13 @@ class _VerseRowState extends State<VerseRow> {
       // general proper-name flag.
       if (isYahweh(word)) {
         return highlighted
-            ? yahwehStyle.copyWith(backgroundColor: highlightColor)
+            ? yahwehStyle.copyWith(
+                backgroundColor: highlightColor,
+                // The usual gold is too dim against a dark-theme tint.
+                color: theme.brightness == Brightness.dark
+                    ? const Color(0xFFFFCA28)
+                    : null,
+              )
             : yahwehStyle;
       }
       return lexicalPosition < widget.entry.names.length &&
@@ -635,9 +654,15 @@ class _VerseRowState extends State<VerseRow> {
           color: widget.isSelected
               ? theme.colorScheme.primaryContainer
               : widget.studyHighlighted
-              ? (widget.studyPassageHighlightColor ??
-                        theme.colorScheme.secondaryContainer)
-                    .withValues(alpha: 0.55)
+              ? theme.brightness == Brightness.dark
+                    ? studyHighlightBackground(
+                        widget.studyPassageHighlightColor ??
+                            theme.colorScheme.secondaryContainer,
+                        theme,
+                      )
+                    : (widget.studyPassageHighlightColor ??
+                              theme.colorScheme.secondaryContainer)
+                          .withValues(alpha: 0.55)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
