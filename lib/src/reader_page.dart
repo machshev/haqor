@@ -1144,7 +1144,6 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     final mobile = MediaQuery.sizeOf(context).width < 900;
     final canTile = !mobile;
     final tiled = _tiled && canTile && _tabs.length > 1;
-    final showTabStrip = !mobile || _tabs.length > 1;
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -1160,12 +1159,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       final actions = _workspaceActions;
-                      final tabWidth = showTabStrip
-                          ? math.min(
-                              constraints.maxWidth * 0.7,
-                              _tabs.length * 150.0,
-                            )
-                          : 0.0;
+                      final tabWidth = math.min(
+                        constraints.maxWidth * 0.7,
+                        _tabs.length * 150.0,
+                      );
                       final fixedWidth = 48.0 + (canTile ? 48 : 0) + 48;
                       final directActionCount = mobile
                           ? 1
@@ -1178,37 +1175,35 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                       return Row(
                         children: [
                           Expanded(
-                            child: showTabStrip
-                                ? ListView.separated(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                    ),
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount: _tabs.length,
-                                    separatorBuilder: (_, _) =>
-                                        const SizedBox(width: 4),
-                                    itemBuilder: (context, index) {
-                                      final tab = _tabs[index];
-                                      return InputChip(
-                                        label: _tabLabel(tab),
-                                        selected:
-                                            !_studyPageSelected &&
-                                            !_wordPageSelected &&
-                                            tab.id == _activeTabId,
-                                        onPressed: () {
-                                          setState(() => _activeTabId = tab.id);
-                                          _showReaderPage();
-                                          _saveWorkspace();
-                                        },
-                                        onDeleted: _tabs.length > 1
-                                            ? () => _closeTab(tab.id)
-                                            : null,
-                                        deleteButtonTooltipMessage:
-                                            'Close reader tab',
-                                      );
-                                    },
-                                  )
-                                : const SizedBox.shrink(),
+                            child: ListView.separated(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _tabs.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(width: 4),
+                              itemBuilder: (context, index) {
+                                final tab = _tabs[index];
+                                return InputChip(
+                                  label: _tabLabel(tab),
+                                  selected:
+                                      !_studyPageSelected &&
+                                      !_wordPageSelected &&
+                                      tab.id == _activeTabId,
+                                  onPressed: () {
+                                    setState(() => _activeTabId = tab.id);
+                                    _showReaderPage();
+                                    _saveWorkspace();
+                                  },
+                                  onDeleted: _tabs.length > 1
+                                      ? () => _closeTab(tab.id)
+                                      : null,
+                                  deleteButtonTooltipMessage:
+                                      'Close reader tab',
+                                );
+                              },
+                            ),
                           ),
                           for (final action in directActions)
                             _workspaceActionButton(action),

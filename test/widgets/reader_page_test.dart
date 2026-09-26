@@ -231,7 +231,7 @@ void main() {
     final rust = await _pumpReader(tester, chapter: 5);
     expect(rust.studyRequests, hasLength(1));
     expect(_verse(1, 5, 1), findsOneWidget);
-    expect(find.text('Bereshit 5'), findsOneWidget);
+    expect(find.text('Bereshit 5'), findsNWidgets(2)); // header and tab chip
     rust.deliverAll(); // prefetched neighbours
     await tester.pump();
   });
@@ -239,7 +239,7 @@ void main() {
   testWidgets('uses saved English book names in reader labels', (tester) async {
     final rust = await _pumpReader(tester, chapter: 5, englishBookNames: true);
     expect(find.text('Genesis'), findsOneWidget);
-    expect(find.text('Genesis 5'), findsOneWidget);
+    expect(find.text('Genesis 5'), findsNWidgets(2)); // header and tab chip
     expect(find.text('Bereshit 5'), findsNothing);
     rust.deliverAll(); // prefetched neighbours
     await tester.pump();
@@ -312,7 +312,7 @@ void main() {
     );
   });
 
-  testWidgets('mobile hides a lone tab and swipes between reader tabs', (
+  testWidgets('mobile shows a lone tab without close and swipes between tabs', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(500, 800);
@@ -321,7 +321,8 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final rust = await _pumpReader(tester, chapter: 5);
 
-    expect(find.byType(InputChip), findsNothing);
+    expect(find.byType(InputChip), findsOneWidget);
+    expect(find.byTooltip('Close reader tab'), findsNothing);
     expect(find.byTooltip('Reader options'), findsOneWidget);
     expect(find.byIcon(Icons.view_column_outlined), findsNothing);
 
@@ -392,7 +393,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Close reader tab').last);
     await tester.pump(const Duration(milliseconds: 250));
-    expect(find.byType(InputChip), findsNothing);
+    expect(find.byType(InputChip), findsOneWidget);
+    expect(tester.widget<InputChip>(find.byType(InputChip)).onDeleted, isNull);
   });
 
   testWidgets('mobile study is a swipeable page with a pinned toolbar action', (
