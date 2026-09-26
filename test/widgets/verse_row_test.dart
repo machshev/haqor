@@ -43,7 +43,7 @@ void main() {
   ) async {
     var selected = 0;
     var opened = 0;
-    Widget row(int crossReferences) => MaterialApp(
+    Widget row(List<double> scores, {double minScore = 0}) => MaterialApp(
       home: Scaffold(
         body: VerseRow(
           entry: VerseEntry(
@@ -54,21 +54,28 @@ void main() {
             names: const [],
             roots: const [],
             ketivs: const [],
-            crossReferences: crossReferences,
+            crossReferenceScores: scores,
           ),
           isSelected: false,
           hebrewNumerals: false,
           onTap: () => selected++,
           onWordTap: (_, _, _, _) {},
           onCrossReferences: () => opened++,
+          crossReferenceMinScore: minScore,
         ),
       ),
     );
 
-    await tester.pumpWidget(row(0));
+    await tester.pumpWidget(row(const []));
     expect(find.byIcon(Icons.link), findsNothing);
 
-    await tester.pumpWidget(row(3));
+    // Only links as strong as the reader's setting count towards the mark.
+    await tester.pumpWidget(row(const [8], minScore: 10));
+    expect(find.byIcon(Icons.link), findsNothing);
+    await tester.pumpWidget(row(const [20, 12, 8], minScore: 10));
+    expect(find.byTooltip('2 cross references'), findsOneWidget);
+
+    await tester.pumpWidget(row(const [20, 12, 8]));
     expect(find.byTooltip('3 cross references'), findsOneWidget);
     await tester.tap(find.byIcon(Icons.link));
     expect(opened, 1);
@@ -90,7 +97,7 @@ void main() {
               names: [],
               roots: [],
               ketivs: [],
-              crossReferences: 0,
+              crossReferenceScores: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -127,7 +134,7 @@ void main() {
               names: [],
               roots: [],
               ketivs: [],
-              crossReferences: 0,
+              crossReferenceScores: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -159,7 +166,7 @@ void main() {
               names: [],
               roots: ['דבר', 'יהוה'],
               ketivs: [],
-              crossReferences: 0,
+              crossReferenceScores: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -194,7 +201,7 @@ void main() {
               names: [],
               roots: ['דבר'],
               ketivs: [],
-              crossReferences: 0,
+              crossReferenceScores: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -250,7 +257,7 @@ void main() {
               names: [],
               roots: ['דבר', 'יהוה'],
               ketivs: [],
-              crossReferences: 0,
+              crossReferenceScores: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -284,7 +291,7 @@ void main() {
               names: [],
               roots: ['מלל', 'מלל'],
               ketivs: [],
-              crossReferences: 0,
+              crossReferenceScores: [],
             ),
             isSelected: false,
             hebrewNumerals: false,
@@ -334,7 +341,7 @@ void main() {
               names: [],
               roots: ['מלל'],
               ketivs: [],
-              crossReferences: 0,
+              crossReferenceScores: [],
             ),
             isSelected: false,
             hebrewNumerals: false,
@@ -390,7 +397,7 @@ void main() {
                   names: [],
                   roots: ['ברא', 'ברא', 'אחר'],
                   ketivs: [],
-                  crossReferences: 0,
+                  crossReferenceScores: [],
                 ),
                 isSelected: false,
                 hebrewNumerals: false,
@@ -443,7 +450,7 @@ void main() {
                   roots: [],
                   names: [],
                   ketivs: [],
-                  crossReferences: 0,
+                  crossReferenceScores: [],
                 ),
                 isSelected: false,
                 hebrewNumerals: false,
@@ -503,7 +510,7 @@ void main() {
               names: [],
               roots: [],
               ketivs: [],
-              crossReferences: 0,
+              crossReferenceScores: [],
             ),
             isSelected: false,
             hebrewNumerals: true,
@@ -559,7 +566,7 @@ void main() {
                 names: const [],
                 roots: const [],
                 ketivs: const [],
-                crossReferences: 0,
+                crossReferenceScores: const [],
               ),
               isSelected: false,
               hebrewNumerals: true,
@@ -603,7 +610,7 @@ void main() {
       names: const [],
       roots: const [],
       ketivs: ketivs,
-      crossReferences: 0,
+      crossReferenceScores: const [],
     );
 
     Future<void> pump(

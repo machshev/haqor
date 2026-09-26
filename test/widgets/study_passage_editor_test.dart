@@ -13,7 +13,7 @@ const _verses = [
     roots: [],
     names: [],
     ketivs: [],
-    crossReferences: 0,
+    crossReferenceScores: [],
   ),
   VerseEntry(
     verse: 2,
@@ -23,7 +23,7 @@ const _verses = [
     roots: [],
     names: [],
     ketivs: [],
-    crossReferences: 0,
+    crossReferenceScores: [],
   ),
 ];
 

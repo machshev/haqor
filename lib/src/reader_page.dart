@@ -1361,6 +1361,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   static const _kNtSyriac = 'nt_syriac';
   static const _kEnglishBookNames = 'english_book_names';
   static const _kHebrewNumerals = 'hebrew_numerals';
+  static const _kCrossReferenceMinScore = 'cross_reference_min_score';
   static const _kFontSize = 'font_size';
   static const _kFontFamily = 'font_family';
   static const _kShowCantillation = 'show_cantillation';
@@ -1423,6 +1424,10 @@ class _ReaderSessionState extends State<_ReaderSession>
   bool _ntSyriac = false;
   bool _englishBookNames = false;
   bool _hebrewNumerals = true;
+
+  // How strong a cross reference must be to be listed or marked; shared by
+  // the panel's strength filter and the verse-number markers.
+  double _crossReferenceMinScore = 0;
   double _fontSize = 20.0;
   String _fontFamily = 'Cardo';
   bool _showCantillation = true;
@@ -1677,6 +1682,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       _ntSyriac = prefs.getBool(_kNtSyriac) ?? false;
       _englishBookNames = prefs.getBool(_kEnglishBookNames) ?? false;
       _hebrewNumerals = prefs.getBool(_kHebrewNumerals) ?? true;
+      _crossReferenceMinScore = prefs.getDouble(_kCrossReferenceMinScore) ?? 0;
       _fontSize = (prefs.getDouble(_kFontSize) ?? 20.0).clamp(16.0, 28.0);
       final savedFamily = prefs.getString(_kFontFamily) ?? 'Cardo';
       _fontFamily = _fontFamilies.contains(savedFamily) ? savedFamily : 'Cardo';
@@ -1796,6 +1802,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       prefs.setBool(_kNtSyriac, _ntSyriac),
       prefs.setBool(_kEnglishBookNames, _englishBookNames),
       prefs.setBool(_kHebrewNumerals, _hebrewNumerals),
+      prefs.setDouble(_kCrossReferenceMinScore, _crossReferenceMinScore),
       prefs.setDouble(_kFontSize, _fontSize),
       prefs.setString(_kFontFamily, _fontFamily),
       prefs.setBool(_kShowCantillation, _showCantillation),
@@ -2389,6 +2396,11 @@ class _ReaderSessionState extends State<_ReaderSession>
           chapter: chapter,
           verse: verse,
           useEnglishBookNames: _englishBookNames,
+          minScore: _crossReferenceMinScore,
+          onMinScoreChanged: (score) {
+            setState(() => _crossReferenceMinScore = score);
+            _savePrefs();
+          },
           onNavigateToPassage: (book, chapter, verse) {
             Navigator.pop(sheetContext);
             _navigateTo(book, chapter, verse: verse);
@@ -3671,6 +3683,7 @@ class _ReaderSessionState extends State<_ReaderSession>
                   ),
               onCrossReferences: () =>
                   _showCrossReferences(b, c, verse: entry.verse),
+              crossReferenceMinScore: _crossReferenceMinScore,
               fontSize: _fontSize,
               fontFamily: _fontFamily,
               showCantillation: _showCantillation,

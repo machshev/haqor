@@ -8,12 +8,25 @@ import '../bindings/bindings.dart';
 import 'verse_text_cache.dart';
 import 'word_info_sheet.dart' show OccurrenceVerseRow;
 
-/// How strongly a quotation's words line up, in words a reader can use. The
-/// cut-offs follow the build's score scale: its weakest stored matches sit at
-/// 7, and nearly every link above 15 is a recognised quotation.
+/// The strength filter's settings: the minimum score each keeps, and its name.
+/// The database holds a deliberately loose set, echoes and allusions
+/// included, so how strict to be is the reader's choice.
+const crossReferenceStrengths = <(double, String)>[
+  (0, 'All'),
+  (kLikelyCrossReference, 'Likely'),
+  (kStrongCrossReference, 'Strong'),
+];
+
+/// Score cut-offs on the build's scale, set where the known quotations fall:
+/// of the 37 the build finds, 27 score at least [kStrongCrossReference] (the
+/// top ~550 of ~60k links) and 31 at least [kLikelyCrossReference] (top ~5k).
+const kLikelyCrossReference = 10.0;
+const kStrongCrossReference = 13.0;
+
+/// How strongly a quotation's words line up, in words a reader can use.
 String crossReferenceStrength(double score) {
-  if (score >= 15) return 'Strong match';
-  if (score >= 10) return 'Likely match';
+  if (score >= kStrongCrossReference) return 'Strong match';
+  if (score >= kLikelyCrossReference) return 'Likely match';
   return 'Possible echo';
 }
 
@@ -36,6 +49,8 @@ class CrossReferencesPanel extends StatefulWidget {
     required this.chapter,
     this.verse,
     required this.useEnglishBookNames,
+    this.minScore = 0,
+    this.onMinScoreChanged,
     this.onNavigateToPassage,
     this.sendRequest,
     this.sendQuotationsRequest,
@@ -49,6 +64,12 @@ class CrossReferencesPanel extends StatefulWidget {
   /// Opens straight onto this verse's links when given.
   final int? verse;
   final bool useEnglishBookNames;
+
+  /// The strength filter the panel opens with (one of
+  /// [crossReferenceStrengths]), and where a change to it is reported — the
+  /// reader shares it with its verse markers.
+  final double minScore;
+  final ValueChanged<double>? onMinScoreChanged;
 
   /// Opens a linked verse: 0-based book index, chapter, verse.
   final void Function(int bookIndex, int chapter, int verse)?
@@ -84,6 +105,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   late int _firstChapter = 1;
   late int _lastChapter = _chapterCount;
   bool _byReference = true;
+  late double _minScore = widget.minScore;
 
   int _requestId = 0;
   bool _loading = true;
@@ -132,6 +154,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
       firstChapter: chapterScope ? widget.chapter : _firstChapter,
       lastChapter: chapterScope ? widget.chapter : _lastChapter,
       byReference: _byReference,
+      minScore: _minScore,
       limit: _pageSize,
       offset: _entries.length,
     );
@@ -166,6 +189,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
         chapter: view.chapter,
         verse: view.verse,
         focus: view.focus,
+        minScore: _minScore,
         useEnglishBookNames: widget.useEnglishBookNames,
         onBack: () => setState(() => _view = null),
         onNavigateToPassage: widget.onNavigateToPassage,
@@ -266,6 +290,19 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
                 selected: {_byReference},
                 onSelectionChanged: (s) =>
                     _update(() => _byReference = s.single),
+              ),
+              SegmentedButton<double>(
+                key: const ValueKey('strength'),
+                showSelectedIcon: false,
+                segments: [
+                  for (final (score, label) in crossReferenceStrengths)
+                    ButtonSegment(value: score, label: Text(label)),
+                ],
+                selected: {_minScore},
+                onSelectionChanged: (s) {
+                  _update(() => _minScore = s.single);
+                  widget.onMinScoreChanged?.call(_minScore);
+                },
               ),
             ],
           ),
@@ -441,6 +478,7 @@ class _VerseLinks extends StatefulWidget {
     required this.chapter,
     required this.verse,
     required this.focus,
+    required this.minScore,
     required this.useEnglishBookNames,
     required this.onBack,
     this.onNavigateToPassage,
@@ -452,6 +490,10 @@ class _VerseLinks extends StatefulWidget {
   final int chapter;
   final int verse;
   final ({int book, int chapter, int verse})? focus;
+
+  /// Links below this are folded behind a "Show weaker links" button: all
+  /// are fetched, so widening costs no round-trip.
+  final double minScore;
   final bool useEnglishBookNames;
   final VoidCallback onBack;
   final void Function(int bookIndex, int chapter, int verse)?
@@ -470,6 +512,9 @@ class _VerseLinksState extends State<_VerseLinks> {
 
   /// The linked verse whose matched words are shown on the source verse.
   int _focused = 0;
+
+  /// Whether the links below [_VerseLinks.minScore] are shown.
+  bool _showWeaker = false;
 
   bool get _fromNt => widget.book >= 40;
 
@@ -496,12 +541,18 @@ class _VerseLinksState extends State<_VerseLinks> {
       setState(() {
         _entries = reply.entries;
         _focused = focused < 0 ? 0 : focused;
+        // A link opened from the overview is shown even when it is weaker.
+        _showWeaker =
+            _focused < reply.entries.length &&
+            reply.entries[_focused].score < widget.minScore;
       });
     });
     final request = GetCrossReferences(
       book: widget.book,
       chapter: widget.chapter,
       verse: widget.verse,
+      // Every link, whatever the filter: the weaker ones are folded, not lost.
+      minScore: 0,
     );
     final send = widget.sendRequest;
     if (send != null) {
@@ -581,16 +632,43 @@ class _VerseLinksState extends State<_VerseLinks> {
             ),
           ),
           const Divider(height: 17),
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-              itemCount: entries.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, i) => _entryRow(context, entries, i),
-            ),
-          ),
+          Expanded(child: _entryList(context, entries)),
         ],
       ],
+    );
+  }
+
+  /// The links as strong as the filter, then a button for the rest. Links
+  /// arrive strongest first, so the ones shown are always a prefix.
+  Widget _entryList(BuildContext context, List<CrossReferenceEntry> entries) {
+    final strong = entries.where((e) => e.score >= widget.minScore).length;
+    final shown = _showWeaker ? entries.length : strong;
+    final weaker = entries.length - strong;
+    final fold = !_showWeaker && weaker > 0;
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+      itemCount: shown + (fold ? 1 : 0),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, i) {
+        if (i < shown) return _entryRow(context, entries, i);
+        return Column(
+          children: [
+            if (shown == 0)
+              const Padding(
+                padding: EdgeInsets.all(8),
+                child: Text('No links this strong.'),
+              ),
+            TextButton(
+              onPressed: () => setState(() => _showWeaker = true),
+              child: Text(
+                weaker == 1
+                    ? 'Show 1 weaker link'
+                    : 'Show $weaker weaker links',
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

@@ -157,6 +157,7 @@ class VerseRow extends StatefulWidget {
     required this.onWordTap,
     this.onWordMenu,
     this.onCrossReferences,
+    this.crossReferenceMinScore = 0,
     this.fontSize = 20.0,
     this.fontFamily = 'Cardo',
     this.showCantillation = true,
@@ -196,8 +197,11 @@ class VerseRow extends StatefulWidget {
   onWordMenu;
 
   /// Opens the verse's cross references. Its marker shows only when the
-  /// verse has any (`entry.crossReferences`).
+  /// verse has a link scoring at least [crossReferenceMinScore].
   final VoidCallback? onCrossReferences;
+
+  /// How strong a link must be to count towards the marker.
+  final double crossReferenceMinScore;
   final double fontSize;
   final String fontFamily;
   final bool showCantillation;
@@ -247,6 +251,11 @@ class _WordGestureRecognizer extends TapGestureRecognizer {
 }
 
 class _VerseRowState extends State<VerseRow> {
+  /// Links at least as strong as the reader is set to show.
+  int get _crossReferenceCount => widget.entry.crossReferenceScores
+      .where((score) => score >= widget.crossReferenceMinScore)
+      .length;
+
   List<String> _words = [];
   List<TapGestureRecognizer> _recognizers = [];
 
@@ -691,10 +700,10 @@ class _VerseRowState extends State<VerseRow> {
                       size: 12,
                       color: theme.colorScheme.secondary,
                     ),
-                  if (widget.entry.crossReferences > 0 &&
+                  if (_crossReferenceCount > 0 &&
                       widget.onCrossReferences != null)
                     _CrossReferenceMarker(
-                      count: widget.entry.crossReferences,
+                      count: _crossReferenceCount,
                       onTap: widget.onCrossReferences!,
                     ),
                 ],

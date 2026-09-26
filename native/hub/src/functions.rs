@@ -529,9 +529,9 @@ pub async fn get_chapter_text(bible: SharedBible) {
                         req.include_roots,
                     )
                     .unwrap_or_default();
-                let cross_references: std::collections::HashMap<u8, u32> = bible_guard
-                    .chapter_cross_reference_counts(req.book, req.chapter)
-                    .map(|counts| counts.into_iter().collect())
+                let mut cross_references: std::collections::HashMap<u8, Vec<f32>> = bible_guard
+                    .chapter_cross_reference_scores(req.book, req.chapter)
+                    .map(|scores| scores.into_iter().collect())
                     .unwrap_or_default();
                 let verses = raw
                     .into_iter()
@@ -565,9 +565,9 @@ pub async fn get_chapter_text(bible: SharedBible) {
                                         .collect()
                                 })
                                 .unwrap_or_default(),
-                            cross_references: cross_references
-                                .get(&verse)
-                                .map_or(0, |&n| n.min(u16::MAX as u32) as u16),
+                            cross_reference_scores: cross_references
+                                .remove(&verse)
+                                .unwrap_or_default(),
                         }
                     })
                     .collect();
@@ -1544,7 +1544,12 @@ pub async fn get_cross_references(bible: SharedBible) {
         let req = signal_pack.message;
         debug_print!("{:?}", req);
         let quotations = lock(&bible)
-            .cross_references(req.book, req.chapter, req.verse)
+            .cross_references(
+                req.book,
+                req.chapter,
+                req.verse,
+                (req.min_score > 0.0).then_some(req.min_score),
+            )
             .unwrap_or_else(|e| {
                 debug_print!("get_cross_references error: {:?}", e);
                 Vec::new()
@@ -1590,6 +1595,7 @@ pub async fn get_quotations(bible: SharedBible) {
             first_chapter: (req.first_chapter > 0).then_some(req.first_chapter),
             last_chapter: (req.last_chapter > 0).then_some(req.last_chapter),
             by_reference: req.by_reference,
+            min_score: (req.min_score > 0.0).then_some(req.min_score),
         };
         let bible = lock(&bible);
         let (total, quotations) = match (

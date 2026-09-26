@@ -233,9 +233,11 @@ pub struct VerseEntry {
     /// The verse's ketiv readings, where it has any — empty for almost every
     /// verse, as the OT carries about 1,250 in total.
     pub ketivs: Vec<KetivEntry>,
-    /// How many verses of the other testament this one is linked to by a
-    /// quotation ([`GetCrossReferences`] fetches them). Zero for most verses.
-    pub cross_references: u16,
+    /// The score of each quotation linking this verse to the other testament
+    /// ([`GetCrossReferences`] fetches them), strongest first; empty for most
+    /// verses. Scores rather than a count, so the reader marks only the links as
+    /// strong as it is set to show without asking for the chapter again.
+    pub cross_reference_scores: Vec<f32>,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
@@ -257,6 +259,8 @@ pub struct GetCrossReferences {
     pub book: u8,
     pub chapter: u8,
     pub verse: u8,
+    /// Leave out links scoring below this; zero keeps them all.
+    pub min_score: f32,
 }
 
 /// One linked verse of a [`CrossReferences`] reply.
@@ -298,6 +302,8 @@ pub struct GetQuotations {
     pub last_chapter: u8,
     /// Walk the book's verses in order instead of listing strongest first.
     pub by_reference: bool,
+    /// Leave out quotations scoring below this; zero keeps them all.
+    pub min_score: f32,
     pub limit: u32,
     pub offset: u32,
 }

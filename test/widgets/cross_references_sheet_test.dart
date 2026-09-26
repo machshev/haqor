@@ -83,6 +83,8 @@ CrossReferenceEntry _entry({
 Future<_FakeRust> _pump(
   WidgetTester tester, {
   int? verse = 23,
+  double minScore = 0,
+  ValueChanged<double>? onMinScoreChanged,
   void Function(int, int, int)? onNavigate,
 }) async {
   final rust = _FakeRust();
@@ -96,6 +98,8 @@ Future<_FakeRust> _pump(
             chapter: 1,
             verse: verse,
             useEnglishBookNames: true,
+            minScore: minScore,
+            onMinScoreChanged: onMinScoreChanged,
             onNavigateToPassage: onNavigate,
             sendRequest: rust.requests.add,
             sendQuotationsRequest: rust.quotationRequests.add,
@@ -125,6 +129,7 @@ Map<String, List<String>> _highlighted(WidgetTester tester) {
 
 void main() {
   overviewTests();
+  strengthTests();
 
   testWidgets('asks for the verse and lists its links with matched words', (
     tester,
@@ -327,5 +332,44 @@ void overviewTests() {
     await tester.tap(find.text('Show more'));
     await tester.pump();
     expect(rust.quotationRequests.last.offset, 3);
+  });
+}
+
+void strengthTests() {
+  testWidgets('the strength filter narrows the overview and is reported', (
+    tester,
+  ) async {
+    final chosen = <double>[];
+    final rust = await _pump(
+      tester,
+      verse: null,
+      onMinScoreChanged: chosen.add,
+    );
+    expect(rust.quotationRequests.single.minScore, 0);
+
+    await tester.tap(find.text('Strong'));
+    await tester.pump();
+    expect(rust.quotationRequests.last.minScore, kStrongCrossReference);
+    expect(chosen, [kStrongCrossReference]);
+  });
+
+  testWidgets('a verse folds its links weaker than the filter', (tester) async {
+    final rust = await _pump(tester, minScore: kLikelyCrossReference);
+    expect(rust.requests.single.minScore, 0, reason: 'fetches every link');
+    rust.deliver(40, 1, 23, [
+      _entry(book: 12, chapter: 7, verse: 14, score: 20),
+      _entry(book: 12, chapter: 8, verse: 8, score: 8, positions: [4]),
+    ]);
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Isaiah 7:14'), findsOneWidget);
+    expect(find.textContaining('Isaiah 8:8'), findsNothing);
+    await tester.tap(find.text('Show 1 weaker link'));
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Isaiah 8:8'), findsOneWidget);
   });
 }
