@@ -167,6 +167,7 @@ class _SelectedWord {
 
 enum _ReaderMenuAction {
   studyWorkspace,
+  crossReferences,
   readingPlan,
   tutor,
   reportIssue,
@@ -885,6 +886,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   List<_ReaderMenuAction> get _workspaceActions => [
     _ReaderMenuAction.studyWorkspace,
+    _ReaderMenuAction.crossReferences,
     _ReaderMenuAction.readingPlan,
     _ReaderMenuAction.tutor,
     if (_activeReader?._adminMode ?? false) _ReaderMenuAction.reportIssue,
@@ -898,6 +900,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           Icons.account_tree_outlined,
           'Study workspace',
         ),
+        _ReaderMenuAction.crossReferences => (Icons.link, 'Cross references'),
         _ReaderMenuAction.readingPlan => (
           Icons.auto_stories_outlined,
           'Reading plan',
@@ -2370,17 +2373,18 @@ class _ReaderSessionState extends State<_ReaderSession>
     if (enabled) _refreshLoadedChaptersForStudyRoots();
   }
 
-  /// The quotations linking a verse to the other testament, as a sheet over
-  /// the reader; tapping a linked verse closes it and opens that verse.
-  Future<void> _showCrossReferences(int bookIndex, int chapter, int verse) {
+  /// The cross-reference panel as a sheet over the reader: a verse's links
+  /// when [verse] is given, else the overview of the chapter. Tapping a linked
+  /// verse closes it and opens that verse.
+  Future<void> _showCrossReferences(int bookIndex, int chapter, {int? verse}) {
     return showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (sheetContext) => SizedBox(
-        height: MediaQuery.sizeOf(sheetContext).height * 0.7,
-        child: CrossReferencesSheet(
+        height: MediaQuery.sizeOf(sheetContext).height * 0.8,
+        child: CrossReferencesPanel(
           book: bookIndex + 1,
           chapter: chapter,
           verse: verse,
@@ -2392,6 +2396,19 @@ class _ReaderSessionState extends State<_ReaderSession>
         ),
       ),
     );
+  }
+
+  /// The toolbar's cross references: the selected verse's links, or the
+  /// overview of the chapter being read when no verse is selected.
+  void _openCrossReferences() {
+    final book = _selectedBook;
+    final chapter = _selectedChapter;
+    final verse = _selectedVerse;
+    if (book != null && chapter != null && verse != null) {
+      _showCrossReferences(book, chapter, verse: verse);
+    } else {
+      _showCrossReferences(_bookIndex, _chapter);
+    }
   }
 
   Future<void> _showStudyWorkspaceSheet() async {
@@ -3412,6 +3429,8 @@ class _ReaderSessionState extends State<_ReaderSession>
         } else {
           _toggleStudyWorkspacePanel();
         }
+      case _ReaderMenuAction.crossReferences:
+        _openCrossReferences();
       case _ReaderMenuAction.readingPlan:
         _showReadingPlan();
       case _ReaderMenuAction.tutor:
@@ -3650,7 +3669,8 @@ class _ReaderSessionState extends State<_ReaderSession>
                     position: position,
                     root: root,
                   ),
-              onCrossReferences: () => _showCrossReferences(b, c, entry.verse),
+              onCrossReferences: () =>
+                  _showCrossReferences(b, c, verse: entry.verse),
               fontSize: _fontSize,
               fontFamily: _fontFamily,
               showCantillation: _showCantillation,

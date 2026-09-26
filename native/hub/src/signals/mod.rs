@@ -286,6 +286,48 @@ pub struct CrossReferences {
     pub entries: Vec<CrossReferenceEntry>,
 }
 
+/// Ask for a page of the quotations touching one book, optionally within a
+/// chapter range: the cross-reference overview of a chapter or a book.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetQuotations {
+    /// Echoed back so a caller can ignore replies to a superseded filter.
+    pub request_id: u32,
+    pub book: u8,
+    /// Inclusive chapter bounds; zero leaves that end open.
+    pub first_chapter: u8,
+    pub last_chapter: u8,
+    /// Walk the book's verses in order instead of listing strongest first.
+    pub by_reference: bool,
+    pub limit: u32,
+    pub offset: u32,
+}
+
+/// One quotation of a [`Quotations`] page, seen from the requested book: the
+/// verse in that book, and the verse of the other testament it is linked to.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct QuotationEntry {
+    pub rank: u32,
+    pub score: f32,
+    pub chapter: u8,
+    pub verse: u8,
+    /// Lexical positions of the matched words in the requested book's verse.
+    pub positions: Vec<u16>,
+    pub other_book: u8,
+    pub other_chapter: u8,
+    pub other_verse: u8,
+    /// The same words' positions in the linked verse, pairwise.
+    pub other_positions: Vec<u16>,
+}
+
+#[derive(Debug, Serialize, RustSignal)]
+pub struct Quotations {
+    pub request_id: u32,
+    pub book: u8,
+    /// How many quotations the filter matches in all, beyond this page.
+    pub total: u32,
+    pub entries: Vec<QuotationEntry>,
+}
+
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetWordInfo {
     /// Echoed in the [`WordInfo`] reply. Replies carry nothing else that says

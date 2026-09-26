@@ -3,16 +3,17 @@ use crate::signals::ProgressSnapshot;
 use crate::signals::{
     BdbSummary, BuildInfo, CalibrationProbe, ChapterText, CrossReferenceEntry, CrossReferences,
     FinishCalibration, GetBuildInfo, GetCalibrationProbe, GetChapter, GetCrossReferences,
-    GetNextStudyItem, GetOnboardingStatus, GetSeenConcepts, GetStudyState,
+    GetNextStudyItem, GetOnboardingStatus, GetQuotations, GetSeenConcepts, GetStudyState,
     GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts,
     GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, HebrewOccurrence,
     IssueReportStatus, KetivEntry, LexiconEntryOverrideStatus, OccurrenceParse, OnboardingStatus,
-    OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, RootChoice, SaveIssueReport,
-    SaveLexiconEntryOverride, SaveStudyState, SaveTutorGloss, SedraOccurrence, SedraSummary,
-    SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, StudyState,
-    SubmitMisreads, SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress,
-    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry,
-    VerseTexts, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence, WordOccurrences,
+    OptimizeTutorGlossOverrides, ProgressSyncStatus, QuotationEntry, Quotations, ResetTutor,
+    RootChoice, SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState, SaveTutorGloss,
+    SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings,
+    StudyItem, StudyState, SubmitMisreads, SubmitReview, SuffixCard, SyncProgress,
+    TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard, VerseEntry,
+    VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry, VocabList, WordCard, WordInfo,
+    WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -23,7 +24,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use haqor_core::bible::{Bible, inflected_gloss};
+use haqor_core::bible::{Bible, QuotationFilter, inflected_gloss};
 use haqor_core::tutor::{self, Grade, Track};
 use rinf::{DartSignal, RustSignal, debug_print};
 
@@ -1573,6 +1574,60 @@ pub async fn get_cross_references(bible: SharedBible) {
             book: req.book,
             chapter: req.chapter,
             verse: req.verse,
+            entries,
+        }
+        .send_signal_to_dart();
+    }
+}
+
+pub async fn get_quotations(bible: SharedBible) {
+    let receiver = GetQuotations::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let filter = QuotationFilter {
+            book: Some(req.book),
+            first_chapter: (req.first_chapter > 0).then_some(req.first_chapter),
+            last_chapter: (req.last_chapter > 0).then_some(req.last_chapter),
+            by_reference: req.by_reference,
+        };
+        let bible = lock(&bible);
+        let (total, quotations) = match (
+            bible.quotation_count(filter),
+            bible.quotations(filter, req.limit, req.offset),
+        ) {
+            (Ok(total), Ok(quotations)) => (total, quotations),
+            (count, page) => {
+                debug_print!("get_quotations error: {:?} {:?}", count.err(), page.err());
+                (0, Vec::new())
+            }
+        };
+        let from_nt = req.book >= 40;
+        let entries = quotations
+            .into_iter()
+            .map(|q| {
+                let (own, other, positions, other_positions) = if from_nt {
+                    (q.nt, q.ot, q.nt_positions, q.ot_positions)
+                } else {
+                    (q.ot, q.nt, q.ot_positions, q.nt_positions)
+                };
+                QuotationEntry {
+                    rank: q.rank,
+                    score: q.score,
+                    chapter: own.chapter,
+                    verse: own.verse,
+                    positions,
+                    other_book: other.book,
+                    other_chapter: other.chapter,
+                    other_verse: other.verse,
+                    other_positions,
+                }
+            })
+            .collect();
+        Quotations {
+            request_id: req.request_id,
+            book: req.book,
+            total,
             entries,
         }
         .send_signal_to_dart();
