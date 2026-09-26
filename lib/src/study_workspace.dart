@@ -349,7 +349,94 @@ class StudyNote {
   }
 }
 
-enum StudyItemType { passage, word, note, group }
+/// A verse of a bookmarked cross reference, with a 0-based book index as the
+/// rest of the study document uses.
+typedef StudyLinkVerse = ({int bookIndex, int chapter, int verse});
+
+/// A bookmarked cross reference: an NT verse quoting or echoing an OT verse,
+/// with the matched words (lexical positions) and the score it was found with,
+/// so the outline can show and highlight it without asking the core again.
+@immutable
+class StudyLink {
+  const StudyLink({
+    required this.ot,
+    required this.nt,
+    this.otPositions = const [],
+    this.ntPositions = const [],
+    this.score = 0,
+    this.groupId,
+    this.note = '',
+    this.order = 0,
+  });
+
+  final StudyLinkVerse ot;
+  final StudyLinkVerse nt;
+  final List<int> otPositions;
+  final List<int> ntPositions;
+  final double score;
+  final String? groupId;
+  final String note;
+  final int order;
+
+  static String _verseKey(StudyLinkVerse v) =>
+      '${v.bookIndex}:${v.chapter}:${v.verse}';
+
+  String get key => 'link-${_verseKey(ot)}-${_verseKey(nt)}';
+
+  StudyLink copyWith({String? Function()? groupId, String? note, int? order}) =>
+      StudyLink(
+        ot: ot,
+        nt: nt,
+        otPositions: otPositions,
+        ntPositions: ntPositions,
+        score: score,
+        groupId: groupId == null ? this.groupId : groupId(),
+        note: note ?? this.note,
+        order: order ?? this.order,
+      );
+
+  Map<String, Object?> toJson() => {
+    'ot': [ot.bookIndex, ot.chapter, ot.verse],
+    'nt': [nt.bookIndex, nt.chapter, nt.verse],
+    if (otPositions.isNotEmpty) 'otWords': otPositions,
+    if (ntPositions.isNotEmpty) 'ntWords': ntPositions,
+    if (score > 0) 'score': score,
+    if (groupId != null) 'group': groupId,
+    if (note.isNotEmpty) 'note': note,
+    'order': order,
+  };
+
+  static StudyLinkVerse? _verse(Object? value) {
+    if (value is! List || value.length != 3 || value.any((v) => v is! int)) {
+      return null;
+    }
+    final [bookIndex, chapter, verse] = value.cast<int>();
+    if (bookIndex < 0 || bookIndex >= kBooks.length) return null;
+    return (bookIndex: bookIndex, chapter: chapter, verse: verse);
+  }
+
+  static List<int> _positions(Object? value) =>
+      value is List ? value.whereType<int>().toList() : const [];
+
+  static StudyLink? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final ot = _verse(value['ot']);
+    final nt = _verse(value['nt']);
+    if (ot == null || nt == null) return null;
+    return StudyLink(
+      ot: ot,
+      nt: nt,
+      otPositions: _positions(value['otWords']),
+      ntPositions: _positions(value['ntWords']),
+      score: value['score'] is num ? (value['score'] as num).toDouble() : 0,
+      groupId: value['group'] is String ? value['group'] as String : null,
+      note: value['note'] is String ? value['note'] as String : '',
+      order: value['order'] is int ? value['order'] as int : 0,
+    );
+  }
+}
+
+enum StudyItemType { passage, word, note, link, group }
 
 @immutable
 class StudyItem {
@@ -363,6 +450,7 @@ class StudyItem {
     StudyItemType.passage => 'passage-${(value as StudyPassage).locationKey}',
     StudyItemType.word => (value as StudyWord).key,
     StudyItemType.note => 'note-${(value as StudyNote).id}',
+    StudyItemType.link => (value as StudyLink).key,
     StudyItemType.group => 'group-${(value as StudyGroup).id}',
   };
 
@@ -370,6 +458,7 @@ class StudyItem {
     StudyItemType.passage => (value as StudyPassage).groupId,
     StudyItemType.word => (value as StudyWord).groupId,
     StudyItemType.note => (value as StudyNote).groupId,
+    StudyItemType.link => (value as StudyLink).groupId,
     StudyItemType.group => (value as StudyGroup).parentId,
   };
 }
@@ -432,6 +521,7 @@ class StudyWorkspace {
     this.passages = const [],
     this.words = const [],
     this.notes = const [],
+    this.links = const [],
   });
 
   final String id;
@@ -441,6 +531,7 @@ class StudyWorkspace {
   final List<StudyPassage> passages;
   final List<StudyWord> words;
   final List<StudyNote> notes;
+  final List<StudyLink> links;
 
   StudyWorkspace copyWith({
     String? name,
@@ -449,6 +540,7 @@ class StudyWorkspace {
     List<StudyPassage>? passages,
     List<StudyWord>? words,
     List<StudyNote>? notes,
+    List<StudyLink>? links,
   }) => StudyWorkspace(
     id: id,
     name: name ?? this.name,
@@ -457,6 +549,33 @@ class StudyWorkspace {
     passages: passages ?? this.passages,
     words: words ?? this.words,
     notes: notes ?? this.notes,
+    links: links ?? this.links,
+  );
+
+  /// The bookmarked link between an OT and an NT verse, if there is one.
+  StudyLink? linkBetween(StudyLinkVerse ot, StudyLinkVerse nt) {
+    final key = StudyLink(ot: ot, nt: nt).key;
+    for (final link in links) {
+      if (link.key == key) return link;
+    }
+    return null;
+  }
+
+  StudyWorkspace putLink(StudyLink link) {
+    final updated = List<StudyLink>.of(links);
+    final index = updated.indexWhere((candidate) => candidate.key == link.key);
+    if (index < 0) {
+      updated.add(link.copyWith(order: nextOrder(link.groupId)));
+    } else {
+      updated[index] = updated[index].groupId == link.groupId
+          ? link
+          : link.copyWith(order: nextOrder(link.groupId));
+    }
+    return copyWith(links: updated);
+  }
+
+  StudyWorkspace removeLink(StudyLink link) => copyWith(
+    links: links.where((candidate) => candidate.key != link.key).toList(),
   );
 
   StudyWord? wordForRoot(String root) {
@@ -532,6 +651,9 @@ class StudyWorkspace {
       for (final note in notes)
         if (note.groupId == groupId)
           StudyItem._(StudyItemType.note, note, note.order),
+      for (final link in links)
+        if (link.groupId == groupId)
+          StudyItem._(StudyItemType.link, link, link.order),
       for (final group in groups)
         if (group.parentId == groupId)
           StudyItem._(StudyItemType.group, group, group.order),
@@ -561,6 +683,9 @@ class StudyWorkspace {
     }
     for (final note in notes) {
       if (note.groupId == groupId) consider(note.order);
+    }
+    for (final link in links) {
+      if (link.groupId == groupId) consider(link.order);
     }
     for (final group in groups) {
       if (group.parentId == groupId) consider(group.order);
@@ -732,6 +857,14 @@ class StudyWorkspace {
                   : note,
           ],
         ),
+        StudyItemType.link => copyWith(
+          links: [
+            for (final link in links)
+              link.key == (item.value as StudyLink).key
+                  ? link.copyWith(groupId: () => groupId, order: order)
+                  : link,
+          ],
+        ),
         StudyItemType.group => copyWith(
           groups: [
             for (final group in groups)
@@ -785,6 +918,12 @@ class StudyWorkspace {
               ? note.copyWith(groupId: () => parentId)
               : note,
       ],
+      links: [
+        for (final link in links)
+          link.groupId == group.id
+              ? link.copyWith(groupId: () => parentId)
+              : link,
+      ],
     );
   }
 
@@ -797,6 +936,7 @@ class StudyWorkspace {
     'passages': passages.map((passage) => passage.toJson()).toList(),
     'words': words.map((word) => word.toJson()).toList(),
     'notes': notes.map((note) => note.toJson()).toList(),
+    if (links.isNotEmpty) 'links': links.map((link) => link.toJson()).toList(),
   };
 
   static StudyWorkspace? fromJson(Object? value) {
@@ -939,6 +1079,18 @@ class StudyWorkspace {
             : note.copyWith(groupId: () => null),
     ];
 
+    // Links came after mixed ordering, so theirs is always stored; one whose
+    // group is gone moves to the top level like any other item.
+    final links = [
+      for (final link
+          in (value['links'] is List ? value['links'] as List : const [])
+              .map(StudyLink.fromJson)
+              .whereType<StudyLink>())
+        link.groupId == null || groupIds.contains(link.groupId)
+            ? link
+            : link.copyWith(groupId: () => null),
+    ];
+
     // Older data had no mixed item ordering. Preserve its visible order
     // (passages followed by words) and turn former group notes into ordinary
     // paragraph items at the start of each group.
@@ -1007,6 +1159,9 @@ class StudyWorkspace {
     for (final note in notes) {
       accountFor(note.groupId, note.order);
     }
+    for (final link in links) {
+      accountFor(link.groupId, link.order);
+    }
     for (final group in groups) {
       final order = storedGroupOrders[group.id];
       if (order != null) accountFor(group.parentId, order);
@@ -1026,6 +1181,7 @@ class StudyWorkspace {
       passages: passages,
       words: words,
       notes: notes,
+      links: links,
     );
   }
 }

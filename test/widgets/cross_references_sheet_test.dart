@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:haqor/src/bindings/bindings.dart';
+import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/cross_references_sheet.dart';
 
 /// Answers the sheet's requests the way the Rust side would, through the
@@ -133,6 +134,7 @@ void main() {
   overviewTests();
   strengthTests();
   dockedTests();
+  bookmarkTests();
 
   testWidgets('asks for the verse and lists its links with matched words', (
     tester,
@@ -437,5 +439,57 @@ void dockedTests() {
 
     await tester.tap(find.byTooltip('Close cross references'));
     expect(closed, 1);
+  });
+}
+
+void bookmarkTests() {
+  testWidgets('a link can be bookmarked the right way round from either side', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final rust = _FakeRust();
+    final bookmarked = <String>{};
+    final toggled = <StudyLink>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            child: CrossReferencesPanel(
+              book: 40,
+              chapter: 1,
+              target: (book: 40, chapter: 1, verse: 23),
+              useEnglishBookNames: true,
+              isLinkBookmarked: (ot, nt) =>
+                  bookmarked.contains(StudyLink(ot: ot, nt: nt).key),
+              onToggleLinkBookmark: (link) async {
+                toggled.add(link);
+                return bookmarked.add(link.key) || !bookmarked.remove(link.key);
+              },
+              sendRequest: rust.requests.add,
+              sendQuotationsRequest: rust.quotationRequests.add,
+              sendVerseTextsRequest: rust.verseRequests.add,
+            ),
+          ),
+        ),
+      ),
+    );
+    rust.deliver(40, 1, 23, [_entry(book: 12, chapter: 7, verse: 14)]);
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Bookmark this link'));
+    await tester.pump();
+    final link = toggled.single;
+    // Opened from Matthew, the link still files Isaiah as its OT side.
+    expect(link.ot, (bookIndex: 11, chapter: 7, verse: 14));
+    expect(link.nt, (bookIndex: 39, chapter: 1, verse: 23));
+    expect(link.otPositions, [0, 2]);
+    expect(link.ntPositions, [1, 3]);
+    expect(find.byTooltip('Remove link bookmark'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Remove link bookmark'));
+    await tester.pump();
+    expect(bookmarked, isEmpty);
+    expect(find.byTooltip('Bookmark this link'), findsOneWidget);
   });
 }

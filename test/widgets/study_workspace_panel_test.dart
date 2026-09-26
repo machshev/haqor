@@ -6,6 +6,8 @@ import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/study_workspace_panel.dart';
 
 void main() {
+  linkTileTests();
+
   testWidgets('word menu switches type and explains unavailable conversions', (
     tester,
   ) async {
@@ -574,5 +576,81 @@ void main() {
     await tester.pumpAndSettle();
     expect(destination, 'last');
     expect(tester.takeException(), isNull);
+  });
+}
+
+void linkTileTests() {
+  testWidgets('a bookmarked link opens either verse and can be removed', (
+    tester,
+  ) async {
+    const link = StudyLink(
+      ot: (bookIndex: 11, chapter: 7, verse: 14),
+      nt: (bookIndex: 39, chapter: 1, verse: 23),
+      score: 14.69,
+      note: 'Emmanuel',
+    );
+    const workspace = StudyWorkspace(id: 's', name: 'Study', links: [link]);
+    final opened = <StudyLinkVerse>[];
+    final shown = <StudyLink>[];
+    final removed = <StudyLink>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StudyWorkspacePanel(
+            workspaces: const [workspace],
+            activeWorkspace: workspace,
+            currentPassage: const StudyPassage(
+              bookIndex: 0,
+              chapter: 1,
+              verse: 1,
+            ),
+            useEnglishBookNames: true,
+            onCreate: () {},
+            onSelect: (_) {},
+            onRename: () {},
+            onDelete: () {},
+            onToggleHighlights: (_) {},
+            onCreateGroup: (_) {},
+            onEditGroup: (_) {},
+            onDeleteGroup: (_) {},
+            onBookmarkCurrent: (_) {},
+            onOpenPassage: (_) {},
+            onEditPassage: (_) {},
+            onUpdatePassage: (_) {},
+            onRemovePassage: (_) {},
+            onEditWord: (_) {},
+            onUpdateWord: (_) {},
+            onSwitchWordKind: (_) {},
+            onRemoveWord: (_) {},
+            onOpenWord: (_) {},
+            onCreateNote: (_) {},
+            onEditNote: (_) {},
+            onUpdateNote: (_) {},
+            onRemoveNote: (_) {},
+            onMoveItem: (_, _, _) {},
+            onOpenLinkVerse: (_, verse) => opened.add(verse),
+            onShowLink: shown.add,
+            onRemoveLink: removed.add,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Strong match · Emmanuel'), findsOneWidget);
+    await tester.tap(find.text('Isaiah 7:14'));
+    await tester.tap(find.text('Matthew 1:23'));
+    expect(opened, [link.ot, link.nt]);
+
+    await tester.tap(find.byTooltip('Link options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show cross references'));
+    await tester.pumpAndSettle();
+    expect(shown, [link]);
+
+    await tester.tap(find.byTooltip('Link options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(removed, [link]);
   });
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../bible_data.dart';
 import '../study_workspace.dart';
+import 'cross_references_sheet.dart' show crossReferenceStrength;
 
 class StudyWorkspacePanel extends StatelessWidget {
   const StudyWorkspacePanel({
@@ -33,6 +34,11 @@ class StudyWorkspacePanel extends StatelessWidget {
     required this.onUpdateNote,
     required this.onRemoveNote,
     required this.onMoveItem,
+    this.onOpenLinkVerse,
+    this.onShowLink,
+    this.onEditLink,
+    this.onUpdateLink,
+    this.onRemoveLink,
   });
 
   final List<StudyWorkspace> workspaces;
@@ -63,9 +69,24 @@ class StudyWorkspacePanel extends StatelessWidget {
   final ValueChanged<StudyNote> onRemoveNote;
   final void Function(StudyItem item, String? groupId, int? index) onMoveItem;
 
+  /// Bookmarked cross references: open one of its verses in the reader, show
+  /// it in the cross-reference panel, edit its note, move it, or remove it.
+  final void Function(StudyLink link, StudyLinkVerse verse)? onOpenLinkVerse;
+  final ValueChanged<StudyLink>? onShowLink;
+  final ValueChanged<StudyLink>? onEditLink;
+  final ValueChanged<StudyLink>? onUpdateLink;
+  final ValueChanged<StudyLink>? onRemoveLink;
+
   String _reference(StudyPassage passage) =>
       '${bookDisplayName(passage.bookIndex, useEnglish: useEnglishBookNames)} '
       '${passage.reference}';
+
+  String _verseReference(StudyLinkVerse verse) =>
+      '${bookDisplayName(verse.bookIndex, useEnglish: useEnglishBookNames)} '
+      '${verse.chapter}:${verse.verse}';
+
+  String _linkLabel(StudyLink link) =>
+      '${_verseReference(link.ot)} ↔ ${_verseReference(link.nt)}';
 
   Future<int?> _pickColor(
     BuildContext context, {
@@ -230,6 +251,7 @@ class StudyWorkspacePanel extends StatelessWidget {
     StudyItemType.passage => _reference(item.value as StudyPassage),
     StudyItemType.word => (item.value as StudyWord).surface,
     StudyItemType.note => (item.value as StudyNote).text,
+    StudyItemType.link => _linkLabel(item.value as StudyLink),
     StudyItemType.group => (item.value as StudyGroup).name,
   };
 
@@ -289,6 +311,12 @@ class StudyWorkspacePanel extends StatelessWidget {
             context,
             workspace,
             item.value as StudyNote,
+            depth: depth,
+          ),
+          StudyItemType.link => _linkTile(
+            context,
+            workspace,
+            item.value as StudyLink,
             depth: depth,
           ),
           StudyItemType.group => throw StateError('Group rendered above'),
@@ -669,6 +697,108 @@ class StudyWorkspacePanel extends StatelessWidget {
           ),
           PopupMenuItem(
             value: _WordAction.remove,
+            child: ListTile(
+              leading: Icon(Icons.bookmark_remove_outlined),
+              title: Text('Remove'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _linkTile(
+    BuildContext context,
+    StudyWorkspace workspace,
+    StudyLink link, {
+    required int depth,
+  }) {
+    final theme = Theme.of(context);
+    final open = onOpenLinkVerse;
+    Widget verse(StudyLinkVerse v) => InkWell(
+      onTap: open == null ? null : () => open(link, v),
+      child: Text(
+        _verseReference(v),
+        style: TextStyle(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    final subtitle = [
+      if (link.score > 0) crossReferenceStrength(link.score),
+      if (link.note.isNotEmpty) link.note,
+    ].join(' · ');
+    return ListTile(
+      key: ValueKey(link.key),
+      dense: true,
+      titleAlignment: subtitle.isEmpty
+          ? ListTileTitleAlignment.center
+          : ListTileTitleAlignment.top,
+      minTileHeight: 32,
+      minVerticalPadding: 0,
+      contentPadding: EdgeInsetsDirectional.only(
+        start: 16 + depth * 12.0,
+        end: 0,
+      ),
+      leading: const Tooltip(
+        message: 'Cross-reference bookmark',
+        child: Icon(Icons.link, size: 18),
+      ),
+      title: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 6,
+        children: [verse(link.ot), const Text('↔'), verse(link.nt)],
+      ),
+      subtitle: subtitle.isEmpty ? null : Text(subtitle),
+      trailing: PopupMenuButton<_LinkAction>(
+        tooltip: 'Link options',
+        iconSize: 18,
+        padding: const EdgeInsets.all(6),
+        style: const ButtonStyle(
+          minimumSize: WidgetStatePropertyAll(Size(32, 32)),
+          maximumSize: WidgetStatePropertyAll(Size(32, 32)),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onSelected: (action) async {
+          switch (action) {
+            case _LinkAction.show:
+              onShowLink?.call(link);
+            case _LinkAction.note:
+              onEditLink?.call(link);
+            case _LinkAction.move:
+              final destination = await _chooseDestination(context, workspace);
+              if (destination != _cancelledChoice) {
+                onUpdateLink?.call(link.copyWith(groupId: () => destination));
+              }
+            case _LinkAction.remove:
+              onRemoveLink?.call(link);
+          }
+        },
+        itemBuilder: (_) => const [
+          PopupMenuItem(
+            value: _LinkAction.show,
+            child: ListTile(
+              leading: Icon(Icons.link),
+              title: Text('Show cross references'),
+            ),
+          ),
+          PopupMenuItem(
+            value: _LinkAction.note,
+            child: ListTile(
+              leading: Icon(Icons.note_alt_outlined),
+              title: Text('Edit note'),
+            ),
+          ),
+          PopupMenuItem(
+            value: _LinkAction.move,
+            child: ListTile(
+              leading: Icon(Icons.drive_file_move_outline),
+              title: Text('Move to group'),
+            ),
+          ),
+          PopupMenuItem(
+            value: _LinkAction.remove,
             child: ListTile(
               leading: Icon(Icons.bookmark_remove_outlined),
               title: Text('Remove'),
@@ -1121,3 +1251,5 @@ enum _ItemAction { highlight, note, move, color, remove }
 enum _WordAction { highlight, switchKind, note, move, color, remove }
 
 enum _NoteAction { edit, move, remove }
+
+enum _LinkAction { show, note, move, remove }

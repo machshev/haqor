@@ -6,6 +6,7 @@ import 'package:rinf/rinf.dart';
 import '../app_settings.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
+import '../study_workspace.dart';
 import 'verse_text_cache.dart';
 import 'word_info_sheet.dart' show OccurrenceVerseRow, VerseModeIcon;
 
@@ -74,6 +75,8 @@ class CrossReferencesPanel extends StatefulWidget {
     this.targetRequest = 0,
     required this.useEnglishBookNames,
     this.onClose,
+    this.isLinkBookmarked,
+    this.onToggleLinkBookmark,
     this.minScore = 0,
     this.onMinScoreChanged,
     this.onNavigateToPassage,
@@ -96,6 +99,12 @@ class CrossReferencesPanel extends StatefulWidget {
 
   /// Closes a docked panel; shown as a close button when given.
   final VoidCallback? onClose;
+
+  /// Whether a link is bookmarked in the active study, and how to bookmark or
+  /// unbookmark it (true when it ends up bookmarked). Without them the links
+  /// carry no bookmark button.
+  final bool Function(StudyLinkVerse ot, StudyLinkVerse nt)? isLinkBookmarked;
+  final Future<bool> Function(StudyLink link)? onToggleLinkBookmark;
 
   /// The strength filter the panel opens with (one of
   /// [crossReferenceStrengths]), and where a change to it is reported — the
@@ -269,6 +278,8 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
         onToggleEnglishOnly: _toggleEnglishOnly,
         onBack: () => setState(() => _view = null),
         onClose: widget.onClose,
+        isLinkBookmarked: widget.isLinkBookmarked,
+        onToggleLinkBookmark: widget.onToggleLinkBookmark,
         onNavigateToPassage: widget.onNavigateToPassage,
         sendRequest: widget.sendRequest,
       );
@@ -528,12 +539,35 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text(
-                '$own${crossReferenceStrength(entry.score)} · '
-                '${_words(entry.positions.length)}',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$own${crossReferenceStrength(entry.score)} · '
+                      '${_words(entry.positions.length)}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  if (widget.isLinkBookmarked case final isBookmarked?)
+                    if (widget.onToggleLinkBookmark case final onToggle?)
+                      _LinkBookmarkButton(
+                        link: _studyLink(
+                          ownBook: widget.book,
+                          ownChapter: entry.chapter,
+                          ownVerse: entry.verse,
+                          ownPositions: entry.positions,
+                          otherBook: entry.otherBook,
+                          otherChapter: entry.otherChapter,
+                          otherVerse: entry.otherVerse,
+                          otherPositions: entry.otherPositions,
+                          score: entry.score,
+                        ),
+                        isBookmarked: isBookmarked,
+                        onToggle: onToggle,
+                      ),
+                ],
               ),
             ),
             OccurrenceVerseRow(
@@ -576,6 +610,8 @@ class _VerseLinks extends StatefulWidget {
     required this.onToggleEnglishOnly,
     required this.onBack,
     this.onClose,
+    this.isLinkBookmarked,
+    this.onToggleLinkBookmark,
     this.onNavigateToPassage,
     this.sendRequest,
   });
@@ -594,6 +630,8 @@ class _VerseLinks extends StatefulWidget {
   final VoidCallback onToggleEnglishOnly;
   final VoidCallback onBack;
   final VoidCallback? onClose;
+  final bool Function(StudyLinkVerse ot, StudyLinkVerse nt)? isLinkBookmarked;
+  final Future<bool> Function(StudyLink link)? onToggleLinkBookmark;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
   final void Function(GetCrossReferences)? sendRequest;
@@ -810,6 +848,23 @@ class _VerseLinksState extends State<_VerseLinks> {
                     ),
                   ),
                 ),
+                if (widget.isLinkBookmarked case final isBookmarked?)
+                  if (widget.onToggleLinkBookmark case final onToggle?)
+                    _LinkBookmarkButton(
+                      link: _studyLink(
+                        ownBook: widget.book,
+                        ownChapter: widget.chapter,
+                        ownVerse: widget.verse,
+                        ownPositions: entry.sourcePositions,
+                        otherBook: entry.book,
+                        otherChapter: entry.chapter,
+                        otherVerse: entry.verse,
+                        otherPositions: entry.positions,
+                        score: entry.score,
+                      ),
+                      isBookmarked: isBookmarked,
+                      onToggle: onToggle,
+                    ),
               ],
             ),
           ),
@@ -831,4 +886,76 @@ class _VerseLinksState extends State<_VerseLinks> {
       ],
     );
   }
+}
+
+/// A link between two verses, the right way round for the study document
+/// whichever side the panel was opened from.
+StudyLink _studyLink({
+  required int ownBook,
+  required int ownChapter,
+  required int ownVerse,
+  required List<int> ownPositions,
+  required int otherBook,
+  required int otherChapter,
+  required int otherVerse,
+  required List<int> otherPositions,
+  required double score,
+}) {
+  final own = (bookIndex: ownBook - 1, chapter: ownChapter, verse: ownVerse);
+  final other = (
+    bookIndex: otherBook - 1,
+    chapter: otherChapter,
+    verse: otherVerse,
+  );
+  final fromNt = ownBook >= 40;
+  return StudyLink(
+    ot: fromNt ? other : own,
+    nt: fromNt ? own : other,
+    otPositions: fromNt ? otherPositions : ownPositions,
+    ntPositions: fromNt ? ownPositions : otherPositions,
+    score: score,
+  );
+}
+
+/// Bookmarks a link in the active study, showing whether it is bookmarked.
+class _LinkBookmarkButton extends StatefulWidget {
+  const _LinkBookmarkButton({
+    required this.link,
+    required this.isBookmarked,
+    required this.onToggle,
+  });
+
+  final StudyLink link;
+  final bool Function(StudyLinkVerse ot, StudyLinkVerse nt) isBookmarked;
+  final Future<bool> Function(StudyLink link) onToggle;
+
+  @override
+  State<_LinkBookmarkButton> createState() => _LinkBookmarkButtonState();
+}
+
+class _LinkBookmarkButtonState extends State<_LinkBookmarkButton> {
+  late bool _bookmarked = widget.isBookmarked(widget.link.ot, widget.link.nt);
+
+  @override
+  void didUpdateWidget(_LinkBookmarkButton old) {
+    super.didUpdateWidget(old);
+    _bookmarked = widget.isBookmarked(widget.link.ot, widget.link.nt);
+  }
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: _bookmarked ? 'Remove link bookmark' : 'Bookmark this link',
+    iconSize: 16,
+    visualDensity: VisualDensity.compact,
+    padding: EdgeInsets.zero,
+    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+    icon: Icon(
+      _bookmarked ? Icons.bookmark : Icons.bookmark_add_outlined,
+      color: _bookmarked ? Theme.of(context).colorScheme.primary : null,
+    ),
+    onPressed: () async {
+      final bookmarked = await widget.onToggle(widget.link);
+      if (mounted) setState(() => _bookmarked = bookmarked);
+    },
+  );
 }

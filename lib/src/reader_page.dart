@@ -613,6 +613,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               ? null
               : (book: bookIndex + 1, chapter: chapter, verse: verse),
           useEnglishBookNames: reader._englishBookNames,
+          isLinkBookmarked: reader._isStudyLinkBookmarked,
+          onToggleLinkBookmark: reader._toggleStudyLinkBookmark,
           minScore: reader._crossReferenceMinScore,
           onMinScoreChanged: reader._setCrossReferenceMinScore,
           onNavigateToPassage: (book, chapter, verse) {
@@ -640,6 +642,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               target: _crossReferenceTarget,
               targetRequest: _crossReferenceRequest,
               useEnglishBookNames: reader._englishBookNames,
+              isLinkBookmarked: reader._isStudyLinkBookmarked,
+              onToggleLinkBookmark: reader._toggleStudyLinkBookmark,
               minScore: reader._crossReferenceMinScore,
               onMinScoreChanged: reader._setCrossReferenceMinScore,
               onNavigateToPassage: (book, chapter, verse) =>
@@ -2452,6 +2456,48 @@ class _ReaderSessionState extends State<_ReaderSession>
     _replaceStudyWorkspace(workspace.removeWord(word));
   }
 
+  /// Bookmarks a cross reference in the active study (creating one if need
+  /// be), or removes it when it is already there. True when it was added.
+  Future<bool> _toggleStudyLinkBookmark(StudyLink link) async {
+    final workspace = await _ensureStudyWorkspace();
+    if (workspace == null || !mounted) return false;
+    final existing = workspace.linkBetween(link.ot, link.nt);
+    if (existing == null) {
+      _replaceStudyWorkspace(workspace.putLink(link));
+      return true;
+    }
+    _replaceStudyWorkspace(workspace.removeLink(existing));
+    return false;
+  }
+
+  bool _isStudyLinkBookmarked(StudyLinkVerse ot, StudyLinkVerse nt) =>
+      _activeStudyWorkspace?.linkBetween(ot, nt) != null;
+
+  Future<void> _editStudyLink(StudyLink link) async {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    final note = await _askForText(
+      title: 'Cross-reference note',
+      initialValue: link.note,
+      label: 'Note',
+      maxLines: 5,
+    );
+    if (note == null || !mounted) return;
+    _replaceStudyWorkspace(workspace.putLink(link.copyWith(note: note)));
+  }
+
+  void _updateStudyLink(StudyLink link) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    _replaceStudyWorkspace(workspace.putLink(link));
+  }
+
+  void _removeStudyLink(StudyLink link) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    _replaceStudyWorkspace(workspace.removeLink(link));
+  }
+
   Future<void> _createStudyNote(String? groupId) async {
     final workspace = await _ensureStudyWorkspace();
     if (workspace == null || !mounted) return;
@@ -2665,6 +2711,30 @@ class _ReaderSessionState extends State<_ReaderSession>
             },
             onMoveItem: (item, groupId, index) {
               _moveStudyItem(item, groupId, index);
+              setSheetState(() {});
+            },
+            onOpenLinkVerse: (link, verse) {
+              Navigator.pop(sheetContext);
+              _navigateTo(verse.bookIndex, verse.chapter, verse: verse.verse);
+            },
+            onShowLink: (link) {
+              Navigator.pop(sheetContext);
+              widget.onCrossReferencesRequested(
+                link.nt.bookIndex,
+                link.nt.chapter,
+                link.nt.verse,
+              );
+            },
+            onEditLink: (link) async {
+              await _editStudyLink(link);
+              if (sheetContext.mounted) setSheetState(() {});
+            },
+            onUpdateLink: (link) {
+              _updateStudyLink(link);
+              setSheetState(() {});
+            },
+            onRemoveLink: (link) {
+              _removeStudyLink(link);
               setSheetState(() {});
             },
           ),
@@ -3531,6 +3601,19 @@ class _ReaderSessionState extends State<_ReaderSession>
         onUpdateNote: _updateStudyNote,
         onRemoveNote: _removeStudyNote,
         onMoveItem: _moveStudyItem,
+        onOpenLinkVerse: (link, verse) {
+          _navigateTo(verse.bookIndex, verse.chapter, verse: verse.verse);
+          onOpenReader?.call();
+        },
+        // The NT verse's links, where the bookmarked one is found again.
+        onShowLink: (link) => widget.onCrossReferencesRequested(
+          link.nt.bookIndex,
+          link.nt.chapter,
+          link.nt.verse,
+        ),
+        onEditLink: _editStudyLink,
+        onUpdateLink: _updateStudyLink,
+        onRemoveLink: _removeStudyLink,
       );
 
   Widget _readerSurface() {

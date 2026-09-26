@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:haqor/src/study_workspace.dart';
 
 void main() {
+  linkTests();
+
   test(
     'switching bookmark type preserves its place and settings through storage',
     () {
@@ -457,4 +459,67 @@ void main() {
       expect(workspace.notes.single.groupId, isNull);
     },
   );
+}
+
+void linkTests() {
+  const isaiah = (bookIndex: 11, chapter: 7, verse: 14);
+  const matthew = (bookIndex: 39, chapter: 1, verse: 23);
+  const link = StudyLink(
+    ot: isaiah,
+    nt: matthew,
+    otPositions: [7, 9],
+    ntPositions: [1, 3],
+    score: 14.69,
+  );
+
+  test('link bookmarks survive notes, moves, storage and group removal', () {
+    var workspace = const StudyWorkspace(
+      id: 's',
+      name: 'Study',
+      groups: [StudyGroup(id: 'g', name: 'Emmanuel')],
+      words: [StudyWord(root: 'עלמ', surface: 'הָעַלְמָה')],
+    ).putLink(link);
+    expect(workspace.linkBetween(isaiah, matthew), isNotNull);
+    // Added as the outline's last item.
+    expect(workspace.itemsIn(null).map((i) => i.type), [
+      StudyItemType.word,
+      StudyItemType.group,
+      StudyItemType.link,
+    ]);
+
+    final item = workspace.itemsIn(null).last;
+    workspace = workspace.moveItem(item, 'g');
+    workspace = workspace.putLink(
+      workspace.links.single.copyWith(note: 'Virgin / young woman'),
+    );
+    workspace = decodeStudyWorkspaces(
+      encodeStudyWorkspaces([workspace]),
+    ).single;
+    final stored = workspace.linkBetween(isaiah, matthew)!;
+    expect(stored.groupId, 'g');
+    expect(stored.note, 'Virgin / young woman');
+    expect(stored.otPositions, [7, 9]);
+    expect(stored.ntPositions, [1, 3]);
+    expect(stored.score, 14.69);
+    expect(workspace.itemsIn('g').single.key, link.key);
+
+    // Removing its group keeps the link at the group's level.
+    workspace = workspace.removeGroup(workspace.groups.single);
+    expect(workspace.linkBetween(isaiah, matthew)!.groupId, isNull);
+    workspace = workspace.removeLink(stored);
+    expect(workspace.links, isEmpty);
+  });
+
+  test('links to a vanished group or with bad verses load safely', () {
+    final workspace = decodeStudyWorkspaces('''[{
+      "id": "s", "name": "Study", "ordered": true,
+      "links": [
+        {"ot": [11, 7, 14], "nt": [39, 1, 23], "group": "gone", "order": 2},
+        {"ot": [11, 7], "nt": [39, 1, 23]},
+        {"ot": [999, 1, 1], "nt": [39, 1, 23]}
+      ]
+    }]''').single;
+    expect(workspace.links, hasLength(1));
+    expect(workspace.links.single.groupId, isNull);
+  });
 }
