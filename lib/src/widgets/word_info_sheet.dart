@@ -151,9 +151,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   // of them to read it under is the reader's to choose.
   String? _selectedRoot;
   // OT-only: which surface forms of the root are shown in the occurrences list.
-  // Empty means "every form", which is where the tab starts: a root's other
-  // inflections are the reason to open the list, so narrowing to the one word
-  // that was tapped is the wrong first answer.
+  // Empty means "every form". The tab starts on the tapped word's own form
+  // (see [_exactFormKey]) when the root's list holds it, and the header's
+  // Exact match / All forms toggle moves between the two in one tap; the
+  // filter sheet widens or narrows from either.
   final Set<String> _otForms = {};
   // OT-only: the parse filter, one selection per morphology dimension. A
   // dimension with no selection admits everything; within a dimension the
@@ -303,7 +304,11 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     _occRequested = true;
     _occSub = WordOccurrences.rustSignalStream.listen((pack) {
       if (mounted) {
-        setState(() => _occ = pack.message);
+        setState(() {
+          _occ = pack.message;
+          final exact = _exactFormKey();
+          if (exact != null && _otForms.isEmpty) _otForms.add(exact);
+        });
         _occSub?.cancel();
       }
     });
@@ -338,6 +343,16 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     _occSub?.cancel();
     _requestInfo();
     _fetchOccurrences();
+  }
+
+  /// The tapped word's own surface form, when it stands among the selected
+  /// root's occurrences. Null otherwise — a headword that is never attested,
+  /// or a root the word was switched away from — and the exact-match toggle is
+  /// then not offered, since it could only show an empty list.
+  String? _exactFormKey() {
+    final key = hebrewSurfaceKey(widget.word);
+    final all = _occ?.hebrewOccurrences ?? const <HebrewOccurrence>[];
+    return all.any((o) => o.surface == key) ? key : null;
   }
 
   /// The root the parse resolved to, which the sheet opens on.
@@ -1065,6 +1080,16 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     // The bar is counted here; the sheet counts forms and parses itself, since
     // those have to move as selections change inside it.
     final inScope = all.where(passesBook).toList();
+    // The toggle's counts follow the parse and book filters, so each segment
+    // says what tapping it would list.
+    final exactForm = _exactFormKey();
+    var exactCount = 0;
+    var allCount = 0;
+    for (final o in inScope) {
+      if (!passesParse(o)) continue;
+      allCount++;
+      if (o.surface == exactForm) exactCount++;
+    }
     final bookCounts = <int, int>{};
     for (final o in all.where((o) => passesForm(o) && passesParse(o))) {
       bookCounts[o.book] = (bookCounts[o.book] ?? 0) + 1;
@@ -1115,13 +1140,32 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (exactForm != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 2),
+                  child: _FormScopeToggle(
+                    // Neither segment is lit when the filter sheet picked some
+                    // other set of forms; either tap replaces that choice.
+                    exact: forms.length == 1 && forms.contains(exactForm)
+                        ? true
+                        : forms.isEmpty
+                        ? false
+                        : null,
+                    exactCount: exactCount,
+                    allCount: allCount,
+                    onChanged: (exact) => setState(() {
+                      _otForms.clear();
+                      if (exact) _otForms.add(exactForm);
+                    }),
+                  ),
+                ),
               Row(
                 children: [
                   Flexible(
                     child: ActionChip(
                       avatar: const Icon(Icons.filter_list, size: 18),
                       label: Text(
-                        _hebrewFilterSummary(forms),
+                        _hebrewFilterSummary(forms, exactForm: exactForm),
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontFamily: 'Cardo',
@@ -1205,7 +1249,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   /// says what is being looked at rather than how many boxes are ticked; a
   /// dimension with several selected collapses to a count, since spelling them
   /// all out would not fit.
-  String _hebrewFilterSummary(Set<String> forms) {
+  String _hebrewFilterSummary(Set<String> forms, {String? exactForm}) {
+    // The scope toggle already says "exact match", so the chip need not.
+    final exact =
+        exactForm != null && forms.length == 1 && forms.contains(exactForm);
     final parts = <String>[
       for (final dimension in _ParseDimension.values)
         if (_otParse[dimension] case final selected? when selected.isNotEmpty)
@@ -1213,7 +1260,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
             selected.first.toLowerCase()
           else
             '${selected.length} ${dimension.label.toLowerCase()}',
-      if (forms.length == 1)
+      if (!exact && forms.length == 1)
         forms.first
       else if (forms.length > 1)
         '${forms.length} forms',
@@ -1225,7 +1272,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       else if (_otBooks.length > 1)
         '${_otBooks.length} books',
     ];
-    return parts.isEmpty ? 'All occurrences' : parts.join(' · ');
+    if (parts.isEmpty) return exact ? 'Filter' : 'All occurrences';
+    return parts.join(' · ');
   }
 
   /// Verses *and* tokens: a root can stand twice in one verse, and a reader
@@ -1774,6 +1822,41 @@ class _VerseOccurrence {
   /// looked-up word that is *not* an occurrence of its root, and text matching
   /// cannot tell the two apart.
   final List<int> positions;
+}
+
+/// The Occurrences tab's one-tap scope switch: the tapped word's exact surface
+/// form, or every form of its root. [exact] is null when the filter sheet has
+/// chosen some other set of forms, which neither segment describes.
+class _FormScopeToggle extends StatelessWidget {
+  const _FormScopeToggle({
+    required this.exact,
+    required this.exactCount,
+    required this.allCount,
+    required this.onChanged,
+  });
+
+  final bool? exact;
+  final int exactCount;
+  final int allCount;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SegmentedButton<bool>(
+      segments: [
+        ButtonSegment(value: true, label: Text('Exact match ($exactCount)')),
+        ButtonSegment(value: false, label: Text('All forms ($allCount)')),
+      ],
+      selected: {?exact},
+      emptySelectionAllowed: true,
+      showSelectedIcon: false,
+      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+      onSelectionChanged: (selection) {
+        // Tapping the lit segment would empty the selection; keep it instead.
+        if (selection.isNotEmpty) onChanged(selection.first);
+      },
+    );
+  }
 }
 
 class _VerseModeIcon extends StatelessWidget {

@@ -172,6 +172,13 @@ Future<_FakeRust> _pumpOccurrences(
   return rust;
 }
 
+/// Widen the list from the tapped word's exact form, where the tab opens, to
+/// every form of the root.
+Future<void> _showAllForms(WidgetTester tester) async {
+  await tester.tap(find.textContaining('All forms ('));
+  await tester.pumpAndSettle();
+}
+
 /// Give the test a tall window, so a filter sheet with seven morphology groups
 /// has them all on screen at once. The sheet scrolls on a real phone; these
 /// tests are about which groups and values it offers, not about scrolling to
@@ -235,7 +242,7 @@ void main() {
       for (var verse = 1; verse <= 40; verse++)
         _occurrence(book: 1, chapter: 1, verse: verse),
     ];
-    await _pumpOccurrences(
+    final rust = await _pumpOccurrences(
       tester,
       occurrences,
       at: (book: 1, chapter: 1, verse: 30),
@@ -243,7 +250,12 @@ void main() {
 
     // Scroll back above the anchor: the verses before it must ascend towards it,
     // not run backwards.
-    await tester.drag(find.byType(SelectableText).first, const Offset(0, 400));
+    // Drag the list itself: the first row in tree order is above the anchor,
+    // off screen, and dragging it would land on whatever covers that point.
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 400));
+    await tester.pumpAndSettle();
+    // Rows scrolled into view ask for their text; answer them.
+    rust.deliverVerseTexts();
     await tester.pumpAndSettle();
     final refs = _visibleRefs(tester);
     final verses = [for (final ref in refs) int.parse(ref.split(':').last)];
@@ -349,7 +361,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Close'));
     await tester.pumpAndSettle();
-    expect(find.text('All occurrences'), findsOneWidget);
+    // Only the starting exact-form scope is left, which the toggle shows.
+    expect(find.text('Filter'), findsOneWidget);
     expect(find.text('3 verses'), findsOneWidget);
   });
 
@@ -385,23 +398,66 @@ void main() {
     );
   });
 
-  testWidgets('the tab opens unfiltered, on every form of the root', (
+  testWidgets('the tab opens on the exact form, every form one tap away', (
     tester,
   ) async {
-    // The looked-up word is only one of the root's forms; the others are the
-    // reason to open the list at all.
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1),
+      _occurrence(book: 1, chapter: 2, verse: 1, surface: 'וַיִּבְרָא'),
+      _occurrence(book: 1, chapter: 3, verse: 1),
+    ]);
+    // The tapped word's own surface form first.
+    expect(find.text('Exact match (2)'), findsOneWidget);
+    expect(find.text('2 verses'), findsOneWidget);
+
+    await _showAllForms(tester);
+    expect(find.text('All occurrences'), findsOneWidget);
+    expect(find.text('3 verses'), findsOneWidget);
+
+    await tester.tap(find.text('Exact match (2)'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 verses'), findsOneWidget);
+  });
+
+  testWidgets('a form chosen in the sheet lights neither scope', (
+    tester,
+  ) async {
     await _pumpOccurrences(tester, [
       _occurrence(book: 1, chapter: 1, verse: 1),
       _occurrence(book: 1, chapter: 2, verse: 1, surface: 'וַיִּבְרָא'),
     ]);
+    await _showAllForms(tester);
+    await tester.tap(find.byType(ActionChip));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Form'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('וַיִּבְרָא').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    final toggle = tester.widget<SegmentedButton<bool>>(
+      find.byType(SegmentedButton<bool>),
+    );
+    expect(toggle.selected, isEmpty);
+    expect(find.text('1 verse'), findsOneWidget);
+  });
+
+  testWidgets('no exact-match scope when the word is not in the list', (
+    tester,
+  ) async {
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1, surface: 'וַיִּבְרָא'),
+    ]);
+    expect(find.byType(SegmentedButton<bool>), findsNothing);
     expect(find.text('All occurrences'), findsOneWidget);
-    expect(find.text('2 verses'), findsOneWidget);
   });
 
   testWidgets('the filter sheet offers parse before form', (tester) async {
     await _pumpOccurrences(tester, [
       _occurrence(book: 1, chapter: 1, verse: 1),
     ]);
+    await _showAllForms(tester);
     await tester.tap(find.byType(ActionChip));
     await tester.pumpAndSettle();
 
@@ -425,6 +481,7 @@ void main() {
         number: 'Plural',
       ),
     ]);
+    await _showAllForms(tester);
     await tester.tap(find.byType(ActionChip));
     await tester.pumpAndSettle();
 
@@ -473,6 +530,7 @@ void main() {
         number: 'Plural',
       ),
     ]);
+    await _showAllForms(tester);
     expect(find.text('All occurrences'), findsOneWidget);
     expect(find.text('3 verses'), findsOneWidget);
 
@@ -502,6 +560,7 @@ void main() {
       _occurrence(book: 1, chapter: 1, verse: 1),
       _occurrence(book: 1, chapter: 2, verse: 1, stem: 'Hiphil'),
     ]);
+    await _showAllForms(tester);
     await tester.tap(find.byType(ActionChip));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Hiphil  1'));

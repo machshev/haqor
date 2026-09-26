@@ -414,9 +414,11 @@ void main() {
     rust.deliverVerseTexts();
     await tester.pumpAndSettle();
 
-    // The new root's list is unfiltered: the cut went with the root it was made
-    // under, so both of עזר's verses are listed.
-    expect(find.text('All occurrences'), findsOneWidget);
-    expect(find.text('2 verses'), findsOneWidget);
+    // The parse cut went with the root it was made under: the new list is back
+    // on its starting scope, the tapped word's exact form, with both of עזר's
+    // verses one tap away.
+    expect(find.text('Filter'), findsOneWidget);
+    expect(find.text('1 verse'), findsOneWidget);
+    expect(find.text('All forms (2)'), findsOneWidget);
   });
 }
