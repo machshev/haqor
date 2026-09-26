@@ -1,6 +1,8 @@
 import 'dart:math';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haqor/src/app_settings.dart';
 import 'package:haqor/src/bindings/bindings.dart';
@@ -133,6 +135,96 @@ void main() {
 
     await tester.tap(find.text('יְהוָה'));
     expect(tapped, ('יְהוָה', 'Yahweh', 1, 'יהוה'));
+  });
+
+  testWidgets('a long press or secondary click opens a word menu', (
+    tester,
+  ) async {
+    final taps = <(String, String?, int?, String)>[];
+    final menus = <(String, String?, int?, String)>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VerseRow(
+            entry: const VerseEntry(
+              verse: 1,
+              text: 'דָבָר',
+              glosses: [],
+              morphologies: [],
+              names: [],
+              roots: ['דבר'],
+              ketivs: [],
+            ),
+            isSelected: false,
+            hebrewNumerals: true,
+            onTap: () {},
+            onWordTap: (word, gloss, position, root) {
+              taps.add((word, gloss, position, root));
+            },
+            onWordMenu: (word, gloss, position, root, globalPosition) {
+              menus.add((word, gloss, position, root));
+            },
+          ),
+        ),
+      ),
+    );
+
+    // Right-to-left text sits at the far edge of the row, so press the word
+    // where it is laid out rather than the middle of the row.
+    final editable = tester.allRenderObjects.whereType<RenderEditable>().single;
+    final box = editable
+        .getBoxesForSelection(
+          const TextSelection(baseOffset: 0, extentOffset: 5),
+        )
+        .first;
+    final word = editable.localToGlobal(box.toRect().center);
+    await tester.longPressAt(word);
+    await tester.pumpAndSettle();
+    expect(menus, [('דָבָר', null, 0, 'דבר')]);
+    expect(taps, isEmpty);
+
+    await tester.tapAt(word, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(menus, hasLength(2));
+    expect(taps, isEmpty);
+
+    // A quick tap still opens word info.
+    await tester.tapAt(word);
+    await tester.pumpAndSettle();
+    expect(taps, [('דָבָר', null, 0, 'דבר')]);
+    expect(menus, hasLength(2));
+  });
+
+  testWidgets('interlinear words open the same menu', (tester) async {
+    (String, String?, int?, String)? menu;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VerseRow(
+            entry: const VerseEntry(
+              verse: 1,
+              text: 'דָבָר ׀ יְהוָה',
+              glosses: ['word', 'Yahweh'],
+              morphologies: ['noun singular', 'noun singular'],
+              names: [],
+              roots: ['דבר', 'יהוה'],
+              ketivs: [],
+            ),
+            isSelected: false,
+            hebrewNumerals: true,
+            glossInterlinear: true,
+            onTap: () {},
+            onWordTap: (_, _, _, _) {},
+            onWordMenu: (word, gloss, position, root, globalPosition) {
+              menu = (word, gloss, position, root);
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.longPress(find.text('יְהוָה'));
+    expect(menu, ('יְהוָה', 'Yahweh', 1, 'יהוה'));
   });
 
   testWidgets('study highlights every word carrying a bookmarked root', (

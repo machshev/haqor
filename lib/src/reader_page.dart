@@ -22,6 +22,7 @@ import 'widgets/study_workspace_panel.dart';
 import 'widgets/study_passage_editor.dart';
 import 'widgets/verse_row.dart';
 import 'widgets/word_info_sheet.dart';
+import 'word_proximity.dart';
 
 class _PassageRef {
   final int bookIndex;
@@ -174,6 +175,21 @@ enum _ReaderMenuAction {
 
 enum _ResolvedReaderLayout { focus, split, threePanel }
 
+enum _WordMenuAction { open, openNewPane, bookmarkRoot, bookmarkForm }
+
+/// One open word inspector, with its own lexical-navigation history.
+class _WordPane {
+  _WordPane(this.id, _SelectedWord word) : history = [word];
+
+  final String id;
+  final List<_SelectedWord> history;
+  int index = 0;
+
+  _SelectedWord get word => history[index];
+  bool get canGoBack => index > 0;
+  bool get canGoForward => index < history.length - 1;
+}
+
 const _workspaceMinimumTileWidth = 260.0;
 const _workspacePanelDividerWidth = 9.0;
 
@@ -234,11 +250,22 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   // The inspector belongs to the workspace, including while reader pages
   // are switched, removed, or rearranged by the responsive layout.
   final GlobalKey _wordInspectorKey = GlobalKey();
-  _SelectedWord? _selectedWord;
-  final List<_SelectedWord> _wordHistory = [];
-  int _wordHistoryIndex = -1;
-  bool get _canGoBackWord => _wordHistoryIndex > 0;
-  bool get _canGoForwardWord => _wordHistoryIndex < _wordHistory.length - 1;
+  // Several words can be open at once, one pane each, switched between like
+  // studies. The open panes are what a proximity search combines.
+  final List<_WordPane> _wordPanes = [];
+  String? _activeWordPaneId;
+  int _nextWordPaneId = 0;
+  final WordProximity _proximity = WordProximity();
+  _WordPane? get _activeWordPane {
+    for (final pane in _wordPanes) {
+      if (pane.id == _activeWordPaneId) return pane;
+    }
+    return null;
+  }
+
+  _SelectedWord? get _selectedWord => _activeWordPane?.word;
+  bool get _canGoBackWord => _activeWordPane?.canGoBack ?? false;
+  bool get _canGoForwardWord => _activeWordPane?.canGoForward ?? false;
   bool _splitShowsWord = false;
   double _sidePanelWidth = 360;
   bool _loaded = false;
@@ -433,6 +460,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   void dispose() {
     _mobileBarTransitionTimer?.cancel();
     _pageController.dispose();
+    _proximity.dispose();
     super.dispose();
   }
 
@@ -456,9 +484,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       });
       if (_tiled && _mobileLayout == false) _saveWorkspace();
     },
-    onWordInfoRequested: (selected) {
+    onWordInfoRequested: (selected, {newPane = false}) {
       setState(() => _activeTabId = tab.id);
-      _selectInspectorWord(selected);
+      _selectInspectorWord(selected, newPane: newPane);
       if (_mobileLayout == true) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _hasWordPage) _showPage(_wordPageIndex);
@@ -506,16 +534,38 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     );
   }
 
-  void _selectInspectorWord(_SelectedWord selected) {
+  /// Shows [selected] in the active word pane, adding to its history, or in a
+  /// new pane when asked (or when none is open yet).
+  void _selectInspectorWord(_SelectedWord selected, {bool newPane = false}) {
     setState(() {
-      if (_canGoForwardWord) {
-        _wordHistory.removeRange(_wordHistoryIndex + 1, _wordHistory.length);
+      final pane = _activeWordPane;
+      if (pane == null || newPane) {
+        final created = _WordPane('word-${_nextWordPaneId++}', selected);
+        _wordPanes.add(created);
+        _activeWordPaneId = created.id;
+      } else {
+        pane.history
+          ..removeRange(pane.index + 1, pane.history.length)
+          ..add(selected);
+        pane.index = pane.history.length - 1;
       }
-      _wordHistory.add(selected);
-      _wordHistoryIndex = _wordHistory.length - 1;
-      _selectedWord = selected;
       _splitShowsWord = true;
     });
+  }
+
+  /// Closes a word pane. The last one stays, as the inspector's only word.
+  void _closeWordPane(String id) {
+    if (_wordPanes.length < 2) return;
+    final index = _wordPanes.indexWhere((pane) => pane.id == id);
+    if (index < 0) return;
+    setState(() {
+      _wordPanes.removeAt(index);
+      if (_activeWordPaneId == id) {
+        _activeWordPaneId =
+            _wordPanes[math.min(index, _wordPanes.length - 1)].id;
+      }
+    });
+    _proximity.forget(id);
   }
 
   void _openInspectorWord(String word, String? bdbId) {
@@ -535,11 +585,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   }
 
   void _moveInspectorHistory(int delta) {
-    final index = _wordHistoryIndex + delta;
-    if (index < 0 || index >= _wordHistory.length) return;
+    final pane = _activeWordPane;
+    if (pane == null) return;
+    final index = pane.index + delta;
+    if (index < 0 || index >= pane.history.length) return;
     setState(() {
-      _wordHistoryIndex = index;
-      _selectedWord = _wordHistory[index];
+      pane.index = index;
       _splitShowsWord = true;
     });
   }
@@ -601,9 +652,59 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     ),
   );
 
+  /// Switches between open word panes, as the study panel switches studies.
+  Widget _wordPaneSelector() {
+    final active = _activeWordPaneId;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 0, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              key: ValueKey('word-pane-selector-$active'),
+              initialValue: active,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: [
+                for (final pane in _wordPanes)
+                  DropdownMenuItem(
+                    value: pane.id,
+                    child: Text(
+                      pane.word.word,
+                      overflow: TextOverflow.ellipsis,
+                      textDirection: TextDirection.rtl,
+                      style: const TextStyle(
+                        fontFamily: 'Cardo',
+                        fontFamilyFallback: ['Noto Serif Hebrew'],
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+              ],
+              onChanged: (id) {
+                if (id != null) setState(() => _activeWordPaneId = id);
+              },
+            ),
+          ),
+          IconButton(
+            tooltip: 'Close word pane',
+            icon: const Icon(Icons.close),
+            onPressed: active == null ? null : () => _closeWordPane(active),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _wordInspector({bool showNavigation = true}) {
     final theme = Theme.of(context);
     final selected = _selectedWord;
+    final activeIndex = _wordPanes.indexWhere(
+      (pane) => pane.id == _activeWordPaneId,
+    );
     return Material(
       key: _wordInspectorKey,
       color: theme.colorScheme.surface,
@@ -626,58 +727,73 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
             : Column(
                 children: [
                   if (showNavigation) _wordNavigationToolbar(),
+                  if (_wordPanes.length > 1) _wordPaneSelector(),
+                  // Every pane stays built, so a hidden one keeps its tab,
+                  // filters, and loaded occurrences, and can take part in a
+                  // proximity search from the pane on show.
                   Expanded(
-                    child: WordInfoSheet(
-                      sendInfoRequest: widget.sendWordInfoRequest,
-                      sendOccurrencesRequest: widget.sendWordOccurrencesRequest,
-                      sendVerseTextsRequest: widget.sendVerseTextsRequest,
-                      key: ValueKey(
-                        '${selected.bookIndex}:${selected.chapter}:'
-                        '${selected.verse}:${selected.position}:${selected.word}:${selected.root}:${selected.bdbId}',
-                      ),
-                      docked: true,
-                      word: selected.word,
-                      bdbId: selected.bdbId,
-                      onOpenWord: _openInspectorWord,
-                      initialRoot: selected.root.isEmpty ? null : selected.root,
-                      syriac: selected.bookIndex >= 39,
-                      book: selected.chapter == null
-                          ? null
-                          : selected.bookIndex + 1,
-                      chapter: selected.chapter,
-                      verse: selected.verse,
-                      position: selected.position,
-                      readerGloss: selected.readerGloss,
-                      useEnglishBookNames:
-                          _activeReader?._englishBookNames ?? false,
-                      reportContext: {
-                        if (selected.chapter != null) ...{
-                          'bookIndex': selected.bookIndex,
-                          'book': kBooks[selected.bookIndex].transliteration,
-                          'chapter': selected.chapter,
-                          'verse': selected.verse,
-                        },
-                      },
-                      isStudyBookmarked: (bookmark) =>
-                          _activeReader?._activeStudyWorkspace?.wordForBookmark(
-                            bookmark,
-                          ) !=
-                          null,
-                      onToggleStudyBookmark: (bookmark) async {
-                        return await _activeReader?._toggleStudyWordBookmark(
-                              bookmark,
-                            ) ??
-                            false;
-                      },
-                      onNavigateToPassage: (book, chapter, verse) {
-                        _activeReader?._navigateTo(book, chapter, verse: verse);
-                        if (_mobileLayout == true) _showReaderPage();
-                      },
+                    child: IndexedStack(
+                      index: activeIndex,
+                      children: [
+                        for (final pane in _wordPanes)
+                          KeyedSubtree(
+                            key: ValueKey(pane.id),
+                            child: TickerMode(
+                              enabled: pane.id == _activeWordPaneId,
+                              child: _wordInfoSheet(pane),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ],
               ),
       ),
+    );
+  }
+
+  Widget _wordInfoSheet(_WordPane pane) {
+    final selected = pane.word;
+    return WordInfoSheet(
+      sendInfoRequest: widget.sendWordInfoRequest,
+      sendOccurrencesRequest: widget.sendWordOccurrencesRequest,
+      sendVerseTextsRequest: widget.sendVerseTextsRequest,
+      key: ValueKey(
+        '${selected.bookIndex}:${selected.chapter}:'
+        '${selected.verse}:${selected.position}:${selected.word}:${selected.root}:${selected.bdbId}',
+      ),
+      docked: true,
+      proximity: _proximity,
+      proximityId: pane.id,
+      word: selected.word,
+      bdbId: selected.bdbId,
+      onOpenWord: _openInspectorWord,
+      initialRoot: selected.root.isEmpty ? null : selected.root,
+      syriac: selected.bookIndex >= 39,
+      book: selected.chapter == null ? null : selected.bookIndex + 1,
+      chapter: selected.chapter,
+      verse: selected.verse,
+      position: selected.position,
+      readerGloss: selected.readerGloss,
+      useEnglishBookNames: _activeReader?._englishBookNames ?? false,
+      reportContext: {
+        if (selected.chapter != null) ...{
+          'bookIndex': selected.bookIndex,
+          'book': kBooks[selected.bookIndex].transliteration,
+          'chapter': selected.chapter,
+          'verse': selected.verse,
+        },
+      },
+      isStudyBookmarked: (bookmark) =>
+          _activeReader?._activeStudyWorkspace?.wordForBookmark(bookmark) !=
+          null,
+      onToggleStudyBookmark: (bookmark) async {
+        return await _activeReader?._toggleStudyWordBookmark(bookmark) ?? false;
+      },
+      onNavigateToPassage: (book, chapter, verse) {
+        _activeReader?._navigateTo(book, chapter, verse: verse);
+        if (_mobileLayout == true) _showReaderPage();
+      },
     );
   }
 
@@ -1200,7 +1316,10 @@ class _ReaderSession extends StatefulWidget {
   final ValueChanged<bool> onScrollChromeChanged;
   final bool tiled;
   final VoidCallback onWorkspaceTilesChanged;
-  final ValueChanged<_SelectedWord> onWordInfoRequested;
+
+  /// Shows a word in the active word pane, or in a new one beside it.
+  final void Function(_SelectedWord selected, {bool newPane})
+  onWordInfoRequested;
 
   /// Test seam: how a [GetChapter] request reaches the Rust side. Defaults to
   /// the real rinf signal; widget tests substitute a stub that answers via
@@ -3018,6 +3137,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     String? readerGloss,
     int? position,
     String root = '',
+    bool newPane = false,
   }) {
     final selected = _SelectedWord(
       word: word,
@@ -3028,7 +3148,134 @@ class _ReaderSessionState extends State<_ReaderSession>
       root: root,
       readerGloss: readerGloss,
     );
-    widget.onWordInfoRequested(selected);
+    widget.onWordInfoRequested(selected, newPane: newPane);
+  }
+
+  /// A word's long-press (or secondary-click) menu: open it in the active word
+  /// pane or a new one, or bookmark it in the active study.
+  Future<void> _showWordMenu(
+    String word,
+    int bookIndex,
+    int chapter,
+    int verse, {
+    required Offset globalPosition,
+    String? readerGloss,
+    int? position,
+    String root = '',
+  }) async {
+    final workspace = _activeStudyWorkspace;
+    StudyWord bookmark(StudyWordKind kind) =>
+        StudyWord(root: root, surface: word, kind: kind);
+    bool bookmarked(StudyWordKind kind) =>
+        workspace?.wordForBookmark(bookmark(kind)) != null;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final at = overlay.globalToLocal(globalPosition);
+    final theme = Theme.of(context);
+    final action = await showMenu<_WordMenuAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(at.dx, at.dy, 0, 0),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        PopupMenuItem(
+          enabled: false,
+          height: 36,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              word,
+              textDirection: TextDirection.rtl,
+              style: TextStyle(
+                fontFamily: 'Cardo',
+                fontFamilyFallback: const ['Noto Serif Hebrew'],
+                fontSize: 20,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ),
+        ),
+        const PopupMenuItem(
+          value: _WordMenuAction.open,
+          child: ListTile(
+            leading: Icon(Icons.menu_book_outlined),
+            title: Text('Word info'),
+          ),
+        ),
+        const PopupMenuItem(
+          value: _WordMenuAction.openNewPane,
+          child: ListTile(
+            leading: Icon(Icons.library_add_outlined),
+            title: Text('Open in new word pane'),
+          ),
+        ),
+        const PopupMenuDivider(),
+        if (root.isNotEmpty)
+          PopupMenuItem(
+            value: _WordMenuAction.bookmarkRoot,
+            child: ListTile(
+              leading: Icon(
+                bookmarked(StudyWordKind.root)
+                    ? Icons.bookmark_remove_outlined
+                    : Icons.bookmark_add_outlined,
+              ),
+              title: Text(
+                bookmarked(StudyWordKind.root)
+                    ? 'Remove root bookmark'
+                    : 'Bookmark this root',
+              ),
+            ),
+          ),
+        PopupMenuItem(
+          value: _WordMenuAction.bookmarkForm,
+          child: ListTile(
+            leading: Icon(
+              bookmarked(StudyWordKind.form)
+                  ? Icons.bookmark_remove_outlined
+                  : Icons.bookmark_add_outlined,
+            ),
+            title: Text(
+              bookmarked(StudyWordKind.form)
+                  ? 'Remove form bookmark'
+                  : 'Bookmark this form',
+            ),
+          ),
+        ),
+      ],
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case _WordMenuAction.open:
+      case _WordMenuAction.openNewPane:
+        _showWordInfo(
+          word,
+          bookIndex,
+          chapter,
+          verse,
+          readerGloss: readerGloss,
+          position: position,
+          root: root,
+          newPane: action == _WordMenuAction.openNewPane,
+        );
+      case _WordMenuAction.bookmarkRoot:
+      case _WordMenuAction.bookmarkForm:
+        final kind = action == _WordMenuAction.bookmarkRoot
+            ? StudyWordKind.root
+            : StudyWordKind.form;
+        final wasBookmarked = bookmarked(kind);
+        final added = await _toggleStudyWordBookmark(bookmark(kind));
+        // Neither added nor removed: no study was chosen to hold it.
+        if (!mounted || (!added && !wasBookmarked)) return;
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text(
+              added
+                  ? 'Bookmarked ${kind.name}'
+                  : 'Removed ${kind.name} bookmark',
+            ),
+          ),
+        );
+    }
   }
 
   _ResolvedReaderLayout _resolveReaderLayout(double width) {
@@ -3363,6 +3610,17 @@ class _ReaderSessionState extends State<_ReaderSession>
                 position: position,
                 root: root,
               ),
+              onWordMenu: (word, readerGloss, position, root, globalPosition) =>
+                  _showWordMenu(
+                    word,
+                    b,
+                    c,
+                    entry.verse,
+                    globalPosition: globalPosition,
+                    readerGloss: readerGloss,
+                    position: position,
+                    root: root,
+                  ),
               fontSize: _fontSize,
               fontFamily: _fontFamily,
               showCantillation: _showCantillation,

@@ -145,6 +145,7 @@ class VerseRow extends StatefulWidget {
     required this.hebrewNumerals,
     required this.onTap,
     required this.onWordTap,
+    this.onWordMenu,
     this.fontSize = 20.0,
     this.fontFamily = 'Cardo',
     this.showCantillation = true,
@@ -171,6 +172,17 @@ class VerseRow extends StatefulWidget {
     String root,
   )
   onWordTap;
+
+  /// A word's menu, asked for by a long press or a secondary click, with the
+  /// same word details as [onWordTap] and where on screen the press was.
+  final void Function(
+    String word,
+    String? readerGloss,
+    int? position,
+    String root,
+    Offset globalPosition,
+  )?
+  onWordMenu;
   final double fontSize;
   final String fontFamily;
   final bool showCantillation;
@@ -191,6 +203,34 @@ class VerseRow extends StatefulWidget {
   State<VerseRow> createState() => _VerseRowState();
 }
 
+/// A word's tap, plus a long press that opens its menu.
+///
+/// A text span carries a single recognizer, so this one also enters a long
+/// press into the gesture arena for each pointer it accepts: a quick release
+/// is still a tap, and holding lets the long press win instead. Being deeper
+/// in the tree than the selectable text around it, the long press also wins
+/// over the text's own long-press selection on a word.
+class _WordGestureRecognizer extends TapGestureRecognizer {
+  _WordGestureRecognizer({GestureLongPressStartCallback? onLongPressStart})
+    : _longPress = onLongPressStart == null
+          ? null
+          : (LongPressGestureRecognizer()..onLongPressStart = onLongPressStart);
+
+  final LongPressGestureRecognizer? _longPress;
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    _longPress?.addPointer(event);
+  }
+
+  @override
+  void dispose() {
+    _longPress?.dispose();
+    super.dispose();
+  }
+}
+
 class _VerseRowState extends State<VerseRow> {
   List<String> _words = [];
   List<TapGestureRecognizer> _recognizers = [];
@@ -204,30 +244,60 @@ class _VerseRowState extends State<VerseRow> {
   @override
   void didUpdateWidget(VerseRow old) {
     super.didUpdateWidget(old);
-    if (old.entry.text != widget.entry.text) {
+    if (old.entry.text != widget.entry.text ||
+        (old.onWordMenu == null) != (widget.onWordMenu == null)) {
       _disposeRecognizers();
       _rebuild();
     }
   }
 
+  String _rootAt(int? position) =>
+      position != null && position < widget.entry.roots.length
+      ? widget.entry.roots[position]
+      : '';
+
   void _rebuild() {
     _words = widget.entry.text.split(' ').where((w) => w.isNotEmpty).toList();
     final positions = verseGlossPositions(_words);
+    final hasMenu = widget.onWordMenu != null;
     _recognizers = [
       for (final (i, word) in _words.indexed)
-        TapGestureRecognizer()
+        _WordGestureRecognizer(
+            onLongPressStart: hasMenu
+                ? (details) => widget.onWordMenu?.call(
+                    word,
+                    null,
+                    positions[i],
+                    _rootAt(positions[i]),
+                    details.globalPosition,
+                  )
+                : null,
+          )
           ..onTap = () {
-            final position = positions[i];
-            widget.onWordTap(
-              word,
-              null,
-              position,
-              position != null && position < widget.entry.roots.length
-                  ? widget.entry.roots[position]
-                  : '',
-            );
-          },
+            widget.onWordTap(word, null, positions[i], _rootAt(positions[i]));
+          }
+          ..onSecondaryTapUp = hasMenu
+              ? (details) => widget.onWordMenu?.call(
+                  word,
+                  null,
+                  positions[i],
+                  _rootAt(positions[i]),
+                  details.globalPosition,
+                )
+              : null,
     ];
+  }
+
+  void _openInterlinearMenu(String word, int position, Offset globalPosition) {
+    widget.onWordMenu?.call(
+      word.replaceAll(_readerWordMarks, ''),
+      position < widget.entry.glosses.length
+          ? widget.entry.glosses[position]
+          : null,
+      position,
+      _rootAt(position),
+      globalPosition,
+    );
   }
 
   void _disposeRecognizers() {
@@ -441,9 +511,23 @@ class _VerseRowState extends State<VerseRow> {
                             ? widget.entry.glosses[glossPosition]
                             : null,
                         glossPosition,
-                        glossPosition < widget.entry.roots.length
-                            ? widget.entry.roots[glossPosition]
-                            : '',
+                        _rootAt(glossPosition),
+                      ),
+                onLongPressStart:
+                    glossPosition == null || widget.onWordMenu == null
+                    ? null
+                    : (details) => _openInterlinearMenu(
+                        interlinearWords[i],
+                        glossPosition,
+                        details.globalPosition,
+                      ),
+                onSecondaryTapUp:
+                    glossPosition == null || widget.onWordMenu == null
+                    ? null
+                    : (details) => _openInterlinearMenu(
+                        interlinearWords[i],
+                        glossPosition,
+                        details.globalPosition,
                       ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(

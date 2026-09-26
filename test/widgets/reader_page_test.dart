@@ -1591,4 +1591,121 @@ void main() {
       expect(find.text('Judges'), findsNothing);
     }
   });
+
+  testWidgets('word menu opens, switches, and closes word panes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 744);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      study.studyWorkspacesKey: study.encodeStudyWorkspaces([
+        const study.StudyWorkspace(id: 'study', name: 'Study'),
+      ]),
+      study.activeStudyWorkspaceKey: 'study',
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+          sendWordInfoRequest: rust.onWordInfo,
+          sendWordOccurrencesRequest: rust.onOccurrences,
+          sendVerseTextsRequest: rust.onVerseTexts,
+        ),
+      ),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+
+    // Word requests stay pending, so the inspector's spinner never settles.
+    // Chapters are answered as the reader prefetches them.
+    Future<void> settle() async {
+      await tester.pump();
+      for (var i = 0; i < 20; i++) {
+        rust.deliverAll();
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    VerseRow row() => tester.widget<VerseRow>(find.byType(VerseRow).first);
+    WordInfoSheet current() =>
+        tester.widget<WordInfoSheet>(find.byType(WordInfoSheet));
+    final close = find.byTooltip('Close word pane');
+
+    row().onWordTap('מלה', null, 3, 'מלל');
+    await settle();
+    expect(current().word, 'מלה');
+    expect(close, findsNothing);
+
+    row().onWordMenu!('דבר', null, 4, 'דבר', const Offset(300, 200));
+    await settle();
+    await tester.tap(find.text('Open in new word pane'));
+    await settle();
+    expect(current().word, 'דבר');
+    expect(current().chapter, 1);
+    expect(current().position, 4);
+    expect(current().proximity, isNotNull);
+    expect(close, findsOneWidget);
+    // The first pane stays built behind the new one, keeping its state.
+    expect(find.byType(WordInfoSheet, skipOffstage: false), findsNWidgets(2));
+    // History belongs to a pane: the new one has nothing to go back to.
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byWidgetPredicate(
+              (w) => w is IconButton && w.tooltip == 'Back to previous word',
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    // A plain tap replaces the active pane's word, not the other pane's.
+    row().onWordTap('יָעַד', null, 5, 'יעד');
+    await settle();
+    expect(current().word, 'יָעַד');
+    expect(find.byType(WordInfoSheet, skipOffstage: false), findsNWidgets(2));
+
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await settle();
+    await tester.tap(find.text('מלה').last);
+    await settle();
+    expect(current().word, 'מלה');
+
+    await tester.tap(close);
+    await settle();
+    expect(current().word, 'יָעַד');
+    expect(close, findsNothing);
+    expect(find.byType(WordInfoSheet, skipOffstage: false), findsOneWidget);
+
+    // Clear any chapter-load notice queued ahead of the bookmark's.
+    ScaffoldMessenger.of(
+      tester.element(find.byType(VerseRow).first),
+    ).clearSnackBars();
+    row().onWordMenu!('מלה', null, 3, 'מלל', const Offset(300, 200));
+    await settle();
+    await tester.tap(find.text('Bookmark this root'));
+    await settle();
+    expect(find.text('Bookmarked root'), findsOneWidget);
+    final saved = study.decodeStudyWorkspaces(
+      (await SharedPreferences.getInstance()).getString(
+        study.studyWorkspacesKey,
+      ),
+    );
+    expect(saved.single.words.single.root, 'מלל');
+    expect(saved.single.words.single.kind, study.StudyWordKind.root);
+
+    row().onWordMenu!('מלה', null, 3, 'מלל', const Offset(300, 200));
+    await settle();
+    expect(find.text('Remove root bookmark'), findsOneWidget);
+    expect(find.text('Bookmark this form'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

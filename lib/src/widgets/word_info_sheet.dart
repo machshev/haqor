@@ -13,6 +13,7 @@ import '../issue_reporting.dart';
 import '../surface.dart';
 import '../study_workspace.dart';
 import '../tutor/progress_sync.dart';
+import '../word_proximity.dart';
 import 'verse_row.dart' show verseGlossPositions;
 import 'verse_text_cache.dart';
 
@@ -91,6 +92,8 @@ class WordInfoSheet extends StatefulWidget {
     this.sendOccurrencesRequest,
     this.sendVerseTextsRequest,
     this.docked = false,
+    this.proximity,
+    this.proximityId,
   });
 
   final String word;
@@ -109,6 +112,12 @@ class WordInfoSheet extends StatefulWidget {
 
   /// Renders as a bounded side-panel body instead of a draggable bottom sheet.
   final bool docked;
+
+  /// The open word panes this sheet can search near, and this sheet's pane id
+  /// among them. The sheet contributes its filtered occurrences under that id
+  /// and, with another pane open, offers a proximity search over them.
+  final WordProximity? proximity;
+  final String? proximityId;
 
   /// When set, the sheet shows the BDB entry with this id (a Lexicon
   /// cross-reference target) rather than parsing [word] as a surface form;
@@ -190,6 +199,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   bool _occRequested = false;
   final Set<StudyWordKind> _studyBookmarks = {};
   bool _bookmarkPending = false;
+  ProximitySource? _proximitySource;
 
   @override
   void initState() {
@@ -199,7 +209,28 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     _requestInfo();
     _loadAdminMode();
     _loadOccurrenceVerseMode();
+    final proximity = widget.proximity;
+    final id = widget.proximityId;
+    if (proximity != null && id != null) {
+      final source = ProximitySource(
+        id: id,
+        label: () => widget.word,
+        hits: _proximityHits,
+      );
+      _proximitySource = source;
+      proximity
+        ..register(source)
+        ..addListener(_onProximityChanged);
+    }
   }
+
+  void _onProximityChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// This word's filtered occurrences have changed, and with them any
+  /// proximity search it takes part in.
+  void _occurrenceFilterChanged() => widget.proximity?.changed();
 
   void _requestInfo() {
     _sub?.cancel();
@@ -313,6 +344,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           }
         });
         _occSub?.cancel();
+        _occurrenceFilterChanged();
       }
     });
     final request = GetWordOccurrences(
@@ -344,6 +376,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       _occRequested = false;
     });
     _occSub?.cancel();
+    _occurrenceFilterChanged();
     _requestInfo();
     _fetchOccurrences();
   }
@@ -460,6 +493,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           break;
       }
     });
+    _occurrenceFilterChanged();
   }
 
   /// The root the parse resolved to, which the sheet opens on.
@@ -559,6 +593,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     _sub?.cancel();
     _occSub?.cancel();
     _verseTexts.dispose();
+    final source = _proximitySource;
+    if (source != null) {
+      widget.proximity
+        ?..removeListener(_onProximityChanged)
+        ..unregister(source);
+    }
     super.dispose();
   }
 
@@ -1172,21 +1212,11 @@ class _WordInfoSheetState extends State<WordInfoSheet>
 
     final forms = _otForms;
 
-    bool passesForm(HebrewOccurrence o) =>
-        forms.isEmpty || forms.contains(o.surface);
-    bool passesParse(HebrewOccurrence o) => _otParse.entries.every(
-      (selection) =>
-          selection.value.isEmpty ||
-          selection.value.contains(selection.key.of(o)),
-    );
-    bool passesBook(HebrewOccurrence o) =>
-        _otBooks.isEmpty || _otBooks.contains(o.book);
-
     // Each filter's own inventory is counted over what the *other* filters
     // admit, so a number says what selecting that entry would actually yield.
     // The bar is counted here; the sheet counts forms and parses itself, since
     // those have to move as selections change inside it.
-    final inScope = all.where(passesBook).toList();
+    final inScope = all.where((o) => _passesOtBook(o.book)).toList();
     // Each scope replaces the form and parse filters but keeps the book one, so
     // its count is taken over the books in view: what tapping it would list.
     final exactForm = _exactFormKey();
@@ -1207,39 +1237,33 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       if (tappedParse != null) _FormScope.parse,
       _FormScope.all,
     ];
+    final matching = all.where(_passesOtFormAndParse).toList();
+    final proximity = _proximityResult(_mergeHebrewTokens(matching).verses);
     final bookCounts = <int, int>{};
-    for (final o in all.where((o) => passesForm(o) && passesParse(o))) {
-      bookCounts[o.book] = (bookCounts[o.book] ?? 0) + 1;
-    }
-
-    // Apply every filter, then merge tokens standing in the same verse so it
-    // appears once with all its matches highlighted.
-    final byVerse = <String, _VerseOccurrence>{};
-    var hits = 0;
-    for (final o in all) {
-      if (!passesForm(o) || !passesParse(o) || !passesBook(o)) continue;
-      hits++;
-      final key = '${o.book}:${o.chapter}:${o.verse}';
-      final existing = byVerse[key];
-      if (existing == null) {
-        byVerse[key] = _VerseOccurrence(
-          book: o.book,
-          chapter: o.chapter,
-          verse: o.verse,
-          words: [o.surface],
-          positions: [o.position],
-        );
-      } else {
-        if (!existing.words.contains(o.surface)) existing.words.add(o.surface);
-        existing.positions.add(o.position);
+    final List<_VerseOccurrence> verses;
+    final int hits;
+    if (proximity == null) {
+      for (final o in matching) {
+        bookCounts[o.book] = (bookCounts[o.book] ?? 0) + 1;
       }
+      // Apply every filter, then merge tokens standing in the same verse so it
+      // appears once with all its matches highlighted.
+      final merged = _mergeHebrewTokens(
+        matching.where((o) => _passesOtBook(o.book)),
+      );
+      verses = merged.verses;
+      hits = merged.hits;
+    } else {
+      // The distribution counts the combined results, and the book filter
+      // narrows them, as it narrows the word's own list.
+      for (final v in proximity.verses) {
+        bookCounts[v.book] = (bookCounts[v.book] ?? 0) + 1;
+      }
+      verses = _markPassageStarts(
+        proximity.verses.where((v) => _passesOtBook(v.book)).toList(),
+      );
+      hits = verses.length;
     }
-    final verses = byVerse.values.toList()
-      ..sort((a, b) {
-        if (a.book != b.book) return a.book.compareTo(b.book);
-        if (a.chapter != b.chapter) return a.chapter.compareTo(b.chapter);
-        return a.verse.compareTo(b.verse);
-      });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1291,12 +1315,15 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _occurrenceCountLabel(verses.length, hits),
+                      proximity == null
+                          ? _occurrenceCountLabel(verses.length, hits)
+                          : _proximityCountLabel(verses),
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ),
+                  if (_proximityAvailable) _proximityToggle(),
                   IconButton(
                     tooltip: 'Copy references',
                     icon: const Icon(Icons.copy_all_outlined, size: 20),
@@ -1324,6 +1351,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   ),
                 ],
               ),
+              if (proximity != null) _proximityControls(context),
               const SizedBox(height: 2),
               _CanonDistribution(
                 countsByBook: bookCounts,
@@ -1339,7 +1367,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           ),
         ),
         Expanded(
-          child: verses.isEmpty
+          child: proximity != null && verses.isEmpty
+              ? _proximityEmpty(context, proximity)
+              : verses.isEmpty
               ? Center(
                   child: Text(
                     'No occurrences match this filter',
@@ -1351,6 +1381,281 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               : _occurrenceVerseList(verses, bottomPad: bottomPad),
         ),
       ],
+    );
+  }
+
+  bool _passesOtFormAndParse(HebrewOccurrence o) =>
+      (_otForms.isEmpty || _otForms.contains(o.surface)) &&
+      _otParse.entries.every(
+        (selection) =>
+            selection.value.isEmpty ||
+            selection.value.contains(selection.key.of(o)),
+      );
+
+  bool _passesOtBook(int book) => _otBooks.isEmpty || _otBooks.contains(book);
+
+  /// Tokens merged by verse, in canonical order, so a verse appears once with
+  /// all its matches highlighted; [hits] counts the tokens.
+  ({List<_VerseOccurrence> verses, int hits}) _mergeHebrewTokens(
+    Iterable<HebrewOccurrence> tokens,
+  ) {
+    final byVerse = <String, _VerseOccurrence>{};
+    var hits = 0;
+    for (final o in tokens) {
+      hits++;
+      final key = '${o.book}:${o.chapter}:${o.verse}';
+      final existing = byVerse[key];
+      if (existing == null) {
+        byVerse[key] = _VerseOccurrence(
+          book: o.book,
+          chapter: o.chapter,
+          verse: o.verse,
+          words: [o.surface],
+          positions: [o.position],
+        );
+      } else {
+        if (!existing.words.contains(o.surface)) existing.words.add(o.surface);
+        existing.positions.add(o.position);
+      }
+    }
+    return (verses: _sortCanonically(byVerse.values.toList()), hits: hits);
+  }
+
+  static List<_VerseOccurrence> _sortCanonically(
+    List<_VerseOccurrence> verses,
+  ) => verses
+    ..sort((a, b) {
+      if (a.book != b.book) return a.book.compareTo(b.book);
+      if (a.chapter != b.chapter) return a.chapter.compareTo(b.chapter);
+      return a.verse.compareTo(b.verse);
+    });
+
+  /// The NT lexeme filter, defaulting to the looked-up lexeme until the
+  /// reader picks others. Empty means every lexeme.
+  Set<int> _effectiveLexemes() {
+    final selected = _selectedLexemes;
+    if (selected != null) return selected;
+    final current = _info?.sedraEntries.indexWhere((e) => e.isCurrent) ?? -1;
+    return {current >= 0 ? current : 0};
+  }
+
+  /// The NT list: the selected lexemes' verses, merged by verse, with the OT
+  /// cognate verses folded in when those are switched on.
+  List<_VerseOccurrence> _sedraVerses(WordOccurrences occ) {
+    final selected = _effectiveLexemes();
+    final byVerse = <String, _VerseOccurrence>{};
+    for (final o in occ.sedraOccurrences) {
+      if (selected.isNotEmpty && !selected.contains(o.lexemeIndex)) continue;
+      final key = '${o.book}:${o.chapter}:${o.verse}';
+      final existing = byVerse[key];
+      if (existing == null) {
+        byVerse[key] = _VerseOccurrence(
+          book: o.book,
+          chapter: o.chapter,
+          verse: o.verse,
+          words: [...o.words],
+        );
+      } else {
+        for (final w in o.words) {
+          if (!existing.words.contains(w)) existing.words.add(w);
+        }
+      }
+    }
+    // OT books (1–39) sort ahead of NT books (40–66), so the list reads in
+    // natural OT→NT order.
+    return _sortCanonically([
+      if (_otSelected)
+        for (final o in occ.otOccurrences)
+          _VerseOccurrence(
+            book: o.book,
+            chapter: o.chapter,
+            verse: o.verse,
+            words: const [],
+          ),
+      ...byVerse.values,
+    ]);
+  }
+
+  /// The verses this word contributes to a proximity search: what its own
+  /// list shows under its form, parse, or lexeme filters, before any book
+  /// filter. Null until the occurrences have loaded.
+  List<ProximityHit>? _proximityHits() {
+    final occ = _occ;
+    if (occ == null) return null;
+    final List<_VerseOccurrence> verses;
+    if (widget.syriac && occ.sedraOccurrences.isNotEmpty) {
+      verses = _sedraVerses(occ);
+    } else if (occ.hebrewOccurrences.isNotEmpty) {
+      verses = _mergeHebrewTokens(
+        occ.hebrewOccurrences.where(_passesOtFormAndParse),
+      ).verses;
+    } else {
+      verses = [
+        for (final o in occ.occurrences)
+          _VerseOccurrence(
+            book: o.book,
+            chapter: o.chapter,
+            verse: o.verse,
+            words: [widget.word],
+          ),
+      ];
+    }
+    return [for (final v in verses) v.toHit()];
+  }
+
+  /// A proximity search can only be offered with another word pane open.
+  bool get _proximityAvailable {
+    final proximity = widget.proximity;
+    final id = widget.proximityId;
+    return proximity != null &&
+        id != null &&
+        proximity.sources.any((source) => source.id != id);
+  }
+
+  /// The combined results when the proximity search is on: [own] (this
+  /// word's list) against every other included pane. Null when it is off.
+  _ProximityResult? _proximityResult(List<_VerseOccurrence> own) {
+    final proximity = widget.proximity;
+    if (proximity == null || !proximity.enabled || !_proximityAvailable) {
+      return null;
+    }
+    final others = [
+      for (final source in proximity.sources)
+        if (source.id != widget.proximityId && proximity.isIncluded(source.id))
+          source,
+    ];
+    if (others.isEmpty) return const _ProximityResult.noPartners();
+    final terms = [
+      [for (final v in own) v.toHit()],
+    ];
+    for (final source in others) {
+      final hits = source.hits();
+      if (hits == null) return const _ProximityResult.loading();
+      terms.add(hits);
+    }
+    return _ProximityResult([
+      for (final match in proximityMatches(terms, proximity.distance))
+        _VerseOccurrence(
+          book: match.book,
+          chapter: match.chapter,
+          verse: match.verse,
+          words: match.words,
+          positions: match.positions,
+          passage: match.passage,
+        ),
+    ]);
+  }
+
+  /// Marks where each passage of a verse-window or chapter search begins, so
+  /// the list separates them. Verses are passages of their own otherwise.
+  List<_VerseOccurrence> _markPassageStarts(List<_VerseOccurrence> verses) {
+    if (widget.proximity?.distance == ProximityDistance.sameVerse) {
+      return verses;
+    }
+    for (var i = 1; i < verses.length; i++) {
+      verses[i].passageStart = verses[i].passage != verses[i - 1].passage;
+    }
+    return verses;
+  }
+
+  String _proximityCountLabel(List<_VerseOccurrence> verses) {
+    final versePart = '${verses.length} verse${verses.length == 1 ? '' : 's'}';
+    if (widget.proximity?.distance == ProximityDistance.sameVerse) {
+      return versePart;
+    }
+    final passages = verses.map((v) => v.passage).toSet().length;
+    return '$passages passage${passages == 1 ? '' : 's'} · $versePart';
+  }
+
+  Widget _proximityToggle() {
+    final enabled = widget.proximity!.enabled;
+    return IconButton(
+      tooltip: enabled
+          ? 'Show only this word'
+          : 'Find passages with the other open words',
+      isSelected: enabled,
+      icon: const Icon(Icons.join_inner, size: 20),
+      onPressed: () => widget.proximity!.enabled = !enabled,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minHeight: 40),
+    );
+  }
+
+  /// Which open words take part, and how close they must stand. This word is
+  /// always part of its own search, so its chip is shown on but fixed.
+  Widget _proximityControls(BuildContext context) {
+    final theme = Theme.of(context);
+    final proximity = widget.proximity!;
+    const hebrew = TextStyle(
+      fontFamily: 'Cardo',
+      fontFamilyFallback: ['Noto Serif Hebrew'],
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 2),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          for (final source in proximity.sources)
+            FilterChip(
+              key: ValueKey('proximity-word-${source.id}'),
+              label: Text(
+                source.label(),
+                style: hebrew,
+                textDirection: TextDirection.rtl,
+              ),
+              selected:
+                  source.id == widget.proximityId ||
+                  proximity.isIncluded(source.id),
+              visualDensity: VisualDensity.compact,
+              tooltip: source.id == widget.proximityId
+                  ? 'This word'
+                  : proximity.isIncluded(source.id)
+                  ? 'Leave this word out'
+                  : 'Include this word',
+              onSelected: source.id == widget.proximityId
+                  ? null
+                  : (included) => proximity.setIncluded(source.id, included),
+            ),
+          DropdownButton<ProximityDistance>(
+            key: const ValueKey('proximity-distance'),
+            value: proximity.distance,
+            isDense: true,
+            underline: const SizedBox.shrink(),
+            style: theme.textTheme.labelLarge,
+            items: [
+              for (final distance in ProximityDistance.options)
+                DropdownMenuItem(value: distance, child: Text(distance.label)),
+            ],
+            onChanged: (distance) {
+              if (distance != null) proximity.distance = distance;
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _proximityEmpty(BuildContext context, _ProximityResult result) {
+    if (result.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          result.noPartners
+              ? 'Include another open word to find passages with it'
+              : 'These words never stand this close together',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
     );
   }
 
@@ -1434,14 +1739,17 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         occurrences: occurrences,
         selectedForms: _otForms,
         selectedParse: _otParse,
-        onChanged: (forms, parse) => setState(() {
-          _otForms
-            ..clear()
-            ..addAll(forms);
-          _otParse
-            ..clear()
-            ..addAll(parse);
-        }),
+        onChanged: (forms, parse) {
+          setState(() {
+            _otForms
+              ..clear()
+              ..addAll(forms);
+            _otParse
+              ..clear()
+              ..addAll(parse);
+          });
+          _occurrenceFilterChanged();
+        },
       ),
     );
   }
@@ -1453,10 +1761,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     double bottomPad,
   ) {
     // Lazily default the filter to the looked-up lexeme.
-    if (_selectedLexemes == null) {
-      final current = info.sedraEntries.indexWhere((e) => e.isCurrent);
-      _selectedLexemes = {current >= 0 ? current : 0};
-    }
+    _selectedLexemes ??= _effectiveLexemes();
     final selected = _selectedLexemes!;
     final showAll = selected.isEmpty;
 
@@ -1466,48 +1771,13 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       counts[o.lexemeIndex] = (counts[o.lexemeIndex] ?? 0) + 1;
     }
 
-    // Apply the filter, then merge rows that fall on the same verse so a verse
+    // Apply the filter, merging rows that fall on the same verse so a verse
     // appears once with all matched word forms highlighted.
-    final filtered = occ.sedraOccurrences.where(
-      (o) => showAll || selected.contains(o.lexemeIndex),
-    );
-    final byVerse = <String, _VerseOccurrence>{};
-    for (final o in filtered) {
-      final key = '${o.book}:${o.chapter}:${o.verse}';
-      final existing = byVerse[key];
-      if (existing == null) {
-        byVerse[key] = _VerseOccurrence(
-          book: o.book,
-          chapter: o.chapter,
-          verse: o.verse,
-          words: [...o.words],
-        );
-      } else {
-        for (final w in o.words) {
-          if (!existing.words.contains(w)) existing.words.add(w);
-        }
-      }
-    }
-    // When the OT filter is active, fold in the Hebrew-Bible occurrences of the
-    // same root alongside the NT (SEDRA) ones, then sort canonically. OT books
-    // (1–39) sort ahead of NT books (40–66), so the list reads in natural
-    // OT→NT order.
-    final verses = <_VerseOccurrence>[
-      if (_otSelected)
-        for (final o in occ.otOccurrences)
-          _VerseOccurrence(
-            book: o.book,
-            chapter: o.chapter,
-            verse: o.verse,
-            words: const [],
-          ),
-      ...byVerse.values,
-    ];
-    verses.sort((a, b) {
-      if (a.book != b.book) return a.book.compareTo(b.book);
-      if (a.chapter != b.chapter) return a.chapter.compareTo(b.chapter);
-      return a.verse.compareTo(b.verse);
-    });
+    final own = _sedraVerses(occ);
+    final proximity = _proximityResult(own);
+    final verses = proximity == null
+        ? own
+        : _markPassageStarts(proximity.verses);
 
     final theme = Theme.of(context);
 
@@ -1541,53 +1811,76 @@ class _WordInfoSheetState extends State<WordInfoSheet>
             ),
           ),
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: ActionChip(
-                        avatar: const Icon(Icons.filter_list, size: 18),
-                        label: Text(
-                          filterSummary,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontFamily: 'Cardo',
-                            fontFamilyFallback: ['Noto Serif Hebrew'],
+              Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: ActionChip(
+                            avatar: const Icon(Icons.filter_list, size: 18),
+                            label: Text(
+                              filterSummary,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'Cardo',
+                                fontFamilyFallback: ['Noto Serif Hebrew'],
+                              ),
+                            ),
+                            onPressed: () => _openLexemeFilterSheet(
+                              context,
+                              info,
+                              occ,
+                              counts,
+                            ),
                           ),
                         ),
-                        onPressed: () =>
-                            _openLexemeFilterSheet(context, info, occ, counts),
-                      ),
+                        const SizedBox(width: 12),
+                        Flexible(
+                          child: Text(
+                            proximity == null
+                                ? '${verses.length} verse'
+                                      '${verses.length == 1 ? '' : 's'}'
+                                : _proximityCountLabel(verses),
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '${verses.length} verse${verses.length == 1 ? '' : 's'}',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                  ),
+                  if (_proximityAvailable) _proximityToggle(),
+                  IconButton(
+                    tooltip: _occurrenceVerseEnglishOnly
+                        ? 'Show Hebrew verse text'
+                        : 'Show English-only verse text',
+                    icon: _VerseModeIcon(
+                      englishOnly: _occurrenceVerseEnglishOnly,
                     ),
-                  ],
-                ),
+                    onPressed: () {
+                      _setOccurrenceVerseMode(!_occurrenceVerseEnglishOnly);
+                    },
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    alignment: Alignment.centerRight,
+                    constraints: const BoxConstraints(minHeight: 40),
+                  ),
+                ],
               ),
-              IconButton(
-                tooltip: _occurrenceVerseEnglishOnly
-                    ? 'Show Hebrew verse text'
-                    : 'Show English-only verse text',
-                icon: _VerseModeIcon(englishOnly: _occurrenceVerseEnglishOnly),
-                onPressed: () {
-                  _setOccurrenceVerseMode(!_occurrenceVerseEnglishOnly);
-                },
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                alignment: Alignment.centerRight,
-                constraints: const BoxConstraints(minHeight: 40),
-              ),
+              if (proximity != null) _proximityControls(context),
             ],
           ),
         ),
-        Expanded(child: _occurrenceVerseList(verses, bottomPad: bottomPad)),
+        Expanded(
+          child: proximity != null && verses.isEmpty
+              ? _proximityEmpty(context, proximity)
+              : _occurrenceVerseList(verses, bottomPad: bottomPad),
+        ),
       ],
     );
   }
@@ -1617,6 +1910,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
             void apply(VoidCallback fn) {
               setState(fn);
               setSheetState(() {});
+              _occurrenceFilterChanged();
             }
 
             return SafeArea(
@@ -1735,8 +2029,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     final bookName = bookIndex >= 0 && bookIndex < kBooks.length
         ? bookDisplayName(bookIndex, useEnglish: widget.useEnglishBookNames)
         : 'Book ${v.book}';
-    return _OccurrenceRow(
-      key: ValueKey('${v.book}:${v.chapter}:${v.verse}'),
+    final key = ValueKey('${v.book}:${v.chapter}:${v.verse}');
+    final row = _OccurrenceRow(
+      key: v.passageStart ? null : key,
       cache: _verseTexts,
       displayRef: '$bookName ${v.chapter}:${v.verse}',
       bookIndex: bookIndex,
@@ -1750,6 +2045,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       onTap: widget.onNavigateToPassage == null
           ? null
           : () => widget.onNavigateToPassage!(bookIndex, v.chapter, v.verse),
+    );
+    if (!v.passageStart) return row;
+    return Column(
+      key: key,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [const Divider(height: 17), row],
     );
   }
 
@@ -1911,6 +2212,27 @@ enum _ParseDimension {
   };
 }
 
+/// A proximity search's combined verses, or why there are none yet.
+class _ProximityResult {
+  const _ProximityResult(this.verses) : loading = false, noPartners = false;
+
+  /// Another included word's occurrences are still loading.
+  const _ProximityResult.loading()
+    : verses = const [],
+      loading = true,
+      noPartners = false;
+
+  /// Every other open word has been left out.
+  const _ProximityResult.noPartners()
+    : verses = const [],
+      loading = false,
+      noPartners = true;
+
+  final List<_VerseOccurrence> verses;
+  final bool loading;
+  final bool noPartners;
+}
+
 /// One verse of an occurrence list, with everything matched inside it.
 class _VerseOccurrence {
   _VerseOccurrence({
@@ -1919,11 +2241,27 @@ class _VerseOccurrence {
     required this.verse,
     required this.words,
     List<int>? positions,
+    this.passage = 0,
   }) : positions = positions ?? [];
 
   final int book;
   final int chapter;
   final int verse;
+
+  /// Which passage of a proximity search the verse belongs to.
+  final int passage;
+
+  /// Whether a separator goes above this verse, where a new passage of a
+  /// verse-window or chapter proximity search begins.
+  bool passageStart = false;
+
+  ProximityHit toHit() => ProximityHit(
+    book: book,
+    chapter: chapter,
+    verse: verse,
+    words: words,
+    positions: positions,
+  );
 
   /// The surface forms matched here. Used to highlight by text where no
   /// positions are known.

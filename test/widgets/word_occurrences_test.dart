@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/widgets/word_info_sheet.dart';
+import 'package:haqor/src/word_proximity.dart';
 
 /// The verse text every occurrence row is answered with. Six lexical words; the
 /// third one repeats the second so a test can tell position-exact highlighting
@@ -136,6 +137,7 @@ Future<_FakeRust> _pumpOccurrences(
   ({int book, int chapter, int verse})? at,
   int? position,
   String word = 'בָּרָא',
+  WordProximity? proximity,
 }) async {
   SharedPreferences.setMockInitialValues({
     'occurrence_verse_english_only': false,
@@ -154,6 +156,8 @@ Future<_FakeRust> _pumpOccurrences(
             verse: at?.verse,
             position: position,
             useEnglishBookNames: true,
+            proximity: proximity,
+            proximityId: proximity == null ? null : 'self',
             sendInfoRequest: rust.onInfoRequest,
             sendOccurrencesRequest: rust.onOccurrencesRequest,
             sendVerseTextsRequest: rust.onVerseTextsRequest,
@@ -716,5 +720,96 @@ void main() {
     await tester.tap(find.byTooltip('Copy references'));
     await tester.pumpAndSettle();
     expect(copied, ['Genesis 1:1\nGenesis 2:3']);
+  });
+
+  testWidgets('proximity finds verses shared with the other open words', (
+    tester,
+  ) async {
+    _useTallWindow(tester);
+    final proximity = WordProximity();
+    addTearDown(proximity.dispose);
+    // Another open pane, whose word stands in Genesis 1:1, 1:3 and 3:1.
+    proximity.register(
+      ProximitySource(
+        id: 'other',
+        label: () => 'אֱלֹהִים',
+        hits: () => const [
+          ProximityHit(book: 1, chapter: 1, verse: 1, positions: [2]),
+          ProximityHit(book: 1, chapter: 1, verse: 3, positions: [2]),
+          ProximityHit(book: 1, chapter: 3, verse: 1, positions: [2]),
+        ],
+      ),
+    );
+    final rust = await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1),
+      _occurrence(book: 1, chapter: 1, verse: 5),
+      _occurrence(book: 1, chapter: 2, verse: 3),
+    ], proximity: proximity);
+    expect(_visibleRefs(tester), ['Genesis 1:1', 'Genesis 1:5', 'Genesis 2:3']);
+
+    await tester.tap(find.byTooltip('Find passages with the other open words'));
+    await tester.pumpAndSettle();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    // Same verse by default, and every open word included.
+    expect(find.text('Same verse'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilterChip>(
+            find.byKey(const ValueKey('proximity-word-other')),
+          )
+          .selected,
+      isTrue,
+    );
+    expect(_visibleRefs(tester), ['Genesis 1:1']);
+    expect(find.text('1 verse'), findsOneWidget);
+
+    // Both words highlight in the shared verse.
+    final text = tester
+        .widget<SelectableText>(find.byType(SelectableText))
+        .textSpan!;
+    final highlighted = [
+      for (final span in text.children!.whereType<TextSpan>())
+        if (span.style?.backgroundColor != null) span.text,
+    ];
+    expect(highlighted, ['בָּרָא', 'בָּרָא']);
+
+    await tester.tap(find.byKey(const ValueKey('proximity-distance')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Within 2 verses').last);
+    await tester.pumpAndSettle();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    expect(_visibleRefs(tester), ['Genesis 1:1', 'Genesis 1:3', 'Genesis 1:5']);
+    expect(find.text('1 passage · 3 verses'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('proximity-word-other')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Include another open word to find passages with it'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byTooltip('Show only this word'));
+    await tester.pumpAndSettle();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    expect(_visibleRefs(tester), ['Genesis 1:1', 'Genesis 1:5', 'Genesis 2:3']);
+  });
+
+  testWidgets('proximity is only offered with another word open', (
+    tester,
+  ) async {
+    final proximity = WordProximity();
+    addTearDown(proximity.dispose);
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1),
+    ], proximity: proximity);
+
+    expect(
+      find.byTooltip('Find passages with the other open words'),
+      findsNothing,
+    );
+    expect(proximity.sources.single.id, 'self');
   });
 }
