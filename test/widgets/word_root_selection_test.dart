@@ -419,6 +419,15 @@ void main() {
     // verses one tap away.
     expect(find.text('Filter'), findsOneWidget);
     expect(find.text('1 verse'), findsOneWidget);
-    expect(find.text('All forms (2)'), findsOneWidget);
+    expect(find.text('All forms'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find
+            .ancestor(of: find.text('All forms'), matching: find.byType(Column))
+            .first,
+        matching: find.text('2'),
+      ),
+      findsOneWidget,
+    );
   });
 }

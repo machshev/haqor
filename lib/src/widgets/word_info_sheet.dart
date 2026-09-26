@@ -153,8 +153,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   // OT-only: which surface forms of the root are shown in the occurrences list.
   // Empty means "every form". The tab starts on the tapped word's own form
   // (see [_exactFormKey]) when the root's list holds it, and the header's
-  // Exact match / All forms toggle moves between the two in one tap; the
-  // filter sheet widens or narrows from either.
+  // scope toggle (see [_FormScope]) moves between that, the tapped token's
+  // parse and every form in one tap; the filter sheet widens or narrows from
+  // any of them.
   final Set<String> _otForms = {};
   // OT-only: the parse filter, one selection per morphology dimension. A
   // dimension with no selection admits everything; within a dimension the
@@ -307,7 +308,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         setState(() {
           _occ = pack.message;
           final exact = _exactFormKey();
-          if (exact != null && _otForms.isEmpty) _otForms.add(exact);
+          if (exact != null && _otForms.isEmpty && _otParse.isEmpty) {
+            _otForms.add(exact);
+          }
         });
         _occSub?.cancel();
       }
@@ -353,6 +356,110 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     final key = hebrewSurfaceKey(widget.word);
     final all = _occ?.hebrewOccurrences ?? const <HebrewOccurrence>[];
     return all.any((o) => o.surface == key) ? key : null;
+  }
+
+  /// The tapped token's own morphology, one value per dimension it carries —
+  /// what the Same parse scope sets as the parse filter.
+  ///
+  /// Read from the token's occurrence row when the reader said where it stands,
+  /// so an ambiguous spelling gives the analysis of *this* token. Without a
+  /// location the surface's most common analysis stands in. Null when neither
+  /// is there, or the token carries no parse at all.
+  Map<_ParseDimension, String>? _tappedParse() {
+    final key = hebrewSurfaceKey(widget.word);
+    final own = [
+      for (final o in _occ?.hebrewOccurrences ?? const <HebrewOccurrence>[])
+        if (o.surface == key) o,
+    ];
+    HebrewOccurrence? token;
+    if (widget.position != null) {
+      for (final o in own) {
+        if (o.book == widget.book &&
+            o.chapter == widget.chapter &&
+            o.verse == widget.verse &&
+            o.position == widget.position) {
+          token = o;
+          break;
+        }
+      }
+    }
+    if (token == null) {
+      final counts = <String, int>{};
+      final byParse = <String, HebrewOccurrence>{};
+      for (final o in own) {
+        final signature = [
+          for (final dimension in _ParseDimension.values) dimension.of(o),
+        ].join('|');
+        counts[signature] = (counts[signature] ?? 0) + 1;
+        byParse.putIfAbsent(signature, () => o);
+      }
+      String? best;
+      for (final entry in counts.entries) {
+        if (best == null || entry.value > counts[best]!) best = entry.key;
+      }
+      token = best == null ? null : byParse[best];
+    }
+    if (token == null) return null;
+    final parse = {
+      for (final dimension in _ParseDimension.values)
+        if (dimension.of(token).isNotEmpty) dimension: dimension.of(token),
+    };
+    return parse.isEmpty ? null : parse;
+  }
+
+  /// Which scope the form and parse filters currently amount to, or null when
+  /// the filter sheet has cut some other way. A dimension released back to
+  /// "Any" leaves an empty selection behind, which admits everything and so
+  /// counts as no selection.
+  _FormScope? _currentScope(
+    String? exactForm,
+    Map<_ParseDimension, String>? tappedParse,
+  ) {
+    final parse = {
+      for (final entry in _otParse.entries)
+        if (entry.value.isNotEmpty) entry.key: entry.value,
+    };
+    if (_otForms.isEmpty && parse.isEmpty) return _FormScope.all;
+    if (exactForm != null &&
+        parse.isEmpty &&
+        _otForms.length == 1 &&
+        _otForms.contains(exactForm)) {
+      return _FormScope.exact;
+    }
+    if (tappedParse != null &&
+        _otForms.isEmpty &&
+        parse.length == tappedParse.length &&
+        tappedParse.entries.every(
+          (entry) =>
+              parse[entry.key]?.length == 1 &&
+              parse[entry.key]!.contains(entry.value),
+        )) {
+      return _FormScope.parse;
+    }
+    return null;
+  }
+
+  /// Replace the form and parse filters with [scope]; the book filter is a
+  /// separate cut and stays.
+  void _applyScope(
+    _FormScope scope,
+    String? exactForm,
+    Map<_ParseDimension, String>? tappedParse,
+  ) {
+    setState(() {
+      _otForms.clear();
+      _otParse.clear();
+      switch (scope) {
+        case _FormScope.exact:
+          if (exactForm != null) _otForms.add(exactForm);
+        case _FormScope.parse:
+          tappedParse?.forEach((dimension, value) {
+            _otParse[dimension] = {value};
+          });
+        case _FormScope.all:
+          break;
+      }
+    });
   }
 
   /// The root the parse resolved to, which the sheet opens on.
@@ -1080,16 +1187,26 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     // The bar is counted here; the sheet counts forms and parses itself, since
     // those have to move as selections change inside it.
     final inScope = all.where(passesBook).toList();
-    // The toggle's counts follow the parse and book filters, so each segment
-    // says what tapping it would list.
+    // Each scope replaces the form and parse filters but keeps the book one, so
+    // its count is taken over the books in view: what tapping it would list.
     final exactForm = _exactFormKey();
-    var exactCount = 0;
-    var allCount = 0;
+    final tappedParse = _tappedParse();
+    final scopeCounts = {for (final scope in _FormScope.values) scope: 0};
     for (final o in inScope) {
-      if (!passesParse(o)) continue;
-      allCount++;
-      if (o.surface == exactForm) exactCount++;
+      scopeCounts[_FormScope.all] = scopeCounts[_FormScope.all]! + 1;
+      if (o.surface == exactForm) {
+        scopeCounts[_FormScope.exact] = scopeCounts[_FormScope.exact]! + 1;
+      }
+      if (tappedParse != null &&
+          tappedParse.entries.every((e) => e.key.of(o) == e.value)) {
+        scopeCounts[_FormScope.parse] = scopeCounts[_FormScope.parse]! + 1;
+      }
     }
+    final scopes = [
+      if (exactForm != null) _FormScope.exact,
+      if (tappedParse != null) _FormScope.parse,
+      _FormScope.all,
+    ];
     final bookCounts = <int, int>{};
     for (final o in all.where((o) => passesForm(o) && passesParse(o))) {
       bookCounts[o.book] = (bookCounts[o.book] ?? 0) + 1;
@@ -1140,23 +1257,18 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (exactForm != null)
+              // "All forms" alone would be no choice at all.
+              if (scopes.length > 1)
                 Padding(
                   padding: const EdgeInsets.only(top: 4, bottom: 2),
                   child: _FormScopeToggle(
-                    // Neither segment is lit when the filter sheet picked some
-                    // other set of forms; either tap replaces that choice.
-                    exact: forms.length == 1 && forms.contains(exactForm)
-                        ? true
-                        : forms.isEmpty
-                        ? false
-                        : null,
-                    exactCount: exactCount,
-                    allCount: allCount,
-                    onChanged: (exact) => setState(() {
-                      _otForms.clear();
-                      if (exact) _otForms.add(exactForm);
-                    }),
+                    scopes: scopes,
+                    // No segment is lit when the filter sheet has cut some
+                    // other way; any tap replaces that choice.
+                    selected: _currentScope(exactForm, tappedParse),
+                    counts: scopeCounts,
+                    onChanged: (scope) =>
+                        _applyScope(scope, exactForm, tappedParse),
                   ),
                 ),
               Row(
@@ -1824,33 +1936,67 @@ class _VerseOccurrence {
   final List<int> positions;
 }
 
-/// The Occurrences tab's one-tap scope switch: the tapped word's exact surface
-/// form, or every form of its root. [exact] is null when the filter sheet has
-/// chosen some other set of forms, which neither segment describes.
+/// The Occurrences tab's one-tap scopes, from narrowest to widest. Each sets
+/// the form and parse filters outright, so the filter sheet can then release
+/// what it does not need — Same parse is the usual start for that, since
+/// dropping one dimension ("any person") broadens along the grammar.
+enum _FormScope {
+  /// The tapped word's own surface form.
+  exact('Exact'),
+
+  /// Every form of the root carrying the tapped token's parse, as one parse
+  /// filter selection per dimension.
+  parse('Same parse'),
+
+  /// Every form of the root.
+  all('All forms');
+
+  const _FormScope(this.label);
+
+  final String label;
+}
+
+/// The segmented switch between the [_FormScope]s on offer. [selected] is null
+/// when the filters match none of them.
 class _FormScopeToggle extends StatelessWidget {
   const _FormScopeToggle({
-    required this.exact,
-    required this.exactCount,
-    required this.allCount,
+    required this.scopes,
+    required this.selected,
+    required this.counts,
     required this.onChanged,
   });
 
-  final bool? exact;
-  final int exactCount;
-  final int allCount;
-  final ValueChanged<bool> onChanged;
+  final List<_FormScope> scopes;
+  final _FormScope? selected;
+  final Map<_FormScope, int> counts;
+  final ValueChanged<_FormScope> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return SegmentedButton<bool>(
+    final countStyle = Theme.of(context).textTheme.labelSmall;
+    // Name over count: three segments with the count inline do not fit a
+    // phone's width.
+    return SegmentedButton<_FormScope>(
       segments: [
-        ButtonSegment(value: true, label: Text('Exact match ($exactCount)')),
-        ButtonSegment(value: false, label: Text('All forms ($allCount)')),
+        for (final scope in scopes)
+          ButtonSegment(
+            value: scope,
+            label: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(scope.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text('${counts[scope] ?? 0}', maxLines: 1, style: countStyle),
+              ],
+            ),
+          ),
       ],
-      selected: {?exact},
+      selected: {?selected},
       emptySelectionAllowed: true,
       showSelectedIcon: false,
-      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+      style: const ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 6)),
+      ),
       onSelectionChanged: (selection) {
         // Tapping the lit segment would empty the selection; keep it instead.
         if (selection.isNotEmpty) onChanged(selection.first);

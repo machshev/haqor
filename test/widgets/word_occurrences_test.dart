@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -133,6 +134,7 @@ Future<_FakeRust> _pumpOccurrences(
   WidgetTester tester,
   List<HebrewOccurrence> occurrences, {
   ({int book, int chapter, int verse})? at,
+  int? position,
   String word = 'בָּרָא',
 }) async {
   SharedPreferences.setMockInitialValues({
@@ -150,6 +152,7 @@ Future<_FakeRust> _pumpOccurrences(
             book: at?.book,
             chapter: at?.chapter,
             verse: at?.verse,
+            position: position,
             useEnglishBookNames: true,
             sendInfoRequest: rust.onInfoRequest,
             sendOccurrencesRequest: rust.onOccurrencesRequest,
@@ -175,9 +178,24 @@ Future<_FakeRust> _pumpOccurrences(
 /// Widen the list from the tapped word's exact form, where the tab opens, to
 /// every form of the root.
 Future<void> _showAllForms(WidgetTester tester) async {
-  await tester.tap(find.textContaining('All forms ('));
+  await tester.tap(find.text('All forms'));
   await tester.pumpAndSettle();
 }
+
+/// The count shown under the scope segment named [label].
+String _scopeCount(WidgetTester tester, String label) {
+  final segment = find
+      .ancestor(of: find.text(label), matching: find.byType(Column))
+      .first;
+  final texts = tester.widgetList<Text>(
+    find.descendant(of: segment, matching: find.byType(Text)),
+  );
+  return texts.last.data!;
+}
+
+/// The header's scope toggle. Its value type is private to the sheet, so it
+/// is found by kind.
+final _scopeToggle = find.byWidgetPredicate((w) => w is SegmentedButton);
 
 /// Give the test a tall window, so a filter sheet with seven morphology groups
 /// has them all on screen at once. The sheet scrolls on a real phone; these
@@ -407,14 +425,14 @@ void main() {
       _occurrence(book: 1, chapter: 3, verse: 1),
     ]);
     // The tapped word's own surface form first.
-    expect(find.text('Exact match (2)'), findsOneWidget);
+    expect(_scopeCount(tester, 'Exact'), '2');
     expect(find.text('2 verses'), findsOneWidget);
 
     await _showAllForms(tester);
     expect(find.text('All occurrences'), findsOneWidget);
     expect(find.text('3 verses'), findsOneWidget);
 
-    await tester.tap(find.text('Exact match (2)'));
+    await tester.tap(find.text('Exact'));
     await tester.pumpAndSettle();
     expect(find.text('2 verses'), findsOneWidget);
   });
@@ -436,9 +454,7 @@ void main() {
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
 
-    final toggle = tester.widget<SegmentedButton<bool>>(
-      find.byType(SegmentedButton<bool>),
-    );
+    final toggle = tester.widget<SegmentedButton<Object>>(_scopeToggle);
     expect(toggle.selected, isEmpty);
     expect(find.text('1 verse'), findsOneWidget);
   });
@@ -449,8 +465,106 @@ void main() {
     await _pumpOccurrences(tester, [
       _occurrence(book: 1, chapter: 1, verse: 1, surface: 'וַיִּבְרָא'),
     ]);
-    expect(find.byType(SegmentedButton<bool>), findsNothing);
+    expect(_scopeToggle, findsNothing);
     expect(find.text('All occurrences'), findsOneWidget);
+  });
+
+  testWidgets('same parse matches the tapped token, across forms', (
+    tester,
+  ) async {
+    _useTallWindow(tester);
+    await _pumpOccurrences(
+      tester,
+      [
+        // The tapped token. The same spelling also stands elsewhere under
+        // another analysis, which must not be the one taken.
+        _occurrence(book: 1, chapter: 1, verse: 1, position: 2),
+        _occurrence(book: 1, chapter: 5, verse: 1, stem: 'Niphal'),
+        // Another spelling with the tapped token's parse.
+        _occurrence(book: 1, chapter: 2, verse: 1, surface: 'וּבָרָא'),
+        // Another spelling, plural: out until number is released.
+        _occurrence(
+          book: 1,
+          chapter: 3,
+          verse: 1,
+          surface: 'בָּרְאוּ',
+          number: 'Plural',
+        ),
+      ],
+      at: (book: 1, chapter: 1, verse: 1),
+      position: 2,
+    );
+
+    expect(_scopeCount(tester, 'Same parse'), '2');
+    await tester.tap(find.text('Same parse'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 verses'), findsOneWidget);
+    expect(
+      tester.widget<SegmentedButton<Object>>(_scopeToggle).selected,
+      hasLength(1),
+    );
+
+    // Broaden one dimension in the sheet: the rest of the parse still holds.
+    await tester.tap(find.byType(ActionChip));
+    await tester.pumpAndSettle();
+    final numberHeading = find
+        .ancestor(of: find.text('NUMBER'), matching: find.byType(Row))
+        .first;
+    await tester.tap(
+      find.descendant(of: numberHeading, matching: find.text('Any')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('3 verses'), findsOneWidget);
+    // With number released the filter is no longer the tapped token's parse.
+    expect(
+      tester.widget<SegmentedButton<Object>>(_scopeToggle).selected,
+      isEmpty,
+    );
+  });
+
+  testWidgets('without a location, same parse takes the commonest analysis', (
+    tester,
+  ) async {
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1, stem: 'Niphal'),
+      _occurrence(book: 1, chapter: 2, verse: 1),
+      _occurrence(book: 1, chapter: 3, verse: 1),
+      _occurrence(book: 1, chapter: 4, verse: 1, surface: 'וּבָרָא'),
+    ]);
+    // The two Qal tokens outvote the Niphal, and the other spelling joins them.
+    expect(_scopeCount(tester, 'Same parse'), '3');
+  });
+
+  testWidgets('the scope toggle fits a phone', (tester) async {
+    tester.view.physicalSize = const Size(360, 700);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await _pumpOccurrences(tester, [
+      for (var i = 0; i < 1200; i++)
+        _occurrence(
+          book: 1 + i ~/ 100,
+          chapter: 1 + i % 100 ~/ 10,
+          verse: 1 + i % 10,
+          surface: i.isEven ? 'בָּרָא' : 'וּבָרָא',
+        ),
+    ]);
+    expect(_scopeCount(tester, 'Exact'), '600');
+    expect(_scopeCount(tester, 'Same parse'), '1200');
+    expect(_scopeCount(tester, 'All forms'), '1200');
+    expect(tester.takeException(), isNull);
+    // The counts grow with the corpus, so they are what must not be cut. The
+    // scope names are not measured: the test font's square glyphs are far
+    // wider than a real font's.
+    for (final count in const ['600', '1200']) {
+      for (final paragraph in tester.renderObjectList<RenderParagraph>(
+        find.descendant(of: find.text(count), matching: find.byType(RichText)),
+      )) {
+        expect(paragraph.didExceedMaxLines, isFalse, reason: '$count is cut');
+      }
+    }
   });
 
   testWidgets('the filter sheet offers parse before form', (tester) async {
@@ -464,7 +578,13 @@ void main() {
     final tabs = tester.widget<TabBar>(find.byType(TabBar).last);
     expect([for (final tab in tabs.tabs) (tab as Tab).text], ['Parse', 'Form']);
     // The parse tab is the one on screen, not the form list.
-    expect(find.text('All forms'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text('All forms'),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('the parse tab groups morphology by dimension', (tester) async {
