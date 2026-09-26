@@ -637,6 +637,7 @@ void linkTileTests() {
     );
 
     expect(find.text('Strong match · Emmanuel'), findsOneWidget);
+    expect(find.textContaining('Bookmark a passage or word'), findsNothing);
     await tester.tap(find.text('Isaiah 7:14'));
     await tester.tap(find.text('Matthew 1:23'));
     expect(opened, [link.ot, link.nt]);

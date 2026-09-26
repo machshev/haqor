@@ -988,7 +988,8 @@ class StudyWorkspacePanel extends StatelessWidget {
                         if (workspace.groups.isEmpty &&
                             workspace.passages.isEmpty &&
                             workspace.words.isEmpty &&
-                            workspace.notes.isEmpty)
+                            workspace.notes.isEmpty &&
+                            workspace.links.isEmpty)
                           const _SectionEmpty(
                             text:
                                 'Bookmark a passage or word, or create a group '
