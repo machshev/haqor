@@ -525,6 +525,15 @@ pub struct SubmitReview {
     pub correct: u8,
 }
 
+/// Lapse each of `words` on the word track ("Again"), as one `SubmitReview`
+/// per word would, but answer with a single `StudyItem`: the card after the
+/// last of them. Flagging several misread words in a verse then moves the
+/// learner on once, rather than flashing through a card per word.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SubmitMisreads {
+    pub words: Vec<String>,
+}
+
 /// Wipe all tutor progress (a dev/settings action).
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct ResetTutor {}
@@ -696,6 +705,11 @@ pub struct VerseCard {
     /// Aligned with `words`: true where the word is a proper name, so the
     /// verse view can render names distinctly (sounded out, not translated).
     pub names: Vec<bool>,
+    /// The verse's pointed text and its transliteration, sent with the card so
+    /// the verse shows without a second round-trip. Empty when it could not be
+    /// read, and the app then asks for it with `GetVerseText`.
+    pub text: String,
+    pub translit: String,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]

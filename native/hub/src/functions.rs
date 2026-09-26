@@ -10,9 +10,9 @@ use crate::signals::{
     OptimizeTutorGlossOverrides, ProgressSyncStatus, ResetTutor, RootChoice, SaveIssueReport,
     SaveLexiconEntryOverride, SaveStudyState, SaveTutorGloss, SedraOccurrence, SedraSummary,
     SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, StudyState,
-    SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings,
-    TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry,
-    VocabList, WordCard, WordInfo, WordOccurrence, WordOccurrences,
+    SubmitMisreads, SubmitReview, SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress,
+    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry,
+    VerseTexts, VocabEntry, VocabList, WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -1219,7 +1219,17 @@ fn to_signal_study_item(bible: &Bible, item: tutor::StudyItem) -> StudyItem {
         }
         tutor::StudyItem::ReadVerse(v) => {
             out.kind = "read_verse".into();
+            // Sent with the card, as `get_verse_text` would answer it, so the
+            // verse is on screen with the card rather than a round-trip later.
+            let text = bible.get(v.book, v.chapter, v.verse).unwrap_or_default();
+            let translit = if text.is_empty() {
+                String::new()
+            } else {
+                haqor_core::romanize::romanize(&text)
+            };
             out.verse = Some(VerseCard {
+                text,
+                translit,
                 book: v.book,
                 chapter: v.chapter,
                 verse: v.verse,
@@ -1276,6 +1286,38 @@ pub async fn submit_review(bible: SharedBible) {
         match bible.submit_review(track, &req.key, grade, now_epoch()) {
             Ok(item) => to_signal_study_item(&bible, item).send_signal_to_dart(),
             Err(e) => debug_print!("submit_review error: {:?}", e),
+        }
+    }
+}
+
+/// Lapse every misread word of a verse, then answer with the one card that
+/// follows the last of them (see [`SubmitMisreads`]).
+pub async fn submit_misreads(bible: SharedBible) {
+    let receiver = SubmitMisreads::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let bible = lock(&bible);
+        let grade = Grade::from_confidence(0, None);
+        let mut next = None;
+        for word in &req.words {
+            match bible.submit_review(Track::Word, word, grade, now_epoch()) {
+                Ok(item) => next = Some(item),
+                Err(e) => debug_print!("submit_misreads error: {:?}", e),
+            }
+        }
+        // With nothing flagged (or every review failing) the learner still
+        // expects to move on.
+        let next = match next {
+            Some(item) => Ok(item),
+            None => bible.next_study_item(now_epoch()),
+        };
+        match next {
+            Ok(item) => {
+                persist_browser_progress(&bible);
+                to_signal_study_item(&bible, item).send_signal_to_dart()
+            }
+            Err(e) => debug_print!("submit_misreads error: {:?}", e),
         }
     }
 }

@@ -18,8 +18,8 @@ use functions::{
     get_study_state, get_tutor_gloss_override_stats, get_tutor_settings, get_tutor_stats,
     get_verse_text, get_verse_texts, get_vocab, get_word_info, get_word_occurrences,
     optimize_tutor_gloss_overrides, reset_tutor, save_issue_report, save_lexicon_entry_override,
-    save_study_state, save_tutor_gloss, set_alphabet_known, set_tutor_settings, submit_review,
-    sync_progress,
+    save_study_state, save_tutor_gloss, set_alphabet_known, set_tutor_settings, submit_misreads,
+    submit_review, sync_progress,
 };
 use signals::SetDataDir;
 
@@ -115,6 +115,7 @@ async fn main() {
     spawn(get_word_occurrences(bible.clone()));
     spawn(get_next_study_item(bible.clone()));
     spawn(submit_review(bible.clone()));
+    spawn(submit_misreads(bible.clone()));
     spawn(reset_tutor(bible.clone()));
     spawn(get_tutor_stats(bible.clone()));
     spawn(get_seen_concepts(bible.clone()));

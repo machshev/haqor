@@ -255,14 +255,17 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   /// instead of gating the whole verse on one blanket grade — flagging a
   /// shared word can re-lock other verses that depend on it too. With
   /// nothing flagged, just move on.
+  ///
+  /// The words go in one request answered by one card: a review per word
+  /// would bring a card per word, flashing past before the last one settles.
   void _submitMisread(List<String> words) {
     if (words.isEmpty) {
       _next();
       return;
     }
-    for (final w in words) {
-      _grade(_wordTrack, w, 0, _notQuiz);
-    }
+    setState(() => _waitingForNext = true);
+    SubmitMisreads(words: words).sendSignalToRust();
+    scheduleProgressSync();
   }
 
   void _showStats() => showModalBottomSheet<void>(
@@ -2080,15 +2083,25 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
   }
 
   void _load(int book, int chapter, int verse) {
+    // The card brings its own verse's text, so it shows with the card; only
+    // the example verses, or a card whose text could not be read, need a
+    // round-trip.
+    final card = widget.card;
+    final own =
+        book == card.book &&
+        chapter == card.chapter &&
+        verse == card.verse &&
+        card.text.isNotEmpty;
     setState(() {
       _book = book;
       _chapter = chapter;
       _verse = verse;
-      _text = null;
-      _translit = '';
+      _text = own ? card.text : null;
+      _translit = own ? card.translit : '';
       _readOk = null;
       _misread.clear();
     });
+    if (own) return;
     GetVerseText(
       book: book,
       chapter: chapter,
