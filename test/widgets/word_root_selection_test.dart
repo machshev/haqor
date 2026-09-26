@@ -48,6 +48,8 @@ class _FakeRust {
             gloss: selected == 'אלה' ? 'god' : 'help; succour',
             contentJson: '{"senses":[{"definition":[{"t":"A divine being"}]}]}',
             posCategory: 'noun',
+            source: 'bdb',
+            lang: '',
           ),
         ],
         sedraEntries: const [],

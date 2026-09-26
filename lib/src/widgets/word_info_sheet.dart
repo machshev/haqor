@@ -14,6 +14,7 @@ import '../surface.dart';
 import '../study_workspace.dart';
 import '../tutor/progress_sync.dart';
 import '../word_proximity.dart';
+import 'lexicon_source.dart';
 import 'verse_row.dart' show verseGlossPositions;
 import 'verse_text_cache.dart';
 
@@ -619,6 +620,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
             'headword': entry.headword,
             'gloss': entry.gloss,
             'posCategory': entry.posCategory,
+            'source': entry.source,
           },
       ],
       'sedraEntries': [
@@ -1035,11 +1037,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   ) {
     final theme = Theme.of(context);
 
-    // One collapsible BDB lexeme row. The original list index keys its
-    // expansion state, so it stays stable when the list is split into the
-    // part-of-speech groups below.
+    // One collapsible lexicon entry row, badged with the lexicon it comes
+    // from. The original list index keys its expansion state, so it stays
+    // stable when the list is split into the part-of-speech groups below.
     Widget buildBdbRow(int i, BdbSummary e) {
       final expanded = _expandedBdb.contains(i);
+      final lang = LexiconPeriodLabel.of(e.lang);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1062,6 +1065,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                     size: 18,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
+                  const SizedBox(width: 6),
+                  LexiconSourceBadge(source: e.source),
+                  if (lang != null) ...[const SizedBox(width: 4), lang],
                   if (e.gloss.isNotEmpty) ...[
                     const SizedBox(width: 8),
                     Expanded(
@@ -1073,7 +1079,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   TextButton(
                     onPressed: e.headword.isEmpty
                         ? null
-                        : () => _openWordInfo(e.headword),
+                        : () =>
+                              _openWordInfo(_withoutHomographMark(e.headword)),
                     child: Text(
                       _normalizeHebrewCombining(e.headword),
                       style: TextStyle(
@@ -3665,31 +3672,53 @@ class _BdbContent extends StatelessWidget {
   // Decoded entries, most recently shown last. A large entry (אמר, עשׂה) is
   // tens of kilobytes of JSON, and the sheet rebuilds every expanded entry on
   // each change anywhere in it, so each is decoded once and kept.
-  static final Map<String, List<dynamic>?> _decoded = {};
+  static final Map<String, Map<String, dynamic>?> _decoded = {};
   static const _decodedLimit = 32;
 
-  /// The entry's senses, or null when its JSON is unreadable.
-  static List<dynamic>? _senses(String contentJson) {
+  /// The decoded entry, or null when its JSON is unreadable.
+  static Map<String, dynamic>? _entry(String contentJson) {
     if (_decoded.containsKey(contentJson)) {
       // Move it to the most recent end.
       return _decoded[contentJson] = _decoded.remove(contentJson);
     }
-    List<dynamic>? senses;
+    Map<String, dynamic>? entry;
     try {
-      final data = jsonDecode(contentJson) as Map<String, dynamic>;
-      senses = data['senses'] as List<dynamic>? ?? [];
+      entry = jsonDecode(contentJson) as Map<String, dynamic>;
     } catch (_) {
-      senses = null;
+      entry = null;
     }
     if (_decoded.length >= _decodedLimit) _decoded.remove(_decoded.keys.first);
-    return _decoded[contentJson] = senses;
+    return _decoded[contentJson] = entry;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final senses = _senses(contentJson);
-    if (senses == null) return const SizedBox.shrink();
+    final entry = _entry(contentJson);
+    if (entry == null) return const SizedBox.shrink();
+    final senses = entry['senses'] as List<dynamic>? ?? const [];
+    final alternatives = (entry['alternatives'] as List<dynamic>? ?? const [])
+        .cast<String>();
+
+    // What Klein and Jastrow carry beyond BDB's senses, each under a label.
+    Widget section(String label, List<dynamic> spans) => Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: SelectableText.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '$label  ',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            ..._spansFromDefinition(context, spans),
+          ],
+        ),
+      ),
+    );
+
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -3698,11 +3727,21 @@ class _BdbContent extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: senses
-            .map<Widget>(
-              (s) => _buildSense(context, s as Map<String, dynamic>, 0),
-            )
-            .toList(),
+        children: [
+          ...senses.map<Widget>(
+            (s) => _buildSense(context, s as Map<String, dynamic>, 0),
+          ),
+          if (entry['plural'] case final List<dynamic> plural)
+            section('Plural', plural),
+          if (alternatives.isNotEmpty)
+            section('Also spelled', [
+              {'t': alternatives.join(', '), 'rtl': true},
+            ]),
+          if (entry['etymology'] case final List<dynamic> etymology)
+            section('Etymology', etymology),
+          if (entry['derivatives'] case final List<dynamic> derivatives)
+            section('Derivatives', derivatives),
+        ],
       ),
     );
   }
@@ -3717,6 +3756,8 @@ class _BdbContent extends StatelessWidget {
     final form = sense['form'] as String?;
     final definition = sense['definition'] as List<dynamic>?;
     final subSenses = sense['senses'] as List<dynamic>?;
+    // Klein dates a sense when it entered the language later than the word.
+    final lang = LexiconPeriodLabel.of(sense['lang'] as String? ?? '');
 
     return Padding(
       padding: EdgeInsets.only(left: depth * 12.0, bottom: 4),
@@ -3734,6 +3775,8 @@ class _BdbContent extends StatelessWidget {
                 ),
               ),
             ),
+          if (lang != null)
+            Padding(padding: const EdgeInsets.only(bottom: 2), child: lang),
           if (definition != null)
             SelectableText.rich(
               TextSpan(
@@ -3831,6 +3874,11 @@ bool _isHebVowel(int cp) =>
     (cp >= 0x05B0 && cp <= 0x05BD && cp != 0x05BC) || cp == 0x05C7;
 
 bool _isHebDot(int cp) => cp == 0x05BC || cp == 0x05C1 || cp == 0x05C2;
+
+/// A dictionary headword without the mark Klein or Jastrow numbers its
+/// homographs with (`שֶׁלֶם ᴵᴵ`, `שָׁלֵם ²`), which no word of the text carries.
+String _withoutHomographMark(String headword) =>
+    headword.replaceAll(RegExp(r'[\sᴵ¹²³⁴⁵⁶⁷⁸⁹⁰]+$'), '');
 
 String _stripTrope(String word) {
   return String.fromCharCodes(

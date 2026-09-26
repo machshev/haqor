@@ -401,16 +401,24 @@ pub struct VocabList {
     pub entries: Vec<VocabEntry>,
 }
 
+/// One lexicon entry of the word's root family. Despite the name — kept so the
+/// signal stays stable — it may come from any lexicon; see [`Self::source`].
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct BdbSummary {
     pub headword: String,
     pub gloss: String,
     pub content_json: String,
-    /// Coarse part-of-speech bucket from the BDB `pos` marker — one of
-    /// `verb`, `noun`, `adjective`, `adverb`, `proper`, or `other`. The Lexicon
-    /// tab groups a root's lexemes under a heading per class (proper names, in
-    /// particular, crowd out the root's actual semantic range).
+    /// Coarse part-of-speech bucket from the entry's `pos` marker — one of
+    /// `root`, `verb`, `noun`, `adjective`, `adverb`, `proper`, or `other`. The
+    /// Lexicon tab groups a root's lexemes under a heading per class (proper
+    /// names, in particular, crowd out the root's actual semantic range).
     pub pos_category: String,
+    /// Which lexicon the entry is from: `bdb`, `klein` or `jastrow`. The sheet
+    /// badges each row with it.
+    pub source: String,
+    /// The period or language the source marks the entry with (Klein's `NH`,
+    /// `PBH`, `MH`, `FW`; Jastrow's `b. h.`, `ch.`). Empty when unmarked.
+    pub lang: String,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]

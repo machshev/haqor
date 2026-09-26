@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use haqor_core::bible::{Bible, QuotationFilter, inflected_gloss};
+use haqor_core::bible::{BdbEntry, Bible, QuotationFilter, inflected_gloss};
 use haqor_core::tutor::{self, Grade, Track};
 use rinf::{DartSignal, RustSignal, debug_print};
 
@@ -35,6 +35,33 @@ pub type SharedBible = Arc<Mutex<Bible>>;
 
 fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
     bible.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Every lexicon's entries for a root family, as the Lexicon tab's rows: the
+/// BDB entries given, with Klein's and Jastrow's beside them. `related` names
+/// more of the family by spelling — a Peshitta word's SEDRA lexemes.
+fn lexicon_rows(
+    bible: &Bible,
+    root: &str,
+    bdb: Vec<BdbEntry>,
+    related: &[String],
+) -> Vec<BdbSummary> {
+    bible
+        .root_lexicon(root, bdb, related)
+        .unwrap_or_else(|e| {
+            debug_print!("root_lexicon({root:?}) error: {e:?}");
+            Vec::new()
+        })
+        .into_iter()
+        .map(|e| BdbSummary {
+            pos_category: e.pos_category.to_string(),
+            source: e.source.as_str().to_string(),
+            lang: e.lang,
+            headword: e.headword,
+            gloss: e.gloss,
+            content_json: e.content_json,
+        })
+        .collect()
 }
 
 /// Browser SQLite lives in the WASM heap.  Save it after every successful
@@ -700,27 +727,20 @@ pub async fn get_word_info(bible: SharedBible) {
         if let Some(id) = req.bdb_id.as_deref().filter(|s| !s.is_empty()) {
             match bible.hebrew_bdb_by_id(id) {
                 Ok(Some(entry)) => {
-                    let mut bdb_entries: Vec<BdbSummary> = bible
-                        .hebrew_bdb_by_root(&entry.root)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|e| BdbSummary {
-                            pos_category: e.pos_category().to_string(),
-                            headword: e.headword,
-                            gloss: e.gloss,
-                            content_json: e.content_json,
-                        })
-                        .collect();
+                    let mut tree = bible.hebrew_bdb_by_root(&entry.root).unwrap_or_default();
                     // A rootless entry (a particle) isn't reachable by root;
                     // show the target lexeme on its own.
-                    if bdb_entries.is_empty() {
-                        bdb_entries.push(BdbSummary {
-                            pos_category: entry.pos_category().to_string(),
+                    if tree.is_empty() {
+                        tree.push(BdbEntry {
                             headword: entry.headword.clone(),
+                            root: entry.root.clone(),
                             gloss: entry.gloss.clone(),
                             content_json: entry.content_json.clone(),
+                            pos: entry.pos.clone(),
+                            is_root: entry.is_root,
                         });
                     }
+                    let bdb_entries = lexicon_rows(&bible, &entry.root, tree, &[]);
                     WordInfo {
                         request_id: req.request_id,
                         found: true,
@@ -784,7 +804,7 @@ pub async fn get_word_info(bible: SharedBible) {
                 Some(first) => {
                     // Overview of the whole root tree: every lexeme sharing the
                     // root, with the looked-up word's own lexeme flagged.
-                    let sedra_entries = bible
+                    let sedra_entries: Vec<SedraSummary> = bible
                         .sedra_root_tree(first.key_root, first.key_lexeme)
                         .unwrap_or_default()
                         .into_iter()
@@ -794,6 +814,17 @@ pub async fn get_word_info(bible: SharedBible) {
                             is_current: l.is_current,
                         })
                         .collect();
+                    // Every other lexicon's entries for the same root letters:
+                    // BDB's Hebrew cognates, and Klein's and Jastrow's articles
+                    // spelled like the root or any lexeme of its SEDRA tree.
+                    let lexemes: Vec<String> =
+                        sedra_entries.iter().map(|e| e.lexeme.clone()).collect();
+                    let bdb_entries = lexicon_rows(
+                        &bible,
+                        &first.root,
+                        bible.hebrew_bdb_by_root(&first.root).unwrap_or_default(),
+                        &lexemes,
+                    );
                     let gloss = first.meanings.first().cloned().unwrap_or_default();
                     WordInfo {
                         request_id: req.request_id,
@@ -809,7 +840,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         prepositions: None,
                         article: false,
                         vav_con: false,
-                        bdb_entries: Vec::new(),
+                        bdb_entries,
                         sedra_entries,
                         person: first.person.clone(),
                         state: first.state.clone(),
@@ -887,7 +918,7 @@ pub async fn get_word_info(bible: SharedBible) {
                     // Match core's lexicon-coverage lookup: rooted words use
                     // the root tree, while rootless function words are looked
                     // up by their surface form and prefix.
-                    let bdb_entries = (if selected.is_empty() {
+                    let tree = (if selected.is_empty() {
                         bible.hebrew_bdb_for_surface(
                             &info.word,
                             info.prefix.as_deref().unwrap_or(""),
@@ -895,15 +926,23 @@ pub async fn get_word_info(bible: SharedBible) {
                     } else {
                         bible.hebrew_bdb_by_root(&selected)
                     })
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|e| BdbSummary {
-                        pos_category: e.pos_category().to_string(),
-                        headword: e.headword,
-                        gloss: e.gloss,
-                        content_json: e.content_json,
-                    })
-                    .collect();
+                    .unwrap_or_default();
+                    // The Peshitta's root spelled with the same letters, so
+                    // an OT word shows its Aramaic cognates too, and Jastrow's
+                    // articles on them join Klein's beside BDB's.
+                    let sedra_entries: Vec<SedraSummary> = bible
+                        .sedra_root_tree_by_letters(&selected)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|l| SedraSummary {
+                            lexeme: l.lexeme,
+                            meaning: l.meanings.join("; "),
+                            is_current: l.is_current,
+                        })
+                        .collect();
+                    let lexemes: Vec<String> =
+                        sedra_entries.iter().map(|e| e.lexeme.clone()).collect();
+                    let bdb_entries = lexicon_rows(&bible, &selected, tree, &lexemes);
                     // The headline describes this occurrence, not merely its
                     // dictionary lemma. Keep the BDB entries below as lexeme
                     // definitions, while rendering proclitics and noun/verb
@@ -924,7 +963,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         article: false,
                         vav_con: info.vav_con,
                         bdb_entries,
-                        sedra_entries: Vec::new(),
+                        sedra_entries,
                         person: info.person,
                         state: info.state,
                         tense: info.tense,
