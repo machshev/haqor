@@ -153,7 +153,7 @@ void main() {
     rust.deliverVerseTexts();
     await tester.pumpAndSettle();
 
-    expect(find.text('Quotes from the OT'), findsOneWidget);
+    expect(find.text('Cross references'), findsOneWidget);
     expect(find.text('Strong match · 2 words'), findsOneWidget);
     expect(find.text('Possible echo · 1 word'), findsOneWidget);
     final highlighted = _highlighted(tester);
@@ -207,7 +207,10 @@ void main() {
 
     rust.deliver(40, 1, 23, const []);
     await tester.pump();
-    expect(find.text('No quotations found for this verse.'), findsOneWidget);
+    expect(
+      find.text('No cross references found for this verse.'),
+      findsOneWidget,
+    );
   });
 }
 
@@ -250,7 +253,7 @@ void overviewTests() {
     await tester.pumpAndSettle();
 
     expect(find.text('Cross references'), findsOneWidget);
-    expect(find.text('3 quotations'), findsOneWidget);
+    expect(find.text('3 links'), findsOneWidget);
     // One heading per verse, however many links it has.
     expect(find.text('Matthew 1:22'), findsOneWidget);
     expect(find.text('Matthew 1:23'), findsOneWidget);
@@ -280,13 +283,13 @@ void overviewTests() {
     await tester.pump();
     rust.deliverVerseTexts();
     await tester.pumpAndSettle();
-    expect(find.text('Quotes from the OT'), findsOneWidget);
+    expect(find.text('Cross references'), findsOneWidget);
     // The link the row was for is the one shown on the verse.
     expect(_highlighted(tester)['Matthew 1:23'], ['הה']);
 
     await tester.tap(find.byTooltip('All cross references'));
     await tester.pumpAndSettle();
-    expect(find.text('2 quotations'), findsOneWidget);
+    expect(find.text('2 links'), findsOneWidget);
     expect(rust.quotationRequests, hasLength(1), reason: 'kept, not refetched');
   });
 
@@ -299,7 +302,7 @@ void overviewTests() {
     await tester.pump();
     rust.deliverQuotations(0, const []);
     await tester.pump();
-    expect(find.text('No quotations found here.'), findsOneWidget);
+    expect(find.text('No cross references found here.'), findsOneWidget);
   });
 
   testWidgets('book scope asks for a chapter range and strength order', (
@@ -324,6 +327,40 @@ void overviewTests() {
     request = rust.quotationRequests.last;
     expect((request.firstChapter, request.lastChapter), (5, 28));
     expect(request.offset, 0);
+  });
+
+  testWidgets('the links filter asks for one kind of link at a time', (
+    tester,
+  ) async {
+    final rust = await _pump(tester, verse: null);
+    expect(rust.quotationRequests.single.scope, 0);
+    expect(find.text('Quotations and parallels in Matthew'), findsOneWidget);
+
+    await tester.tap(find.text('OT ↔ NT'));
+    await tester.pump();
+    expect(rust.quotationRequests.last.scope, 1);
+    expect(find.text('Matthew quoting the OT'), findsOneWidget);
+
+    await tester.tap(find.text('Within NT'));
+    await tester.pump();
+    expect(rust.quotationRequests.last.scope, 2);
+    expect(rust.quotationRequests.last.offset, 0);
+    expect(find.text('Matthew and the rest of the NT'), findsOneWidget);
+  });
+
+  testWidgets('links within the testament are labelled as parallels', (
+    tester,
+  ) async {
+    final rust = await _pump(tester, verse: null);
+    rust.deliverQuotations(2, [
+      _quote(verse: 23, otherBook: 12, otherChapter: 7, otherVerse: 14),
+      _quote(verse: 23, otherBook: 42, otherChapter: 1, otherVerse: 31),
+    ]);
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    expect(find.text('Strong match · 2 words'), findsOneWidget);
+    expect(find.text('Parallel · Strong match · 2 words'), findsOneWidget);
   });
 
   testWidgets('show more asks for the next page', (tester) async {
@@ -460,8 +497,9 @@ void bookmarkTests() {
               chapter: 1,
               target: (book: 40, chapter: 1, verse: 23),
               useEnglishBookNames: true,
-              isLinkBookmarked: (ot, nt) =>
-                  bookmarked.contains(StudyLink(ot: ot, nt: nt).key),
+              isLinkBookmarked: (earlier, later) => bookmarked.contains(
+                StudyLink(earlier: earlier, later: later).key,
+              ),
               onToggleLinkBookmark: (link) async {
                 toggled.add(link);
                 return bookmarked.add(link.key) || !bookmarked.remove(link.key);
@@ -480,16 +518,57 @@ void bookmarkTests() {
     await tester.tap(find.byTooltip('Bookmark this link'));
     await tester.pump();
     final link = toggled.single;
-    // Opened from Matthew, the link still files Isaiah as its OT side.
-    expect(link.ot, (bookIndex: 11, chapter: 7, verse: 14));
-    expect(link.nt, (bookIndex: 39, chapter: 1, verse: 23));
-    expect(link.otPositions, [0, 2]);
-    expect(link.ntPositions, [1, 3]);
+    // Opened from Matthew, the link still files Isaiah as its earlier verse.
+    expect(link.earlier, (bookIndex: 11, chapter: 7, verse: 14));
+    expect(link.later, (bookIndex: 39, chapter: 1, verse: 23));
+    expect(link.earlierPositions, [0, 2]);
+    expect(link.laterPositions, [1, 3]);
     expect(find.byTooltip('Remove link bookmark'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Remove link bookmark'));
     await tester.pump();
     expect(bookmarked, isEmpty);
     expect(find.byTooltip('Bookmark this link'), findsOneWidget);
+  });
+
+  testWidgets('a link within the NT is filed earlier verse first', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final rust = _FakeRust();
+    final toggled = <StudyLink>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 600,
+            child: CrossReferencesPanel(
+              book: 41,
+              chapter: 1,
+              target: (book: 41, chapter: 1, verse: 3),
+              useEnglishBookNames: true,
+              isLinkBookmarked: (_, _) => false,
+              onToggleLinkBookmark: (link) async {
+                toggled.add(link);
+                return true;
+              },
+              sendRequest: rust.requests.add,
+              sendQuotationsRequest: rust.quotationRequests.add,
+              sendVerseTextsRequest: rust.verseRequests.add,
+            ),
+          ),
+        ),
+      ),
+    );
+    // Opened from Mark 1:3, its parallel Matthew 3:3 comes first.
+    rust.deliver(41, 1, 3, [_entry(book: 40, chapter: 3, verse: 3)]);
+    await tester.pump();
+    await tester.tap(find.byTooltip('Bookmark this link'));
+    await tester.pump();
+    final link = toggled.single;
+    expect(link.earlier, (bookIndex: 39, chapter: 3, verse: 3));
+    expect(link.later, (bookIndex: 40, chapter: 1, verse: 3));
+    expect(link.earlierPositions, [0, 2]);
+    expect(link.laterPositions, [1, 3]);
   });
 }

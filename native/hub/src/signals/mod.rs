@@ -233,9 +233,9 @@ pub struct VerseEntry {
     /// The verse's ketiv readings, where it has any — empty for almost every
     /// verse, as the OT carries about 1,250 in total.
     pub ketivs: Vec<KetivEntry>,
-    /// The score of each quotation linking this verse to the other testament
-    /// ([`GetCrossReferences`] fetches them), strongest first; empty for most
-    /// verses. Scores rather than a count, so the reader marks only the links as
+    /// The score of each link of this verse — quotations across the testaments
+    /// and parallels within its own ([`GetCrossReferences`] fetches them) —
+    /// strongest first; empty for many verses. Scores rather than a count, so the reader marks only the links as
     /// strong as it is set to show without asking for the chapter again.
     pub cross_reference_scores: Vec<f32>,
 }
@@ -252,8 +252,9 @@ pub struct ChapterText {
     pub verses: Vec<VerseEntry>,
 }
 
-/// Ask for the quotations linking one verse to the other testament: the NT
-/// verses quoting an OT verse, or the OT verses an NT verse quotes.
+/// Ask for the links of one verse: the NT verses quoting an OT verse or the OT
+/// verses an NT verse quotes, and the verses of its own testament it
+/// parallels (parallel accounts, repeated oracles, synoptic parallels).
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetCrossReferences {
     pub book: u8,
@@ -269,7 +270,7 @@ pub struct CrossReferenceEntry {
     /// Position in the global quotation ranking, 1 being the strongest.
     pub rank: u32,
     pub score: f32,
-    /// The linked verse, in the other testament.
+    /// The linked verse, in either testament.
     pub book: u8,
     pub chapter: u8,
     pub verse: u8,
@@ -304,12 +305,16 @@ pub struct GetQuotations {
     pub by_reference: bool,
     /// Leave out quotations scoring below this; zero keeps them all.
     pub min_score: f32,
+    /// Which links: 0 all, 1 only OT/NT quotations, 2 only links within one
+    /// testament.
+    pub scope: u8,
     pub limit: u32,
     pub offset: u32,
 }
 
-/// One quotation of a [`Quotations`] page, seen from the requested book: the
-/// verse in that book, and the verse of the other testament it is linked to.
+/// One link of a [`Quotations`] page, seen from the requested book: the verse
+/// in that book, and the verse it is linked to (in either testament; a link
+/// between two verses of the book is listed from both).
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct QuotationEntry {
     pub rank: u32,

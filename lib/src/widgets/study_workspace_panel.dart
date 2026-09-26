@@ -86,7 +86,7 @@ class StudyWorkspacePanel extends StatelessWidget {
       '${verse.chapter}:${verse.verse}';
 
   String _linkLabel(StudyLink link) =>
-      '${_verseReference(link.ot)} ↔ ${_verseReference(link.nt)}';
+      '${_verseReference(link.earlier)} ↔ ${_verseReference(link.later)}';
 
   Future<int?> _pickColor(
     BuildContext context, {
@@ -748,7 +748,7 @@ class StudyWorkspacePanel extends StatelessWidget {
       title: Wrap(
         crossAxisAlignment: WrapCrossAlignment.center,
         spacing: 6,
-        children: [verse(link.ot), const Text('↔'), verse(link.nt)],
+        children: [verse(link.earlier), const Text('↔'), verse(link.later)],
       ),
       subtitle: subtitle.isEmpty ? null : Text(subtitle),
       trailing: PopupMenuButton<_LinkAction>(

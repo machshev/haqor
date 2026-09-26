@@ -584,8 +584,8 @@ void linkTileTests() {
     tester,
   ) async {
     const link = StudyLink(
-      ot: (bookIndex: 11, chapter: 7, verse: 14),
-      nt: (bookIndex: 39, chapter: 1, verse: 23),
+      earlier: (bookIndex: 11, chapter: 7, verse: 14),
+      later: (bookIndex: 39, chapter: 1, verse: 23),
       score: 14.69,
       note: 'Emmanuel',
     );
@@ -640,7 +640,7 @@ void linkTileTests() {
     expect(find.textContaining('Bookmark a passage or word'), findsNothing);
     await tester.tap(find.text('Isaiah 7:14'));
     await tester.tap(find.text('Matthew 1:23'));
-    expect(opened, [link.ot, link.nt]);
+    expect(opened, [link.earlier, link.later]);
 
     await tester.tap(find.byTooltip('Link options'));
     await tester.pumpAndSettle();

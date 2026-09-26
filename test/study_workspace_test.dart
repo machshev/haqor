@@ -465,10 +465,10 @@ void linkTests() {
   const isaiah = (bookIndex: 11, chapter: 7, verse: 14);
   const matthew = (bookIndex: 39, chapter: 1, verse: 23);
   const link = StudyLink(
-    ot: isaiah,
-    nt: matthew,
-    otPositions: [7, 9],
-    ntPositions: [1, 3],
+    earlier: isaiah,
+    later: matthew,
+    earlierPositions: [7, 9],
+    laterPositions: [1, 3],
     score: 14.69,
   );
 
@@ -498,8 +498,8 @@ void linkTests() {
     final stored = workspace.linkBetween(isaiah, matthew)!;
     expect(stored.groupId, 'g');
     expect(stored.note, 'Virgin / young woman');
-    expect(stored.otPositions, [7, 9]);
-    expect(stored.ntPositions, [1, 3]);
+    expect(stored.earlierPositions, [7, 9]);
+    expect(stored.laterPositions, [1, 3]);
     expect(stored.score, 14.69);
     expect(workspace.itemsIn('g').single.key, link.key);
 

@@ -21,7 +21,8 @@ const crossReferenceStrengths = <(double, String)>[
 
 /// Score cut-offs on the build's scale, set where the known quotations fall:
 /// of the 37 the build finds, 27 score at least [kStrongCrossReference] (the
-/// top ~550 of ~60k links) and 31 at least [kLikelyCrossReference] (top ~5k).
+/// top ~550 of ~60k OT/NT links) and 31 at least [kLikelyCrossReference] (top
+/// ~5k). Links within one testament are scaled onto the same scale.
 const kLikelyCrossReference = 10.0;
 const kStrongCrossReference = 13.0;
 
@@ -33,6 +34,11 @@ String crossReferenceStrength(double score) {
 }
 
 String _words(int n) => n == 1 ? '1 word' : '$n words';
+
+/// `Parallel · ` for a link between two verses of one testament (1-based
+/// books), naming what kind of link it is; nothing for an OT/NT quotation.
+String _parallel(int book, int otherBook) =>
+    (book >= 40) == (otherBook >= 40) ? 'Parallel · ' : '';
 
 /// The header buttons both views share: the Hebrew / English verse switch, as
 /// in the word sheet's occurrence lists, and a docked panel's close button.
@@ -59,7 +65,13 @@ List<Widget> _headerActions({
 /// Which part of the book the overview lists.
 enum CrossReferenceScope { chapter, book }
 
-/// The quotations linking the OT and the NT, seen from where the reader is.
+/// Which links the overview lists, by the testaments of their two verses. The
+/// index is the [GetQuotations.scope] code.
+enum CrossReferenceLinks { all, otherTestament, sameTestament }
+
+/// The cross references of where the reader is: quotations linking the OT and
+/// the NT, and parallels within one testament (parallel accounts, repeated
+/// oracles, synoptic parallels).
 ///
 /// Two views share the panel. The overview lists every quotation touching the
 /// current chapter — or the whole book, optionally narrowed to a chapter range —
@@ -103,7 +115,8 @@ class CrossReferencesPanel extends StatefulWidget {
   /// Whether a link is bookmarked in the active study, and how to bookmark or
   /// unbookmark it (true when it ends up bookmarked). Without them the links
   /// carry no bookmark button.
-  final bool Function(StudyLinkVerse ot, StudyLinkVerse nt)? isLinkBookmarked;
+  final bool Function(StudyLinkVerse earlier, StudyLinkVerse later)?
+  isLinkBookmarked;
   final Future<bool> Function(StudyLink link)? onToggleLinkBookmark;
 
   /// The strength filter the panel opens with (one of
@@ -144,6 +157,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   _VerseView? _view;
 
   CrossReferenceScope _scope = CrossReferenceScope.chapter;
+  CrossReferenceLinks _links = CrossReferenceLinks.all;
   late int _firstChapter = 1;
   late int _lastChapter = _chapterCount;
   bool _byReference = true;
@@ -233,6 +247,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
       lastChapter: chapterScope ? widget.chapter : _lastChapter,
       byReference: _byReference,
       minScore: _minScore,
+      scope: _links.index,
       limit: _pageSize,
       offset: _entries.length,
     );
@@ -290,6 +305,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   Widget _overview(BuildContext context) {
     final theme = Theme.of(context);
     final fromNt = widget.book >= 40;
+    final testament = fromNt ? 'NT' : 'OT';
     final bookName = bookDisplayName(
       widget.book - 1,
       useEnglish: widget.useEnglishBookNames,
@@ -311,9 +327,16 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
                       style: theme.textTheme.titleMedium,
                     ),
                     Text(
-                      fromNt
-                          ? '$bookName quoting the OT'
-                          : '$bookName quoted in the NT',
+                      switch (_links) {
+                        CrossReferenceLinks.all =>
+                          'Quotations and parallels in $bookName',
+                        CrossReferenceLinks.otherTestament =>
+                          fromNt
+                              ? '$bookName quoting the OT'
+                              : '$bookName quoted in the NT',
+                        CrossReferenceLinks.sameTestament =>
+                          '$bookName and the rest of the $testament',
+                      },
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -383,6 +406,26 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
                     ),
                   ],
                 ),
+              SegmentedButton<CrossReferenceLinks>(
+                key: const ValueKey('links'),
+                showSelectedIcon: false,
+                segments: [
+                  const ButtonSegment(
+                    value: CrossReferenceLinks.all,
+                    label: Text('All links'),
+                  ),
+                  const ButtonSegment(
+                    value: CrossReferenceLinks.otherTestament,
+                    label: Text('OT ↔ NT'),
+                  ),
+                  ButtonSegment(
+                    value: CrossReferenceLinks.sameTestament,
+                    label: Text('Within $testament'),
+                  ),
+                ],
+                selected: {_links},
+                onSelectionChanged: (s) => _update(() => _links = s.single),
+              ),
               SegmentedButton<bool>(
                 showSelectedIcon: false,
                 segments: const [
@@ -413,7 +456,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: Text(
-              _total == 1 ? '1 quotation' : '$_total quotations',
+              _total == 1 ? '1 link' : '$_total links',
               style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -430,7 +473,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
       return Center(
         child: _loading
             ? const CircularProgressIndicator()
-            : const Text('No quotations found here.'),
+            : const Text('No cross references found here.'),
       );
     }
     final hasMore = _entries.length < _total;
@@ -543,7 +586,8 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
                 children: [
                   Expanded(
                     child: Text(
-                      '$own${crossReferenceStrength(entry.score)} · '
+                      '$own${_parallel(widget.book, entry.otherBook)}'
+                      '${crossReferenceStrength(entry.score)} · '
                       '${_words(entry.positions.length)}',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
@@ -630,7 +674,8 @@ class _VerseLinks extends StatefulWidget {
   final VoidCallback onToggleEnglishOnly;
   final VoidCallback onBack;
   final VoidCallback? onClose;
-  final bool Function(StudyLinkVerse ot, StudyLinkVerse nt)? isLinkBookmarked;
+  final bool Function(StudyLinkVerse earlier, StudyLinkVerse later)?
+  isLinkBookmarked;
   final Future<bool> Function(StudyLink link)? onToggleLinkBookmark;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
@@ -651,8 +696,6 @@ class _VerseLinksState extends State<_VerseLinks> {
 
   /// Whether the links below [_VerseLinks.minScore] are shown.
   bool _showWeaker = false;
-
-  bool get _fromNt => widget.book >= 40;
 
   @override
   void initState() {
@@ -712,7 +755,6 @@ class _VerseLinksState extends State<_VerseLinks> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final entries = _entries;
-    final title = _fromNt ? 'Quotes from the OT' : 'Quoted in the NT';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -730,7 +772,10 @@ class _VerseLinksState extends State<_VerseLinks> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: theme.textTheme.titleMedium),
+                    Text(
+                      'Cross references',
+                      style: theme.textTheme.titleMedium,
+                    ),
                     Text(
                       _ref(widget.book, widget.chapter, widget.verse),
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -752,7 +797,9 @@ class _VerseLinksState extends State<_VerseLinks> {
           const Expanded(child: Center(child: CircularProgressIndicator()))
         else if (entries.isEmpty)
           const Expanded(
-            child: Center(child: Text('No quotations found for this verse.')),
+            child: Center(
+              child: Text('No cross references found for this verse.'),
+            ),
           )
         else ...[
           Padding(
@@ -841,6 +888,7 @@ class _VerseLinksState extends State<_VerseLinks> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
+                    '${_parallel(widget.book, entry.book)}'
                     '${crossReferenceStrength(entry.score)} · '
                     '${_words(entry.positions.length)}',
                     style: theme.textTheme.labelSmall?.copyWith(
@@ -888,7 +936,7 @@ class _VerseLinksState extends State<_VerseLinks> {
   }
 }
 
-/// A link between two verses, the right way round for the study document
+/// A link between two verses, in the study document's canonical order
 /// whichever side the panel was opened from.
 StudyLink _studyLink({
   required int ownBook,
@@ -907,12 +955,14 @@ StudyLink _studyLink({
     chapter: otherChapter,
     verse: otherVerse,
   );
-  final fromNt = ownBook >= 40;
+  int order(StudyLinkVerse v) =>
+      (v.bookIndex << 16) | (v.chapter << 8) | v.verse;
+  final ownFirst = order(own) < order(other);
   return StudyLink(
-    ot: fromNt ? other : own,
-    nt: fromNt ? own : other,
-    otPositions: fromNt ? otherPositions : ownPositions,
-    ntPositions: fromNt ? ownPositions : otherPositions,
+    earlier: ownFirst ? own : other,
+    later: ownFirst ? other : own,
+    earlierPositions: ownFirst ? ownPositions : otherPositions,
+    laterPositions: ownFirst ? otherPositions : ownPositions,
     score: score,
   );
 }
@@ -926,7 +976,8 @@ class _LinkBookmarkButton extends StatefulWidget {
   });
 
   final StudyLink link;
-  final bool Function(StudyLinkVerse ot, StudyLinkVerse nt) isBookmarked;
+  final bool Function(StudyLinkVerse earlier, StudyLinkVerse later)
+  isBookmarked;
   final Future<bool> Function(StudyLink link) onToggle;
 
   @override
@@ -934,12 +985,15 @@ class _LinkBookmarkButton extends StatefulWidget {
 }
 
 class _LinkBookmarkButtonState extends State<_LinkBookmarkButton> {
-  late bool _bookmarked = widget.isBookmarked(widget.link.ot, widget.link.nt);
+  late bool _bookmarked = widget.isBookmarked(
+    widget.link.earlier,
+    widget.link.later,
+  );
 
   @override
   void didUpdateWidget(_LinkBookmarkButton old) {
     super.didUpdateWidget(old);
-    _bookmarked = widget.isBookmarked(widget.link.ot, widget.link.nt);
+    _bookmarked = widget.isBookmarked(widget.link.earlier, widget.link.later);
   }
 
   @override

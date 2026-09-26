@@ -2456,7 +2456,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   Future<bool> _toggleStudyLinkBookmark(StudyLink link) async {
     final workspace = await _ensureStudyWorkspace();
     if (workspace == null || !mounted) return false;
-    final existing = workspace.linkBetween(link.ot, link.nt);
+    final existing = workspace.linkBetween(link.earlier, link.later);
     if (existing == null) {
       _replaceStudyWorkspace(workspace.putLink(link));
       return true;
@@ -2465,8 +2465,8 @@ class _ReaderSessionState extends State<_ReaderSession>
     return false;
   }
 
-  bool _isStudyLinkBookmarked(StudyLinkVerse ot, StudyLinkVerse nt) =>
-      _activeStudyWorkspace?.linkBetween(ot, nt) != null;
+  bool _isStudyLinkBookmarked(StudyLinkVerse earlier, StudyLinkVerse later) =>
+      _activeStudyWorkspace?.linkBetween(earlier, later) != null;
 
   Future<void> _editStudyLink(StudyLink link) async {
     final workspace = _activeStudyWorkspace;
@@ -2715,9 +2715,9 @@ class _ReaderSessionState extends State<_ReaderSession>
             onShowLink: (link) {
               Navigator.pop(sheetContext);
               widget.onCrossReferencesRequested(
-                link.nt.bookIndex,
-                link.nt.chapter,
-                link.nt.verse,
+                link.later.bookIndex,
+                link.later.chapter,
+                link.later.verse,
               );
             },
             onEditLink: (link) async {
@@ -3600,11 +3600,11 @@ class _ReaderSessionState extends State<_ReaderSession>
           _navigateTo(verse.bookIndex, verse.chapter, verse: verse.verse);
           onOpenReader?.call();
         },
-        // The NT verse's links, where the bookmarked one is found again.
+        // The later verse's links, where the bookmarked one is found again.
         onShowLink: (link) => widget.onCrossReferencesRequested(
-          link.nt.bookIndex,
-          link.nt.chapter,
-          link.nt.verse,
+          link.later.bookIndex,
+          link.later.chapter,
+          link.later.verse,
         ),
         onEditLink: _editStudyLink,
         onUpdateLink: _updateStudyLink,

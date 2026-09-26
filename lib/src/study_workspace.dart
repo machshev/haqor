@@ -354,25 +354,32 @@ class StudyNote {
 typedef StudyLinkVerse = ({int bookIndex, int chapter, int verse});
 
 /// A bookmarked cross reference: an NT verse quoting or echoing an OT verse,
-/// with the matched words (lexical positions) and the score it was found with,
-/// so the outline can show and highlight it without asking the core again.
+/// or two verses of one testament sharing wording, with the matched words
+/// (lexical positions) and the score it was found with, so the outline can
+/// show and highlight it without asking the core again.
+///
+/// The two verses are kept in canonical order (OT before NT, then book,
+/// chapter and verse), so a link has one key whichever end it was bookmarked
+/// from. The JSON keys `ot` / `nt` (`otWords` / `ntWords`) date from when
+/// every link crossed the testaments; they still hold the earlier and the
+/// later verse, which for those links is the OT and the NT one.
 @immutable
 class StudyLink {
   const StudyLink({
-    required this.ot,
-    required this.nt,
-    this.otPositions = const [],
-    this.ntPositions = const [],
+    required this.earlier,
+    required this.later,
+    this.earlierPositions = const [],
+    this.laterPositions = const [],
     this.score = 0,
     this.groupId,
     this.note = '',
     this.order = 0,
   });
 
-  final StudyLinkVerse ot;
-  final StudyLinkVerse nt;
-  final List<int> otPositions;
-  final List<int> ntPositions;
+  final StudyLinkVerse earlier;
+  final StudyLinkVerse later;
+  final List<int> earlierPositions;
+  final List<int> laterPositions;
   final double score;
   final String? groupId;
   final String note;
@@ -381,14 +388,14 @@ class StudyLink {
   static String _verseKey(StudyLinkVerse v) =>
       '${v.bookIndex}:${v.chapter}:${v.verse}';
 
-  String get key => 'link-${_verseKey(ot)}-${_verseKey(nt)}';
+  String get key => 'link-${_verseKey(earlier)}-${_verseKey(later)}';
 
   StudyLink copyWith({String? Function()? groupId, String? note, int? order}) =>
       StudyLink(
-        ot: ot,
-        nt: nt,
-        otPositions: otPositions,
-        ntPositions: ntPositions,
+        earlier: earlier,
+        later: later,
+        earlierPositions: earlierPositions,
+        laterPositions: laterPositions,
         score: score,
         groupId: groupId == null ? this.groupId : groupId(),
         note: note ?? this.note,
@@ -396,10 +403,10 @@ class StudyLink {
       );
 
   Map<String, Object?> toJson() => {
-    'ot': [ot.bookIndex, ot.chapter, ot.verse],
-    'nt': [nt.bookIndex, nt.chapter, nt.verse],
-    if (otPositions.isNotEmpty) 'otWords': otPositions,
-    if (ntPositions.isNotEmpty) 'ntWords': ntPositions,
+    'ot': [earlier.bookIndex, earlier.chapter, earlier.verse],
+    'nt': [later.bookIndex, later.chapter, later.verse],
+    if (earlierPositions.isNotEmpty) 'otWords': earlierPositions,
+    if (laterPositions.isNotEmpty) 'ntWords': laterPositions,
     if (score > 0) 'score': score,
     if (groupId != null) 'group': groupId,
     if (note.isNotEmpty) 'note': note,
@@ -420,14 +427,14 @@ class StudyLink {
 
   static StudyLink? fromJson(Object? value) {
     if (value is! Map) return null;
-    final ot = _verse(value['ot']);
-    final nt = _verse(value['nt']);
-    if (ot == null || nt == null) return null;
+    final earlier = _verse(value['ot']);
+    final later = _verse(value['nt']);
+    if (earlier == null || later == null) return null;
     return StudyLink(
-      ot: ot,
-      nt: nt,
-      otPositions: _positions(value['otWords']),
-      ntPositions: _positions(value['ntWords']),
+      earlier: earlier,
+      later: later,
+      earlierPositions: _positions(value['otWords']),
+      laterPositions: _positions(value['ntWords']),
       score: value['score'] is num ? (value['score'] as num).toDouble() : 0,
       groupId: value['group'] is String ? value['group'] as String : null,
       note: value['note'] is String ? value['note'] as String : '',
@@ -553,8 +560,8 @@ class StudyWorkspace {
   );
 
   /// The bookmarked link between an OT and an NT verse, if there is one.
-  StudyLink? linkBetween(StudyLinkVerse ot, StudyLinkVerse nt) {
-    final key = StudyLink(ot: ot, nt: nt).key;
+  StudyLink? linkBetween(StudyLinkVerse earlier, StudyLinkVerse later) {
+    final key = StudyLink(earlier: earlier, later: later).key;
     for (final link in links) {
       if (link.key == key) return link;
     }

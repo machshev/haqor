@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use haqor_core::bible::{BdbEntry, Bible, QuotationFilter, inflected_gloss};
+use haqor_core::bible::{BdbEntry, Bible, QuotationFilter, QuotationScope, inflected_gloss};
 use haqor_core::tutor::{self, Grade, Track};
 use rinf::{DartSignal, RustSignal, debug_print};
 
@@ -1593,25 +1593,17 @@ pub async fn get_cross_references(bible: SharedBible) {
                 debug_print!("get_cross_references error: {:?}", e);
                 Vec::new()
             });
-        // The requested verse is one side of each quotation; send the other.
-        let from_nt = req.book >= 40;
+        // Each link comes seen from the requested verse; send the other one.
         let entries = quotations
             .into_iter()
-            .map(|q| {
-                let (other, positions, source_positions) = if from_nt {
-                    (q.ot, q.ot_positions, q.nt_positions)
-                } else {
-                    (q.nt, q.nt_positions, q.ot_positions)
-                };
-                CrossReferenceEntry {
-                    rank: q.rank,
-                    score: q.score,
-                    book: other.book,
-                    chapter: other.chapter,
-                    verse: other.verse,
-                    positions,
-                    source_positions,
-                }
+            .map(|q| CrossReferenceEntry {
+                rank: q.rank,
+                score: q.score,
+                book: q.other.book,
+                chapter: q.other.chapter,
+                verse: q.other.verse,
+                positions: q.other_positions,
+                source_positions: q.positions,
             })
             .collect();
         CrossReferences {
@@ -1635,6 +1627,11 @@ pub async fn get_quotations(bible: SharedBible) {
             last_chapter: (req.last_chapter > 0).then_some(req.last_chapter),
             by_reference: req.by_reference,
             min_score: (req.min_score > 0.0).then_some(req.min_score),
+            scope: match req.scope {
+                1 => QuotationScope::OtherTestament,
+                2 => QuotationScope::SameTestament,
+                _ => QuotationScope::All,
+            },
         };
         let bible = lock(&bible);
         let (total, quotations) = match (
@@ -1647,26 +1644,19 @@ pub async fn get_quotations(bible: SharedBible) {
                 (0, Vec::new())
             }
         };
-        let from_nt = req.book >= 40;
+        // A book filter has each link seen from its verse in the book.
         let entries = quotations
             .into_iter()
-            .map(|q| {
-                let (own, other, positions, other_positions) = if from_nt {
-                    (q.nt, q.ot, q.nt_positions, q.ot_positions)
-                } else {
-                    (q.ot, q.nt, q.ot_positions, q.nt_positions)
-                };
-                QuotationEntry {
-                    rank: q.rank,
-                    score: q.score,
-                    chapter: own.chapter,
-                    verse: own.verse,
-                    positions,
-                    other_book: other.book,
-                    other_chapter: other.chapter,
-                    other_verse: other.verse,
-                    other_positions,
-                }
+            .map(|q| QuotationEntry {
+                rank: q.rank,
+                score: q.score,
+                chapter: q.verse.chapter,
+                verse: q.verse.verse,
+                positions: q.positions,
+                other_book: q.other.book,
+                other_chapter: q.other.chapter,
+                other_verse: q.other.verse,
+                other_positions: q.other_positions,
             })
             .collect();
         Quotations {

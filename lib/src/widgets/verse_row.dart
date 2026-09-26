@@ -716,7 +716,8 @@ class _VerseRowState extends State<VerseRow> {
   }
 }
 
-/// The margin mark of a verse linked to the other testament by a quotation.
+/// The margin mark of a verse with cross references: quotations linking it to
+/// the other testament, or parallels within its own.
 /// Its own tap target, larger than the glyph, so it opens the cross
 /// references rather than selecting the verse around it.
 class _CrossReferenceMarker extends StatelessWidget {
