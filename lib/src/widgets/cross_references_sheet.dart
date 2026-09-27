@@ -97,6 +97,7 @@ class CrossReferencesPanel extends StatefulWidget {
     this.sendRequest,
     this.sendQuotationsRequest,
     this.sendThematicReferencesRequest,
+    this.sendThematicOverviewRequest,
     this.sendVerseTextsRequest,
   });
 
@@ -136,6 +137,7 @@ class CrossReferencesPanel extends StatefulWidget {
   final void Function(GetCrossReferences)? sendRequest;
   final void Function(GetQuotations)? sendQuotationsRequest;
   final void Function(GetThematicReferences)? sendThematicReferencesRequest;
+  final void Function(GetThematicOverview)? sendThematicOverviewRequest;
   final void Function(GetVerseTexts)? sendVerseTextsRequest;
 
   @override
@@ -153,12 +155,26 @@ typedef _VerseView = ({
 class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   static const _pageSize = 100;
 
+  /// Verses per page of the thematic overview: a verse has a dozen targets on
+  /// average.
+  static const _thematicPageSize = 40;
+
   late final VerseTextCache _verseTexts = VerseTextCache(
     send: widget.sendVerseTextsRequest,
   );
   StreamSubscription<RustSignalPack<Quotations>>? _sub;
+  StreamSubscription<RustSignalPack<ThematicOverview>>? _thematicSub;
 
   _VerseView? _view;
+
+  /// The list picked — quotations or thematic references — shared by the
+  /// overview and a verse's view. Null until the reader picks one: a verse
+  /// then picks for itself, and the overview shows quotations.
+  _Section? _section;
+  _Section get _overviewSection => _section ?? _Section.links;
+
+  /// The list the overview last asked for.
+  _Section? _overviewLoaded;
 
   CrossReferenceScope _scope = CrossReferenceScope.chapter;
   CrossReferenceLinks _links = CrossReferenceLinks.all;
@@ -175,6 +191,10 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   bool _loading = true;
   int _total = 0;
   final List<QuotationEntry> _entries = [];
+
+  /// The thematic overview's verses so far, and how many there are in all.
+  final List<ThematicVerseEntry> _thematicVerses = [];
+  int _thematicTotal = 0;
   double _overviewOffset = 0;
 
   int get _chapterCount => kBooks[widget.book - 1].chapters;
@@ -193,6 +213,15 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
         _loading = false;
         _total = reply.total;
         _entries.addAll(reply.entries);
+      });
+    });
+    _thematicSub = ThematicOverview.rustSignalStream.listen((pack) {
+      final reply = pack.message;
+      if (reply.requestId != _requestId || !mounted) return;
+      setState(() {
+        _loading = false;
+        _thematicTotal = reply.total;
+        _thematicVerses.addAll(reply.verses);
       });
     });
     _requestOverview();
@@ -232,6 +261,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   @override
   void dispose() {
     _sub?.cancel();
+    _thematicSub?.cancel();
     _verseTexts.dispose();
     super.dispose();
   }
@@ -241,9 +271,29 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
     if (!more) {
       _entries.clear();
       _total = 0;
+      _thematicVerses.clear();
+      _thematicTotal = 0;
     }
     _loading = true;
+    _overviewLoaded = _overviewSection;
     final chapterScope = _scope == CrossReferenceScope.chapter;
+    if (_overviewSection == _Section.thematic) {
+      final request = GetThematicOverview(
+        requestId: ++_requestId,
+        book: widget.book,
+        firstChapter: chapterScope ? widget.chapter : _firstChapter,
+        lastChapter: chapterScope ? widget.chapter : _lastChapter,
+        limit: _thematicPageSize,
+        offset: _thematicVerses.length,
+      );
+      final send = widget.sendThematicOverviewRequest;
+      if (send != null) {
+        send(request);
+      } else {
+        request.sendSignalToRust();
+      }
+      return;
+    }
     final request = GetQuotations(
       requestId: ++_requestId,
       book: widget.book,
@@ -295,7 +345,16 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
         useEnglishBookNames: widget.useEnglishBookNames,
         englishOnly: _englishOnly,
         onToggleEnglishOnly: _toggleEnglishOnly,
-        onBack: () => setState(() => _view = null),
+        chosenSection: _section,
+        onSectionChanged: (section) => _section = section,
+        onBack: () => setState(() {
+          _view = null;
+          // The overview follows the list the verse was left on.
+          if (_overviewSection != _overviewLoaded) {
+            _overviewOffset = 0;
+            _requestOverview();
+          }
+        }),
         onClose: widget.onClose,
         isLinkBookmarked: widget.isLinkBookmarked,
         onToggleLinkBookmark: widget.onToggleLinkBookmark,
@@ -316,6 +375,11 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
       useEnglish: widget.useEnglishBookNames,
     );
     final chapters = [for (var c = 1; c <= _chapterCount; c++) c];
+    final thematic = _overviewSection == _Section.thematic;
+    final count = thematic
+        ? (_thematicTotal == 1 ? '1 verse' : '$_thematicTotal verses')
+        : (_total == 1 ? '1 link' : '$_total links');
+    final loaded = thematic ? _thematicVerses.isNotEmpty : _entries.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -332,16 +396,18 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
                       style: theme.textTheme.titleMedium,
                     ),
                     Text(
-                      switch (_links) {
-                        CrossReferenceLinks.all =>
-                          'Quotations and parallels in $bookName',
-                        CrossReferenceLinks.otherTestament =>
-                          fromNt
-                              ? '$bookName quoting the OT'
-                              : '$bookName quoted in the NT',
-                        CrossReferenceLinks.sameTestament =>
-                          '$bookName and the rest of the $testament',
-                      },
+                      thematic
+                          ? 'Thematic references in $bookName'
+                          : switch (_links) {
+                              CrossReferenceLinks.all =>
+                                'Quotations and parallels in $bookName',
+                              CrossReferenceLinks.otherTestament =>
+                                fromNt
+                                    ? '$bookName quoting the OT'
+                                    : '$bookName quoted in the NT',
+                              CrossReferenceLinks.sameTestament =>
+                                '$bookName and the rest of the $testament',
+                            },
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -355,6 +421,13 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
                 onClose: widget.onClose,
               ),
             ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+          child: _sectionSwitch(
+            selected: _overviewSection,
+            onSelected: (section) => _update(() => _section = section),
           ),
         ),
         Padding(
@@ -411,66 +484,145 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
                     ),
                   ],
                 ),
-              SegmentedButton<CrossReferenceLinks>(
-                key: const ValueKey('links'),
-                showSelectedIcon: false,
-                segments: [
-                  const ButtonSegment(
-                    value: CrossReferenceLinks.all,
-                    label: Text('All links'),
-                  ),
-                  const ButtonSegment(
-                    value: CrossReferenceLinks.otherTestament,
-                    label: Text('OT ↔ NT'),
-                  ),
-                  ButtonSegment(
-                    value: CrossReferenceLinks.sameTestament,
-                    label: Text('Within $testament'),
-                  ),
-                ],
-                selected: {_links},
-                onSelectionChanged: (s) => _update(() => _links = s.single),
-              ),
-              SegmentedButton<bool>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: true, label: Text('In order')),
-                  ButtonSegment(value: false, label: Text('Strongest')),
-                ],
-                selected: {_byReference},
-                onSelectionChanged: (s) =>
-                    _update(() => _byReference = s.single),
-              ),
-              SegmentedButton<double>(
-                key: const ValueKey('strength'),
-                showSelectedIcon: false,
-                segments: [
-                  for (final (score, label) in crossReferenceStrengths)
-                    ButtonSegment(value: score, label: Text(label)),
-                ],
-                selected: {_minScore},
-                onSelectionChanged: (s) {
-                  _update(() => _minScore = s.single);
-                  widget.onMinScoreChanged?.call(_minScore);
-                },
-              ),
+              // How links are found, ordered and filtered: nothing a
+              // thematic reference has.
+              if (!thematic) ...[
+                SegmentedButton<CrossReferenceLinks>(
+                  key: const ValueKey('links'),
+                  showSelectedIcon: false,
+                  segments: [
+                    const ButtonSegment(
+                      value: CrossReferenceLinks.all,
+                      label: Text('All links'),
+                    ),
+                    const ButtonSegment(
+                      value: CrossReferenceLinks.otherTestament,
+                      label: Text('OT ↔ NT'),
+                    ),
+                    ButtonSegment(
+                      value: CrossReferenceLinks.sameTestament,
+                      label: Text('Within $testament'),
+                    ),
+                  ],
+                  selected: {_links},
+                  onSelectionChanged: (s) => _update(() => _links = s.single),
+                ),
+                SegmentedButton<bool>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: true, label: Text('In order')),
+                    ButtonSegment(value: false, label: Text('Strongest')),
+                  ],
+                  selected: {_byReference},
+                  onSelectionChanged: (s) =>
+                      _update(() => _byReference = s.single),
+                ),
+                SegmentedButton<double>(
+                  key: const ValueKey('strength'),
+                  showSelectedIcon: false,
+                  segments: [
+                    for (final (score, label) in crossReferenceStrengths)
+                      ButtonSegment(value: score, label: Text(label)),
+                  ],
+                  selected: {_minScore},
+                  onSelectionChanged: (s) {
+                    _update(() => _minScore = s.single);
+                    widget.onMinScoreChanged?.call(_minScore);
+                  },
+                ),
+              ],
             ],
           ),
         ),
-        if (!_loading || _entries.isNotEmpty)
+        if (!_loading || loaded)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: Text(
-              _total == 1 ? '1 link' : '$_total links',
+              count,
               style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
         const Divider(height: 13),
-        Expanded(child: _overviewList(context)),
+        Expanded(
+          child: thematic
+              ? _thematicOverviewList(context)
+              : _overviewList(context),
+        ),
       ],
     );
+  }
+
+  /// A "Show more" button, or a spinner while the next page is coming.
+  Widget _showMore() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Center(
+      child: _loading
+          ? const CircularProgressIndicator()
+          : OutlinedButton(
+              onPressed: () => setState(() => _requestOverview(more: true)),
+              child: const Text('Show more'),
+            ),
+    ),
+  );
+
+  /// The thematic references of the chapter or book, verse by verse, the way
+  /// a wide-margin Bible prints them: each key phrase and the passages it
+  /// points to, compactly. A verse's heading opens its own view, with the
+  /// target verses' text; a reference opens that passage in the reader.
+  Widget _thematicOverviewList(BuildContext context) {
+    if (_thematicVerses.isEmpty) {
+      return Center(
+        child: _loading
+            ? const CircularProgressIndicator()
+            : const Text('No thematic references here.'),
+      );
+    }
+    final hasMore = _thematicVerses.length < _thematicTotal;
+    final controller = ScrollController(initialScrollOffset: _overviewOffset);
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        _overviewOffset = n.metrics.pixels;
+        return false;
+      },
+      child: ListView.builder(
+        key: const ValueKey('thematic-overview'),
+        controller: controller,
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+        itemCount: _thematicVerses.length + (hasMore ? 1 : 0),
+        itemBuilder: (context, i) {
+          if (i == _thematicVerses.length) return _showMore();
+          final verse = _thematicVerses[i];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _verseHeadingFor(
+                context,
+                chapter: verse.chapter,
+                verse: verse.verse,
+              ),
+              for (final entry in verse.entries)
+                _ThematicMarginEntry(
+                  entry: entry,
+                  label: _targetLabel,
+                  onOpen: widget.onNavigateToPassage,
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// A target's reference, shortened within the book the panel shows.
+  String _targetLabel(ThematicTarget t) {
+    final start = t.book == widget.book
+        ? '${t.chapter}:${t.verse}'
+        : _ref(t.book, t.chapter, t.verse);
+    if (t.lastChapter == t.chapter && t.lastVerse == t.verse) return start;
+    if (t.lastChapter == t.chapter) return '$start–${t.lastVerse}';
+    return '$start–${t.lastChapter}:${t.lastVerse}';
   }
 
   Widget _overviewList(BuildContext context) {
@@ -493,20 +645,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
         padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
         itemCount: _entries.length + (hasMore ? 1 : 0),
         itemBuilder: (context, i) {
-          if (i == _entries.length) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Center(
-                child: _loading
-                    ? const CircularProgressIndicator()
-                    : OutlinedButton(
-                        onPressed: () =>
-                            setState(() => _requestOverview(more: true)),
-                        child: const Text('Show more'),
-                      ),
-              ),
-            );
-          }
+          if (i == _entries.length) return _showMore();
           final entry = _entries[i];
           final previous = i == 0 ? null : _entries[i - 1];
           final newVerse =
@@ -542,18 +681,33 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
     });
   }
 
-  Widget _verseHeading(BuildContext context, QuotationEntry entry) {
+  Widget _verseHeading(BuildContext context, QuotationEntry entry) =>
+      _verseHeadingFor(context, chapter: entry.chapter, verse: entry.verse);
+
+  /// A verse of the book the panel shows, opening its own view.
+  Widget _verseHeadingFor(
+    BuildContext context, {
+    required int chapter,
+    required int verse,
+  }) {
     final theme = Theme.of(context);
     return InkWell(
       borderRadius: BorderRadius.circular(6),
-      onTap: () => _openVerse(entry, focusLink: false),
+      onTap: () => setState(
+        () => _view = (
+          book: widget.book,
+          chapter: chapter,
+          verse: verse,
+          focus: null,
+        ),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(4, 12, 4, 2),
         child: Row(
           children: [
             Expanded(
               child: Text(
-                _ref(widget.book, entry.chapter, entry.verse),
+                _ref(widget.book, chapter, verse),
                 style: theme.textTheme.titleSmall?.copyWith(
                   color: theme.colorScheme.primary,
                 ),
@@ -642,11 +796,8 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   }
 }
 
-/// One verse's links, strongest first, with the matched words highlighted on
-/// both sides. Choosing a link shows its words on the verse itself; tapping
-/// the linked verse opens it in the reader.
-/// The two lists of a verse's own view.
-enum _VerseSection {
+/// The two lists the panel shows, for a verse or a chapter.
+enum _Section {
   /// Quotations and parallels found by aligning roots.
   links,
 
@@ -654,6 +805,94 @@ enum _VerseSection {
   thematic,
 }
 
+/// The Quotations | Thematic switch, for the overview and a verse alike; a
+/// verse's view gives its counts.
+Widget _sectionSwitch({
+  required _Section selected,
+  required ValueChanged<_Section> onSelected,
+  int? links,
+  int? thematic,
+}) => SegmentedButton<_Section>(
+  key: const ValueKey('section'),
+  showSelectedIcon: false,
+  segments: [
+    ButtonSegment(
+      value: _Section.links,
+      label: Text(links == null ? 'Quotations' : 'Quotations ($links)'),
+    ),
+    ButtonSegment(
+      value: _Section.thematic,
+      label: Text(thematic == null ? 'Thematic' : 'Thematic ($thematic)'),
+    ),
+  ],
+  selected: {selected},
+  onSelectionChanged: (s) => onSelected(s.single),
+);
+
+/// One key phrase of a verse in the thematic overview: the phrase, then the
+/// passages it points to as compact references, each opening its passage.
+class _ThematicMarginEntry extends StatelessWidget {
+  const _ThematicMarginEntry({
+    required this.entry,
+    required this.label,
+    this.onOpen,
+  });
+
+  final ThematicReferenceEntry entry;
+  final String Function(ThematicTarget) label;
+
+  /// Opens a passage: 0-based book index, chapter, verse.
+  final void Function(int bookIndex, int chapter, int verse)? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final linkStyle = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.primary,
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 2, 4, 2),
+      child: Wrap(
+        spacing: 2,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Text(
+              entry.phrase,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontStyle: FontStyle.italic,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          for (final (i, target) in entry.targets.indexed)
+            InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: onOpen == null
+                  ? null
+                  : () =>
+                        onOpen!(target.book - 1, target.chapter, target.verse),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+                child: Text(
+                  i + 1 < entry.targets.length
+                      ? '${label(target)};'
+                      : label(target),
+                  style: linkStyle,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One verse's links, strongest first, with the matched words highlighted on
+/// both sides. Choosing a link shows its words on the verse itself; tapping
+/// the linked verse opens it in the reader. Beside them, its thematic
+/// references.
 class _VerseLinks extends StatefulWidget {
   const _VerseLinks({
     super.key,
@@ -667,6 +906,8 @@ class _VerseLinks extends StatefulWidget {
     required this.englishOnly,
     required this.onToggleEnglishOnly,
     required this.onBack,
+    this.chosenSection,
+    this.onSectionChanged,
     this.onClose,
     this.isLinkBookmarked,
     this.onToggleLinkBookmark,
@@ -688,6 +929,11 @@ class _VerseLinks extends StatefulWidget {
   final bool englishOnly;
   final VoidCallback onToggleEnglishOnly;
   final VoidCallback onBack;
+
+  /// The list the reader last picked in the panel, if any, and where a new
+  /// pick is reported.
+  final _Section? chosenSection;
+  final ValueChanged<_Section>? onSectionChanged;
   final VoidCallback? onClose;
   final bool Function(StudyLinkVerse earlier, StudyLinkVerse later)?
   isLinkBookmarked;
@@ -713,16 +959,16 @@ class _VerseLinksState extends State<_VerseLinks> {
   List<ThematicReferenceEntry>? _thematic;
 
   /// The list the reader picked, if they have.
-  _VerseSection? _chosenSection;
+  late _Section? _chosenSection = widget.chosenSection;
 
   /// Which list shows: the one picked, else the quotations and parallels —
   /// unless the verse has none and does have thematic references.
-  _VerseSection get _section {
+  _Section get _section {
     final chosen = _chosenSection;
     if (chosen != null) return chosen;
     final noLinks = _entries?.isEmpty ?? false;
     final thematic = _thematic?.isNotEmpty ?? false;
-    return noLinks && thematic ? _VerseSection.thematic : _VerseSection.links;
+    return noLinks && thematic ? _Section.thematic : _Section.links;
   }
 
   /// The linked verse whose matched words are shown on the source verse.
@@ -863,52 +1109,44 @@ class _VerseLinksState extends State<_VerseLinks> {
             ),
           )
         else ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: OccurrenceVerseRow(
-              key: ValueKey('source-$section-$_focused'),
-              cache: widget.cache,
-              displayRef: _ref(widget.book, widget.chapter, widget.verse),
-              bookIndex: widget.book - 1,
-              chapter: widget.chapter,
-              verse: widget.verse,
-              highlightWords: const [],
-              positions: section == _VerseSection.links && entries.isNotEmpty
-                  ? entries[_focused.clamp(0, entries.length - 1)]
-                        .sourcePositions
-                  : const [],
-              isCurrent: true,
-              englishOnly: widget.englishOnly,
-              useEnglishBookNames: widget.useEnglishBookNames,
+          // The verse itself, with the focused link's matched words. The
+          // thematic list has no words to show on it, and the header already
+          // names the verse.
+          if (section == _Section.links)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: OccurrenceVerseRow(
+                key: ValueKey('source-$_focused'),
+                cache: widget.cache,
+                displayRef: _ref(widget.book, widget.chapter, widget.verse),
+                bookIndex: widget.book - 1,
+                chapter: widget.chapter,
+                verse: widget.verse,
+                highlightWords: const [],
+                positions: entries.isEmpty
+                    ? const []
+                    : entries[_focused.clamp(0, entries.length - 1)]
+                          .sourcePositions,
+                isCurrent: true,
+                englishOnly: widget.englishOnly,
+                useEnglishBookNames: widget.useEnglishBookNames,
+              ),
             ),
-          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-            child: SegmentedButton<_VerseSection>(
-              key: const ValueKey('verse-section'),
-              showSelectedIcon: false,
-              segments: [
-                ButtonSegment(
-                  value: _VerseSection.links,
-                  label: Text('Quotations (${entries.length})'),
-                ),
-                ButtonSegment(
-                  value: _VerseSection.thematic,
-                  label: Text(
-                    thematic == null
-                        ? 'Thematic'
-                        : 'Thematic (${_targetCount(thematic)})',
-                  ),
-                ),
-              ],
-              selected: {section},
-              onSelectionChanged: (s) =>
-                  setState(() => _chosenSection = s.first),
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+            child: _sectionSwitch(
+              selected: section,
+              links: entries.length,
+              thematic: thematic == null ? null : _targetCount(thematic),
+              onSelected: (s) {
+                setState(() => _chosenSection = s);
+                widget.onSectionChanged?.call(s);
+              },
             ),
           ),
           const Divider(height: 17),
           Expanded(
-            child: section == _VerseSection.links
+            child: section == _Section.links
                 ? entries.isEmpty
                       ? const Center(
                           child: Text('No quotations or parallels found.'),

@@ -220,6 +220,7 @@ class BibleReaderPage extends StatefulWidget {
     this.sendCrossReferencesRequest,
     this.sendQuotationsRequest,
     this.sendThematicReferencesRequest,
+    this.sendThematicOverviewRequest,
   });
 
   final void Function(GetChapter request)? sendChapterRequest;
@@ -232,6 +233,7 @@ class BibleReaderPage extends StatefulWidget {
   final void Function(GetQuotations request)? sendQuotationsRequest;
   final void Function(GetThematicReferences request)?
   sendThematicReferencesRequest;
+  final void Function(GetThematicOverview request)? sendThematicOverviewRequest;
 
   @override
   State<BibleReaderPage> createState() => _BibleReaderPageState();
@@ -637,6 +639,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           sendRequest: widget.sendCrossReferencesRequest,
           sendQuotationsRequest: widget.sendQuotationsRequest,
           sendThematicReferencesRequest: widget.sendThematicReferencesRequest,
+          sendThematicOverviewRequest: widget.sendThematicOverviewRequest,
           sendVerseTextsRequest: widget.sendVerseTextsRequest,
         ),
       ),
@@ -667,6 +670,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               sendQuotationsRequest: widget.sendQuotationsRequest,
               sendThematicReferencesRequest:
                   widget.sendThematicReferencesRequest,
+              sendThematicOverviewRequest: widget.sendThematicOverviewRequest,
               sendVerseTextsRequest: widget.sendVerseTextsRequest,
             ),
     );

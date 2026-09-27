@@ -15,6 +15,19 @@ class _FakeRust {
   final List<GetQuotations> quotationRequests = [];
 
   final List<GetThematicReferences> thematicRequests = [];
+  final List<GetThematicOverview> thematicOverviewRequests = [];
+
+  void deliverThematicOverview(int total, List<ThematicVerseEntry> verses) {
+    assignRustSignal['ThematicOverview']!(
+      ThematicOverview(
+        requestId: thematicOverviewRequests.last.requestId,
+        book: thematicOverviewRequests.last.book,
+        total: total,
+        verses: verses,
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+  }
 
   void deliverThematic(
     int book,
@@ -126,6 +139,7 @@ Future<_FakeRust> _pump(
             sendRequest: rust.requests.add,
             sendQuotationsRequest: rust.quotationRequests.add,
             sendThematicReferencesRequest: rust.thematicRequests.add,
+            sendThematicOverviewRequest: rust.thematicOverviewRequests.add,
             sendVerseTextsRequest: rust.verseRequests.add,
           ),
         ),
@@ -306,8 +320,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('“a virgin”'), findsOneWidget);
     expect(find.text('Strong match · 2 words'), findsNothing);
-    // No link is focused, so the source verse shows no matched words.
-    expect(_highlighted(tester)['Matthew 1:23'], isEmpty);
+    // The thematic list shows no source verse: the header names it.
+    expect(_highlighted(tester).containsKey('Matthew 1:23'), isFalse);
 
     await tester.tap(find.text('Quotations (1)'));
     await tester.pumpAndSettle();
@@ -348,6 +362,118 @@ QuotationEntry _quote({
 );
 
 void overviewTests() {
+  testWidgets('the overview switches to the chapter\'s thematic references', (
+    tester,
+  ) async {
+    final opened = <(int, int, int)>[];
+    final rust = await _pump(
+      tester,
+      verse: null,
+      onNavigate: (b, c, v) => opened.add((b, c, v)),
+    );
+    rust.deliverQuotations(0, const []);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('strength')), findsOneWidget);
+
+    await tester.tap(find.text('Thematic'));
+    await tester.pump();
+    final request = rust.thematicOverviewRequests.single;
+    expect(request.book, 40);
+    expect((request.firstChapter, request.lastChapter), (1, 1));
+    expect(request.offset, 0);
+    // Strength, order and link kind belong to quotations alone.
+    expect(find.byKey(const ValueKey('strength')), findsNothing);
+    expect(find.byKey(const ValueKey('links')), findsNothing);
+
+    rust.deliverThematicOverview(2, [
+      ThematicVerseEntry(
+        chapter: 1,
+        verse: 21,
+        entries: [
+          ThematicReferenceEntry(
+            phrase: 'Jesus',
+            targets: [
+              _target(book: 40, chapter: 1, verse: 25),
+              _target(book: 44, chapter: 5, verse: 31),
+            ],
+          ),
+        ],
+      ),
+      ThematicVerseEntry(
+        chapter: 1,
+        verse: 23,
+        entries: [
+          ThematicReferenceEntry(
+            phrase: 'a virgin',
+            targets: [_target(book: 12, chapter: 7, verse: 14, lastVerse: 16)],
+          ),
+        ],
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    expect(find.text('Thematic references in Matthew'), findsOneWidget);
+    expect(find.text('2 verses'), findsOneWidget);
+    expect(find.text('Matthew 1:21'), findsOneWidget);
+    expect(find.text('Jesus'), findsOneWidget);
+    // Within the book a reference drops the book's name.
+    expect(find.text('1:25;'), findsOneWidget);
+    expect(find.text('Acts 5:31'), findsOneWidget);
+    expect(find.text('Isaiah 7:14–16'), findsOneWidget);
+
+    await tester.tap(find.text('Acts 5:31'));
+    expect(opened, [(43, 5, 31)]);
+
+    // A verse's heading opens its view on the thematic list, with no source
+    // verse above it.
+    await tester.tap(find.text('Matthew 1:23'));
+    await tester.pump();
+    expect(rust.thematicRequests.single.verse, 23);
+    rust.deliver(40, 1, 23, [_entry(book: 12, chapter: 7, verse: 14)]);
+    rust.deliverThematic(40, 1, 23, [
+      ThematicReferenceEntry(
+        phrase: 'a virgin',
+        targets: [_target(book: 12, chapter: 7, verse: 14)],
+      ),
+    ]);
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    expect(find.text('“a virgin”'), findsOneWidget);
+    expect(_highlighted(tester).containsKey('Matthew 1:23'), isFalse);
+
+    // Back on quotations, the overview follows.
+    await tester.tap(find.text('Quotations (1)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('All cross references'));
+    await tester.pump();
+    expect(rust.quotationRequests, hasLength(2));
+  });
+
+  testWidgets('the thematic overview pages by verse', (tester) async {
+    final rust = await _pump(tester, verse: null);
+    rust.deliverQuotations(0, const []);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Thematic'));
+    await tester.pump();
+    rust.deliverThematicOverview(41, [
+      for (var v = 1; v <= 3; v++)
+        ThematicVerseEntry(
+          chapter: 1,
+          verse: v,
+          entries: [
+            ThematicReferenceEntry(
+              phrase: 'p$v',
+              targets: [_target(book: 1, chapter: 1, verse: 1)],
+            ),
+          ],
+        ),
+    ]);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Show more'), 100);
+    await tester.tap(find.text('Show more'));
+    await tester.pump();
+    expect(rust.thematicOverviewRequests.last.offset, 3);
+  });
   testWidgets('with no verse it opens the chapter overview grouped by verse', (
     tester,
   ) async {
@@ -569,6 +695,7 @@ void dockedTests() {
             sendRequest: rust.requests.add,
             sendQuotationsRequest: rust.quotationRequests.add,
             sendThematicReferencesRequest: rust.thematicRequests.add,
+            sendThematicOverviewRequest: rust.thematicOverviewRequests.add,
             sendVerseTextsRequest: rust.verseRequests.add,
           ),
         ),
@@ -623,6 +750,7 @@ void bookmarkTests() {
               sendRequest: rust.requests.add,
               sendQuotationsRequest: rust.quotationRequests.add,
               sendThematicReferencesRequest: rust.thematicRequests.add,
+              sendThematicOverviewRequest: rust.thematicOverviewRequests.add,
               sendVerseTextsRequest: rust.verseRequests.add,
             ),
           ),
@@ -672,6 +800,7 @@ void bookmarkTests() {
               sendRequest: rust.requests.add,
               sendQuotationsRequest: rust.quotationRequests.add,
               sendThematicReferencesRequest: rust.thematicRequests.add,
+              sendThematicOverviewRequest: rust.thematicOverviewRequests.add,
               sendVerseTextsRequest: rust.verseRequests.add,
             ),
           ),
