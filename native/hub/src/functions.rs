@@ -42,17 +42,15 @@ fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
 /// Every lexicon's entries for a root family, as the Lexicon tab's lexemes:
 /// the BDB entries given, with Klein's and Jastrow's for the same word beside
 /// them. `related` names more of the family by spelling — a Peshitta word's
-/// SEDRA lexemes. `word` is the word looked up, whose shin or sin keeps out
-/// the other root spelled with the same letters.
+/// SEDRA lexemes.
 fn lexicon_rows(
     bible: &Bible,
     root: &str,
     bdb: Vec<BdbEntry>,
     related: &[String],
-    word: &str,
 ) -> Vec<LexemeSummary> {
     bible
-        .root_lexemes(root, bdb, related, word)
+        .root_lexemes(root, bdb, related)
         .unwrap_or_else(|e| {
             debug_print!("root_lexemes({root:?}) error: {e:?}");
             Vec::new()
@@ -780,7 +778,7 @@ pub async fn get_word_info(bible: SharedBible) {
                             is_root: entry.is_root,
                         });
                     }
-                    let lexicon = lexicon_rows(&bible, &entry.root, tree, &[], &entry.headword);
+                    let lexicon = lexicon_rows(&bible, &entry.root, tree, &[]);
                     WordInfo {
                         request_id: req.request_id,
                         found: true,
@@ -857,14 +855,18 @@ pub async fn get_word_info(bible: SharedBible) {
                     // Every other lexicon's entries for the same root letters:
                     // BDB's Hebrew cognates, and Klein's and Jastrow's articles
                     // spelled like the root or any lexeme of its SEDRA tree.
-                    let lexemes: Vec<String> =
-                        sedra_entries.iter().map(|e| e.lexeme.clone()).collect();
+                    // Syriac has the one ש, so a Hebrew shin root and sin root
+                    // both answer to it.
+                    let lexemes: Vec<String> = std::iter::once(first.root.clone())
+                        .chain(sedra_entries.iter().map(|e| e.lexeme.clone()))
+                        .collect();
                     let lexicon = lexicon_rows(
                         &bible,
                         &first.root,
-                        bible.hebrew_bdb_by_root(&first.root).unwrap_or_default(),
+                        bible
+                            .hebrew_bdb_by_syriac_root(&first.root)
+                            .unwrap_or_default(),
                         &lexemes,
-                        "",
                     );
                     let gloss = first.meanings.first().cloned().unwrap_or_default();
                     WordInfo {
@@ -983,7 +985,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         .collect();
                     let lexemes: Vec<String> =
                         sedra_entries.iter().map(|e| e.lexeme.clone()).collect();
-                    let lexicon = lexicon_rows(&bible, &selected, tree, &lexemes, &info.word);
+                    let lexicon = lexicon_rows(&bible, &selected, tree, &lexemes);
                     // The headline describes this occurrence, not merely its
                     // dictionary lemma. Keep the BDB entries below as lexeme
                     // definitions, while rendering proclitics and noun/verb
