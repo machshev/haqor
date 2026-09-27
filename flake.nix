@@ -25,7 +25,7 @@
       in
         builtins.head (builtins.match "[^\"]*\"([0-9.]+)\".*" ndkLine);
       androidComposition = pkgs.androidenv.composeAndroidPackages {
-        buildToolsVersions = ["34.0.0"];
+        buildToolsVersions = ["35.0.0"];
         platformVersions = ["34" "35" "36"];
         cmakeVersions = ["3.22.1"];
         abiVersions = ["x86_64" "armeabi-v7a" "arm64-v8a"];
