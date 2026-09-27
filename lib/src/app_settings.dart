@@ -476,6 +476,7 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
                 label: 'Font size',
                 value: _readingSettings.fontSize,
                 options: {
+                  13.0: 'Extra small',
                   16.0: 'Small',
                   20.0: 'Medium',
                   24.0: 'Large',

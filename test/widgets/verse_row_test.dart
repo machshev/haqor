@@ -77,9 +77,107 @@ void main() {
 
     await tester.pumpWidget(row(const [20, 12, 8]));
     expect(find.byTooltip('3 cross references'), findsOneWidget);
+    // The mark opens the verse's first line rather than standing in a margin
+    // column, so only that line is indented by it.
+    expect(
+      find.descendant(
+        of: find.byType(SelectableText),
+        matching: find.byIcon(Icons.link),
+      ),
+      findsOneWidget,
+    );
     await tester.tap(find.byIcon(Icons.link));
     expect(opened, 1);
     expect(selected, 0, reason: 'the mark must not also select the verse');
+  });
+
+  testWidgets('verses are spaced no further apart than lines', (tester) async {
+    for (final fontSize in [13.0, 16.0, 20.0, 28.0]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                // A one-line verse carrying every margin mark, which must not
+                // push the row beyond the height of its text.
+                VerseRow(
+                  entry: VerseEntry(
+                    verse: 23,
+                    text: 'הִנֵּה הָעַלְמָה',
+                    glosses: const [],
+                    morphologies: const [],
+                    names: const [],
+                    roots: const [],
+                    ketivs: const [],
+                    crossReferenceScores: const [20],
+                  ),
+                  isSelected: false,
+                  hebrewNumerals: false,
+                  onTap: () {},
+                  onWordTap: (_, _, _, _) {},
+                  onCrossReferences: () {},
+                  studyNote: true,
+                  fontSize: fontSize,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      final lineHeight = tester.getSize(find.byType(SelectableText)).height;
+      expect(
+        tester.getSize(find.byType(VerseRow)).height,
+        lineHeight,
+        reason: 'at font size $fontSize',
+      );
+      expect(
+        verseRowScrollExtent(fontSize: fontSize, fontFamily: 'Cardo'),
+        lineHeight,
+        reason: 'at font size $fontSize',
+      );
+    }
+  });
+
+  testWidgets('interlinear verses are spaced no further apart than lines', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              VerseRow(
+                entry: const VerseEntry(
+                  verse: 1,
+                  text: 'דָבָר יְהוָה',
+                  glosses: ['word', 'Yahweh'],
+                  morphologies: ['noun singular', 'noun singular'],
+                  names: [],
+                  roots: [],
+                  ketivs: [],
+                  crossReferenceScores: [20],
+                ),
+                isSelected: false,
+                hebrewNumerals: false,
+                glossInterlinear: true,
+                morphologyInterlinear: true,
+                onTap: () {},
+                onWordTap: (_, _, _, _) {},
+                onCrossReferences: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // The word columns carry their own padding, which already separates one
+    // wrapped line from the next; the row adds nothing on top.
+    expect(
+      tester.getSize(find.byType(VerseRow)).height,
+      tester.getSize(find.byType(Wrap)).height,
+    );
   });
 
   testWidgets('standalone punctuation cannot shift Yahweh highlighting', (
@@ -146,8 +244,8 @@ void main() {
       ),
     );
 
-    expect(find.text('בְּרֵאשִׁית'), findsOneWidget);
-    expect(find.text('בְּרֵאשִׁ֖ית'), findsNothing);
+    expect(find.textContaining('בְּרֵאשִׁית'), findsOneWidget);
+    expect(find.textContaining('בְּרֵאשִׁ֖ית'), findsNothing);
   });
 
   testWidgets('word taps carry the lexical occurrence position', (

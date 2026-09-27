@@ -1839,7 +1839,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       _englishBookNames = prefs.getBool(_kEnglishBookNames) ?? false;
       _hebrewNumerals = prefs.getBool(_kHebrewNumerals) ?? true;
       _crossReferenceMinScore = prefs.getDouble(_kCrossReferenceMinScore) ?? 0;
-      _fontSize = (prefs.getDouble(_kFontSize) ?? 20.0).clamp(16.0, 28.0);
+      _fontSize = (prefs.getDouble(_kFontSize) ?? 20.0).clamp(13.0, 28.0);
       final savedFamily = prefs.getString(_kFontFamily) ?? 'Cardo';
       _fontFamily = _fontFamilies.contains(savedFamily) ? savedFamily : 'Cardo';
       _showCantillation = prefs.getBool(_kShowCantillation) ?? true;
@@ -3188,17 +3188,9 @@ class _ReaderSessionState extends State<_ReaderSession>
 
     final key = event.logicalKey;
     final distance = key == LogicalKeyboardKey.arrowUp
-        ? -verseRowScrollExtent(
-            fontSize: _fontSize,
-            fontFamily: _fontFamily,
-            interlinear: _glossInterlinear || _morphologyInterlinear,
-          )
+        ? -verseRowScrollExtent(fontSize: _fontSize, fontFamily: _fontFamily)
         : key == LogicalKeyboardKey.arrowDown
-        ? verseRowScrollExtent(
-            fontSize: _fontSize,
-            fontFamily: _fontFamily,
-            interlinear: _glossInterlinear || _morphologyInterlinear,
-          )
+        ? verseRowScrollExtent(fontSize: _fontSize, fontFamily: _fontFamily)
         : key == LogicalKeyboardKey.pageUp
         ? -_scrollController.position.viewportDimension * 0.9
         : key == LogicalKeyboardKey.pageDown

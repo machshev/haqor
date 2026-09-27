@@ -124,7 +124,6 @@ Map<int, List<({KetivEntry ketiv, bool before})>> ketivAnchors(
 double verseRowScrollExtent({
   required double fontSize,
   required String fontFamily,
-  required bool interlinear,
 }) {
   final textPainter = TextPainter(
     text: TextSpan(
@@ -141,10 +140,7 @@ double verseRowScrollExtent({
     maxLines: 1,
   )..layout();
 
-  final lineHeight = textPainter.preferredLineHeight;
-  final verticalMargin = interlinear ? 2.0 : 1.0;
-  final verticalPadding = interlinear ? 8.0 : 4.0;
-  return lineHeight + (verticalMargin * 2) + (verticalPadding * 2);
+  return textPainter.preferredLineHeight;
 }
 
 class VerseRow extends StatefulWidget {
@@ -513,6 +509,42 @@ class _VerseRowState extends State<VerseRow> {
           : baseStyle;
     }
 
+    // The verse number and its marks open the verse's first line, as in a
+    // printed Bible, rather than standing in a margin column: a column would
+    // indent every line by however wide that verse's marks happen to be.
+    final verseMarks = Padding(
+      padding: const EdgeInsetsDirectional.only(end: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        textDirection: TextDirection.rtl,
+        children: [
+          Text(
+            widget.hebrewNumerals
+                ? _toHebrewNumeral(widget.entry.verse)
+                : '${widget.entry.verse}',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          if (widget.studyNote)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 2),
+              child: Icon(
+                Icons.sticky_note_2_outlined,
+                size: 12,
+                color: theme.colorScheme.secondary,
+              ),
+            ),
+          if (_crossReferenceCount > 0 && widget.onCrossReferences != null)
+            _CrossReferenceMarker(
+              count: _crossReferenceCount,
+              onTap: widget.onCrossReferences!,
+            ),
+        ],
+      ),
+    );
+
     final Widget content;
     if ((widget.glossInterlinear || widget.morphologyInterlinear) &&
         (widget.entry.glosses.isNotEmpty ||
@@ -532,6 +564,13 @@ class _VerseRowState extends State<VerseRow> {
           spacing: 6,
           textDirection: TextDirection.rtl,
           children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: SizedBox(
+                height: widget.fontSize * 1.6,
+                child: Center(child: verseMarks),
+              ),
+            ),
             for (final (i, glossPosition) in verseGlossPositions(
               interlinearWords,
             ).indexed)
@@ -610,7 +649,9 @@ class _VerseRowState extends State<VerseRow> {
         ),
       );
     } else {
-      final spans = <InlineSpan>[];
+      final spans = <InlineSpan>[
+        WidgetSpan(alignment: PlaceholderAlignment.middle, child: verseMarks),
+      ];
       final displayNamePositions = verseGlossPositions(_words);
       final anchors = widget.ketivDisplay == KetivDisplay.hidden
           ? const <int, List<({KetivEntry ketiv, bool before})>>{}
@@ -648,17 +689,11 @@ class _VerseRowState extends State<VerseRow> {
       onTap: widget.onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        margin: EdgeInsets.symmetric(
-          vertical: widget.glossInterlinear || widget.morphologyInterlinear
-              ? 2
-              : 1,
-        ),
-        padding: EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: widget.glossInterlinear || widget.morphologyInterlinear
-              ? 8
-              : 4,
-        ),
+        // No space between verses beyond what the lines themselves carry — the
+        // running text's leading, or the interlinear words' own padding — so
+        // the gap between verses matches the gap between lines.
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        // Square corners, so neighbouring highlighted verses join into one band.
         decoration: BoxDecoration(
           color: widget.isSelected
               ? theme.colorScheme.primaryContainer
@@ -673,44 +708,8 @@ class _VerseRowState extends State<VerseRow> {
                               theme.colorScheme.secondaryContainer)
                           .withValues(alpha: 0.55)
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: content),
-            const SizedBox(width: 8),
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    widget.hebrewNumerals
-                        ? _toHebrewNumeral(widget.entry.verse)
-                        : '${widget.entry.verse}',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (widget.studyNote)
-                    Icon(
-                      Icons.sticky_note_2_outlined,
-                      size: 12,
-                      color: theme.colorScheme.secondary,
-                    ),
-                  if (_crossReferenceCount > 0 &&
-                      widget.onCrossReferences != null)
-                    _CrossReferenceMarker(
-                      count: _crossReferenceCount,
-                      onTap: widget.onCrossReferences!,
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        child: content,
       ),
     );
   }
@@ -739,7 +738,7 @@ class _CrossReferenceMarker extends StatelessWidget {
           onTap: onTap,
           radius: 16,
           child: Padding(
-            padding: const EdgeInsets.all(4),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
             child: Icon(
               Icons.link,
               size: 14,
