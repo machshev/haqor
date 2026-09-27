@@ -630,36 +630,46 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     if (mounted) setState(() => _crossReferencesVisible = false);
   }
 
+  /// A panel that moves between a phone's pages and the side panel under
+  /// [key], with its own overlay so its tooltips move with it (see
+  /// [_ReaderSessionState.build]).
+  Widget _movablePanel(GlobalKey key, Widget child) => KeyedSubtree(
+    key: key,
+    child: Overlay.wrap(child: child),
+  );
+
   Widget _crossReferencesPanel() {
     final reader = _activeReader;
-    return Material(
-      key: _crossReferencesKey,
-      color: Theme.of(context).colorScheme.surface,
-      child: reader == null
-          ? const SizedBox.shrink()
-          : CrossReferencesPanel(
-              book: reader._bookIndex + 1,
-              chapter: reader._chapter,
-              target: _crossReferenceTarget,
-              targetRequest: _crossReferenceRequest,
-              useEnglishBookNames: reader._englishBookNames,
-              isLinkBookmarked: reader._isStudyLinkBookmarked,
-              onToggleLinkBookmark: reader._toggleStudyLinkBookmark,
-              minScore: reader._crossReferenceMinScore,
-              onMinScoreChanged: reader._setCrossReferenceMinScore,
-              onNavigateToPassage: (book, chapter, verse) {
-                reader._navigateTo(book, chapter, verse: verse);
-                // A phone shows the reader in place of the page.
-                if (_crossReferencesPageSelected) _showReaderPage();
-              },
-              onClose: _closeCrossReferences,
-              sendRequest: widget.sendCrossReferencesRequest,
-              sendQuotationsRequest: widget.sendQuotationsRequest,
-              sendThematicReferencesRequest:
-                  widget.sendThematicReferencesRequest,
-              sendThematicOverviewRequest: widget.sendThematicOverviewRequest,
-              sendVerseTextsRequest: widget.sendVerseTextsRequest,
-            ),
+    return _movablePanel(
+      _crossReferencesKey,
+      Material(
+        color: Theme.of(context).colorScheme.surface,
+        child: reader == null
+            ? const SizedBox.shrink()
+            : CrossReferencesPanel(
+                book: reader._bookIndex + 1,
+                chapter: reader._chapter,
+                target: _crossReferenceTarget,
+                targetRequest: _crossReferenceRequest,
+                useEnglishBookNames: reader._englishBookNames,
+                isLinkBookmarked: reader._isStudyLinkBookmarked,
+                onToggleLinkBookmark: reader._toggleStudyLinkBookmark,
+                minScore: reader._crossReferenceMinScore,
+                onMinScoreChanged: reader._setCrossReferenceMinScore,
+                onNavigateToPassage: (book, chapter, verse) {
+                  reader._navigateTo(book, chapter, verse: verse);
+                  // A phone shows the reader in place of the page.
+                  if (_crossReferencesPageSelected) _showReaderPage();
+                },
+                onClose: _closeCrossReferences,
+                sendRequest: widget.sendCrossReferencesRequest,
+                sendQuotationsRequest: widget.sendQuotationsRequest,
+                sendThematicReferencesRequest:
+                    widget.sendThematicReferencesRequest,
+                sendThematicOverviewRequest: widget.sendThematicOverviewRequest,
+                sendVerseTextsRequest: widget.sendVerseTextsRequest,
+              ),
+      ),
     );
   }
 
@@ -849,49 +859,51 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     final activeIndex = _wordPanes.indexWhere(
       (pane) => pane.id == _activeWordPaneId,
     );
-    return Material(
-      key: _wordInspectorKey,
-      color: theme.colorScheme.surface,
-      child: SafeArea(
-        top: false,
-        child: selected == null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'Select a Hebrew or Syriac word to keep its lexicon '
-                    'and occurrences beside the passage.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+    return _movablePanel(
+      _wordInspectorKey,
+      Material(
+        color: theme.colorScheme.surface,
+        child: SafeArea(
+          top: false,
+          child: selected == null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Select a Hebrew or Syriac word to keep its lexicon '
+                      'and occurrences beside the passage.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                ),
-              )
-            : Column(
-                children: [
-                  if (showNavigation) _wordNavigationToolbar(),
-                  if (_wordPanes.length > 1) _wordPaneSelector(),
-                  // Every pane stays built, so a hidden one keeps its tab,
-                  // filters, and loaded occurrences, and can take part in a
-                  // proximity search from the pane on show.
-                  Expanded(
-                    child: IndexedStack(
-                      index: activeIndex,
-                      children: [
-                        for (final pane in _wordPanes)
-                          KeyedSubtree(
-                            key: ValueKey(pane.id),
-                            child: TickerMode(
-                              enabled: pane.id == _activeWordPaneId,
-                              child: _wordInfoSheet(pane),
+                )
+              : Column(
+                  children: [
+                    if (showNavigation) _wordNavigationToolbar(),
+                    if (_wordPanes.length > 1) _wordPaneSelector(),
+                    // Every pane stays built, so a hidden one keeps its tab,
+                    // filters, and loaded occurrences, and can take part in a
+                    // proximity search from the pane on show.
+                    Expanded(
+                      child: IndexedStack(
+                        index: activeIndex,
+                        children: [
+                          for (final pane in _wordPanes)
+                            KeyedSubtree(
+                              key: ValueKey(pane.id),
+                              child: TickerMode(
+                                enabled: pane.id == _activeWordPaneId,
+                                child: _wordInfoSheet(pane),
+                              ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+        ),
       ),
     );
   }
@@ -4045,6 +4057,14 @@ class _ReaderSessionState extends State<_ReaderSession>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    // The session moves between the reader pages, the tiled workspace and
+    // their layouts under its global key, and a page view or layout builder
+    // adopts it during layout. An open tooltip then re-attaching to the app's
+    // overlay, outside that layout, fails, so its tooltips move with it.
+    return Overlay.wrap(child: _session(context));
+  }
+
+  Widget _session(BuildContext context) {
     final book = kBooks[_bookIndex];
     final theme = Theme.of(context);
     return Scaffold(

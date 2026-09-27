@@ -1896,12 +1896,16 @@ String _sidePanelShown(WidgetTester tester, Finder switcher) => tester
     .split('.')
     .last;
 
-Future<_FakeRust> _pumpWorkspace(WidgetTester tester, Size size) async {
+Future<_FakeRust> _pumpWorkspace(
+  WidgetTester tester,
+  Size size, {
+  Map<String, Object> prefs = const {},
+}) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
-  SharedPreferences.setMockInitialValues({'book': 0, 'chapter': 1});
+  SharedPreferences.setMockInitialValues({'book': 0, 'chapter': 1, ...prefs});
   final rust = _FakeRust();
   await tester.pumpWidget(
     MaterialApp(
@@ -2031,6 +2035,51 @@ void crossReferenceDockTests() {
     expect(find.byType(VerseRow).hitTestable(), findsWidgets);
     expect(tester.takeException(), isNull);
   });
+
+  // A page view, or the tiled workspace's layout builder, adopts a reader
+  // (and the word and cross reference panels) during layout when the window
+  // crosses between phone and desktop widths. A tooltip open inside it must
+  // not re-attach to the app's overlay then.
+  for (final tiled in [false, true]) {
+    testWidgets('an open tooltip survives resizing (tiled: $tiled)', (
+      tester,
+    ) async {
+      final rust = await _pumpWorkspace(
+        tester,
+        const Size(420, 800),
+        prefs: {
+          'reader_tabs': ['primary', 'two'],
+          'reader_tabs_tiled': tiled,
+          'study_workspace_visible': true,
+        },
+      );
+      final row = tester.widget<VerseRow>(find.byType(VerseRow).first);
+      row.onWordTap('מלה', null, 0, '');
+      row.onCrossReferences!();
+      await _turnPage(tester);
+      await tester.tap(find.byType(InputChip).first);
+      rust.deliverAll();
+      await _turnPage(tester);
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      for (final width in [1400.0, 420.0, 1400.0]) {
+        await mouse.moveTo(
+          tester.getCenter(
+            find
+                .byTooltip('Cross references in this chapter')
+                .hitTestable()
+                .first,
+          ),
+        );
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.text('Cross references in this chapter'), findsOneWidget);
+        tester.view.physicalSize = Size(width, 800);
+        await _turnPage(tester);
+        expect(tester.takeException(), isNull, reason: 'at $width');
+      }
+    });
+  }
 }
 
 void readerViewTests() {
