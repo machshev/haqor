@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../study_workspace.dart';
+import 'markdown_note.dart';
 import 'verse_row.dart';
 
 enum _PassageScope { chapter, verses, phrase }
@@ -327,11 +328,10 @@ class _StudyPassageEditorState extends State<StudyPassageEditor> {
               Text(_reference.reference),
             ],
             const SizedBox(height: 12),
-            TextField(
+            MarkdownNoteField(
               controller: _note,
+              label: 'Passage note',
               minLines: 2,
-              maxLines: 5,
-              decoration: const InputDecoration(labelText: 'Passage note'),
             ),
             if (_error != null)
               Padding(

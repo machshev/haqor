@@ -19,6 +19,7 @@ import 'tutor/progress_sync.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
 import 'widgets/cross_references_sheet.dart';
+import 'widgets/markdown_note.dart';
 import 'widgets/study_workspace_panel.dart';
 import 'widgets/study_passage_editor.dart';
 import 'widgets/study_section_editor.dart';
@@ -2506,11 +2507,11 @@ class _ReaderSessionState extends State<_ReaderSession>
   Future<void> _editStudyWord(StudyWord word) async {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
-    final note = await _askForText(
+    final note = await showMarkdownNoteDialog(
+      context,
       title: word.title,
       initialValue: word.note,
       label: 'Word note',
-      maxLines: 5,
     );
     if (note == null || !mounted) return;
     _replaceStudyWorkspace(workspace.putWord(word.copyWith(note: note)));
@@ -2556,11 +2557,11 @@ class _ReaderSessionState extends State<_ReaderSession>
   Future<void> _editStudyLink(StudyLink link) async {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
-    final note = await _askForText(
+    final note = await showMarkdownNoteDialog(
+      context,
       title: 'Cross-reference note',
       initialValue: link.note,
       label: 'Note',
-      maxLines: 5,
     );
     if (note == null || !mounted) return;
     _replaceStudyWorkspace(workspace.putLink(link.copyWith(note: note)));
@@ -2581,11 +2582,11 @@ class _ReaderSessionState extends State<_ReaderSession>
   Future<void> _createStudyNote(String? groupId) async {
     final workspace = await _ensureStudyWorkspace();
     if (workspace == null || !mounted) return;
-    final text = await _askForText(
+    final text = await showMarkdownNoteDialog(
+      context,
       title: 'New study note',
       initialValue: '',
       label: 'Note',
-      maxLines: 8,
       confirmLabel: 'Add',
     );
     if (text == null || !mounted) return;
@@ -2603,11 +2604,11 @@ class _ReaderSessionState extends State<_ReaderSession>
   Future<void> _editStudyNote(StudyNote note) async {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
-    final text = await _askForText(
+    final text = await showMarkdownNoteDialog(
+      context,
       title: 'Edit study note',
       initialValue: note.text,
       label: 'Note',
-      maxLines: 8,
     );
     if (text != null && mounted) {
       _replaceStudyWorkspace(workspace.putNote(note.copyWith(text: text)));
@@ -4614,7 +4615,7 @@ class _StudyHeading extends StatelessWidget {
           if (section.note.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 2),
-              child: Text(
+              child: MarkdownNote(
                 section.note,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,

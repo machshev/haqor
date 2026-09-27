@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../bible_data.dart';
 import '../study_workspace.dart';
 import 'cross_references_sheet.dart' show crossReferenceStrength;
+import 'markdown_note.dart';
 
 class StudyWorkspacePanel extends StatelessWidget {
   const StudyWorkspacePanel({
@@ -297,7 +298,7 @@ class StudyWorkspacePanel extends StatelessWidget {
   String _itemLabel(StudyItem item) => switch (item.type) {
     StudyItemType.passage => _reference(item.value as StudyPassage),
     StudyItemType.word => (item.value as StudyWord).surface,
-    StudyItemType.note => (item.value as StudyNote).text,
+    StudyItemType.note => markdownPlainText((item.value as StudyNote).text),
     StudyItemType.link => _linkLabel(item.value as StudyLink),
     StudyItemType.group => (item.value as StudyGroup).name,
     StudyItemType.section => (item.value as StudySection).title,
@@ -593,7 +594,7 @@ class StudyWorkspacePanel extends StatelessWidget {
                   ),
                 ),
                 if (section.note.isNotEmpty)
-                  Text(section.note, style: theme.textTheme.bodySmall),
+                  MarkdownNote(section.note, style: theme.textTheme.bodySmall),
               ],
             ),
           ),
@@ -737,7 +738,7 @@ class StudyWorkspacePanel extends StatelessWidget {
       _reference(passage),
       style: const TextStyle(fontWeight: FontWeight.bold),
     ),
-    subtitle: passage.note.isEmpty ? null : Text(passage.note),
+    subtitle: passage.note.isEmpty ? null : MarkdownNote(passage.note),
     onTap: () => onOpenPassage(passage),
     trailing: PopupMenuButton<_ItemAction>(
       tooltip: 'Passage options',
@@ -818,17 +819,18 @@ class StudyWorkspacePanel extends StatelessWidget {
     StudyWord word, {
     required int depth,
   }) {
-    final subtitle = [
-      if (word.kind == StudyWordKind.root && word.root.isEmpty)
-        'Open this word again to resolve its root.',
-      if (word.note.isNotEmpty) word.note,
-    ].join(' · ');
+    final subtitle = _noteSubtitle(
+      word.kind == StudyWordKind.root && word.root.isEmpty
+          ? 'Open this word again to resolve its root.'
+          : null,
+      word.note,
+    );
     final isRoot = word.kind == StudyWordKind.root;
     final canSwitchKind = workspace.canSwitchWordKind(word);
     return ListTile(
       key: ValueKey(word.key),
       dense: true,
-      titleAlignment: subtitle.isEmpty
+      titleAlignment: subtitle == null
           ? ListTileTitleAlignment.center
           : ListTileTitleAlignment.top,
       minTileHeight: 32,
@@ -864,7 +866,7 @@ class StudyWorkspacePanel extends StatelessWidget {
           ),
         ),
       ),
-      subtitle: subtitle.isEmpty ? null : Text(subtitle),
+      subtitle: subtitle,
       trailing: PopupMenuButton<_WordAction>(
         tooltip: 'Word options',
         iconSize: 18,
@@ -977,14 +979,14 @@ class StudyWorkspacePanel extends StatelessWidget {
         ),
       ),
     );
-    final subtitle = [
-      if (link.score > 0) crossReferenceStrength(link.score),
-      if (link.note.isNotEmpty) link.note,
-    ].join(' · ');
+    final subtitle = _noteSubtitle(
+      link.score > 0 ? crossReferenceStrength(link.score) : null,
+      link.note,
+    );
     return ListTile(
       key: ValueKey(link.key),
       dense: true,
-      titleAlignment: subtitle.isEmpty
+      titleAlignment: subtitle == null
           ? ListTileTitleAlignment.center
           : ListTileTitleAlignment.top,
       minTileHeight: 32,
@@ -1002,7 +1004,7 @@ class StudyWorkspacePanel extends StatelessWidget {
         spacing: 6,
         children: [verse(link.earlier), const Text('↔'), verse(link.later)],
       ),
-      subtitle: subtitle.isEmpty ? null : Text(subtitle),
+      subtitle: subtitle,
       trailing: PopupMenuButton<_LinkAction>(
         tooltip: 'Link options',
         iconSize: 18,
@@ -1061,6 +1063,19 @@ class StudyWorkspacePanel extends StatelessWidget {
     );
   }
 
+  /// A bookmark's [detail] (if any) with its Markdown [note] beneath, or
+  /// null when there is neither.
+  Widget? _noteSubtitle(String? detail, String note) {
+    if (detail == null && note.isEmpty) return null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (detail != null) Text(detail),
+        if (note.isNotEmpty) MarkdownNote(note),
+      ],
+    );
+  }
+
   Widget _noteTile(
     BuildContext context,
     StudyWorkspace workspace,
@@ -1076,7 +1091,7 @@ class StudyWorkspacePanel extends StatelessWidget {
       end: 0,
     ),
     leading: const Icon(Icons.notes_outlined, size: 18),
-    title: Text(note.text),
+    title: MarkdownNote(note.text),
     trailing: PopupMenuButton<_NoteAction>(
       tooltip: 'Note options',
       iconSize: 18,

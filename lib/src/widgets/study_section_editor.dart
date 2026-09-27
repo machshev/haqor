@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../study_workspace.dart';
+import 'markdown_note.dart';
 
 /// Edits a passage summary (its title, note and the chapter or verses it
 /// covers) or a section heading beneath one (its title, note and the verse
@@ -359,12 +360,7 @@ class _StudySectionEditorState extends State<StudySectionEditor> {
               Text(_referenceText),
             ],
             const SizedBox(height: 12),
-            TextField(
-              controller: _note,
-              minLines: 2,
-              maxLines: 5,
-              decoration: const InputDecoration(labelText: 'Note'),
-            ),
+            MarkdownNoteField(controller: _note, label: 'Note', minLines: 2),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
