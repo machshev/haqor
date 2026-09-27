@@ -133,6 +133,7 @@ Future<void> _deliverExpectingNoShift(
 
 void main() {
   crossReferenceDockTests();
+  readerViewTests();
 
   for (final enabled in [true, false]) {
     testWidgets(
@@ -1815,5 +1816,93 @@ void crossReferenceDockTests() {
       findsOneWidget,
     );
     expect(rust.crossReferenceRequests.single.verse, 1);
+  });
+}
+
+void readerViewTests() {
+  VerseRow verseRow(WidgetTester tester) =>
+      tester.widget<VerseRow>(_verse(1, 1, 1));
+
+  Future<void> cycleView(WidgetTester tester) async {
+    await tester.tap(find.byKey(const ValueKey('reader-view-toggle')));
+    await tester.pump();
+  }
+
+  testWidgets('the top bar cycles interlinear, Hebrew only and rapid reading', (
+    tester,
+  ) async {
+    final rust = await _pumpReader(tester, chapter: 1);
+    expect(verseRow(tester).interlinearPositions, isNull);
+
+    // No layers were enabled, so the interlinear turned the glosses on.
+    await cycleView(tester);
+    expect(verseRow(tester).interlinearPositions, isEmpty);
+    await cycleView(tester);
+    expect(rust.pending.any((r) => r.chapter == 1 && r.includeGlosses), isTrue);
+    rust.deliverAll();
+    await tester.pump();
+    expect(verseRow(tester).glossInterlinear, isTrue);
+    expect(verseRow(tester).interlinearPositions, isEmpty);
+
+    // A tap reveals the word rather than opening its details, and a second
+    // tap hides it again.
+    verseRow(tester).onWordTap('מלה', null, 3, '');
+    await tester.pump();
+    expect(verseRow(tester).interlinearPositions, {3});
+    expect(rust.wordRequests, isEmpty);
+    verseRow(tester).onWordTap('מלה', null, 4, '');
+    await tester.pump();
+    expect(verseRow(tester).interlinearPositions, {3, 4});
+    verseRow(tester).onWordTap('מלה', null, 3, '');
+    await tester.pump();
+    expect(verseRow(tester).interlinearPositions, {4});
+    expect(
+      tester.widget<VerseRow>(_verse(1, 1, 2)).interlinearPositions,
+      isEmpty,
+    );
+
+    await cycleView(tester);
+    expect(verseRow(tester).interlinearPositions, isNull);
+    verseRow(tester).onWordTap('מלה', null, 3, '');
+    await tester.pump();
+    expect(rust.wordRequests, hasLength(1));
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('reader_view'), 'interlinear');
+  });
+
+  testWidgets('rapid reading can reveal a whole verse', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      'gloss_interlinear': true,
+      'reader_view': 'rapid',
+      'rapid_reveal': 'verse',
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+          sendWordInfoRequest: rust.onWordInfo,
+          sendWordOccurrencesRequest: rust.onOccurrences,
+          sendVerseTextsRequest: rust.onVerseTexts,
+        ),
+      ),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pump();
+
+    expect(verseRow(tester).interlinearPositions, isEmpty);
+    verseRow(tester).onWordTap('מלה', null, 3, '');
+    await tester.pump();
+    expect(verseRow(tester).interlinearPositions, isNull);
+    verseRow(tester).onWordTap('מלה', null, 5, '');
+    await tester.pump();
+    expect(verseRow(tester).interlinearPositions, isEmpty);
+    expect(rust.wordRequests, isEmpty);
   });
 }

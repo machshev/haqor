@@ -1523,6 +1523,8 @@ class _ReaderSessionState extends State<_ReaderSession>
   static const _kShowCantillation = 'show_cantillation';
   static const _kGlossInterlinear = 'gloss_interlinear';
   static const _kMorphologyInterlinear = 'morphology_interlinear';
+  static const _kReaderView = 'reader_view';
+  static const _kRapidReveal = 'rapid_reveal';
   static const _kHighlightProperNames = 'highlight_proper_names';
   static const _kKetivDisplay = 'ketiv_display';
   static const _kReadingPlanBook = 'reading_plan_book';
@@ -1589,6 +1591,12 @@ class _ReaderSessionState extends State<_ReaderSession>
   bool _showCantillation = true;
   bool _glossInterlinear = false;
   bool _morphologyInterlinear = false;
+  ReaderView _readerView = ReaderView.interlinear;
+  RapidReveal _rapidReveal = RapidReveal.word;
+
+  // What rapid reading has revealed, by (book index, chapter, verse): the
+  // lexical positions shown, or null for the whole verse.
+  final Map<(int, int, int), Set<int>?> _revealed = {};
   bool _highlightProperNames = false;
   bool _studyWorkspaceVisible = false;
   KetivDisplay _ketivDisplay = KetivDisplay.superscript;
@@ -1845,6 +1853,12 @@ class _ReaderSessionState extends State<_ReaderSession>
       _showCantillation = prefs.getBool(_kShowCantillation) ?? true;
       _glossInterlinear = prefs.getBool(_kGlossInterlinear) ?? false;
       _morphologyInterlinear = prefs.getBool(_kMorphologyInterlinear) ?? false;
+      _readerView =
+          ReaderView.values.asNameMap()[prefs.getString(_kReaderView)] ??
+          ReaderView.interlinear;
+      _rapidReveal =
+          RapidReveal.values.asNameMap()[prefs.getString(_kRapidReveal)] ??
+          RapidReveal.word;
       _highlightProperNames = prefs.getBool(_kHighlightProperNames) ?? false;
       _studyWorkspaceVisible = prefs.getBool(_kStudyWorkspaceVisible) ?? false;
       _ketivDisplay = KetivDisplay.values.firstWhere(
@@ -1964,6 +1978,8 @@ class _ReaderSessionState extends State<_ReaderSession>
       prefs.setBool(_kShowCantillation, _showCantillation),
       prefs.setBool(_kGlossInterlinear, _glossInterlinear),
       prefs.setBool(_kMorphologyInterlinear, _morphologyInterlinear),
+      prefs.setString(_kReaderView, _readerView.name),
+      prefs.setString(_kRapidReveal, _rapidReveal.name),
       prefs.setBool(_kHighlightProperNames, _highlightProperNames),
       prefs.setBool(_kStudyWorkspaceVisible, _studyWorkspaceVisible),
       prefs.setString(_kKetivDisplay, _ketivDisplay.name),
@@ -1997,6 +2013,8 @@ class _ReaderSessionState extends State<_ReaderSession>
       _glossInterlinear = settings.glossInterlinear;
       _morphologyInterlinear = settings.morphologyInterlinear;
       _highlightProperNames = settings.highlightProperNames;
+      if (settings.rapidReveal != _rapidReveal) _revealed.clear();
+      _rapidReveal = settings.rapidReveal;
       _ketivDisplay = settings.ketivDisplay;
       _fontSize = settings.fontSize;
       _fontFamily = settings.fontFamily;
@@ -2018,11 +2036,69 @@ class _ReaderSessionState extends State<_ReaderSession>
     glossInterlinear: _glossInterlinear,
     morphologyInterlinear: _morphologyInterlinear,
     highlightProperNames: _highlightProperNames,
+    rapidReveal: _rapidReveal,
     ketivDisplay: _ketivDisplay,
     fontSize: _fontSize,
     fontFamily: _fontFamily,
     readerLayoutMode: _readerLayoutMode,
   );
+
+  void _cycleReaderView() {
+    final next = _readerView.next;
+    setState(() {
+      _readerView = next;
+      _revealed.clear();
+    });
+    // An interlinear with no layers enabled would look just like the bare
+    // text, so asking for one turns the glosses on.
+    if (next != ReaderView.plain &&
+        !_glossInterlinear &&
+        !_morphologyInterlinear) {
+      _applyReadingSettings(_readingSettings.copyWith(glossInterlinear: true));
+    } else {
+      _savePrefs();
+    }
+  }
+
+  /// Shows or hides the interlinear a rapid-reading tap on the word at
+  /// [position] asks for: the word's own, or its verse's.
+  void _toggleReveal(int bookIndex, int chapter, int verse, int position) {
+    final key = (bookIndex, chapter, verse);
+    setState(() {
+      switch (_rapidReveal) {
+        case RapidReveal.verse:
+          if (_revealed.containsKey(key)) {
+            _revealed.remove(key);
+          } else {
+            _revealed[key] = null;
+          }
+        case RapidReveal.word:
+          if (!_revealed.containsKey(key)) {
+            _revealed[key] = {position};
+            break;
+          }
+          final positions = _revealed[key];
+          if (positions == null) {
+            // Revealed whole before the setting changed: hide it all.
+            _revealed.remove(key);
+          } else if (!positions.remove(position)) {
+            positions.add(position);
+          } else if (positions.isEmpty) {
+            _revealed.remove(key);
+          }
+      }
+    });
+  }
+
+  Set<int>? _interlinearPositions(int bookIndex, int chapter, int verse) =>
+      switch (_readerView) {
+        ReaderView.interlinear => null,
+        ReaderView.plain => const <int>{},
+        ReaderView.rapid =>
+          _revealed.containsKey((bookIndex, chapter, verse))
+              ? _revealed[(bookIndex, chapter, verse)]
+              : const <int>{},
+      };
 
   Future<void> _showAppSettings() async {
     await showAppSettings(
@@ -3722,6 +3798,17 @@ class _ReaderSessionState extends State<_ReaderSession>
         centerTitle: true,
         actions: [
           IconButton(
+            key: const ValueKey('reader-view-toggle'),
+            icon: Icon(switch (_readerView) {
+              ReaderView.interlinear => Icons.subtitles_outlined,
+              ReaderView.plain => Icons.notes,
+              ReaderView.rapid => Icons.touch_app_outlined,
+            }),
+            onPressed: _cycleReaderView,
+            tooltip:
+                '${_readerView.label} · switch to ${_readerView.next.label}',
+          ),
+          IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: _canGoBack ? _goBack : null,
             tooltip: 'Back',
@@ -3864,15 +3951,23 @@ class _ReaderSessionState extends State<_ReaderSession>
                   _selectedVerse = entry.verse;
                 }
               }),
-              onWordTap: (word, readerGloss, position, root) => _showWordInfo(
-                word,
-                b,
-                c,
-                entry.verse,
-                readerGloss: readerGloss,
-                position: position,
-                root: root,
-              ),
+              onWordTap: (word, readerGloss, position, root) {
+                if (_readerView == ReaderView.rapid) {
+                  if (position != null) {
+                    _toggleReveal(b, c, entry.verse, position);
+                  }
+                  return;
+                }
+                _showWordInfo(
+                  word,
+                  b,
+                  c,
+                  entry.verse,
+                  readerGloss: readerGloss,
+                  position: position,
+                  root: root,
+                );
+              },
               onWordMenu: (word, readerGloss, position, root, globalPosition) =>
                   _showWordMenu(
                     word,
@@ -3892,6 +3987,7 @@ class _ReaderSessionState extends State<_ReaderSession>
               showCantillation: _showCantillation,
               glossInterlinear: _glossInterlinear,
               morphologyInterlinear: _morphologyInterlinear,
+              interlinearPositions: _interlinearPositions(b, c, entry.verse),
               highlightProperNames: _highlightProperNames,
               studyHighlighted:
                   (workspace?.highlightsEnabled ?? false) &&

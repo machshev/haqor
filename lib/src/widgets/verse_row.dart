@@ -159,6 +159,7 @@ class VerseRow extends StatefulWidget {
     this.showCantillation = true,
     this.glossInterlinear = false,
     this.morphologyInterlinear = false,
+    this.interlinearPositions,
     this.highlightProperNames = false,
     this.studyHighlighted = false,
     this.studyNote = false,
@@ -203,6 +204,10 @@ class VerseRow extends StatefulWidget {
   final bool showCantillation;
   final bool glossInterlinear;
   final bool morphologyInterlinear;
+
+  /// The lexical positions whose interlinear layers show, or null for every
+  /// word. Empty sets the verse as running text, as with no layers enabled.
+  final Set<int>? interlinearPositions;
   final bool highlightProperNames;
   final bool studyHighlighted;
   final bool studyNote;
@@ -546,7 +551,11 @@ class _VerseRowState extends State<VerseRow> {
     );
 
     final Widget content;
+    final interlinearPositions = widget.interlinearPositions;
+    bool showsInterlinear(int position) =>
+        interlinearPositions == null || interlinearPositions.contains(position);
     if ((widget.glossInterlinear || widget.morphologyInterlinear) &&
+        (interlinearPositions == null || interlinearPositions.isNotEmpty) &&
         (widget.entry.glosses.isNotEmpty ||
             widget.entry.morphologies.isNotEmpty)) {
       final interlinearWords = interlinearVerseWords(_words);
@@ -616,6 +625,7 @@ class _VerseRowState extends State<VerseRow> {
                             : styleForWord(interlinearWords[i], glossPosition),
                       ),
                       if (glossPosition != null &&
+                          showsInterlinear(glossPosition) &&
                           widget.glossInterlinear &&
                           glossPosition < widget.entry.glosses.length &&
                           widget.entry.glosses[glossPosition].isNotEmpty)
@@ -624,6 +634,7 @@ class _VerseRowState extends State<VerseRow> {
                           style: theme.textTheme.labelSmall,
                         ),
                       if (glossPosition != null &&
+                          showsInterlinear(glossPosition) &&
                           widget.glossInterlinear &&
                           widget.morphologyInterlinear &&
                           glossPosition < widget.entry.glosses.length &&
@@ -632,6 +643,7 @@ class _VerseRowState extends State<VerseRow> {
                           widget.entry.morphologies[glossPosition].isNotEmpty)
                         const SizedBox(height: 4),
                       if (glossPosition != null &&
+                          showsInterlinear(glossPosition) &&
                           widget.morphologyInterlinear &&
                           glossPosition < widget.entry.morphologies.length &&
                           widget.entry.morphologies[glossPosition].isNotEmpty)

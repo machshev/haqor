@@ -96,6 +96,40 @@ enum ReaderLayoutMode {
   final String description;
 }
 
+/// How the reader sets the text, cycled from its top bar.
+///
+/// Separate from which interlinear layers are enabled: those say what an
+/// interlinear shows, this says whether it shows, so the reader can drop to
+/// the bare text and back without losing the layers they chose.
+enum ReaderView {
+  /// Each word over its enabled interlinear layers.
+  interlinear('Interlinear'),
+
+  /// The Hebrew text alone.
+  plain('Hebrew only'),
+
+  /// The Hebrew text alone, a tap revealing the interlinear where it is
+  /// needed instead of opening the word's details.
+  rapid('Rapid reading');
+
+  const ReaderView(this.label);
+
+  final String label;
+
+  ReaderView get next => values[(index + 1) % values.length];
+}
+
+/// How much of the interlinear a tap reveals in [ReaderView.rapid].
+enum RapidReveal {
+  word('Word', 'A tap shows the interlinear beneath that word.'),
+  verse('Verse', 'A tap shows the interlinear for the whole verse.');
+
+  const RapidReveal(this.label, this.description);
+
+  final String label;
+  final String description;
+}
+
 class AppReadingSettings {
   const AppReadingSettings({
     required this.ntSyriac,
@@ -105,6 +139,7 @@ class AppReadingSettings {
     required this.glossInterlinear,
     required this.morphologyInterlinear,
     required this.highlightProperNames,
+    required this.rapidReveal,
     required this.ketivDisplay,
     required this.fontSize,
     required this.fontFamily,
@@ -118,6 +153,7 @@ class AppReadingSettings {
   final bool glossInterlinear;
   final bool morphologyInterlinear;
   final bool highlightProperNames;
+  final RapidReveal rapidReveal;
   final KetivDisplay ketivDisplay;
   final double fontSize;
   final String fontFamily;
@@ -131,6 +167,7 @@ class AppReadingSettings {
     bool? glossInterlinear,
     bool? morphologyInterlinear,
     bool? highlightProperNames,
+    RapidReveal? rapidReveal,
     KetivDisplay? ketivDisplay,
     double? fontSize,
     String? fontFamily,
@@ -143,6 +180,7 @@ class AppReadingSettings {
     glossInterlinear: glossInterlinear ?? this.glossInterlinear,
     morphologyInterlinear: morphologyInterlinear ?? this.morphologyInterlinear,
     highlightProperNames: highlightProperNames ?? this.highlightProperNames,
+    rapidReveal: rapidReveal ?? this.rapidReveal,
     ketivDisplay: ketivDisplay ?? this.ketivDisplay,
     fontSize: fontSize ?? this.fontSize,
     fontFamily: fontFamily ?? this.fontFamily,
@@ -419,6 +457,37 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
                   _readingSettings.copyWith(glossInterlinear: value),
                 ),
               ),
+              const SizedBox(height: 8),
+              Text('Rapid reading reveals', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 4),
+              Text(
+                'Rapid reading, chosen from the reader\'s top bar, shows the '
+                'Hebrew alone and a tap reveals the interlinear. Long press '
+                'or right-click a word for its details.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<RapidReveal>(
+                showSelectedIcon: false,
+                segments: [
+                  for (final option in RapidReveal.values)
+                    ButtonSegment(value: option, label: Text(option.label)),
+                ],
+                selected: {_readingSettings.rapidReveal},
+                onSelectionChanged: (selection) => _updateReadingSettings(
+                  _readingSettings.copyWith(rapidReveal: selection.single),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _readingSettings.rapidReveal.description,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Highlight proper names'),
