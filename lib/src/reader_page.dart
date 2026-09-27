@@ -270,6 +270,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   bool? _mobileLayout;
   bool _studyPageSelected = false;
   bool _wordPageSelected = false;
+  bool _crossReferencesPageSelected = false;
   int? _pageTarget;
   String _activeTabId = 'primary';
   bool _tiled = false;
@@ -320,6 +321,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   int get _wordPageIndex => _tabs.length + _readerPageOffset;
 
+  /// On a phone, open cross references are a page after the word page.
+  bool get _hasCrossReferencesPage =>
+      _mobileLayout == true && _crossReferencesVisible;
+
+  int get _crossReferencesPageIndex => _wordPageIndex + (_hasWordPage ? 1 : 0);
+
   int get _activeReaderPage =>
       _tabs.indexWhere((tab) => tab.id == _activeTabId) + _readerPageOffset;
 
@@ -337,6 +344,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _mobileLayout = mobile;
     _studyPageSelected = false;
     _wordPageSelected = false;
+    _crossReferencesPageSelected = false;
     _pageTarget = null;
     _pageController = PageController(
       initialPage: _activeReaderPage,
@@ -348,7 +356,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     setState(() {
       _studyPageSelected = _mobileLayout == true && index == 0;
       _wordPageSelected = _hasWordPage && index == _wordPageIndex;
-      if (!_studyPageSelected && !_wordPageSelected) {
+      _crossReferencesPageSelected =
+          _hasCrossReferencesPage && index == _crossReferencesPageIndex;
+      if (!_studyPageSelected &&
+          !_wordPageSelected &&
+          !_crossReferencesPageSelected) {
         _activeTabId = _tabs[index - _readerPageOffset].id;
       }
       _mobileBarHidden = false;
@@ -479,6 +491,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           ? 0
           : _wordPageSelected
           ? _wordPageIndex
+          : _crossReferencesPageSelected
+          ? _crossReferencesPageIndex
           : _activeReaderPage;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -536,6 +550,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     onScrollChromeChanged: (hidden) {
       if (_studyPageSelected ||
           _wordPageSelected ||
+          _crossReferencesPageSelected ||
           tab.id != _activeTabId ||
           MediaQuery.sizeOf(context).width >= 900 ||
           _mobileBarHidden == hidden) {
@@ -586,14 +601,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     );
   }
 
-  /// Opens cross references: docked beside the reader, or as a sheet where
-  /// there is no room. With a verse its links, else the overview, which docked
-  /// follows the reader.
+  /// Opens cross references: docked beside the reader, or on a phone as a
+  /// page of its own beside the readers, as study and word info are. With a
+  /// verse its links, else the overview, which follows the reader.
   void _requestCrossReferences(int bookIndex, int chapter, int? verse) {
-    if (_mobileLayout == true) {
-      _showCrossReferencesSheet(bookIndex, chapter, verse);
-      return;
-    }
     setState(() {
       _crossReferencesVisible = true;
       _sidePanelView = _SidePanelView.crossReferences;
@@ -603,47 +614,20 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           : (book: bookIndex + 1, chapter: chapter, verse: verse);
       _crossReferenceRequest++;
     });
+    if (_mobileLayout == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _hasCrossReferencesPage) {
+          _showPage(_crossReferencesPageIndex);
+        }
+      });
+    }
   }
 
-  /// The cross-reference panel as a sheet over the reader, where there is no
-  /// room to dock it. Tapping a linked verse closes it and opens that verse.
-  Future<void> _showCrossReferencesSheet(
-    int bookIndex,
-    int chapter,
-    int? verse,
-  ) async {
-    final reader = _activeReader;
-    if (reader == null) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheetContext) => SizedBox(
-        height: MediaQuery.sizeOf(sheetContext).height * 0.8,
-        child: CrossReferencesPanel(
-          book: bookIndex + 1,
-          chapter: chapter,
-          target: verse == null
-              ? null
-              : (book: bookIndex + 1, chapter: chapter, verse: verse),
-          useEnglishBookNames: reader._englishBookNames,
-          isLinkBookmarked: reader._isStudyLinkBookmarked,
-          onToggleLinkBookmark: reader._toggleStudyLinkBookmark,
-          minScore: reader._crossReferenceMinScore,
-          onMinScoreChanged: reader._setCrossReferenceMinScore,
-          onNavigateToPassage: (book, chapter, verse) {
-            Navigator.pop(sheetContext);
-            reader._navigateTo(book, chapter, verse: verse);
-          },
-          sendRequest: widget.sendCrossReferencesRequest,
-          sendQuotationsRequest: widget.sendQuotationsRequest,
-          sendThematicReferencesRequest: widget.sendThematicReferencesRequest,
-          sendThematicOverviewRequest: widget.sendThematicOverviewRequest,
-          sendVerseTextsRequest: widget.sendVerseTextsRequest,
-        ),
-      ),
-    );
+  /// Closes cross references, returning a phone to the reader first so the
+  /// page leaves without the reader jumping.
+  Future<void> _closeCrossReferences() async {
+    if (_crossReferencesPageSelected) await _showPage(_activeReaderPage);
+    if (mounted) setState(() => _crossReferencesVisible = false);
   }
 
   Widget _crossReferencesPanel() {
@@ -663,9 +647,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
               onToggleLinkBookmark: reader._toggleStudyLinkBookmark,
               minScore: reader._crossReferenceMinScore,
               onMinScoreChanged: reader._setCrossReferenceMinScore,
-              onNavigateToPassage: (book, chapter, verse) =>
-                  reader._navigateTo(book, chapter, verse: verse),
-              onClose: () => setState(() => _crossReferencesVisible = false),
+              onNavigateToPassage: (book, chapter, verse) {
+                reader._navigateTo(book, chapter, verse: verse);
+                // A phone shows the reader in place of the page.
+                if (_crossReferencesPageSelected) _showReaderPage();
+              },
+              onClose: _closeCrossReferences,
               sendRequest: widget.sendCrossReferencesRequest,
               sendQuotationsRequest: widget.sendQuotationsRequest,
               sendThematicReferencesRequest:
@@ -1209,6 +1196,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                                   selected:
                                       !_studyPageSelected &&
                                       !_wordPageSelected &&
+                                      !_crossReferencesPageSelected &&
                                       tab.id == _activeTabId,
                                   onPressed: () {
                                     setState(() => _activeTabId = tab.id);
@@ -1236,6 +1224,17 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                                 _wordPageSelected
                                     ? _activeReaderPage
                                     : _wordPageIndex,
+                              ),
+                            ),
+                          if (_hasCrossReferencesPage)
+                            IconButton(
+                              isSelected: _crossReferencesPageSelected,
+                              icon: const Icon(Icons.link),
+                              tooltip: 'Cross references',
+                              onPressed: () => _showPage(
+                                _crossReferencesPageSelected
+                                    ? _activeReaderPage
+                                    : _crossReferencesPageIndex,
                               ),
                             ),
                           IconButton(
@@ -1327,6 +1326,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                                   child: _wordInspector(),
                                 ),
                               ),
+                            if (_hasCrossReferencesPage)
+                              _WordInfoPage(
+                                key: const ValueKey('cross-references-page'),
+                                active: _crossReferencesPageSelected,
+                                child: _crossReferencesPanel(),
+                              ),
                           ],
                         ),
                       ),
@@ -1339,8 +1344,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   }
 }
 
-// Keep lexicon/occurrence tabs, filters, and loaded results when swiping back
-// to a reader. Reader sessions have their own independent keep-alive state.
+// Keep lexicon/occurrence tabs, filters, and loaded results (and the cross
+// references page's) when swiping back to a reader. Reader sessions have their own independent keep-alive state.
 class _WordInfoPage extends StatefulWidget {
   const _WordInfoPage({super.key, required this.child, required this.active});
 

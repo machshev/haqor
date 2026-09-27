@@ -1996,20 +1996,40 @@ void crossReferenceDockTests() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('on a phone cross references open as a sheet', (tester) async {
+  testWidgets('on a phone cross references are a page beside the reader', (
+    tester,
+  ) async {
     final rust = await _pumpWorkspace(tester, const Size(420, 800));
+    expect(find.byKey(const ValueKey('cross-references-page')), findsNothing);
     tester.widget<VerseRow>(find.byType(VerseRow).first).onCrossReferences!();
-    // The sheet opens on its loading spinner, which never settles.
-    await tester.pump(const Duration(seconds: 1));
-    expect(find.byType(BottomSheet), findsOneWidget);
+    // The panel opens on its loading spinner, which never settles.
+    await _turnPage(tester);
+    expect(find.byType(BottomSheet), findsNothing);
+    final page = find.byKey(const ValueKey('cross-references-page'));
+    expect(page.hitTestable(), findsOneWidget);
     expect(
-      find.descendant(
-        of: find.byType(BottomSheet),
-        matching: find.byType(CrossReferencesPanel),
-      ),
+      find.descendant(of: page, matching: find.byType(CrossReferencesPanel)),
       findsOneWidget,
     );
-    expect(rust.crossReferenceRequests.single.verse, 1);
+    expect(rust.crossReferenceRequests.last.verse, 1);
+
+    // Its bar button goes back to the reader and returns to the page.
+    final button = find.byTooltip('Cross references');
+    await tester.tap(button);
+    await _turnPage(tester);
+    expect(page.hitTestable(), findsNothing);
+    expect(find.byType(VerseRow).hitTestable(), findsWidgets);
+    await tester.tap(button);
+    await _turnPage(tester);
+    expect(page.hitTestable(), findsOneWidget);
+
+    // Closing it returns to the reader and removes the page.
+    await tester.tap(find.byTooltip('Close cross references'));
+    await _turnPage(tester);
+    expect(page, findsNothing);
+    expect(find.byTooltip('Cross references'), findsNothing);
+    expect(find.byType(VerseRow).hitTestable(), findsWidgets);
+    expect(tester.takeException(), isNull);
   });
 }
 
@@ -2106,4 +2126,12 @@ void readerViewTests() {
     expect(verseRow(tester).interlinearPositions, isEmpty);
     expect(rust.wordRequests, isEmpty);
   });
+}
+
+/// Frames enough for a page turn, which takes several: a pump that settles
+/// never ends while a panel shows its loading spinner.
+Future<void> _turnPage(WidgetTester tester) async {
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
 }
