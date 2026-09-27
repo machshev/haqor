@@ -109,6 +109,7 @@ class CrossReferencesPanel extends StatefulWidget {
 
   /// A verse (1-based book) whose links to open: at once, and again whenever
   /// [targetRequest] changes — so asking for the same verse twice reopens it.
+  /// Null with a changed request goes back to the overview.
   final ({int book, int chapter, int verse})? target;
   final int targetRequest;
   final bool useEnglishBookNames;
@@ -249,7 +250,11 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
 
   void _openTarget() {
     final target = widget.target;
-    if (target == null) return;
+    // Asked for no verse, the panel shows the overview.
+    if (target == null) {
+      _view = null;
+      return;
+    }
     _view = (
       book: target.book,
       chapter: target.chapter,

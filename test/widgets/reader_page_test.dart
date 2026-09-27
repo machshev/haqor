@@ -1925,22 +1925,48 @@ Future<_FakeRust> _pumpWorkspace(WidgetTester tester, Size size) async {
 }
 
 void crossReferenceDockTests() {
-  testWidgets('cross references dock beside the reader from the toolbar', (
+  testWidgets('cross references dock beside the reader from its toolbar', (
     tester,
   ) async {
     final rust = await _pumpWorkspace(tester, const Size(1366, 744));
     expect(find.byType(CrossReferencesPanel), findsNothing);
+    // The workspace bar no longer carries it: the reader's own toolbar does.
+    expect(find.byTooltip('Cross references'), findsNothing);
 
-    await tester.tap(find.byTooltip('Cross references'));
+    await tester.tap(find.byTooltip('Cross references in this chapter'));
     await tester.pump();
     expect(find.byType(CrossReferencesPanel), findsOneWidget);
     expect(find.byType(BottomSheet), findsNothing, reason: 'docked');
     final request = rust.quotationRequests.single;
     expect((request.book, request.firstChapter), (1, 1));
 
-    await tester.tap(find.byTooltip('Cross references'));
+    await tester.tap(find.byTooltip('Close cross references'));
     await tester.pump();
     expect(find.byType(CrossReferencesPanel), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a verse number\'s menu opens its cross references', (
+    tester,
+  ) async {
+    final rust = await _pumpWorkspace(tester, const Size(1366, 744));
+    await tester.longPress(find.byKey(const ValueKey('verse-number-2')).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Chapter cross references'), findsOneWidget);
+    await tester.tap(find.text('Cross references'));
+    // The panel opens on its loading spinner, which never settles.
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(CrossReferencesPanel), findsOneWidget);
+    final request = rust.crossReferenceRequests.single;
+    expect((request.book, request.chapter, request.verse), (1, 1, 2));
+    expect(rust.thematicRequests.single.verse, 2);
+
+    // The reader's toolbar button brings the docked panel back to the
+    // chapter's overview.
+    await tester.tap(find.byTooltip('Cross references in this chapter'));
+    await tester.pump();
+    expect(find.byTooltip('All cross references'), findsNothing);
+    expect(find.text('Quotations'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

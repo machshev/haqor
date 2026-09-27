@@ -179,6 +179,9 @@ enum _ReaderMenuAction {
 
 enum _ResolvedReaderLayout { focus, split, threePanel }
 
+/// What a verse number's menu offers.
+enum _VerseMenuAction { crossReferences, chapterCrossReferences }
+
 enum _WordMenuAction {
   open,
   openNewPane,
@@ -594,14 +597,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     setState(() {
       _crossReferencesVisible = true;
       _sidePanelView = _SidePanelView.crossReferences;
-      if (verse != null) {
-        _crossReferenceTarget = (
-          book: bookIndex + 1,
-          chapter: chapter,
-          verse: verse,
-        );
-        _crossReferenceRequest++;
-      }
+      // Without a verse the panel goes back to the overview.
+      _crossReferenceTarget = verse == null
+          ? null
+          : (book: bookIndex + 1, chapter: chapter, verse: verse);
+      _crossReferenceRequest++;
     });
   }
 
@@ -1049,7 +1049,6 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   List<_ReaderMenuAction> get _workspaceActions => [
     _ReaderMenuAction.studyWorkspace,
-    _ReaderMenuAction.crossReferences,
     _ReaderMenuAction.readingPlan,
     _ReaderMenuAction.tutor,
     if (_activeReader?._adminMode ?? false) _ReaderMenuAction.reportIssue,
@@ -3696,6 +3695,62 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   /// A word's long-press (or secondary-click) menu: open it in the active word
   /// pane or a new one, or bookmark it in the active study.
+  /// A verse's menu, from a long press or a secondary click on its number:
+  /// its cross references, or the chapter's.
+  Future<void> _showVerseMenu(
+    int bookIndex,
+    int chapter,
+    int verse,
+    Offset globalPosition,
+  ) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final at = overlay.globalToLocal(globalPosition);
+    final theme = Theme.of(context);
+    final action = await showMenu<_VerseMenuAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(at.dx, at.dy, 0, 0),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        PopupMenuItem(
+          enabled: false,
+          height: 36,
+          child: Text(
+            '${bookDisplayName(bookIndex, useEnglish: _englishBookNames)} '
+            '$chapter:$verse',
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ),
+        const PopupMenuItem(
+          value: _VerseMenuAction.crossReferences,
+          child: ListTile(
+            leading: Icon(Icons.link),
+            title: Text('Cross references'),
+          ),
+        ),
+        const PopupMenuItem(
+          value: _VerseMenuAction.chapterCrossReferences,
+          child: ListTile(
+            leading: Icon(Icons.format_list_bulleted),
+            title: Text('Chapter cross references'),
+          ),
+        ),
+      ],
+    );
+    if (!mounted) return;
+    switch (action) {
+      case _VerseMenuAction.crossReferences:
+        widget.onCrossReferencesRequested(bookIndex, chapter, verse);
+      case _VerseMenuAction.chapterCrossReferences:
+        widget.onCrossReferencesRequested(bookIndex, chapter, null);
+      case null:
+        break;
+    }
+  }
+
   Future<void> _showWordMenu(
     String word,
     int bookIndex,
@@ -4043,6 +4098,13 @@ class _ReaderSessionState extends State<_ReaderSession>
         centerTitle: true,
         actions: [
           IconButton(
+            key: const ValueKey('reader-cross-references'),
+            icon: const Icon(Icons.link),
+            onPressed: () =>
+                widget.onCrossReferencesRequested(_bookIndex, _chapter, null),
+            tooltip: 'Cross references in this chapter',
+          ),
+          IconButton(
             key: const ValueKey('reader-view-toggle'),
             icon: Icon(switch (_readerView) {
               ReaderView.interlinear => Icons.subtitles_outlined,
@@ -4234,6 +4296,8 @@ class _ReaderSessionState extends State<_ReaderSession>
                   ),
               onCrossReferences: () =>
                   widget.onCrossReferencesRequested(b, c, entry.verse),
+              onVerseMenu: (globalPosition) =>
+                  _showVerseMenu(b, c, entry.verse, globalPosition),
               crossReferenceMinScore: _crossReferenceMinScore,
               fontSize: _fontSize,
               fontFamily: _fontFamily,

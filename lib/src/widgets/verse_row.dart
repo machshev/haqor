@@ -153,6 +153,7 @@ class VerseRow extends StatefulWidget {
     required this.onWordTap,
     this.onWordMenu,
     this.onCrossReferences,
+    this.onVerseMenu,
     this.crossReferenceMinScore = 0,
     this.fontSize = 20.0,
     this.fontFamily = 'Cardo',
@@ -196,6 +197,10 @@ class VerseRow extends StatefulWidget {
   /// Opens the verse's cross references. Its marker shows only when the
   /// verse has a link scoring at least [crossReferenceMinScore].
   final VoidCallback? onCrossReferences;
+
+  /// The verse's menu, asked for by a long press or a secondary click on its
+  /// number, with where on screen the press was.
+  final void Function(Offset globalPosition)? onVerseMenu;
 
   /// How strong a link must be to count towards the marker.
   final double crossReferenceMinScore;
@@ -526,14 +531,12 @@ class _VerseRowState extends State<VerseRow> {
         mainAxisSize: MainAxisSize.min,
         textDirection: TextDirection.rtl,
         children: [
-          Text(
-            widget.hebrewNumerals
+          _VerseNumber(
+            key: ValueKey('verse-number-${widget.entry.verse}'),
+            label: widget.hebrewNumerals
                 ? _toHebrewNumeral(widget.entry.verse)
                 : '${widget.entry.verse}',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.bold,
-            ),
+            onMenu: widget.onVerseMenu,
           ),
           if (widget.studyNote)
             Padding(
@@ -728,6 +731,42 @@ class _VerseRowState extends State<VerseRow> {
               : Colors.transparent,
         ),
         child: content,
+      ),
+    );
+  }
+}
+
+/// A verse's number, opening the verse's menu on a long press or a secondary
+/// click. Its own gesture target, a little larger than the glyphs, so the
+/// press is not taken for the verse's tap or a text selection.
+class _VerseNumber extends StatelessWidget {
+  const _VerseNumber({super.key, required this.label, this.onMenu});
+
+  final String label;
+  final void Function(Offset globalPosition)? onMenu;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final text = Text(
+      label,
+      style: theme.textTheme.labelSmall?.copyWith(
+        color: theme.colorScheme.primary,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+    final menu = onMenu;
+    if (menu == null) return text;
+    return Semantics(
+      label: 'Verse $label menu',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPressStart: (d) => menu(d.globalPosition),
+        onSecondaryTapDown: (d) => menu(d.globalPosition),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+          child: text,
+        ),
       ),
     );
   }
