@@ -1165,7 +1165,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     }
 
     // One word of the root family: its lone entry as a single row, or its
-    // headword over every lexicon's entries for it, indented beneath.
+    // headword over every lexicon's entries for it, indented beneath. An entry
+    // spelled otherwise (a bare root, or a form that only refers to this
+    // word) keeps its own headword on its row.
     Widget buildLexeme(int i, LexemeSummary lexeme) {
       if (lexeme.entries.length == 1) {
         return buildBdbRow(
@@ -1199,7 +1201,13 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (final (j, e) in lexeme.entries.indexed)
-                  buildBdbRow((i, j), e),
+                  buildBdbRow(
+                    (i, j),
+                    e,
+                    headword: _sameHeadword(e.headword, lexeme.headword)
+                        ? null
+                        : e.headword,
+                  ),
               ],
             ),
           ),
@@ -3987,6 +3995,13 @@ bool _isHebVowel(int cp) =>
     (cp >= 0x05B0 && cp <= 0x05BD && cp != 0x05BC) || cp == 0x05C7;
 
 bool _isHebDot(int cp) => cp == 0x05BC || cp == 0x05C1 || cp == 0x05C2;
+
+/// Whether two headwords spell one word, whatever their accents or the order
+/// their points are stored in.
+bool _sameHeadword(String a, String b) {
+  List<int> points(String s) => _stripTrope(s).runes.toList()..sort();
+  return listEquals(points(a), points(b));
+}
 
 String _stripTrope(String word) {
   return String.fromCharCodes(

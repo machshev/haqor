@@ -322,4 +322,44 @@ void _groupedLexemeTests() {
       expect(find.byTooltip(LexiconSource.jastrow.title), findsNWidgets(2));
     },
   );
+
+  testWidgets("an entry that only refers to the word keeps its own headword", (
+    tester,
+  ) async {
+    const armour = BdbSummary(
+      headword: 'שִׁרְיוֹן',
+      gloss: 'body-armour',
+      contentJson: '',
+      posCategory: 'noun',
+      source: 'bdb',
+      lang: '',
+      homograph: '',
+    );
+    const variant = BdbSummary(
+      headword: 'שִׁרְיָן',
+      gloss: 'see שִׁרֽיוֹן',
+      contentJson: '',
+      posCategory: 'other',
+      source: 'klein',
+      lang: '',
+      homograph: '',
+    );
+    await _pumpSheet(
+      tester,
+      syriac: false,
+      lexemes: const [
+        LexemeSummary(
+          headword: 'שִׁרְיוֹן',
+          posCategory: 'noun',
+          entries: [armour, variant],
+        ),
+      ],
+    );
+    String points(String s) => String.fromCharCodes(s.runes.toList()..sort());
+    Finder hebrew(String word) => find.byWidgetPredicate(
+      (w) => w is Text && w.data != null && points(w.data!) == points(word),
+    );
+    expect(hebrew('שִׁרְיוֹן'), findsOneWidget);
+    expect(hebrew('שִׁרְיָן'), findsOneWidget);
+  });
 }
