@@ -4,17 +4,18 @@ use crate::signals::{
     BdbSummary, BuildInfo, CalibrationProbe, ChapterText, CrossReferenceEntry, CrossReferences,
     DictionaryEntry, FinishCalibration, GetBuildInfo, GetCalibrationProbe, GetChapter,
     GetCrossReferences, GetDictionaryEntry, GetNextStudyItem, GetOnboardingStatus, GetQuotations,
-    GetSeenConcepts, GetStudyState, GetThematicReferences, GetTutorGlossOverrideStats,
-    GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts, GetVocab, GetWordInfo,
-    GetWordOccurrences, GlyphCard, GrammarCard, IssueReportStatus, KetivEntry, LexemeSummary,
-    LexiconEntryOverrideStatus, Occurrence, OccurrenceParse, OnboardingStatus,
-    OptimizeTutorGlossOverrides, ProgressSyncStatus, QuotationEntry, Quotations, ResetTutor,
-    RootChoice, SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState, SaveTutorGloss,
-    SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, StudyState,
-    SubmitMisreads, SubmitReview, SuffixCard, SyncProgress, ThematicReferenceEntry,
-    ThematicReferences, ThematicTarget, TutorGlossOverrideStats, TutorProgress, TutorSettings,
-    TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry,
-    VocabList, WordCard, WordInfo, WordOccurrence, WordOccurrences,
+    GetSeenConcepts, GetStudyState, GetThematicOverview, GetThematicReferences,
+    GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts,
+    GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, IssueReportStatus,
+    KetivEntry, LexemeSummary, LexiconEntryOverrideStatus, Occurrence, OccurrenceParse,
+    OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus, QuotationEntry, Quotations,
+    ResetTutor, RootChoice, SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState,
+    SaveTutorGloss, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem,
+    StudyState, SubmitMisreads, SubmitReview, SuffixCard, SyncProgress, ThematicOverview,
+    ThematicReferenceEntry, ThematicReferences, ThematicTarget, ThematicVerseEntry,
+    TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard, VerseEntry,
+    VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry, VocabList, WordCard, WordInfo,
+    WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -27,7 +28,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use haqor_core::bible::{
     BdbEntry, Bible, LexiconEntry, LexiconSource, QuotationFilter, QuotationScope, RootRef,
-    SedraLexemeSummary, inflected_gloss,
+    SedraLexemeSummary, ThematicFilter, inflected_gloss,
 };
 use haqor_core::tutor::{self, Grade, Track};
 use rinf::{DartSignal, RustSignal, debug_print};
@@ -1673,6 +1674,66 @@ pub async fn get_thematic_references(bible: SharedBible) {
             chapter: req.chapter,
             verse: req.verse,
             entries,
+        }
+        .send_signal_to_dart();
+    }
+}
+
+/// A core thematic reference as the signals carry it.
+fn thematic_entry(r: haqor_core::bible::ThematicReference) -> ThematicReferenceEntry {
+    ThematicReferenceEntry {
+        phrase: r.phrase,
+        targets: r
+            .targets
+            .into_iter()
+            .map(|t| ThematicTarget {
+                book: t.first.book,
+                chapter: t.first.chapter,
+                verse: t.first.verse,
+                last_chapter: t.last.chapter,
+                last_verse: t.last.verse,
+            })
+            .collect(),
+    }
+}
+
+pub async fn get_thematic_overview(bible: SharedBible) {
+    let receiver = GetThematicOverview::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let filter = ThematicFilter {
+            book: req.book,
+            first_chapter: (req.first_chapter > 0).then_some(req.first_chapter),
+            last_chapter: (req.last_chapter > 0).then_some(req.last_chapter),
+        };
+        let bible = lock(&bible);
+        let (total, verses) = match (
+            bible.thematic_reference_verse_count(filter),
+            bible.thematic_reference_verses(filter, req.limit, req.offset),
+        ) {
+            (Ok(total), Ok(verses)) => (total, verses),
+            (count, page) => {
+                debug_print!(
+                    "get_thematic_overview error: {:?} {:?}",
+                    count.err(),
+                    page.err()
+                );
+                (0, Vec::new())
+            }
+        };
+        ThematicOverview {
+            request_id: req.request_id,
+            book: req.book,
+            total,
+            verses: verses
+                .into_iter()
+                .map(|v| ThematicVerseEntry {
+                    chapter: v.verse.chapter,
+                    verse: v.verse.verse,
+                    entries: v.references.into_iter().map(thematic_entry).collect(),
+                })
+                .collect(),
         }
         .send_signal_to_dart();
     }

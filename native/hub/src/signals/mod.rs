@@ -377,6 +377,39 @@ pub struct ThematicReferences {
     pub entries: Vec<ThematicReferenceEntry>,
 }
 
+/// Ask for a page of the verses of one book, optionally within a chapter
+/// range, that have thematic references: the thematic overview of a chapter
+/// or a book.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetThematicOverview {
+    /// Echoed back so a caller can ignore replies to a superseded filter.
+    pub request_id: u32,
+    pub book: u8,
+    /// Inclusive chapter bounds; zero leaves that end open.
+    pub first_chapter: u8,
+    pub last_chapter: u8,
+    /// Verses per page, and how many to skip.
+    pub limit: u32,
+    pub offset: u32,
+}
+
+/// One verse of a [`ThematicOverview`] page and its references.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ThematicVerseEntry {
+    pub chapter: u8,
+    pub verse: u8,
+    pub entries: Vec<ThematicReferenceEntry>,
+}
+
+#[derive(Debug, Serialize, RustSignal)]
+pub struct ThematicOverview {
+    pub request_id: u32,
+    pub book: u8,
+    /// How many verses the filter matches in all, beyond this page.
+    pub total: u32,
+    pub verses: Vec<ThematicVerseEntry>,
+}
+
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetWordInfo {
     /// Echoed in the [`WordInfo`] reply. Replies carry nothing else that says
