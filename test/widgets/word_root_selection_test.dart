@@ -42,14 +42,22 @@ class _FakeRust {
         prepositions: null,
         article: false,
         vavCon: false,
-        bdbEntries: [
-          BdbSummary(
+        lexemes: [
+          LexemeSummary(
             headword: selected == 'אלה' ? 'אֵל' : 'עֵזֶר',
-            gloss: selected == 'אלה' ? 'god' : 'help; succour',
-            contentJson: '{"senses":[{"definition":[{"t":"A divine being"}]}]}',
             posCategory: 'noun',
-            source: 'bdb',
-            lang: '',
+            entries: [
+              BdbSummary(
+                headword: selected == 'אלה' ? 'אֵל' : 'עֵזֶר',
+                gloss: selected == 'אלה' ? 'god' : 'help; succour',
+                contentJson:
+                    '{"senses":[{"definition":[{"t":"A divine being"}]}]}',
+                posCategory: 'noun',
+                source: 'bdb',
+                lang: '',
+                homograph: '',
+              ),
+            ],
           ),
         ],
         sedraEntries: const [],

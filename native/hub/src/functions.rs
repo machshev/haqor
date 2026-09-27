@@ -6,14 +6,14 @@ use crate::signals::{
     GetCrossReferences, GetDictionaryEntry, GetNextStudyItem, GetOnboardingStatus, GetQuotations,
     GetSeenConcepts, GetStudyState, GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats,
     GetVerseText, GetVerseTexts, GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard,
-    HebrewOccurrence, IssueReportStatus, KetivEntry, LexiconEntryOverrideStatus, OccurrenceParse,
-    OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus, QuotationEntry, Quotations,
-    ResetTutor, RootChoice, SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState,
-    SaveTutorGloss, SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts, SetAlphabetKnown,
-    SetTutorSettings, StudyItem, StudyState, SubmitMisreads, SubmitReview, SuffixCard,
-    SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard,
-    VerseEntry, VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry, VocabList, WordCard,
-    WordInfo, WordOccurrence, WordOccurrences,
+    HebrewOccurrence, IssueReportStatus, KetivEntry, LexemeSummary, LexiconEntryOverrideStatus,
+    OccurrenceParse, OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus,
+    QuotationEntry, Quotations, ResetTutor, RootChoice, SaveIssueReport, SaveLexiconEntryOverride,
+    SaveStudyState, SaveTutorGloss, SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts,
+    SetAlphabetKnown, SetTutorSettings, StudyItem, StudyState, SubmitMisreads, SubmitReview,
+    SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats,
+    VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry, VocabList,
+    WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -39,23 +39,28 @@ fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
     bible.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Every lexicon's entries for a root family, as the Lexicon tab's rows: the
-/// BDB entries given, with Klein's and Jastrow's beside them. `related` names
-/// more of the family by spelling — a Peshitta word's SEDRA lexemes.
+/// Every lexicon's entries for a root family, as the Lexicon tab's lexemes:
+/// the BDB entries given, with Klein's and Jastrow's for the same word beside
+/// them. `related` names more of the family by spelling — a Peshitta word's
+/// SEDRA lexemes.
 fn lexicon_rows(
     bible: &Bible,
     root: &str,
     bdb: Vec<BdbEntry>,
     related: &[String],
-) -> Vec<BdbSummary> {
+) -> Vec<LexemeSummary> {
     bible
-        .root_lexicon(root, bdb, related)
+        .root_lexemes(root, bdb, related)
         .unwrap_or_else(|e| {
-            debug_print!("root_lexicon({root:?}) error: {e:?}");
+            debug_print!("root_lexemes({root:?}) error: {e:?}");
             Vec::new()
         })
         .into_iter()
-        .map(lexicon_summary)
+        .map(|l| LexemeSummary {
+            headword: l.headword,
+            pos_category: l.pos_category.to_string(),
+            entries: l.entries.into_iter().map(lexicon_summary).collect(),
+        })
         .collect()
 }
 
@@ -64,6 +69,7 @@ fn lexicon_summary(e: LexiconEntry) -> BdbSummary {
         pos_category: e.pos_category.to_string(),
         source: e.source.as_str().to_string(),
         lang: e.lang,
+        homograph: e.homograph,
         headword: e.headword,
         gloss: e.gloss,
         content_json: e.content_json,
@@ -772,7 +778,7 @@ pub async fn get_word_info(bible: SharedBible) {
                             is_root: entry.is_root,
                         });
                     }
-                    let bdb_entries = lexicon_rows(&bible, &entry.root, tree, &[]);
+                    let lexicon = lexicon_rows(&bible, &entry.root, tree, &[]);
                     WordInfo {
                         request_id: req.request_id,
                         found: true,
@@ -787,7 +793,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         prepositions: None,
                         article: false,
                         vav_con: false,
-                        bdb_entries,
+                        lexemes: lexicon,
                         sedra_entries: Vec::new(),
                         person: None,
                         state: None,
@@ -813,7 +819,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         prepositions: None,
                         article: false,
                         vav_con: false,
-                        bdb_entries: Vec::new(),
+                        lexemes: Vec::new(),
                         sedra_entries: Vec::new(),
                         person: None,
                         state: None,
@@ -851,7 +857,7 @@ pub async fn get_word_info(bible: SharedBible) {
                     // spelled like the root or any lexeme of its SEDRA tree.
                     let lexemes: Vec<String> =
                         sedra_entries.iter().map(|e| e.lexeme.clone()).collect();
-                    let bdb_entries = lexicon_rows(
+                    let lexicon = lexicon_rows(
                         &bible,
                         &first.root,
                         bible.hebrew_bdb_by_root(&first.root).unwrap_or_default(),
@@ -872,7 +878,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         prepositions: None,
                         article: false,
                         vav_con: false,
-                        bdb_entries,
+                        lexemes: lexicon,
                         sedra_entries,
                         person: first.person.clone(),
                         state: first.state.clone(),
@@ -900,7 +906,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         prepositions: None,
                         article: false,
                         vav_con: false,
-                        bdb_entries: Vec::new(),
+                        lexemes: Vec::new(),
                         sedra_entries: Vec::new(),
                         person: None,
                         state: None,
@@ -974,7 +980,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         .collect();
                     let lexemes: Vec<String> =
                         sedra_entries.iter().map(|e| e.lexeme.clone()).collect();
-                    let bdb_entries = lexicon_rows(&bible, &selected, tree, &lexemes);
+                    let lexicon = lexicon_rows(&bible, &selected, tree, &lexemes);
                     // The headline describes this occurrence, not merely its
                     // dictionary lemma. Keep the BDB entries below as lexeme
                     // definitions, while rendering proclitics and noun/verb
@@ -994,7 +1000,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         prepositions: None,
                         article: false,
                         vav_con: info.vav_con,
-                        bdb_entries,
+                        lexemes: lexicon,
                         sedra_entries,
                         person: info.person,
                         state: info.state,
@@ -1020,7 +1026,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         prepositions: None,
                         article: false,
                         vav_con: false,
-                        bdb_entries: Vec::new(),
+                        lexemes: Vec::new(),
                         sedra_entries: Vec::new(),
                         person: None,
                         state: None,

@@ -163,7 +163,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     with SingleTickerProviderStateMixin {
   StreamSubscription<RustSignalPack<WordInfo>>? _sub;
   WordInfo? _info;
-  final Set<int> _expandedBdb = {};
+  final Set<(int, int)> _expandedBdb = {};
   late final TabController _tabController;
   bool _adminMode = false;
   // OT-only: which of the word's roots the Lexicon and Occurrences tabs show.
@@ -616,13 +616,20 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         'article': info.article,
         'vavCon': info.vavCon,
       },
-      'bdbEntries': [
-        for (final entry in info.bdbEntries)
+      'lexemes': [
+        for (final lexeme in info.lexemes)
           {
-            'headword': entry.headword,
-            'gloss': entry.gloss,
-            'posCategory': entry.posCategory,
-            'source': entry.source,
+            'headword': lexeme.headword,
+            'posCategory': lexeme.posCategory,
+            'entries': [
+              for (final entry in lexeme.entries)
+                {
+                  'gloss': entry.gloss,
+                  'posCategory': entry.posCategory,
+                  'source': entry.source,
+                  if (entry.homograph.isNotEmpty) 'homograph': entry.homograph,
+                },
+            ],
           },
       ],
       'sedraEntries': [
@@ -1064,10 +1071,29 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   ) {
     final theme = Theme.of(context);
 
+    // The lexeme's headword, which opens that word's own sheet.
+    Widget headwordButton(String headword) => TextButton(
+      onPressed: headword.isEmpty ? null : () => _openWordInfo(headword),
+      child: Text(
+        _normalizeHebrewCombining(headword),
+        style: TextStyle(
+          fontFamily: 'Noto Serif Hebrew',
+          fontFamilyFallback: const ['Cardo'],
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: theme.colorScheme.primary,
+        ),
+        textDirection: TextDirection.rtl,
+      ),
+    );
+
     // One collapsible lexicon entry row, badged with the lexicon it comes
-    // from. The original list index keys its expansion state, so it stays
-    // stable when the list is split into the part-of-speech groups below.
-    Widget buildBdbRow(int i, BdbSummary e) {
+    // from and numbered with the source's own homograph mark, which tells its
+    // entries for the word apart. Its (lexeme, entry) index pair keys its
+    // expansion state, so it stays stable when the lexemes are split into the
+    // part-of-speech groups below. [headword] ends the row when the entry is
+    // its lexeme's only one, which then needs no heading of its own.
+    Widget buildBdbRow((int, int) i, BdbSummary e, {String? headword}) {
       final expanded = _expandedBdb.contains(i);
       final lang = LexiconPeriodLabel.of(e.lang);
       return Column(
@@ -1083,7 +1109,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               }
             }),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
+              padding: EdgeInsets.symmetric(
+                vertical: headword == null ? 10 : 6,
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -1094,6 +1122,16 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   ),
                   const SizedBox(width: 6),
                   LexiconSourceBadge(source: e.source),
+                  if (e.homograph.isNotEmpty) ...[
+                    const SizedBox(width: 4),
+                    Text(
+                      e.homograph,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                   if (lang != null) ...[const SizedBox(width: 4), lang],
                   if (e.gloss.isNotEmpty) ...[
                     const SizedBox(width: 8),
@@ -1102,24 +1140,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                     ),
                   ] else
                     const Spacer(),
-                  const SizedBox(width: 8),
-                  TextButton(
-                    onPressed: e.headword.isEmpty
-                        ? null
-                        : () =>
-                              _openWordInfo(_withoutHomographMark(e.headword)),
-                    child: Text(
-                      _normalizeHebrewCombining(e.headword),
-                      style: TextStyle(
-                        fontFamily: 'Noto Serif Hebrew',
-                        fontFamilyFallback: const ['Cardo'],
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
-                      ),
-                      textDirection: TextDirection.rtl,
-                    ),
-                  ),
+                  if (headword != null) ...[
+                    const SizedBox(width: 8),
+                    headwordButton(headword),
+                  ],
                 ],
               ),
             ),
@@ -1136,6 +1160,49 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                     _onDictionaryLinkTap(context, source, key, text),
               ),
             ),
+        ],
+      );
+    }
+
+    // One word of the root family: its lone entry as a single row, or its
+    // headword over every lexicon's entries for it, indented beneath.
+    Widget buildLexeme(int i, LexemeSummary lexeme) {
+      if (lexeme.entries.length == 1) {
+        return buildBdbRow(
+          (i, 0),
+          lexeme.entries.single,
+          headword: lexeme.headword,
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Divider(color: theme.colorScheme.outlineVariant)),
+              const SizedBox(width: 8),
+              headwordButton(lexeme.headword),
+            ],
+          ),
+          Container(
+            margin: const EdgeInsetsDirectional.only(start: 8, bottom: 4),
+            padding: const EdgeInsetsDirectional.only(start: 4),
+            decoration: BoxDecoration(
+              border: BorderDirectional(
+                start: BorderSide(
+                  color: theme.colorScheme.outlineVariant,
+                  width: 2,
+                ),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final (j, e) in lexeme.entries.indexed)
+                  buildBdbRow((i, j), e),
+              ],
+            ),
+          ),
         ],
       );
     }
@@ -1163,14 +1230,14 @@ class _WordInfoSheetState extends State<WordInfoSheet>
 
     final rows = <Widget>[];
     for (final (key, label) in groups) {
-      final entries = info.bdbEntries.indexed
+      final lexemes = info.lexemes.indexed
           .where((p) => p.$2.posCategory == key)
           .toList();
-      if (entries.isEmpty) continue;
+      if (lexemes.isEmpty) continue;
       if (rows.isNotEmpty) rows.add(const SizedBox(height: 12));
       rows.add(sectionHeading(label));
       rows.add(const SizedBox(height: 4));
-      rows.addAll(entries.map((p) => buildBdbRow(p.$1, p.$2)));
+      rows.addAll(lexemes.map((p) => buildLexeme(p.$1, p.$2)));
     }
 
     // A resolved word with no dictionary entry (curated function words such
@@ -3921,11 +3988,6 @@ bool _isHebVowel(int cp) =>
 
 bool _isHebDot(int cp) => cp == 0x05BC || cp == 0x05C1 || cp == 0x05C2;
 
-/// A dictionary headword without the mark Klein or Jastrow numbers its
-/// homographs with (`שֶׁלֶם ᴵᴵ`, `שָׁלֵם ²`), which no word of the text carries.
-String _withoutHomographMark(String headword) =>
-    headword.replaceAll(RegExp(r'[\sᴵ¹²³⁴⁵⁶⁷⁸⁹⁰]+$'), '');
-
 String _stripTrope(String word) {
   return String.fromCharCodes(
     word.runes.where((cp) {
@@ -4187,7 +4249,11 @@ class _DictionaryEntryPreviewDialogState
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _normalizeHebrewCombining(entry?.headword ?? widget.linkText),
+                  _normalizeHebrewCombining(
+                    entry == null
+                        ? widget.linkText
+                        : '${entry.headword} ${entry.homograph}'.trim(),
+                  ),
                   style: TextStyle(
                     fontFamily: 'Noto Serif Hebrew',
                     fontFamilyFallback: const ['Cardo'],

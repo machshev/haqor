@@ -24,6 +24,7 @@ const _klein = BdbSummary(
   posCategory: 'noun',
   source: 'klein',
   lang: '',
+  homograph: '',
 );
 
 const _jastrow = BdbSummary(
@@ -33,6 +34,7 @@ const _jastrow = BdbSummary(
   posCategory: 'noun',
   source: 'jastrow',
   lang: 'ch.',
+  homograph: '',
 );
 
 const _bdb = BdbSummary(
@@ -42,12 +44,14 @@ const _bdb = BdbSummary(
   posCategory: 'noun',
   source: 'bdb',
   lang: '',
+  homograph: '',
 );
 
 Future<void> _pumpSheet(
   WidgetTester tester, {
   required bool syriac,
   List<SedraSummary> sedraEntries = const [],
+  List<LexemeSummary>? lexemes,
   void Function(GetDictionaryEntry)? onDictionaryRequest,
 }) async {
   SharedPreferences.setMockInitialValues({
@@ -88,7 +92,20 @@ Future<void> _pumpSheet(
       prepositions: null,
       article: false,
       vavCon: false,
-      bdbEntries: const [_bdb, _klein, _jastrow],
+      lexemes:
+          lexemes ??
+          const [
+            LexemeSummary(
+              headword: 'שָׁלוֹם',
+              posCategory: 'noun',
+              entries: [_bdb, _klein],
+            ),
+            LexemeSummary(
+              headword: 'שְׁלָם',
+              posCategory: 'noun',
+              entries: [_jastrow],
+            ),
+          ],
       sedraEntries: sedraEntries,
       person: null,
       state: null,
@@ -121,6 +138,8 @@ void tapLink(WidgetTester tester, String text) {
 }
 
 void main() {
+  _groupedLexemeTests();
+
   testWidgets('each entry is badged with the lexicon it comes from', (
     tester,
   ) async {
@@ -178,6 +197,7 @@ void main() {
           posCategory: 'verb',
           source: 'klein',
           lang: '',
+          homograph: '',
         ),
       ).bincodeSerialize(),
       Uint8List(0),
@@ -245,4 +265,61 @@ void main() {
     expect(LexiconPeriodLabel.describe('ch. = h.').$1, 'Aram.');
     expect(LexiconPeriodLabel.of(''), isNull);
   });
+}
+
+void _groupedLexemeTests() {
+  BdbSummary entry(String source, String homograph, String gloss) => BdbSummary(
+    headword: 'שֶׁבֶת',
+    gloss: gloss,
+    contentJson: '',
+    posCategory: 'noun',
+    source: source,
+    lang: '',
+    homograph: homograph,
+  );
+
+  testWidgets(
+    "one word's entries share one headword, numbered by their source",
+    (tester) async {
+      await _pumpSheet(
+        tester,
+        syriac: false,
+        lexemes: [
+          LexemeSummary(
+            headword: 'שֶׁבֶת',
+            posCategory: 'noun',
+            entries: [
+              entry('bdb', '', 'cessation'),
+              entry('klein', 'ᴵ', 'seat, sitting'),
+              entry('klein', 'ᴵᴵ', 'Anethum'),
+              entry('jastrow', 'I', 'dill'),
+              entry('jastrow', 'II', 'seat'),
+            ],
+          ),
+        ],
+      );
+      // The headword once, over all five entries, and no stray numeral on it.
+      // The sheet reorders the points for display, so match them as a set.
+      String points(String s) => String.fromCharCodes(s.runes.toList()..sort());
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Text &&
+              w.data != null &&
+              points(w.data!) == points('שֶׁבֶת'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Nouns'), findsOneWidget);
+      for (final gloss in ['cessation', 'seat, sitting', 'Anethum', 'dill']) {
+        expect(find.text(gloss), findsOneWidget);
+      }
+      // Each source's numeral stays with its own entry.
+      for (final mark in ['ᴵ', 'ᴵᴵ', 'I', 'II']) {
+        expect(find.text(mark), findsOneWidget);
+      }
+      expect(find.byTooltip(LexiconSource.klein.title), findsNWidgets(2));
+      expect(find.byTooltip(LexiconSource.jastrow.title), findsNWidgets(2));
+    },
+  );
 }

@@ -48,7 +48,7 @@ class _FakeRust {
         prepositions: null,
         article: false,
         vavCon: false,
-        bdbEntries: const [],
+        lexemes: const [],
         sedraEntries: const [],
         person: null,
         state: null,

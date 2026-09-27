@@ -424,6 +424,24 @@ pub struct BdbSummary {
     /// The period or language the source marks the entry with (Klein's `NH`,
     /// `PBH`, `MH`, `FW`; Jastrow's `b. h.`, `ch.`). Empty when unmarked.
     pub lang: String,
+    /// The numeral the source tells same-spelled entries apart by (Klein's
+    /// `ᴵᴵ`, Jastrow's `II` or `²`), cut off [`Self::headword`]. It numbers
+    /// one source's entries only, so the sheet shows it on the entry within
+    /// its [`LexemeSummary`] rather than on the lexeme. Empty when unnumbered.
+    pub homograph: String,
+}
+
+/// One word of the root family: every lexicon's entries for one headword,
+/// under the class they mostly agree on.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct LexemeSummary {
+    /// The headword without any homograph numeral.
+    pub headword: String,
+    /// The bucket the Lexicon tab heads the lexeme under; see
+    /// [`BdbSummary::pos_category`].
+    pub pos_category: String,
+    /// BDB's entries, then Klein's, then Jastrow's.
+    pub entries: Vec<BdbSummary>,
 }
 
 /// Ask for one Klein or Jastrow entry by its key: the target of a `dref` link
@@ -541,7 +559,8 @@ pub struct WordInfo {
     pub prepositions: Option<String>,
     pub article: bool,
     pub vav_con: bool,
-    pub bdb_entries: Vec<BdbSummary>,
+    /// The root family by lexeme, each gathering every lexicon's entries.
+    pub lexemes: Vec<LexemeSummary>,
     pub sedra_entries: Vec<SedraSummary>,
     pub person: Option<String>,
     pub state: Option<String>,
