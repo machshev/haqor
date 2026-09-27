@@ -16,6 +16,7 @@ class StudySectionEditor extends StatefulWidget {
     required this.loadChapter,
     required this.validate,
     this.summary,
+    this.parents = const [],
   });
 
   final StudySection initial;
@@ -29,6 +30,10 @@ class StudySectionEditor extends StatefulWidget {
   /// The summary a heading belongs to; null when editing a summary.
   final StudySection? summary;
 
+  /// For a heading, the sections it may go under, outermost (its summary)
+  /// first; offered when there is more than one. The initial parent is kept.
+  final List<StudySection> parents;
+
   @override
   State<StudySectionEditor> createState() => _StudySectionEditorState();
 }
@@ -36,6 +41,7 @@ class StudySectionEditor extends StatefulWidget {
 class _StudySectionEditorState extends State<StudySectionEditor> {
   late int _book, _chapter, _verse, _endChapter, _endVerse;
   late bool _wholeChapter;
+  late String? _parentId;
   late final TextEditingController _title, _note;
   List<VerseEntry> _startVerses = [], _endVerses = [];
   final Map<(int, int), Future<List<VerseEntry>>> _chapters = {};
@@ -58,6 +64,7 @@ class _StudySectionEditorState extends State<StudySectionEditor> {
     _endVerse = s.endVerse ?? s.verse;
     _title = TextEditingController(text: s.title);
     _note = TextEditingController(text: s.note);
+    _parentId = s.parentId;
     _load();
   }
 
@@ -123,7 +130,11 @@ class _StudySectionEditorState extends State<StudySectionEditor> {
 
   StudySection get _edited => widget.initial
       .withAnchor(_anchor)
-      .copyWith(title: _title.text.trim(), note: _note.text.trim());
+      .copyWith(
+        title: _title.text.trim(),
+        note: _note.text.trim(),
+        parentId: () => _parentId,
+      );
 
   void _save() {
     final edited = _edited;
@@ -264,6 +275,29 @@ class _StudySectionEditorState extends State<StudySectionEditor> {
               ),
             ),
             const SizedBox(height: 12),
+            if (!_isSummary && widget.parents.length > 1) ...[
+              DropdownButtonFormField<String>(
+                key: const ValueKey('section-parent'),
+                initialValue: _parentId,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Under'),
+                items: [
+                  for (var i = 0; i < widget.parents.length; i++)
+                    DropdownMenuItem(
+                      value: widget.parents[i].id,
+                      child: Text(
+                        '${'  ' * i}${widget.parents[i].title}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (id) => setState(() {
+                  _parentId = id;
+                  _error = null;
+                }),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (_isSummary) ...[
               DropdownButtonFormField<int>(
                 initialValue: _book,

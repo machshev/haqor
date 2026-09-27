@@ -928,6 +928,44 @@ class StudyWorkspace {
         ),
       );
 
+  /// The sections covering a verse, outermost first: a summary containing it
+  /// (one shown in the reader, if any is), then each heading down to the
+  /// deepest one it falls under. Empty when no summary contains it.
+  List<StudySection> sectionsCovering(int book, int chapter, int verse) {
+    final containing = sections.where(
+      (s) => s.range?.containsVerse(book, chapter, verse) ?? false,
+    );
+    final summary =
+        containing.where((s) => s.showInReader).firstOrNull ??
+        containing.firstOrNull;
+    if (summary == null) return const [];
+    final chain = [summary];
+    final here = (chapter: chapter, verse: verse);
+    while (true) {
+      final next = childHeadings(
+        chain.last.id,
+      ).where((h) => _compareStarts(h.start, here) <= 0).lastOrNull;
+      if (next == null || chain.contains(next)) return chain;
+      chain.add(next);
+    }
+  }
+
+  /// Where a new heading at a verse belongs by default among [covering]
+  /// (from [sectionsCovering]): beside the deepest heading over it, dividing
+  /// that section there, or beneath it when it starts on that very verse or
+  /// only the summary covers it.
+  StudySection? headingParentAt(
+    List<StudySection> covering,
+    StudySectionStart start,
+  ) {
+    if (covering.isEmpty) return null;
+    final deepest = covering.last;
+    if (deepest.isSummary || _compareStarts(deepest.start, start) == 0) {
+      return deepest;
+    }
+    return covering[covering.length - 2];
+  }
+
   /// The derived end of a section: the verse before the next heading beside
   /// it, or else its parent's end, up to its summary's range end. The verse
   /// is null where that is the end of a chapter, whose length is unknown.

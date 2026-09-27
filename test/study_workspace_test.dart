@@ -712,6 +712,29 @@ void sectionTests() {
     );
   });
 
+  test('a new heading at a verse divides the section over it', () {
+    final workspace = build();
+    List<String> covering(int chapter, int verse) => [
+      for (final s in workspace.sectionsCovering(0, chapter, verse)) s.id,
+    ];
+    String? parentAt(int chapter, int verse) => workspace.headingParentAt(
+      workspace.sectionsCovering(0, chapter, verse),
+      (chapter: chapter, verse: verse),
+    )?.id;
+    expect(covering(1, 2), ['sum']);
+    expect(covering(1, 5), ['sum', 'light']);
+    expect(covering(1, 12), ['sum', 'land', 'plants']);
+    expect(covering(2, 4), isEmpty);
+    expect(workspace.sectionsCovering(1, 1, 5), isEmpty);
+    // Under the summary before any heading; beside the heading over it; and
+    // beneath a heading starting on that very verse.
+    expect(parentAt(1, 2), 'sum');
+    expect(parentAt(1, 5), 'sum');
+    expect(parentAt(1, 12), 'land');
+    expect(parentAt(1, 9), 'land');
+    expect(parentAt(2, 4), isNull);
+  });
+
   test('headings without a summary above them are dropped on load', () {
     final workspace = decodeStudyWorkspaces('''[{
       "id": "s", "name": "Study", "ordered": true,

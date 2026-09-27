@@ -293,6 +293,106 @@ void main() {
     });
   }
 
+  testWidgets('headings are added and edited from the reader', (tester) async {
+    const workspace = study.StudyWorkspace(
+      id: 'study',
+      name: 'Study',
+      // Hidden, and shown once a heading is added from the reader.
+      headingsEnabled: false,
+      sections: [
+        study.StudySection(
+          id: 'sum',
+          title: 'Creation',
+          chapter: 1,
+          verse: 1,
+          bookIndex: 0,
+          wholeChapter: true,
+        ),
+        study.StudySection(
+          id: 'light',
+          title: 'Light',
+          chapter: 1,
+          verse: 3,
+          parentId: 'sum',
+        ),
+      ],
+    );
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      study.studyWorkspacesKey: study.encodeStudyWorkspaces([workspace]),
+      study.activeStudyWorkspaceKey: 'study',
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+          sendWordInfoRequest: rust.onWordInfo,
+          sendWordOccurrencesRequest: rust.onOccurrences,
+          sendVerseTextsRequest: rust.onVerseTexts,
+        ),
+      ),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('study-heading-light')), findsNothing);
+
+    tester.widget<VerseRow>(_verse(1, 1, 5)).onWordMenu!(
+      'מלה',
+      null,
+      3,
+      '',
+      const Offset(300, 200),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add heading at 1:5'));
+    await tester.pumpAndSettle();
+    expect(find.text('New section heading'), findsOneWidget);
+    // Beside Light by default, dividing it at verse 5.
+    expect(find.byKey(const ValueKey('section-parent')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('section-title')),
+      'Firmament',
+    );
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+
+    final saved = study
+        .decodeStudyWorkspaces(
+          (await SharedPreferences.getInstance()).getString(
+            study.studyWorkspacesKey,
+          ),
+        )
+        .single;
+    expect(saved.headingsEnabled, isTrue);
+    final added = saved.sections.firstWhere((s) => s.title == 'Firmament');
+    expect(added.parentId, 'sum');
+    expect(added.start, (chapter: 1, verse: 5));
+    final heading = find.byKey(ValueKey('study-heading-${added.id}'));
+    expect(
+      tester.getTopLeft(heading).dy,
+      lessThan(tester.getTopLeft(_verse(1, 1, 5)).dy),
+    );
+    expect(
+      tester.getTopLeft(heading).dy,
+      greaterThan(tester.getTopLeft(_verse(1, 1, 4)).dy),
+    );
+
+    // Clear any chapter-load notice lying over the heading.
+    ScaffoldMessenger.of(tester.element(heading)).removeCurrentSnackBar();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Firmament'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit heading'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit section heading'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('initial load shows the requested chapter with its divider', (
     tester,
   ) async {

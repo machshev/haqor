@@ -178,7 +178,15 @@ enum _ReaderMenuAction {
 
 enum _ResolvedReaderLayout { focus, split, threePanel }
 
-enum _WordMenuAction { open, openNewPane, bookmarkRoot, bookmarkForm }
+enum _WordMenuAction {
+  open,
+  openNewPane,
+  bookmarkRoot,
+  bookmarkForm,
+  addHeading,
+}
+
+enum _StudyHeadingAction { edit, addSubheading, delete }
 
 /// What a docked side panel shows, switched between when more than one is open.
 enum _SidePanelView { study, word, crossReferences }
@@ -2629,6 +2637,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   Future<StudySection?> _askForStudySection(
     StudySection section, {
     required bool creating,
+    List<StudySection> parents = const [],
   }) {
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return Future.value();
@@ -2643,6 +2652,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         summary: section.isSummary || parent == null
             ? null
             : workspace.summaryOf(parent),
+        parents: parents,
         // Checked against the workspace as it is when saving.
         validate: (edited) =>
             (_activeStudyWorkspace ?? workspace).sectionProblem(edited),
@@ -2690,6 +2700,51 @@ class _ReaderSessionState extends State<_ReaderSession>
     final latest = _activeStudyWorkspace;
     if (created == null || latest == null || !mounted) return;
     _replaceStudyWorkspace(latest.putSection(created));
+  }
+
+  /// Adds, from the reader, a heading starting at a verse to the summary
+  /// covering it (asking which heading to put it under), or else a new
+  /// summary starting there. Its headings are then shown, to see it land.
+  Future<void> _addStudyHeadingAt(int book, int chapter, int verse) async {
+    final workspace = await _ensureStudyWorkspace();
+    if (workspace == null || !mounted) return;
+    final id = DateTime.now().microsecondsSinceEpoch.toString();
+    final covering = workspace.sectionsCovering(book, chapter, verse);
+    final parent = workspace.headingParentAt(covering, (
+      chapter: chapter,
+      verse: verse,
+    ));
+    final created = await _askForStudySection(
+      parent == null
+          ? StudySection(
+              id: id,
+              title: '',
+              chapter: chapter,
+              verse: verse,
+              bookIndex: book,
+              // From the top of a chapter, the whole chapter by default.
+              wholeChapter: verse == 1,
+              endChapter: verse == 1 ? null : chapter,
+              endVerse: verse == 1 ? null : verse,
+            )
+          : StudySection(
+              id: id,
+              title: '',
+              chapter: chapter,
+              verse: verse,
+              parentId: parent.id,
+            ),
+      creating: true,
+      parents: covering,
+    );
+    final latest = _activeStudyWorkspace;
+    if (created == null || latest == null || !mounted) return;
+    var updated = latest.putSection(created).copyWith(headingsEnabled: true);
+    final summary = updated.summaryOf(created);
+    if (summary != null && !summary.showInReader) {
+      updated = updated.putSection(summary.copyWith(showInReader: true));
+    }
+    _replaceStudyWorkspace(updated);
   }
 
   Future<void> _editStudySection(StudySection section) async {
@@ -3718,10 +3773,27 @@ class _ReaderSessionState extends State<_ReaderSession>
             ),
           ),
         ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: _WordMenuAction.addHeading,
+          child: ListTile(
+            leading: const Icon(Icons.toc),
+            title: Text(
+              workspace == null ||
+                      workspace
+                          .sectionsCovering(bookIndex, chapter, verse)
+                          .isEmpty
+                  ? 'Start a passage summary here'
+                  : 'Add heading at $chapter:$verse',
+            ),
+          ),
+        ),
       ],
     );
     if (!mounted || action == null) return;
     switch (action) {
+      case _WordMenuAction.addHeading:
+        await _addStudyHeadingAt(bookIndex, chapter, verse);
       case _WordMenuAction.open:
       case _WordMenuAction.openNewPane:
         _showWordInfo(
@@ -4196,6 +4268,17 @@ class _ReaderSessionState extends State<_ReaderSession>
                     key: ValueKey('study-heading-${heading.section.id}'),
                     heading: heading,
                     useEnglishBookNames: _englishBookNames,
+                    onAction: (action) => switch (action) {
+                      _StudyHeadingAction.edit => _editStudySection(
+                        heading.section,
+                      ),
+                      _StudyHeadingAction.addSubheading => _createStudySection(
+                        heading.section.id,
+                      ),
+                      _StudyHeadingAction.delete => _deleteStudySection(
+                        heading.section,
+                      ),
+                    },
                   ),
                 row,
               ],
@@ -4478,16 +4561,19 @@ class _PlanChapterChip extends StatelessWidget {
 }
 
 /// A study summary's title, or one of its section headings, set inline
-/// before the verse it starts at, with its note beneath.
+/// before the verse it starts at, with its note beneath. Tapping it offers
+/// to edit it, add a subheading beneath it, or delete it.
 class _StudyHeading extends StatelessWidget {
   const _StudyHeading({
     super.key,
     required this.heading,
     required this.useEnglishBookNames,
+    required this.onAction,
   });
 
   final StudyReaderHeading heading;
   final bool useEnglishBookNames;
+  final ValueChanged<_StudyHeadingAction> onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -4495,7 +4581,7 @@ class _StudyHeading extends StatelessWidget {
     final section = heading.section;
     final isSummary = heading.depth == 0;
     final range = heading.summary.range!;
-    return Padding(
+    final content = Padding(
       padding: EdgeInsetsDirectional.only(
         start: (heading.depth - 1).clamp(0, 6) * 16.0,
         top: isSummary ? 16 : 12,
@@ -4538,6 +4624,35 @@ class _StudyHeading extends StatelessWidget {
             ),
         ],
       ),
+    );
+    return PopupMenuButton<_StudyHeadingAction>(
+      tooltip: 'Study heading options',
+      position: PopupMenuPosition.under,
+      onSelected: onAction,
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: _StudyHeadingAction.edit,
+          child: ListTile(
+            leading: const Icon(Icons.edit_note),
+            title: Text(isSummary ? 'Edit summary' : 'Edit heading'),
+          ),
+        ),
+        const PopupMenuItem(
+          value: _StudyHeadingAction.addSubheading,
+          child: ListTile(
+            leading: Icon(Icons.subdirectory_arrow_right),
+            title: Text('Add subheading'),
+          ),
+        ),
+        PopupMenuItem(
+          value: _StudyHeadingAction.delete,
+          child: ListTile(
+            leading: const Icon(Icons.delete_outline),
+            title: Text(isSummary ? 'Delete summary' : 'Delete heading'),
+          ),
+        ),
+      ],
+      child: SizedBox(width: double.infinity, child: content),
     );
   }
 }
