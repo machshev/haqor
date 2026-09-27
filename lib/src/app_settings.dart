@@ -121,8 +121,8 @@ enum ReaderView {
 
 /// How much of the interlinear a tap reveals in [ReaderView.rapid].
 enum RapidReveal {
-  word('Word', 'A tap shows the interlinear beneath that word.'),
-  verse('Verse', 'A tap shows the interlinear for the whole verse.');
+  verse('Verse', 'A tap shows the interlinear for the whole verse.'),
+  word('Word', 'A tap shows the interlinear beneath that word.');
 
   const RapidReveal(this.label, this.description);
 

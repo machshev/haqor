@@ -1844,23 +1844,23 @@ void readerViewTests() {
     expect(verseRow(tester).glossInterlinear, isTrue);
     expect(verseRow(tester).interlinearPositions, isEmpty);
 
-    // A tap reveals the word rather than opening its details, and a second
-    // tap hides it again.
+    // By default a tap reveals its whole verse rather than opening the word's
+    // details, and a tap on any of its words hides it again.
     verseRow(tester).onWordTap('מלה', null, 3, '');
     await tester.pump();
-    expect(verseRow(tester).interlinearPositions, {3});
+    expect(verseRow(tester).interlinearPositions, isNull);
     expect(rust.wordRequests, isEmpty);
-    verseRow(tester).onWordTap('מלה', null, 4, '');
-    await tester.pump();
-    expect(verseRow(tester).interlinearPositions, {3, 4});
-    verseRow(tester).onWordTap('מלה', null, 3, '');
-    await tester.pump();
-    expect(verseRow(tester).interlinearPositions, {4});
     expect(
       tester.widget<VerseRow>(_verse(1, 1, 2)).interlinearPositions,
       isEmpty,
     );
+    verseRow(tester).onWordTap('מלה', null, 5, '');
+    await tester.pump();
+    expect(verseRow(tester).interlinearPositions, isEmpty);
+    verseRow(tester).onWordTap('מלה', null, 3, '');
+    await tester.pump();
 
+    // Leaving rapid reading forgets what it revealed.
     await cycleView(tester);
     expect(verseRow(tester).interlinearPositions, isNull);
     verseRow(tester).onWordTap('מלה', null, 3, '');
@@ -1871,13 +1871,13 @@ void readerViewTests() {
     expect(prefs.getString('reader_view'), 'interlinear');
   });
 
-  testWidgets('rapid reading can reveal a whole verse', (tester) async {
+  testWidgets('rapid reading can reveal single words', (tester) async {
     SharedPreferences.setMockInitialValues({
       'book': 0,
       'chapter': 1,
       'gloss_interlinear': true,
       'reader_view': 'rapid',
-      'rapid_reveal': 'verse',
+      'rapid_reveal': 'word',
     });
     final rust = _FakeRust();
     await tester.pumpWidget(
@@ -1896,11 +1896,18 @@ void readerViewTests() {
     rust.deliverAll();
     await tester.pump();
 
+    // Each tap shows or hides its own word's interlinear.
     expect(verseRow(tester).interlinearPositions, isEmpty);
     verseRow(tester).onWordTap('מלה', null, 3, '');
     await tester.pump();
-    expect(verseRow(tester).interlinearPositions, isNull);
-    verseRow(tester).onWordTap('מלה', null, 5, '');
+    expect(verseRow(tester).interlinearPositions, {3});
+    verseRow(tester).onWordTap('מלה', null, 4, '');
+    await tester.pump();
+    expect(verseRow(tester).interlinearPositions, {3, 4});
+    verseRow(tester).onWordTap('מלה', null, 3, '');
+    await tester.pump();
+    expect(verseRow(tester).interlinearPositions, {4});
+    verseRow(tester).onWordTap('מלה', null, 4, '');
     await tester.pump();
     expect(verseRow(tester).interlinearPositions, isEmpty);
     expect(rust.wordRequests, isEmpty);

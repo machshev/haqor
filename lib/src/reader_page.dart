@@ -1592,7 +1592,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   bool _glossInterlinear = false;
   bool _morphologyInterlinear = false;
   ReaderView _readerView = ReaderView.interlinear;
-  RapidReveal _rapidReveal = RapidReveal.word;
+  RapidReveal _rapidReveal = RapidReveal.verse;
 
   // What rapid reading has revealed, by (book index, chapter, verse): the
   // lexical positions shown, or null for the whole verse.
@@ -1858,7 +1858,7 @@ class _ReaderSessionState extends State<_ReaderSession>
           ReaderView.interlinear;
       _rapidReveal =
           RapidReveal.values.asNameMap()[prefs.getString(_kRapidReveal)] ??
-          RapidReveal.word;
+          RapidReveal.verse;
       _highlightProperNames = prefs.getBool(_kHighlightProperNames) ?? false;
       _studyWorkspaceVisible = prefs.getBool(_kStudyWorkspaceVisible) ?? false;
       _ketivDisplay = KetivDisplay.values.firstWhere(
