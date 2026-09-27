@@ -790,7 +790,6 @@ void main() {
       article: false,
       vavCon: false,
       lexemes: const [],
-      sedraEntries: const [],
       roots: const [],
     );
     assignRustSignal['WordInfo']!(info.bincodeSerialize(), Uint8List(0));

@@ -141,7 +141,7 @@ class WordInfoSheet extends StatefulWidget {
   /// It can intentionally differ from the descriptive Lexicon header.
   final String? readerGloss;
 
-  /// Concrete reader location for occurrence-level OT morphology.
+  /// Concrete reader location for the tapped token's own morphology.
   final int? book;
   final int? chapter;
   final int? verse;
@@ -172,37 +172,30 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   // (אֱלִיעֶזֶר from אל "god" and עזר "help") and belongs to both lists, so which
   // of them to read it under is the reader's to choose.
   String? _selectedRoot;
-  // OT-only: which surface forms of the root are shown in the occurrences list.
-  // Empty means "every form". The tab starts on the tapped word's own form
-  // (see [_exactFormKey]) when the root's list holds it, and the header's
-  // scope toggle (see [_FormScope]) moves between that, the tapped token's
-  // parse and every form in one tap; the filter sheet widens or narrows from
-  // any of them.
-  final Set<String> _otForms = {};
-  // OT-only: the parse filter, one selection per morphology dimension. A
-  // dimension with no selection admits everything; within a dimension the
-  // selections are alternatives, and across dimensions they all have to hold —
-  // so "Qal" plus "plural" plus "participle" narrows, where a list of whole
-  // labels would have needed the exact combination to exist as an entry.
-  final Map<_ParseDimension, Set<String>> _otParse = {};
+  // Which surface forms of the root are shown in the occurrences list. Empty
+  // means "every form". The tab starts on the tapped word's own form (see
+  // [_exactFormKey]) when the root's list holds it, and the header's scope
+  // toggle (see [_FormScope]) moves between that, the tapped token's parse and
+  // every form in one tap; the filter sheet widens or narrows from any of them.
+  final Set<String> _forms = {};
+  // The parse filter, one selection per morphology dimension. A dimension with
+  // no selection admits everything; within a dimension the selections are
+  // alternatives, and across dimensions they all have to hold — so "Qal" plus
+  // "plural" plus "participle" narrows, where a list of whole labels would have
+  // needed the exact combination to exist as an entry. OT and NT tokens share
+  // the one vocabulary, so a selection cuts across both testaments.
+  final Map<_ParseDimension, Set<String>> _parse = {};
   final ScrollController _dockedScrollController = ScrollController();
-  // OT-only: restrict the list to any selected books (1-based, matching the
+  // Restrict the list to any selected books (1-based, matching the
   // occurrence rows). Empty shows the whole canon.
-  final Set<int> _otBooks = {};
+  final Set<int> _books = {};
   // Every occurrence row reads its verse text through this one cache, which
   // batches the requests of a layout pass into a single round-trip.
   late final VerseTextCache _verseTexts = VerseTextCache(
     send: widget.sendVerseTextsRequest,
   );
-  // NT-only: which lexeme indices (positions in info.sedraEntries) are shown in
-  // the occurrences list. Null until first built, then defaults to the looked-up
-  // lexeme. Empty set means "show all".
-  Set<int>? _selectedLexemes;
-  // NT-only: when true the occurrences list shows OT (Hebrew Bible) verses of
-  // the same consonantal root instead of the SEDRA-based NT occurrences.
-  bool _otSelected = false;
-  // Shared across both occurrences tabs: false shows Hebrew verse text, true
-  // shows the aligned English reader glosses instead.
+  // False shows Hebrew verse text, true shows the aligned English reader
+  // glosses instead.
   bool _occurrenceVerseEnglishOnly = false;
   // Occurrence lists are full-text root scans, and Rust answers requests one at
   // a time with no way to cancel one, so a scan nobody looks at still holds up
@@ -283,8 +276,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     setState(() {
       _occ = occ;
       final exact = _exactFormKey();
-      if (exact != null && _otForms.isEmpty && _otParse.isEmpty) {
-        _otForms.add(exact);
+      if (exact != null && _forms.isEmpty && _parse.isEmpty) {
+        _forms.add(exact);
       }
     });
     _occurrenceFilterChanged();
@@ -408,9 +401,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     if ((_selectedRoot ?? _primaryRoot()) == root) return;
     setState(() {
       _selectedRoot = root;
-      _otForms.clear();
-      _otParse.clear();
-      _otBooks.clear();
+      _forms.clear();
+      _parse.clear();
+      _books.clear();
       _expandedBdb.clear();
       _occ = null;
       _occRequested = false;
@@ -429,10 +422,17 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   ///
   /// It and [_tappedParse] depend on nothing but the loaded lists, so each is
   /// worked out once per reply rather than rescanned on every rebuild.
+  ///
+  /// The form is the list's own spelling of it: the tokens are matched on their
+  /// normalised key, since an NT token is spelled as SEDRA vocalises it.
   String? _exactFormKey() => _exactFormMemo.get([_occ], () {
     final key = hebrewSurfaceKey(widget.word);
-    final all = _occ?.hebrewOccurrences ?? const <HebrewOccurrence>[];
-    return all.any((o) => o.surface == key) ? key : null;
+    for (final o in _occ?.tokens ?? const <Occurrence>[]) {
+      if (o.surface == key || hebrewSurfaceKey(o.surface) == key) {
+        return o.surface;
+      }
+    }
+    return null;
   });
   final _exactFormMemo = _Memo<String?>();
   final _tappedParseMemo = _Memo<Map<_ParseDimension, String>?>();
@@ -448,12 +448,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       _tappedParseMemo.get([_occ], _computeTappedParse);
 
   Map<_ParseDimension, String>? _computeTappedParse() {
-    final key = hebrewSurfaceKey(widget.word);
+    final key = _exactFormKey();
     final own = [
-      for (final o in _occ?.hebrewOccurrences ?? const <HebrewOccurrence>[])
+      for (final o in _occ?.tokens ?? const <Occurrence>[])
         if (o.surface == key) o,
     ];
-    HebrewOccurrence? token;
+    Occurrence? token;
     if (widget.position != null) {
       for (final o in own) {
         if (o.book == widget.book &&
@@ -467,7 +467,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     }
     if (token == null) {
       final counts = <String, int>{};
-      final byParse = <String, HebrewOccurrence>{};
+      final byParse = <String, Occurrence>{};
       for (final o in own) {
         final signature = [
           for (final dimension in _ParseDimension.values) dimension.of(o),
@@ -498,18 +498,18 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     Map<_ParseDimension, String>? tappedParse,
   ) {
     final parse = {
-      for (final entry in _otParse.entries)
+      for (final entry in _parse.entries)
         if (entry.value.isNotEmpty) entry.key: entry.value,
     };
-    if (_otForms.isEmpty && parse.isEmpty) return _FormScope.all;
+    if (_forms.isEmpty && parse.isEmpty) return _FormScope.all;
     if (exactForm != null &&
         parse.isEmpty &&
-        _otForms.length == 1 &&
-        _otForms.contains(exactForm)) {
+        _forms.length == 1 &&
+        _forms.contains(exactForm)) {
       return _FormScope.exact;
     }
     if (tappedParse != null &&
-        _otForms.isEmpty &&
+        _forms.isEmpty &&
         parse.length == tappedParse.length &&
         tappedParse.entries.every(
           (entry) =>
@@ -529,14 +529,14 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     Map<_ParseDimension, String>? tappedParse,
   ) {
     setState(() {
-      _otForms.clear();
-      _otParse.clear();
+      _forms.clear();
+      _parse.clear();
       switch (scope) {
         case _FormScope.exact:
-          if (exactForm != null) _otForms.add(exactForm);
+          if (exactForm != null) _forms.add(exactForm);
         case _FormScope.parse:
           tappedParse?.forEach((dimension, value) {
-            _otParse[dimension] = {value};
+            _parse[dimension] = {value};
           });
         case _FormScope.all:
           break;
@@ -621,6 +621,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           {
             'headword': lexeme.headword,
             'posCategory': lexeme.posCategory,
+            if (lexeme.isCurrent) 'isCurrent': true,
             'entries': [
               for (final entry in lexeme.entries)
                 {
@@ -630,14 +631,6 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   if (entry.homograph.isNotEmpty) 'homograph': entry.homograph,
                 },
             ],
-          },
-      ],
-      'sedraEntries': [
-        for (final entry in info.sedraEntries)
-          {
-            'lexeme': entry.lexeme,
-            'meaning': entry.meaning,
-            'isCurrent': entry.isCurrent,
           },
       ],
     },
@@ -1168,7 +1161,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     // headword over every lexicon's entries for it, indented beneath. An entry
     // spelled otherwise (a bare root, or a form that only refers to this
     // word) keeps its own headword on its row.
-    Widget buildLexeme(int i, LexemeSummary lexeme) {
+    Widget buildLexemeRows(int i, LexemeSummary lexeme) {
       if (lexeme.entries.length == 1) {
         return buildBdbRow(
           (i, 0),
@@ -1215,6 +1208,22 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       );
     }
 
+    // The looked-up word's own lexeme (SEDRA files a Peshitta word under one)
+    // is tinted, so it stands out among its root's family.
+    Widget buildLexeme(int i, LexemeSummary lexeme) {
+      final row = buildLexemeRows(i, lexeme);
+      if (!lexeme.isCurrent) return row;
+      return Container(
+        key: ValueKey('current-lexeme-$i'),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: row,
+      );
+    }
+
     Widget sectionHeading(String label) => Text(
       label,
       style: theme.textTheme.labelLarge?.copyWith(
@@ -1250,7 +1259,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
 
     // A resolved word with no dictionary entry (curated function words such
     // as בָּהּ bridge to no BDB lexeme) would otherwise render a blank tab.
-    if (rows.isEmpty && info.sedraEntries.isEmpty) {
+    if (rows.isEmpty) {
       rows.add(
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 24),
@@ -1268,94 +1277,14 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     return ListView(
       controller: scrollController,
       padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
-      children: [
-        ...rows,
-        if (info.sedraEntries.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                'Root tree',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const Spacer(),
-              if (info.root.isNotEmpty)
-                Text(
-                  '${info.root}  ·  ${info.sedraEntries.length} lexemes',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  textDirection: TextDirection.rtl,
-                ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest.withValues(
-                alpha: 0.5,
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: info.sedraEntries.map((e) {
-                return Container(
-                  margin: const EdgeInsets.symmetric(vertical: 1),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 3,
-                  ),
-                  decoration: e.isCurrent
-                      ? BoxDecoration(
-                          color: theme.colorScheme.primaryContainer.withValues(
-                            alpha: 0.6,
-                          ),
-                          borderRadius: BorderRadius.circular(6),
-                        )
-                      : null,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(
-                        e.lexeme,
-                        style: TextStyle(
-                          fontFamily: 'Cardo',
-                          fontFamilyFallback: const ['Noto Serif Hebrew'],
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: e.isCurrent
-                              ? theme.colorScheme.onPrimaryContainer
-                              : theme.colorScheme.onSurface,
-                        ),
-                        textDirection: TextDirection.rtl,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          e.meaning,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: e.isCurrent
-                                ? theme.colorScheme.onPrimaryContainer
-                                : theme.colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ],
-      ],
+      children: [...rows],
     );
   }
 
+  /// A filter header and a canon distribution over a merged-by-verse list,
+  /// the same whichever testament the word was read in: its root's tokens
+  /// across the canon, filtered by surface form, by lexeme, by parse and by
+  /// book.
   Widget _buildOccurrencesTab(
     BuildContext context,
     WordInfo info,
@@ -1367,37 +1296,19 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     if (occ == null) {
       return const Center(child: CircularProgressIndicator());
     }
-
-    // NT: lexeme-filterable list backed by the detailed SEDRA occurrences.
-    if (widget.syriac && occ.sedraOccurrences.isNotEmpty) {
-      return _buildSedraOccurrencesTab(context, info, occ, bottomPad);
+    if (occ.occurrences.isEmpty && occ.tokens.isEmpty) {
+      return const SizedBox.shrink();
     }
 
-    if (occ.occurrences.isNotEmpty || occ.hebrewOccurrences.isNotEmpty) {
-      return _buildHebrewOccurrencesTab(context, info, occ, bottomPad);
-    }
-
-    return const SizedBox.shrink();
-  }
-
-  /// OT counterpart of [_buildSedraOccurrencesTab]: a filter header and a canon
-  /// distribution over a merged-by-verse list. The NT side filters by lexeme;
-  /// the OT side filters by surface form, by parse, and by book.
-  Widget _buildHebrewOccurrencesTab(
-    BuildContext context,
-    WordInfo info,
-    WordOccurrences occ,
-    double bottomPad,
-  ) {
     final theme = Theme.of(context);
 
-    // Older/edge data (e.g. a word with no readable root) has no per-token
-    // tagging — fall back to a flat list of the surface's own verses.
-    if (occ.hebrewOccurrences.isEmpty) {
+    // Edge data (e.g. a word with no readable root) has no per-token tagging —
+    // fall back to a flat list of the surface's own verses.
+    if (occ.tokens.isEmpty) {
       return _occurrenceVerseList(_flatVerses(occ), bottomPad: bottomPad);
     }
 
-    final forms = _otForms;
+    final forms = _forms;
 
     // Each filter's own inventory is counted over what the *other* filters
     // admit, so a number says what selecting that entry would actually yield.
@@ -1408,7 +1319,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     // every toggle, so each derived list is memoised on what it depends on.
     final exactForm = _exactFormKey();
     final tappedParse = _tappedParse();
-    final (:inScope, :scopeCounts) = _hebrewScope(occ);
+    final (:inScope, :scopeCounts) = _tokenScope(occ);
     final scopes = [
       if (exactForm != null) _FormScope.exact,
       if (tappedParse != null) _FormScope.parse,
@@ -1419,8 +1330,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     final List<_VerseOccurrence> verses;
     final int hits;
     if (proximity == null) {
-      bookCounts = _hebrewMatches(occ).bookCounts;
-      final shown = _hebrewShown(occ);
+      bookCounts = _tokenMatches(occ).bookCounts;
+      final shown = _tokensShown(occ);
       verses = shown.verses;
       hits = shown.hits;
     } else {
@@ -1434,7 +1345,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         return counts;
       });
       verses = _markPassageStarts(
-        proximity.verses.where((v) => _passesOtBook(v.book)).toList(),
+        proximity.verses.where((v) => _passesBook(v.book)).toList(),
       );
       hits = verses.length;
     }
@@ -1475,7 +1386,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                     child: ActionChip(
                       avatar: const Icon(Icons.filter_list, size: 18),
                       label: Text(
-                        _hebrewFilterSummary(forms, exactForm: exactForm),
+                        _filterSummary(forms, exactForm: exactForm),
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontFamily: 'Cardo',
@@ -1483,7 +1394,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                         ),
                       ),
                       onPressed: () =>
-                          _openHebrewFilterSheet(context, occurrences: inScope),
+                          _openFilterSheet(context, occurrences: inScope),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -1529,10 +1440,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               const SizedBox(height: 2),
               _CanonDistribution(
                 countsByBook: bookCounts,
-                selectedBooks: _otBooks,
+                selectedBooks: _books,
                 useEnglishBookNames: widget.useEnglishBookNames,
                 onSelect: (books) => setState(() {
-                  _otBooks
+                  _books
                     ..clear()
                     ..addAll(books);
                 }),
@@ -1558,48 +1469,38 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     );
   }
 
-  bool _passesOtFormAndParse(HebrewOccurrence o) =>
-      (_otForms.isEmpty || _otForms.contains(o.surface)) &&
-      _otParse.entries.every(
+  bool _passesFormAndParse(Occurrence o) =>
+      (_forms.isEmpty || _forms.contains(o.surface)) &&
+      _parse.entries.every(
         (selection) =>
             selection.value.isEmpty ||
             selection.value.contains(selection.key.of(o)),
       );
 
-  bool _passesOtBook(int book) => _otBooks.isEmpty || _otBooks.contains(book);
+  bool _passesBook(int book) => _books.isEmpty || _books.contains(book);
 
   /// The form and parse filters as a value, for memo keys: the sets are
   /// mutated in place, so their identity says nothing about their contents.
   String get _formParseKey => [
-    (_otForms.toList()..sort()).join('\u0001'),
+    (_forms.toList()..sort()).join('\u0001'),
     for (final dimension in _ParseDimension.values)
-      ((_otParse[dimension] ?? const <String>{}).toList()..sort()).join(
-        '\u0001',
-      ),
+      ((_parse[dimension] ?? const <String>{}).toList()..sort()).join('\u0001'),
   ].join('\u0002');
 
   /// The book filter as a value, as [_formParseKey] is.
-  String get _booksKey => (_otBooks.toList()..sort()).join(',');
+  String get _booksKey => (_books.toList()..sort()).join(',');
 
-  /// The NT lexeme filter as a value, as [_formParseKey] is.
-  String get _lexemesKey =>
-      '${(_effectiveLexemes().toList()..sort()).join(',')}|$_otSelected';
-
-  final _hebrewMatchesMemo =
+  final _tokenMatchesMemo =
       _Memo<
         ({
-          List<HebrewOccurrence> matching,
+          List<Occurrence> matching,
           ({List<_VerseOccurrence> verses, int hits}) merged,
           Map<int, int> bookCounts,
         })
       >();
-  final _hebrewScopeMemo =
-      _Memo<
-        ({List<HebrewOccurrence> inScope, Map<_FormScope, int> scopeCounts})
-      >();
-  final _hebrewShownMemo = _Memo<({List<_VerseOccurrence> verses, int hits})>();
-  final _sedraVersesMemo = _Memo<List<_VerseOccurrence>>();
-  final _sedraCountsMemo = _Memo<Map<int, int>>();
+  final _tokenScopeMemo =
+      _Memo<({List<Occurrence> inScope, Map<_FormScope, int> scopeCounts})>();
+  final _tokensShownMemo = _Memo<({List<_VerseOccurrence> verses, int hits})>();
   final _flatVersesMemo = _Memo<List<_VerseOccurrence>>();
   final _proximityHitsMemo = _Memo<List<ProximityHit>?>();
   final _proximityResultMemo = _Memo<_ProximityResult>();
@@ -1608,69 +1509,63 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   /// The tokens the form and parse filters admit, merged by verse, with their
   /// per-book token counts for the distribution bar.
   ({
-    List<HebrewOccurrence> matching,
+    List<Occurrence> matching,
     ({List<_VerseOccurrence> verses, int hits}) merged,
     Map<int, int> bookCounts,
   })
-  _hebrewMatches(WordOccurrences occ) =>
-      _hebrewMatchesMemo.get([occ, _formParseKey], () {
-        final matching = occ.hebrewOccurrences
-            .where(_passesOtFormAndParse)
-            .toList();
+  _tokenMatches(WordOccurrences occ) =>
+      _tokenMatchesMemo.get([occ, _formParseKey], () {
+        final matching = occ.tokens.where(_passesFormAndParse).toList();
         final bookCounts = <int, int>{};
         for (final o in matching) {
           bookCounts[o.book] = (bookCounts[o.book] ?? 0) + 1;
         }
         return (
           matching: matching,
-          merged: _mergeHebrewTokens(matching),
+          merged: _mergeTokens(matching),
           bookCounts: bookCounts,
         );
       });
 
   /// The tokens the book filter admits, and what each scope would list among
   /// them: a scope replaces the form and parse filters but keeps the book one.
-  ({List<HebrewOccurrence> inScope, Map<_FormScope, int> scopeCounts})
-  _hebrewScope(WordOccurrences occ) =>
-      _hebrewScopeMemo.get([occ, _booksKey], () {
-        final exactForm = _exactFormKey();
-        final tappedParse = _tappedParse();
-        final inScope = occ.hebrewOccurrences
-            .where((o) => _passesOtBook(o.book))
-            .toList();
-        final scopeCounts = {for (final scope in _FormScope.values) scope: 0};
-        for (final o in inScope) {
-          scopeCounts[_FormScope.all] = scopeCounts[_FormScope.all]! + 1;
-          if (o.surface == exactForm) {
-            scopeCounts[_FormScope.exact] = scopeCounts[_FormScope.exact]! + 1;
-          }
-          if (tappedParse != null &&
-              tappedParse.entries.every((e) => e.key.of(o) == e.value)) {
-            scopeCounts[_FormScope.parse] = scopeCounts[_FormScope.parse]! + 1;
-          }
-        }
-        return (inScope: inScope, scopeCounts: scopeCounts);
-      });
+  ({List<Occurrence> inScope, Map<_FormScope, int> scopeCounts}) _tokenScope(
+    WordOccurrences occ,
+  ) => _tokenScopeMemo.get([occ, _booksKey], () {
+    final exactForm = _exactFormKey();
+    final tappedParse = _tappedParse();
+    final inScope = occ.tokens.where((o) => _passesBook(o.book)).toList();
+    final scopeCounts = {for (final scope in _FormScope.values) scope: 0};
+    for (final o in inScope) {
+      scopeCounts[_FormScope.all] = scopeCounts[_FormScope.all]! + 1;
+      if (o.surface == exactForm) {
+        scopeCounts[_FormScope.exact] = scopeCounts[_FormScope.exact]! + 1;
+      }
+      if (tappedParse != null &&
+          tappedParse.entries.every((e) => e.key.of(o) == e.value)) {
+        scopeCounts[_FormScope.parse] = scopeCounts[_FormScope.parse]! + 1;
+      }
+    }
+    return (inScope: inScope, scopeCounts: scopeCounts);
+  });
 
-  /// The OT list as shown: every filter applied, merged by verse so a verse
+  /// The list as shown: every filter applied, merged by verse so a verse
   /// appears once with all its matches highlighted.
-  ({List<_VerseOccurrence> verses, int hits}) _hebrewShown(
+  ({List<_VerseOccurrence> verses, int hits}) _tokensShown(
     WordOccurrences occ,
   ) {
-    final matches = _hebrewMatches(occ);
-    if (_otBooks.isEmpty) return matches.merged;
-    return _hebrewShownMemo.get(
-      [matches.matching, _booksKey],
-      () => _mergeHebrewTokens(
-        matches.matching.where((o) => _passesOtBook(o.book)),
-      ),
-    );
+    final matches = _tokenMatches(occ);
+    if (_books.isEmpty) return matches.merged;
+    return _tokensShownMemo.get([
+      matches.matching,
+      _booksKey,
+    ], () => _mergeTokens(matches.matching.where((o) => _passesBook(o.book))));
   }
 
   /// Tokens merged by verse, in canonical order, so a verse appears once with
   /// all its matches highlighted; [hits] counts the tokens.
-  ({List<_VerseOccurrence> verses, int hits}) _mergeHebrewTokens(
-    Iterable<HebrewOccurrence> tokens,
+  ({List<_VerseOccurrence> verses, int hits}) _mergeTokens(
+    Iterable<Occurrence> tokens,
   ) {
     final byVerse = <int, _VerseOccurrence>{};
     var hits = 0;
@@ -1706,55 +1601,6 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       return a.verse.compareTo(b.verse);
     });
 
-  /// The NT lexeme filter, defaulting to the looked-up lexeme until the
-  /// reader picks others. Empty means every lexeme.
-  Set<int> _effectiveLexemes() {
-    final selected = _selectedLexemes;
-    if (selected != null) return selected;
-    final current = _info?.sedraEntries.indexWhere((e) => e.isCurrent) ?? -1;
-    return {current >= 0 ? current : 0};
-  }
-
-  /// The NT list: the selected lexemes' verses, merged by verse, with the OT
-  /// cognate verses folded in when those are switched on.
-  List<_VerseOccurrence> _sedraVerses(WordOccurrences occ) =>
-      _sedraVersesMemo.get([occ, _lexemesKey], () => _computeSedraVerses(occ));
-
-  List<_VerseOccurrence> _computeSedraVerses(WordOccurrences occ) {
-    final selected = _effectiveLexemes();
-    final byVerse = <int, _VerseOccurrence>{};
-    for (final o in occ.sedraOccurrences) {
-      if (selected.isNotEmpty && !selected.contains(o.lexemeIndex)) continue;
-      final key = _verseKey(o.book, o.chapter, o.verse);
-      final existing = byVerse[key];
-      if (existing == null) {
-        byVerse[key] = _VerseOccurrence(
-          book: o.book,
-          chapter: o.chapter,
-          verse: o.verse,
-          words: [...o.words],
-        );
-      } else {
-        for (final w in o.words) {
-          if (!existing.words.contains(w)) existing.words.add(w);
-        }
-      }
-    }
-    // OT books (1–39) sort ahead of NT books (40–66), so the list reads in
-    // natural OT→NT order.
-    return _sortCanonically([
-      if (_otSelected)
-        for (final o in occ.otOccurrences)
-          _VerseOccurrence(
-            book: o.book,
-            chapter: o.chapter,
-            verse: o.verse,
-            words: const [],
-          ),
-      ...byVerse.values,
-    ]);
-  }
-
   /// The verses this word contributes to a proximity search: what its own
   /// list shows under its form, parse, or lexeme filters, before any book
   /// filter. Null until the occurrences have loaded.
@@ -1774,11 +1620,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   /// This word's own list under its form, parse, or lexeme filters, before
   /// any book filter.
   List<_VerseOccurrence> _ownVerses(WordOccurrences occ) {
-    if (widget.syriac && occ.sedraOccurrences.isNotEmpty) {
-      return _sedraVerses(occ);
-    }
-    if (occ.hebrewOccurrences.isNotEmpty) {
-      return _hebrewMatches(occ).merged.verses;
+    if (occ.tokens.isNotEmpty) {
+      return _tokenMatches(occ).merged.verses;
     }
     return _flatVerses(occ);
   }
@@ -1970,13 +1813,13 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   /// says what is being looked at rather than how many boxes are ticked; a
   /// dimension with several selected collapses to a count, since spelling them
   /// all out would not fit.
-  String _hebrewFilterSummary(Set<String> forms, {String? exactForm}) {
+  String _filterSummary(Set<String> forms, {String? exactForm}) {
     // The scope toggle already says "exact match", so the chip need not.
     final exact =
         exactForm != null && forms.length == 1 && forms.contains(exactForm);
     final parts = <String>[
       for (final dimension in _ParseDimension.values)
-        if (_otParse[dimension] case final selected? when selected.isNotEmpty)
+        if (_parse[dimension] case final selected? when selected.isNotEmpty)
           if (selected.length == 1)
             selected.first.toLowerCase()
           else
@@ -1985,16 +1828,21 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         forms.first
       else if (forms.length > 1)
         '${forms.length} forms',
-      if (_otBooks.length == 1)
-        bookDisplayName(
-          _otBooks.first - 1,
-          useEnglish: widget.useEnglishBookNames,
-        )
-      else if (_otBooks.length > 1)
-        '${_otBooks.length} books',
+      ?_booksSummary(),
     ];
     if (parts.isEmpty) return exact ? 'Filter' : 'All occurrences';
     return parts.join(' · ');
+  }
+
+  /// The book filter's part of a filter summary; null when it admits every
+  /// book.
+  String? _booksSummary() {
+    if (_books.isEmpty) return null;
+    if (_books.length > 1) return '${_books.length} books';
+    return bookDisplayName(
+      _books.first - 1,
+      useEnglish: widget.useEnglishBookNames,
+    );
   }
 
   /// Verses *and* tokens: a root can stand twice in one verse, and a reader
@@ -2028,12 +1876,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     );
   }
 
-  /// The OT filter sheet: forms on one tab, parses on the other, each searchable
+  /// The filter sheet: forms on one tab, parses on the other, each searchable
   /// because a common root has hundreds of forms (בוא alone has 320) and a wall
   /// of unsorted checkboxes is not a filter anyone can use.
-  Future<void> _openHebrewFilterSheet(
+  Future<void> _openFilterSheet(
     BuildContext context, {
-    required List<HebrewOccurrence> occurrences,
+    required List<Occurrence> occurrences,
   }) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -2041,291 +1889,20 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       isScrollControlled: true,
       builder: (sheetContext) => _OccurrenceFilterSheet(
         occurrences: occurrences,
-        selectedForms: _otForms,
-        selectedParse: _otParse,
+        selectedForms: _forms,
+        selectedParse: _parse,
         onChanged: (forms, parse) {
           setState(() {
-            _otForms
+            _forms
               ..clear()
               ..addAll(forms);
-            _otParse
+            _parse
               ..clear()
               ..addAll(parse);
           });
           _occurrenceFilterChanged();
         },
       ),
-    );
-  }
-
-  Widget _buildSedraOccurrencesTab(
-    BuildContext context,
-    WordInfo info,
-    WordOccurrences occ,
-    double bottomPad,
-  ) {
-    // Lazily default the filter to the looked-up lexeme.
-    _selectedLexemes ??= _effectiveLexemes();
-    final selected = _selectedLexemes!;
-    final showAll = selected.isEmpty;
-
-    // Distinct-verse counts per lexeme index, for the chip labels.
-    final counts = _sedraCountsMemo.get([occ], () {
-      final counts = <int, int>{};
-      for (final o in occ.sedraOccurrences) {
-        counts[o.lexemeIndex] = (counts[o.lexemeIndex] ?? 0) + 1;
-      }
-      return counts;
-    });
-
-    // Apply the filter, merging rows that fall on the same verse so a verse
-    // appears once with all matched word forms highlighted.
-    final own = _sedraVerses(occ);
-    final proximity = _proximityResult();
-    final verses = proximity == null
-        ? own
-        : _markPassageStarts(proximity.verses);
-
-    final theme = Theme.of(context);
-
-    // Compact summary of the active filter, shown on the filter button so the
-    // full chip list can live in a popup instead of eating vertical space.
-    final String lexemeSummary;
-    if (showAll) {
-      lexemeSummary = 'All lexemes';
-    } else if (selected.length == 1) {
-      final i = selected.first;
-      lexemeSummary = (i >= 0 && i < info.sedraEntries.length)
-          ? info.sedraEntries[i].lexeme
-          : 'All lexemes';
-    } else {
-      lexemeSummary = '${selected.length} lexemes';
-    }
-    final filterSummary = _otSelected ? '$lexemeSummary + OT' : lexemeSummary;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Pinned filter header — a single compact row so it stays out of the
-        // way on narrow screens. Tapping the button opens the lexeme picker.
-        Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            border: Border(
-              bottom: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-          ),
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Flexible(
-                          child: ActionChip(
-                            avatar: const Icon(Icons.filter_list, size: 18),
-                            label: Text(
-                              filterSummary,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: 'Cardo',
-                                fontFamilyFallback: ['Noto Serif Hebrew'],
-                              ),
-                            ),
-                            onPressed: () => _openLexemeFilterSheet(
-                              context,
-                              info,
-                              occ,
-                              counts,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Flexible(
-                          child: Text(
-                            proximity == null
-                                ? '${verses.length} verse'
-                                      '${verses.length == 1 ? '' : 's'}'
-                                : _proximityCountLabel(verses),
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (_proximityAvailable) _proximityToggle(),
-                  IconButton(
-                    tooltip: _occurrenceVerseEnglishOnly
-                        ? 'Show Hebrew verse text'
-                        : 'Show English-only verse text',
-                    icon: VerseModeIcon(
-                      englishOnly: _occurrenceVerseEnglishOnly,
-                    ),
-                    onPressed: () {
-                      _setOccurrenceVerseMode(!_occurrenceVerseEnglishOnly);
-                    },
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    alignment: Alignment.centerRight,
-                    constraints: const BoxConstraints(minHeight: 40),
-                  ),
-                ],
-              ),
-              if (proximity != null) _proximityControls(context),
-            ],
-          ),
-        ),
-        Expanded(
-          child: proximity != null && verses.isEmpty
-              ? _proximityEmpty(context, proximity)
-              : _occurrenceVerseList(verses, bottomPad: bottomPad),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _openLexemeFilterSheet(
-    BuildContext context,
-    WordInfo info,
-    WordOccurrences occ,
-    Map<int, int> counts,
-  ) async {
-    final theme = Theme.of(context);
-    const lexStyle = TextStyle(
-      fontFamily: 'Cardo',
-      fontFamilyFallback: ['Noto Serif Hebrew'],
-    );
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (sheetContext, setSheetState) {
-            final selected = _selectedLexemes ?? {};
-            final showAll = selected.isEmpty;
-            // Toggle filter state on both the sheet and the underlying tab so
-            // the verse list stays in sync as selections change.
-            void apply(VoidCallback fn) {
-              setState(fn);
-              setSheetState(() {});
-              _occurrenceFilterChanged();
-            }
-
-            return SafeArea(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(sheetContext).size.height * 0.6,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 12, 4),
-                      child: Row(
-                        children: [
-                          Text(
-                            'Filter occurrences',
-                            style: theme.textTheme.titleSmall,
-                          ),
-                          const Spacer(),
-                          TextButton(
-                            onPressed: () => Navigator.of(sheetContext).pop(),
-                            child: const Text('Done'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Flexible(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          // Pack the short lexeme labels into as many columns as
-                          // the sheet width comfortably allows (~200px each).
-                          final columns = (constraints.maxWidth / 200)
-                              .floor()
-                              .clamp(1, 3);
-                          CheckboxListTile buildLexemeTile(int i) {
-                            return CheckboxListTile(
-                              dense: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              title: Text(
-                                '${info.sedraEntries[i].lexeme} (${counts[i] ?? 0})',
-                                style: lexStyle,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              value: selected.contains(i),
-                              onChanged: (on) => apply(() {
-                                final next = {...selected};
-                                if (on ?? false) {
-                                  next.add(i);
-                                } else {
-                                  next.remove(i);
-                                }
-                                _selectedLexemes = next;
-                              }),
-                            );
-                          }
-
-                          return ListView(
-                            shrinkWrap: true,
-                            children: [
-                              CheckboxListTile(
-                                dense: true,
-                                title: const Text('All lexemes'),
-                                value: showAll,
-                                onChanged: (_) => apply(() {
-                                  _selectedLexemes = {};
-                                }),
-                              ),
-                              if (occ.otOccurrences.isNotEmpty)
-                                CheckboxListTile(
-                                  dense: true,
-                                  title: Text(
-                                    'Old Testament (${occ.otOccurrences.length})',
-                                  ),
-                                  value: _otSelected,
-                                  onChanged: (on) => apply(() {
-                                    _otSelected = on ?? false;
-                                  }),
-                                ),
-                              for (
-                                var i = 0;
-                                i < info.sedraEntries.length;
-                                i += columns
-                              )
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    for (var j = i; j < i + columns; j++)
-                                      Expanded(
-                                        child: j < info.sedraEntries.length
-                                            ? buildLexemeTile(j)
-                                            : const SizedBox.shrink(),
-                                      ),
-                                  ],
-                                ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 
@@ -2492,8 +2069,16 @@ class _WordInfoSheetState extends State<WordInfoSheet>
 /// verb root has a dozen stems times half a dozen tenses times nine
 /// person/gender/number cells, and a reader after "every Hiphil" or "every
 /// plural participle" should not have to find that exact combination in a list.
+///
+/// Hebrew and Aramaic tokens answer in one vocabulary, so a selection cuts
+/// across both testaments. Their stems keep their own names under [stem];
+/// [stemFamily] is where they meet (Qal and Peal are both Simple, Hiphil and
+/// Aphel both Causative). [lexeme] is SEDRA's, carried by NT tokens only; a
+/// dimension with no values among the tokens is not offered.
 enum _ParseDimension {
   partOfSpeech('Part of speech'),
+  lexeme('Lexeme'),
+  stemFamily('Stem family'),
   stem('Stem'),
   tense('Tense'),
   person('Person'),
@@ -2508,8 +2093,10 @@ enum _ParseDimension {
 
   /// This dimension's value for a token, empty where the analysis has none (an
   /// infinitive has no person, a verb no state).
-  String of(HebrewOccurrence o) => switch (this) {
+  String of(Occurrence o) => switch (this) {
     _ParseDimension.partOfSpeech => o.parse.partOfSpeech,
+    _ParseDimension.lexeme => o.lexeme,
+    _ParseDimension.stemFamily => o.parse.stemFamily,
     _ParseDimension.stem => o.parse.stem,
     _ParseDimension.tense => o.parse.tense,
     _ParseDimension.person => o.parse.person,
@@ -2913,7 +2500,7 @@ class _CanonDistribution extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final books = List.generate(39, (index) => index + 1);
+    final books = List.generate(kBooks.length, (index) => index + 1);
     final peak = countsByBook.values.fold<int>(
       0,
       (highest, count) => count > highest ? count : highest,
@@ -2997,10 +2584,16 @@ class _CanonDistribution extends StatelessWidget {
   }
 }
 
-const _kTanakhSections = [
+/// The canon's categories, in book order: the Tanakh's three divisions, then
+/// the New Testament's.
+const List<({String label, String? hebrew, int start, int end})>
+_kCanonSections = [
   (label: 'Torah', hebrew: 'תּוֹרָה', start: 1, end: 5),
   (label: "Nevi'im", hebrew: 'נְבִיאִים', start: 6, end: 26),
   (label: 'Ketuvim', hebrew: 'כְּתוּבִים', start: 27, end: 39),
+  (label: 'Gospels and Acts', hebrew: null, start: 40, end: 44),
+  (label: 'Pauline Epistles', hebrew: null, start: 45, end: 57),
+  (label: 'General Epistles and Revelation', hebrew: null, start: 58, end: 66),
 ];
 
 class _BookDistributionFilterSheet extends StatefulWidget {
@@ -3119,7 +2712,7 @@ class _BookDistributionFilterSheetState
               child: Row(
                 children: [
                   Text(
-                    'Scroll to see all 39 books',
+                    'Scroll to see all ${kBooks.length} books',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -3159,7 +2752,7 @@ class _BookDistributionFilterSheetState
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      for (var book = 1; book <= 39; book++)
+                      for (var book = 1; book <= kBooks.length; book++)
                         _ExpandedBookBar(
                           book: book,
                           count: widget.countsByBook[book] ?? 0,
@@ -3180,7 +2773,7 @@ class _BookDistributionFilterSheetState
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
                 children: [
-                  for (final section in _kTanakhSections) ...[
+                  for (final section in _kCanonSections) ...[
                     _BookCategoryHeader(
                       label: section.label,
                       hebrew: section.hebrew,
@@ -3313,7 +2906,7 @@ class _BookCategoryHeader extends StatelessWidget {
   });
 
   final String label;
-  final String hebrew;
+  final String? hebrew;
   final int selectedCount;
   final int bookCount;
   final VoidCallback onTap;
@@ -3327,7 +2920,7 @@ class _BookCategoryHeader extends StatelessWidget {
       tristate: true,
       value: selectedCount == 0 ? false : (allSelected ? true : null),
       onChanged: (_) => onTap(),
-      title: Text('$label  $hebrew'),
+      title: Text(hebrew == null ? label : '$label  $hebrew'),
       subtitle: Text(
         selectedCount == 0 ? 'Select category' : '$selectedCount selected',
       ),
@@ -3336,11 +2929,12 @@ class _BookCategoryHeader extends StatelessWidget {
   }
 }
 
-/// The OT occurrence filter: the parse by morphology dimension on one tab,
+/// The occurrence filter: the parse by morphology dimension on one tab,
 /// surface forms on the other.
 ///
-/// The parse tab groups its entries under Part of speech / Stem / Tense /
-/// Person / Gender / Number / State rather than listing whole parse labels.
+/// The parse tab groups its entries under Part of speech / Lexeme / Stem family
+/// / Stem / Tense / Person / Gender / Number / State rather than listing whole
+/// parse labels.
 /// Within a group the entries are alternatives; across groups they all have to
 /// hold. So "every Hiphil plural participle" is three taps, where a flat list of
 /// labels needed that exact combination to exist as one entry — and a verb root
@@ -3360,7 +2954,7 @@ class _OccurrenceFilterSheet extends StatefulWidget {
   /// facets from these rather than taking totals computed when it opened —
   /// those go stale the moment a selection changes, which is the one thing the
   /// sheet exists to do.
-  final List<HebrewOccurrence> occurrences;
+  final List<Occurrence> occurrences;
   final Set<String> selectedForms;
   final Map<_ParseDimension, Set<String>> selectedParse;
   final void Function(

@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 enum LexiconSource {
   bdb('B', 'Brown-Driver-Briggs'),
   klein('K', "Klein's Etymological Dictionary"),
-  jastrow('J', "Jastrow's Dictionary of the Targumim, Talmud and Midrash");
+  jastrow('J', "Jastrow's Dictionary of the Targumim, Talmud and Midrash"),
+  sedra('S', 'SEDRA Syriac lexicon of the Peshitta');
 
   const LexiconSource(this.letter, this.title);
 
@@ -20,16 +21,17 @@ enum LexiconSource {
   static LexiconSource of(String key) => switch (key) {
     'klein' => LexiconSource.klein,
     'jastrow' => LexiconSource.jastrow,
+    'sedra' => LexiconSource.sedra,
     _ => LexiconSource.bdb,
   };
 }
 
 /// A small monogram naming which lexicon an entry comes from, so entries of
-/// one lexeme from BDB, Klein and Jastrow can be told apart at a glance.
+/// one lexeme from BDB, Klein, Jastrow and SEDRA can be told apart at a glance.
 class LexiconSourceBadge extends StatelessWidget {
   const LexiconSourceBadge({super.key, required this.source});
 
-  /// The hub's source key: `bdb`, `klein` or `jastrow`.
+  /// The hub's source key: `bdb`, `klein`, `jastrow` or `sedra`.
   final String source;
 
   @override
@@ -45,6 +47,10 @@ class LexiconSourceBadge extends StatelessWidget {
       LexiconSource.jastrow => (
         scheme.secondaryContainer,
         scheme.onSecondaryContainer,
+      ),
+      LexiconSource.sedra => (
+        scheme.surfaceContainerHighest,
+        scheme.onSurfaceVariant,
       ),
     };
     return Tooltip(

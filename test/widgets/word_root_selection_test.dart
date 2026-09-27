@@ -46,6 +46,7 @@ class _FakeRust {
           LexemeSummary(
             headword: selected == 'אלה' ? 'אֵל' : 'עֵזֶר',
             posCategory: 'noun',
+            isCurrent: false,
             entries: [
               BdbSummary(
                 headword: selected == 'אלה' ? 'אֵל' : 'עֵזֶר',
@@ -60,7 +61,6 @@ class _FakeRust {
             ],
           ),
         ],
-        sedraEntries: const [],
         person: null,
         state: null,
         tense: null,
@@ -78,16 +78,13 @@ class _FakeRust {
     );
   }
 
-  void deliverOccurrences(List<HebrewOccurrence> occurrences) {
+  void deliverOccurrences(List<Occurrence> occurrences) {
     assignRustSignal['WordOccurrences']!(
       WordOccurrences(
         requestId: occurrenceRequests.last.requestId,
         found: true,
         occurrences: const [],
-        rootOccurrences: const [],
-        sedraOccurrences: const [],
-        otOccurrences: const [],
-        hebrewOccurrences: occurrences,
+        tokens: occurrences,
       ).bincodeSerialize(),
       Uint8List(0),
     );
@@ -119,20 +116,22 @@ class _FakeRust {
   }
 }
 
-HebrewOccurrence _occurrence({
+Occurrence _occurrence({
   required int chapter,
   required int verse,
   String surface = 'אֱלִיעֶזֶר',
   String state = 'Absolute',
-}) => HebrewOccurrence(
+}) => Occurrence(
   book: 1,
   chapter: chapter,
   verse: verse,
   position: 1,
   surface: surface,
+  lexeme: '',
   parse: OccurrenceParse(
     partOfSpeech: 'Noun',
     stem: '',
+    stemFamily: '',
     tense: '',
     person: '',
     gender: 'Masculine',

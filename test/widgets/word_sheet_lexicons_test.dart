@@ -9,7 +9,7 @@ import 'package:haqor/src/widgets/lexicon_source.dart';
 import 'package:haqor/src/widgets/word_info_sheet.dart';
 
 /// The Lexicon tab lists every lexicon's entries for the word's root family —
-/// BDB, Klein and Jastrow, on OT and NT words alike — and badges each with the
+/// BDB, Klein, Jastrow and SEDRA, on OT and NT words alike — and badges each with the
 /// lexicon it comes from, so the reader can weigh them against each other.
 
 const _klein = BdbSummary(
@@ -37,6 +37,16 @@ const _jastrow = BdbSummary(
   homograph: '',
 );
 
+const _sedra = BdbSummary(
+  headword: 'שְׁלָמָא',
+  gloss: 'peace',
+  contentJson: '{"senses":[{"definition":[{"t":"peace"}]}]}',
+  posCategory: 'noun',
+  source: 'sedra',
+  lang: '',
+  homograph: '',
+);
+
 const _bdb = BdbSummary(
   headword: 'שָׁלוֹם',
   gloss: 'completeness; soundness; welfare; peace',
@@ -50,7 +60,6 @@ const _bdb = BdbSummary(
 Future<void> _pumpSheet(
   WidgetTester tester, {
   required bool syriac,
-  List<SedraSummary> sedraEntries = const [],
   List<LexemeSummary>? lexemes,
   void Function(GetDictionaryEntry)? onDictionaryRequest,
 }) async {
@@ -98,15 +107,16 @@ Future<void> _pumpSheet(
             LexemeSummary(
               headword: 'שָׁלוֹם',
               posCategory: 'noun',
+              isCurrent: false,
               entries: [_bdb, _klein],
             ),
             LexemeSummary(
               headword: 'שְׁלָם',
               posCategory: 'noun',
+              isCurrent: false,
               entries: [_jastrow],
             ),
           ],
-      sedraEntries: sedraEntries,
       person: null,
       state: null,
       tense: null,
@@ -238,25 +248,42 @@ void main() {
     expect(find.byType(AlertDialog), findsOneWidget);
   });
 
-  testWidgets('an NT word shows the other lexicons above its SEDRA tree', (
+  testWidgets('an NT word reads SEDRA as one lexicon among the others', (
     tester,
   ) async {
     await _pumpSheet(
       tester,
       syriac: true,
-      sedraEntries: const [
-        SedraSummary(lexeme: 'שלמא', meaning: 'peace', isCurrent: true),
+      lexemes: const [
+        LexemeSummary(
+          headword: 'שְׁלָמָא',
+          posCategory: 'noun',
+          isCurrent: true,
+          entries: [_sedra],
+        ),
+        LexemeSummary(
+          headword: 'שָׁלוֹם',
+          posCategory: 'noun',
+          isCurrent: false,
+          entries: [_bdb, _klein],
+        ),
       ],
     );
+    expect(find.byTooltip(LexiconSource.sedra.title), findsOneWidget);
     expect(find.byTooltip(LexiconSource.bdb.title), findsOneWidget);
-    expect(find.byTooltip(LexiconSource.jastrow.title), findsOneWidget);
-    expect(find.text('Root tree'), findsOneWidget);
+    expect(find.byTooltip(LexiconSource.klein.title), findsOneWidget);
+    // No separate root tree: SEDRA's lexemes are the family's own rows, the
+    // looked-up word's marked.
+    expect(find.text('Root tree'), findsNothing);
+    expect(find.byKey(const ValueKey('current-lexeme-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('current-lexeme-1')), findsNothing);
   });
 
   test('an unknown or missing source reads as BDB', () {
     expect(LexiconSource.of(''), LexiconSource.bdb);
     expect(LexiconSource.of('klein'), LexiconSource.klein);
     expect(LexiconSource.of('jastrow'), LexiconSource.jastrow);
+    expect(LexiconSource.of('sedra'), LexiconSource.sedra);
   });
 
   test('period markers are spelled out', () {
@@ -288,6 +315,7 @@ void _groupedLexemeTests() {
           LexemeSummary(
             headword: 'שֶׁבֶת',
             posCategory: 'noun',
+            isCurrent: false,
             entries: [
               entry('bdb', '', 'cessation'),
               entry('klein', 'ᴵ', 'seat, sitting'),
@@ -351,6 +379,7 @@ void _groupedLexemeTests() {
         LexemeSummary(
           headword: 'שִׁרְיוֹן',
           posCategory: 'noun',
+          isCurrent: false,
           entries: [armour, variant],
         ),
       ],

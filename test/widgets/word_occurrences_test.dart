@@ -49,7 +49,6 @@ class _FakeRust {
         article: false,
         vavCon: false,
         lexemes: const [],
-        sedraEntries: const [],
         person: null,
         state: null,
         tense: 'Perfect',
@@ -60,16 +59,13 @@ class _FakeRust {
     );
   }
 
-  void deliverOccurrences(List<HebrewOccurrence> occurrences) {
+  void deliverOccurrences(List<Occurrence> occurrences) {
     assignRustSignal['WordOccurrences']!(
       WordOccurrences(
         requestId: occurrenceRequests.last.requestId,
         found: true,
         occurrences: const [],
-        rootOccurrences: const [],
-        sedraOccurrences: const [],
-        otOccurrences: const [],
-        hebrewOccurrences: occurrences,
+        tokens: occurrences,
       ).bincodeSerialize(),
       Uint8List(0),
     );
@@ -105,7 +101,7 @@ class _FakeRust {
   }
 }
 
-HebrewOccurrence _occurrence({
+Occurrence _occurrence({
   required int book,
   required int chapter,
   required int verse,
@@ -118,15 +114,19 @@ HebrewOccurrence _occurrence({
   String gender = 'Masculine',
   String number = 'Singular',
   String state = '',
-}) => HebrewOccurrence(
+  String stemFamily = '',
+  String lexeme = '',
+}) => Occurrence(
   book: book,
   chapter: chapter,
   verse: verse,
   position: position,
   surface: surface,
+  lexeme: lexeme,
   parse: OccurrenceParse(
     partOfSpeech: partOfSpeech,
     stem: stem,
+    stemFamily: stemFamily,
     tense: tense,
     person: person,
     gender: gender,
@@ -139,11 +139,12 @@ HebrewOccurrence _occurrence({
 /// Pump the sheet's Occurrences tab with [occurrences], opened from [at].
 Future<_FakeRust> _pumpOccurrences(
   WidgetTester tester,
-  List<HebrewOccurrence> occurrences, {
+  List<Occurrence> occurrences, {
   ({int book, int chapter, int verse})? at,
   int? position,
   String word = 'בָּרָא',
   WordProximity? proximity,
+  bool syriac = false,
 }) async {
   SharedPreferences.setMockInitialValues({
     'occurrence_verse_english_only': false,
@@ -156,7 +157,7 @@ Future<_FakeRust> _pumpOccurrences(
           height: 600,
           child: WordInfoSheet(
             word: word,
-            syriac: false,
+            syriac: syriac,
             book: at?.book,
             chapter: at?.chapter,
             verse: at?.verse,
@@ -338,7 +339,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Occurrence distribution'), findsOneWidget);
-    expect(find.text('Scroll to see all 39 books'), findsOneWidget);
+    expect(find.text('Scroll to see all 66 books'), findsOneWidget);
     expect(find.byType(Scrollbar), findsOneWidget);
     final earlierButton = find.ancestor(
       of: find.byTooltip('Earlier books'),
@@ -817,5 +818,96 @@ void main() {
       findsNothing,
     );
     expect(proximity.sources.single.id, 'self');
+  });
+
+  testWidgets('an NT word lists its root across the canon, as an OT word does', (
+    tester,
+  ) async {
+    _useTallWindow(tester);
+    await _pumpOccurrences(
+      tester,
+      [
+        // The Hebrew cognate, ahead of the Peshitta's own tokens.
+        _occurrence(book: 2, chapter: 32, verse: 32, surface: 'כָּתַב'),
+        _occurrence(
+          book: 40,
+          chapter: 1,
+          verse: 1,
+          position: 0,
+          surface: 'כְּתָבָא',
+          partOfSpeech: 'Noun',
+          stem: '',
+          tense: '',
+          person: '',
+          state: 'Emphatic',
+          lexeme: 'כְּתָבָא',
+        ),
+      ],
+      word: 'כְּתָבָא',
+      syriac: true,
+    );
+
+    // The same header: the scope toggle opens on the tapped form, and the list
+    // can be copied and cut by book.
+    expect(find.text('1 verse'), findsOneWidget);
+    expect(find.byTooltip('Copy references'), findsOneWidget);
+    await _showAllForms(tester);
+    expect(find.text('2 verses'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Open book distribution and filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Scroll to see all 66 books'), findsOneWidget);
+    expect(find.text('Exodus (1)'), findsOneWidget);
+    await tester.ensureVisible(find.text('Matthew (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Gospels and Acts'), findsOneWidget);
+
+    await tester.tap(find.text('Matthew (1)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+    expect(find.text('Matthew'), findsOneWidget);
+    expect(find.text('1 verse'), findsOneWidget);
+  });
+
+  testWidgets('stem families meet across Hebrew and Aramaic', (tester) async {
+    _useTallWindow(tester);
+    await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1, stemFamily: 'Simple'),
+      _occurrence(
+        book: 1,
+        chapter: 2,
+        verse: 1,
+        surface: 'הִבְרִיא',
+        stem: 'Hiphil',
+        stemFamily: 'Causative',
+      ),
+      _occurrence(
+        book: 40,
+        chapter: 1,
+        verse: 1,
+        surface: 'בְּרָא',
+        stem: 'Peal',
+        stemFamily: 'Simple',
+        lexeme: 'בְּרָא',
+      ),
+    ]);
+    await _showAllForms(tester);
+    await tester.tap(find.byType(ActionChip));
+    await tester.pumpAndSettle();
+
+    // Each language's stems stay themselves, and meet in their family.
+    expect(find.text('STEM FAMILY'), findsOneWidget);
+    expect(find.text('Qal  1'), findsOneWidget);
+    expect(find.text('Peal  1'), findsOneWidget);
+    // Only the NT token names a SEDRA lexeme, but the group is offered.
+    expect(find.text('LEXEME'), findsOneWidget);
+
+    await tester.tap(find.text('Simple  2'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(find.text('simple'), findsOneWidget);
+    expect(find.text('2 verses'), findsOneWidget);
   });
 }
