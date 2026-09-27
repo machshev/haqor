@@ -39,6 +39,12 @@ class StudyWorkspacePanel extends StatelessWidget {
     this.onEditLink,
     this.onUpdateLink,
     this.onRemoveLink,
+    this.onToggleHeadings,
+    this.onCreateSection,
+    this.onEditSection,
+    this.onUpdateSection,
+    this.onDeleteSection,
+    this.onOpenSection,
   });
 
   final List<StudyWorkspace> workspaces;
@@ -76,6 +82,16 @@ class StudyWorkspacePanel extends StatelessWidget {
   final ValueChanged<StudyLink>? onEditLink;
   final ValueChanged<StudyLink>? onUpdateLink;
   final ValueChanged<StudyLink>? onRemoveLink;
+
+  /// Passage summaries and their section headings: show them in the reader,
+  /// add one (a summary, or a heading when the parent is a section), edit,
+  /// update, delete, or open one's first verse in the reader.
+  final ValueChanged<bool>? onToggleHeadings;
+  final ValueChanged<String?>? onCreateSection;
+  final ValueChanged<StudySection>? onEditSection;
+  final ValueChanged<StudySection>? onUpdateSection;
+  final ValueChanged<StudySection>? onDeleteSection;
+  final ValueChanged<StudySection>? onOpenSection;
 
   String _reference(StudyPassage passage) =>
       '${bookDisplayName(passage.bookIndex, useEnglish: useEnglishBookNames)} '
@@ -149,7 +165,15 @@ class StudyWorkspacePanel extends StatelessWidget {
               onPressed: () => Navigator.pop(dialogContext, group.id),
               child: ListTile(
                 leading: const Icon(Icons.folder_outlined),
-                title: Text(_groupPath(workspace, group)),
+                title: Text(_containerPath(workspace, group.id)),
+              ),
+            ),
+          for (final section in workspace.sections)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, section.id),
+              child: ListTile(
+                leading: Icon(_sectionIcon(section)),
+                title: Text(_containerPath(workspace, section.id)),
               ),
             ),
         ],
@@ -159,15 +183,38 @@ class StudyWorkspacePanel extends StatelessWidget {
     return choice == _topLevelChoice ? null : choice;
   }
 
-  String _groupPath(StudyWorkspace workspace, StudyGroup group) {
-    final names = <String>[group.name];
-    final visited = <String>{group.id};
-    var parent = workspace.groupById(group.parentId);
-    while (parent != null && visited.add(parent.id)) {
-      names.insert(0, parent.name);
-      parent = workspace.groupById(parent.parentId);
+  String _containerPath(StudyWorkspace workspace, String id) {
+    final names = <String>[workspace.containerName(id) ?? ''];
+    final visited = <String>{id};
+    var parent = workspace.containerParent(id);
+    while (parent != null && visited.add(parent)) {
+      names.insert(0, workspace.containerName(parent) ?? '');
+      parent = workspace.containerParent(parent);
     }
     return names.join(' / ');
+  }
+
+  static IconData _sectionIcon(StudySection section) =>
+      section.isSummary ? Icons.toc : Icons.subdirectory_arrow_right;
+
+  /// A summary's book and range, or a heading's verses up to the next one.
+  String _sectionReference(StudyWorkspace workspace, StudySection section) {
+    final summary = workspace.summaryOf(section);
+    final book = summary?.bookIndex;
+    final name = book == null
+        ? ''
+        : '${bookDisplayName(book, useEnglish: useEnglishBookNames)} ';
+    if (section.isSummary) return '$name${section.range!.reference}';
+    final end = workspace.sectionEnd(section);
+    final start = '${section.chapter}:${section.verse}';
+    final last = end.verse == null
+        ? (end.chapter == section.chapter ? 'end' : '${end.chapter}:end')
+        : end.chapter == section.chapter
+        ? '${end.verse}'
+        : '${end.chapter}:${end.verse}';
+    return end.chapter == section.chapter && end.verse == section.verse
+        ? '$name$start'
+        : '$name$start–$last';
   }
 
   Widget _dropTarget(
@@ -253,6 +300,7 @@ class StudyWorkspacePanel extends StatelessWidget {
     StudyItemType.note => (item.value as StudyNote).text,
     StudyItemType.link => _linkLabel(item.value as StudyLink),
     StudyItemType.group => (item.value as StudyGroup).name,
+    StudyItemType.section => (item.value as StudySection).title,
   };
 
   List<Widget> _itemsAt(
@@ -266,10 +314,11 @@ class StudyWorkspacePanel extends StatelessWidget {
     final items = workspace.itemsIn(groupId);
     for (var index = 0; index < items.length; index++) {
       final item = items[index];
-      if (item.type == StudyItemType.group &&
-          ancestors.contains((item.value as StudyGroup).id)) {
-        continue;
-      }
+      final containerId = switch (item.value) {
+        StudyGroup(:final id) || StudySection(:final id) => id,
+        _ => null,
+      };
+      if (containerId != null && ancestors.contains(containerId)) continue;
       children.add(
         _dropTarget(
           workspace,
@@ -288,6 +337,20 @@ class StudyWorkspacePanel extends StatelessWidget {
             group,
             depth: depth,
             ancestors: {...ancestors, group.id},
+            handle: handle,
+            item: item,
+            index: index,
+          ),
+        );
+      } else if (item.type == StudyItemType.section) {
+        final section = item.value as StudySection;
+        children.add(
+          _sectionTile(
+            context,
+            workspace,
+            section,
+            depth: depth,
+            ancestors: {...ancestors, section.id},
             handle: handle,
             item: item,
             index: index,
@@ -319,7 +382,8 @@ class StudyWorkspacePanel extends StatelessWidget {
             item.value as StudyLink,
             depth: depth,
           ),
-          StudyItemType.group => throw StateError('Group rendered above'),
+          StudyItemType.group ||
+          StudyItemType.section => throw StateError('Rendered above'),
         };
         children.add(
           _rowDropTarget(
@@ -398,42 +462,52 @@ class StudyWorkspacePanel extends StatelessWidget {
                     onCreateNote(group.id);
                   case _GroupAction.addGroup:
                     onCreateGroup(group.id);
+                  case _GroupAction.addSummary:
+                    onCreateSection?.call(group.id);
                   case _GroupAction.edit:
                     onEditGroup(group);
                   case _GroupAction.delete:
                     onDeleteGroup(group);
                 }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
+              itemBuilder: (_) => [
+                const PopupMenuItem(
                   value: _GroupAction.addNote,
                   child: ListTile(
                     leading: Icon(Icons.note_add_outlined),
                     title: Text('Add note'),
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: _GroupAction.addPassage,
                   child: ListTile(
                     leading: Icon(Icons.bookmark_add_outlined),
                     title: Text('Add current passage'),
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: _GroupAction.addGroup,
                   child: ListTile(
                     leading: Icon(Icons.create_new_folder_outlined),
                     title: Text('Add subgroup'),
                   ),
                 ),
-                PopupMenuItem(
+                if (onCreateSection != null)
+                  const PopupMenuItem(
+                    value: _GroupAction.addSummary,
+                    child: ListTile(
+                      leading: Icon(Icons.toc),
+                      title: Text('Add passage summary'),
+                    ),
+                  ),
+                const PopupMenuItem(
                   value: _GroupAction.edit,
                   child: ListTile(
                     leading: Icon(Icons.edit_note),
                     title: Text('Edit group'),
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: _GroupAction.delete,
                   child: ListTile(
                     leading: Icon(Icons.delete_outline),
@@ -454,14 +528,192 @@ class StudyWorkspacePanel extends StatelessWidget {
           depth: depth + 1,
           ancestors: ancestors,
         ),
-        if (workspace.passages.every((item) => item.groupId != group.id) &&
-            workspace.words.every((item) => item.groupId != group.id) &&
-            workspace.notes.every((item) => item.groupId != group.id) &&
-            workspace.childGroups(group.id).isEmpty)
+        if (workspace.itemsIn(group.id).isEmpty)
           const _SectionEmpty(text: 'This group is empty.'),
       ],
     ),
   );
+
+  Widget _sectionTile(
+    BuildContext context,
+    StudyWorkspace workspace,
+    StudySection section, {
+    required int depth,
+    required Set<String> ancestors,
+    required Widget handle,
+    required StudyItem item,
+    required int index,
+  }) {
+    final theme = Theme.of(context);
+    final open = onOpenSection;
+    final create = onCreateSection;
+    return Padding(
+      key: ValueKey(item.key),
+      padding: EdgeInsetsDirectional.only(start: depth * 12.0),
+      child: ExpansionTile(
+        key: PageStorageKey((workspace.id, section.id)),
+        initiallyExpanded: true,
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        tilePadding: const EdgeInsetsDirectional.only(end: 0),
+        childrenPadding: EdgeInsets.zero,
+        controlAffinity: ListTileControlAffinity.leading,
+        title: _dropTarget(
+          workspace,
+          section.id,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(_sectionIcon(section), size: 16),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        section.title,
+                        style:
+                            (section.isSummary
+                                    ? theme.textTheme.titleSmall
+                                    : theme.textTheme.bodyMedium)
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+                InkWell(
+                  onTap: open == null ? null : () => open(section),
+                  child: Text(
+                    _sectionReference(workspace, section),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (section.note.isNotEmpty)
+                  Text(section.note, style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+        ),
+        trailing: _rowDropTarget(
+          workspace,
+          item,
+          index,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (section.isSummary &&
+                  (!section.showInReader || !workspace.headingsEnabled))
+                Tooltip(
+                  message: 'Not shown in the reader',
+                  child: Icon(
+                    Icons.visibility_off_outlined,
+                    size: 16,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              PopupMenuButton<_SectionAction>(
+                tooltip: section.isSummary
+                    ? 'Summary options'
+                    : 'Heading options',
+                onSelected: (action) {
+                  switch (action) {
+                    case _SectionAction.addHeading:
+                      create?.call(section.id);
+                    case _SectionAction.addPassage:
+                      onBookmarkCurrent(section.id);
+                    case _SectionAction.addNote:
+                      onCreateNote(section.id);
+                    case _SectionAction.addGroup:
+                      onCreateGroup(section.id);
+                    case _SectionAction.showInReader:
+                      onUpdateSection?.call(
+                        section.copyWith(showInReader: !section.showInReader),
+                      );
+                    case _SectionAction.edit:
+                      onEditSection?.call(section);
+                    case _SectionAction.delete:
+                      onDeleteSection?.call(section);
+                  }
+                },
+                itemBuilder: (_) => [
+                  if (section.isSummary)
+                    CheckedPopupMenuItem(
+                      value: _SectionAction.showInReader,
+                      checked: section.showInReader,
+                      child: const Text('Show headings in reader'),
+                    ),
+                  const PopupMenuItem(
+                    value: _SectionAction.addHeading,
+                    child: ListTile(
+                      leading: Icon(Icons.subdirectory_arrow_right),
+                      title: Text('Add section heading'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: _SectionAction.addNote,
+                    child: ListTile(
+                      leading: Icon(Icons.note_add_outlined),
+                      title: Text('Add note'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: _SectionAction.addPassage,
+                    child: ListTile(
+                      leading: Icon(Icons.bookmark_add_outlined),
+                      title: Text('Add current passage'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: _SectionAction.addGroup,
+                    child: ListTile(
+                      leading: Icon(Icons.create_new_folder_outlined),
+                      title: Text('Add subgroup'),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: _SectionAction.edit,
+                    child: ListTile(
+                      leading: const Icon(Icons.edit_note),
+                      title: Text(
+                        section.isSummary ? 'Edit summary' : 'Edit heading',
+                      ),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: _SectionAction.delete,
+                    child: ListTile(
+                      leading: const Icon(Icons.delete_outline),
+                      title: Text(
+                        section.isSummary ? 'Delete summary' : 'Delete heading',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              handle,
+            ],
+          ),
+        ),
+        children: [
+          ..._itemsAt(
+            context,
+            workspace,
+            section.id,
+            depth: depth + 1,
+            ancestors: ancestors,
+          ),
+          if (workspace.itemsIn(section.id).isEmpty)
+            const _SectionEmpty(
+              text: 'Add section headings, notes or passages here.',
+            ),
+        ],
+      ),
+    );
+  }
 
   Widget _passageTile(
     BuildContext context,
@@ -923,6 +1175,12 @@ class StudyWorkspacePanel extends StatelessWidget {
                             if (workspace != null) {
                               onToggleHighlights(!workspace.highlightsEnabled);
                             }
+                          case _WorkspaceAction.toggleHeadings:
+                            if (workspace != null) {
+                              onToggleHeadings?.call(
+                                !workspace.headingsEnabled,
+                              );
+                            }
                           case _WorkspaceAction.rename:
                             onRename();
                           case _WorkspaceAction.delete:
@@ -942,6 +1200,12 @@ class StudyWorkspacePanel extends StatelessWidget {
                             value: _WorkspaceAction.toggleHighlights,
                             checked: workspace.highlightsEnabled,
                             child: const Text('Show study highlights'),
+                          ),
+                        if (workspace != null && onToggleHeadings != null)
+                          CheckedPopupMenuItem(
+                            value: _WorkspaceAction.toggleHeadings,
+                            checked: workspace.headingsEnabled,
+                            child: const Text('Show study headings'),
                           ),
                         const PopupMenuDivider(),
                         const PopupMenuItem(
@@ -977,6 +1241,9 @@ class StudyWorkspacePanel extends StatelessWidget {
                             onBookmarkCurrent: () => onBookmarkCurrent(null),
                             onCreateGroup: () => onCreateGroup(null),
                             onCreateNote: () => onCreateNote(null),
+                            onCreateSummary: onCreateSection == null
+                                ? null
+                                : () => onCreateSection!(null),
                           ),
                         ),
                         ..._itemsAt(
@@ -989,7 +1256,8 @@ class StudyWorkspacePanel extends StatelessWidget {
                             workspace.passages.isEmpty &&
                             workspace.words.isEmpty &&
                             workspace.notes.isEmpty &&
-                            workspace.links.isEmpty)
+                            workspace.links.isEmpty &&
+                            workspace.sections.isEmpty)
                           const _SectionEmpty(
                             text:
                                 'Bookmark a passage or word, or create a group '
@@ -1107,11 +1375,13 @@ class _OutlineHeader extends StatelessWidget {
     required this.onBookmarkCurrent,
     required this.onCreateGroup,
     required this.onCreateNote,
+    this.onCreateSummary,
   });
 
   final VoidCallback onBookmarkCurrent;
   final VoidCallback onCreateGroup;
   final VoidCallback onCreateNote;
+  final VoidCallback? onCreateSummary;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -1137,6 +1407,8 @@ class _OutlineHeader extends StatelessWidget {
                 onCreateGroup();
               case _OutlineAction.createNote:
                 onCreateNote();
+              case _OutlineAction.createSummary:
+                onCreateSummary?.call();
             }
           },
           itemBuilder: (_) => [
@@ -1161,6 +1433,14 @@ class _OutlineHeader extends StatelessWidget {
                 title: Text('New group'),
               ),
             ),
+            if (onCreateSummary != null)
+              const PopupMenuItem(
+                value: _OutlineAction.createSummary,
+                child: ListTile(
+                  leading: Icon(Icons.toc),
+                  title: Text('New passage summary'),
+                ),
+              ),
           ],
         ),
       ],
@@ -1241,11 +1521,27 @@ const _highlightColors = <int>[
 const _topLevelChoice = '__top_level__';
 const _cancelledChoice = '__cancelled__';
 
-enum _WorkspaceAction { create, toggleHighlights, rename, delete }
+enum _WorkspaceAction {
+  create,
+  toggleHighlights,
+  toggleHeadings,
+  rename,
+  delete,
+}
 
-enum _OutlineAction { bookmarkPassage, createNote, createGroup }
+enum _OutlineAction { bookmarkPassage, createNote, createGroup, createSummary }
 
-enum _GroupAction { addPassage, addNote, addGroup, edit, delete }
+enum _GroupAction { addPassage, addNote, addGroup, addSummary, edit, delete }
+
+enum _SectionAction {
+  showInReader,
+  addHeading,
+  addNote,
+  addPassage,
+  addGroup,
+  edit,
+  delete,
+}
 
 enum _ItemAction { highlight, note, move, color, remove }
 

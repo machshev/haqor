@@ -226,6 +226,73 @@ void main() {
     );
   }
 
+  for (final shown in [true, false]) {
+    testWidgets('study headings stand before their verses ($shown)', (
+      tester,
+    ) async {
+      final workspace = study.StudyWorkspace(
+        id: 'study',
+        name: 'Study',
+        headingsEnabled: shown,
+        sections: const [
+          study.StudySection(
+            id: 'sum',
+            title: 'Creation',
+            chapter: 1,
+            verse: 1,
+            bookIndex: 0,
+            wholeChapter: true,
+            note: 'Six days',
+          ),
+          study.StudySection(
+            id: 'light',
+            title: 'Light',
+            chapter: 1,
+            verse: 3,
+            parentId: 'sum',
+            note: 'Day one',
+          ),
+        ],
+      );
+      SharedPreferences.setMockInitialValues({
+        'book': 0,
+        'chapter': 1,
+        study.studyWorkspacesKey: study.encodeStudyWorkspaces([workspace]),
+        study.activeStudyWorkspaceKey: 'study',
+      });
+      final rust = _FakeRust();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BibleReaderPage(
+            sendChapterRequest: rust.onRequest,
+            sendStudyStateRequest: rust.onStudyRequest,
+            saveStudyState: rust.onStudySave,
+            sendWordInfoRequest: rust.onWordInfo,
+            sendWordOccurrencesRequest: rust.onOccurrences,
+            sendVerseTextsRequest: rust.onVerseTexts,
+          ),
+        ),
+      );
+      await tester.pump();
+      rust.deliverAll();
+      await tester.pumpAndSettle();
+      final summary = find.byKey(const ValueKey('study-heading-sum'));
+      final light = find.byKey(const ValueKey('study-heading-light'));
+      if (!shown) {
+        expect(summary, findsNothing);
+        expect(light, findsNothing);
+        return;
+      }
+      expect(find.text('Six days'), findsOneWidget);
+      expect(find.text('Day one'), findsOneWidget);
+      final y = tester.getTopLeft;
+      expect(y(summary).dy, lessThan(y(_verse(1, 1, 1)).dy));
+      expect(y(light).dy, greaterThan(y(_verse(1, 1, 2)).dy));
+      expect(y(light).dy, lessThan(y(_verse(1, 1, 3)).dy));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('initial load shows the requested chapter with its divider', (
     tester,
   ) async {

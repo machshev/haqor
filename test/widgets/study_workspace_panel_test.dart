@@ -7,6 +7,7 @@ import 'package:haqor/src/widgets/study_workspace_panel.dart';
 
 void main() {
   linkTileTests();
+  sectionTileTests();
 
   testWidgets('word menu switches type and explains unavailable conversions', (
     tester,
@@ -653,5 +654,146 @@ void linkTileTests() {
     await tester.tap(find.text('Remove'));
     await tester.pumpAndSettle();
     expect(removed, [link]);
+  });
+}
+
+void sectionTileTests() {
+  testWidgets('a summary shows its headings, opens them and toggles them in '
+      'the reader', (tester) async {
+    const workspace = StudyWorkspace(
+      id: 'study',
+      name: 'Study',
+      sections: [
+        StudySection(
+          id: 'sum',
+          title: 'Creation',
+          chapter: 1,
+          verse: 1,
+          bookIndex: 0,
+          endChapter: 2,
+          endVerse: 3,
+          note: 'Six days',
+        ),
+        StudySection(
+          id: 'light',
+          title: 'Light',
+          chapter: 1,
+          verse: 3,
+          parentId: 'sum',
+        ),
+        StudySection(
+          id: 'land',
+          title: 'Land',
+          chapter: 1,
+          verse: 9,
+          parentId: 'sum',
+        ),
+      ],
+      notes: [StudyNote(id: 'n', text: 'Before the days', groupId: 'sum')],
+    );
+    final created = <String?>[];
+    StudySection? updated, opened, edited, deleted;
+    bool? headingsEnabled;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 380,
+            height: 760,
+            child: StudyWorkspacePanel(
+              workspaces: const [workspace],
+              activeWorkspace: workspace,
+              currentPassage: const StudyPassage(
+                bookIndex: 0,
+                chapter: 1,
+                verse: 2,
+              ),
+              useEnglishBookNames: true,
+              onCreate: () {},
+              onSelect: (_) {},
+              onRename: () {},
+              onDelete: () {},
+              onToggleHighlights: (_) {},
+              onCreateGroup: (_) {},
+              onEditGroup: (_) {},
+              onDeleteGroup: (_) {},
+              onBookmarkCurrent: (_) {},
+              onOpenPassage: (_) {},
+              onEditPassage: (_) {},
+              onUpdatePassage: (_) {},
+              onRemovePassage: (_) {},
+              onEditWord: (_) {},
+              onUpdateWord: (_) {},
+              onSwitchWordKind: (_) {},
+              onRemoveWord: (_) {},
+              onOpenWord: (_) {},
+              onCreateNote: (_) {},
+              onEditNote: (_) {},
+              onUpdateNote: (_) {},
+              onRemoveNote: (_) {},
+              onMoveItem: (_, _, _) {},
+              onToggleHeadings: (enabled) => headingsEnabled = enabled,
+              onCreateSection: created.add,
+              onEditSection: (s) => edited = s,
+              onUpdateSection: (s) => updated = s,
+              onDeleteSection: (s) => deleted = s,
+              onOpenSection: (s) => opened = s,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Genesis 1:1–2:3'), findsOneWidget);
+    expect(find.text('Six days'), findsOneWidget);
+    expect(find.text('Genesis 1:3–8'), findsOneWidget);
+    expect(find.text('Genesis 1:9–2:3'), findsOneWidget);
+    // The summary's own note comes before its headings.
+    final y = tester.getTopLeft;
+    expect(
+      y(find.text('Before the days')).dy,
+      lessThan(y(find.text('Light')).dy),
+    );
+    expect(y(find.text('Light')).dy, lessThan(y(find.text('Land')).dy));
+
+    await tester.tap(find.text('Genesis 1:9–2:3'));
+    expect(opened?.id, 'land');
+
+    await tester.tap(find.byTooltip('Summary options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show headings in reader'));
+    await tester.pumpAndSettle();
+    expect(updated?.id, 'sum');
+    expect(updated?.showInReader, isFalse);
+
+    await tester.tap(find.byTooltip('Summary options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add section heading'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Heading options').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Show headings in reader'), findsNothing);
+    await tester.tap(find.text('Edit heading'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Heading options').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete heading'));
+    await tester.pumpAndSettle();
+    expect(edited?.id, 'light');
+    expect(deleted?.id, 'land');
+
+    await tester.tap(find.byTooltip('Add study item'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New passage summary'));
+    await tester.pumpAndSettle();
+    expect(created, ['sum', null]);
+
+    await tester.tap(find.byTooltip('Workspace options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show study headings'));
+    await tester.pumpAndSettle();
+    expect(headingsEnabled, isFalse);
+    expect(tester.takeException(), isNull);
   });
 }

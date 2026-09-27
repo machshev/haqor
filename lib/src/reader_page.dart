@@ -21,6 +21,7 @@ import 'widgets/chapter_selector.dart';
 import 'widgets/cross_references_sheet.dart';
 import 'widgets/study_workspace_panel.dart';
 import 'widgets/study_passage_editor.dart';
+import 'widgets/study_section_editor.dart';
 import 'widgets/verse_row.dart';
 import 'widgets/word_info_sheet.dart';
 import 'word_proximity.dart';
@@ -2619,6 +2620,134 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
   }
 
+  void _toggleStudyHeadings(bool enabled) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    _replaceStudyWorkspace(workspace.copyWith(headingsEnabled: enabled));
+  }
+
+  Future<StudySection?> _askForStudySection(
+    StudySection section, {
+    required bool creating,
+  }) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return Future.value();
+    final parent = workspace.sectionById(section.parentId);
+    return showDialog<StudySection>(
+      context: context,
+      builder: (_) => StudySectionEditor(
+        initial: section,
+        creating: creating,
+        useEnglishBookNames: _englishBookNames,
+        loadChapter: _loadStudyChapter,
+        summary: section.isSummary || parent == null
+            ? null
+            : workspace.summaryOf(parent),
+        // Checked against the workspace as it is when saving.
+        validate: (edited) =>
+            (_activeStudyWorkspace ?? workspace).sectionProblem(edited),
+      ),
+    );
+  }
+
+  /// Adds a section heading to the section [parentId], or else a passage
+  /// summary, of the reader's current chapter, to [parentId] or the top.
+  Future<void> _createStudySection(String? parentId) async {
+    final workspace = await _ensureStudyWorkspace();
+    if (workspace == null || !mounted) return;
+    final id = DateTime.now().microsecondsSinceEpoch.toString();
+    final current = _currentStudyPassage;
+    final parent = workspace.sectionById(parentId);
+    final StudySection initial;
+    if (parent == null) {
+      initial = StudySection(
+        id: id,
+        title: '',
+        chapter: current.chapter,
+        verse: 1,
+        bookIndex: current.bookIndex,
+        wholeChapter: true,
+        parentId: parentId,
+      );
+    } else {
+      // The verse being read, where a heading may start there.
+      final summary = workspace.summaryOf(parent);
+      final here = (chapter: current.chapter, verse: current.verse);
+      final start =
+          summary?.bookIndex == current.bookIndex &&
+              workspace.canPlaceHeading(parent.id, here)
+          ? here
+          : parent.start;
+      initial = StudySection(
+        id: id,
+        title: '',
+        chapter: start.chapter,
+        verse: start.verse,
+        parentId: parentId,
+      );
+    }
+    final created = await _askForStudySection(initial, creating: true);
+    final latest = _activeStudyWorkspace;
+    if (created == null || latest == null || !mounted) return;
+    _replaceStudyWorkspace(latest.putSection(created));
+  }
+
+  Future<void> _editStudySection(StudySection section) async {
+    final edited = await _askForStudySection(section, creating: false);
+    final workspace = _activeStudyWorkspace;
+    if (edited == null || workspace == null || !mounted) return;
+    _replaceStudyWorkspace(workspace.putSection(edited));
+  }
+
+  void _updateStudySection(StudySection section) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    _replaceStudyWorkspace(workspace.putSection(section));
+  }
+
+  Future<void> _deleteStudySection(StudySection section) async {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Delete ${section.title}?'),
+        content: Text(
+          section.isSummary
+              ? 'Its section headings will be deleted. Its other study items '
+                    'will be kept and moved up one level.'
+              : 'Its study items and subheadings will be kept and moved up '
+                    'one level.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    final latest = _activeStudyWorkspace;
+    if (confirmed == true && latest != null && mounted) {
+      _replaceStudyWorkspace(latest.removeSection(section));
+    }
+  }
+
+  void _openStudySection(StudySection section) {
+    final summary = _activeStudyWorkspace?.summaryOf(section);
+    final book = summary?.bookIndex;
+    if (book == null) return;
+    _navigateTo(
+      book,
+      section.chapter,
+      verse: section.isSummary && section.wholeChapter ? null : section.verse,
+    );
+  }
+
   void _moveStudyItem(StudyItem item, String? groupId, int? index) {
     final workspace = _activeStudyWorkspace;
     if (workspace != null) {
@@ -2807,6 +2936,30 @@ class _ReaderSessionState extends State<_ReaderSession>
             onRemoveLink: (link) {
               _removeStudyLink(link);
               setSheetState(() {});
+            },
+            onToggleHeadings: (enabled) {
+              _toggleStudyHeadings(enabled);
+              setSheetState(() {});
+            },
+            onCreateSection: (parentId) async {
+              await _createStudySection(parentId);
+              if (sheetContext.mounted) setSheetState(() {});
+            },
+            onEditSection: (section) async {
+              await _editStudySection(section);
+              if (sheetContext.mounted) setSheetState(() {});
+            },
+            onUpdateSection: (section) {
+              _updateStudySection(section);
+              setSheetState(() {});
+            },
+            onDeleteSection: (section) async {
+              await _deleteStudySection(section);
+              if (sheetContext.mounted) setSheetState(() {});
+            },
+            onOpenSection: (section) {
+              Navigator.pop(sheetContext);
+              _openStudySection(section);
             },
           ),
         ),
@@ -3677,6 +3830,15 @@ class _ReaderSessionState extends State<_ReaderSession>
         onEditLink: _editStudyLink,
         onUpdateLink: _updateStudyLink,
         onRemoveLink: _removeStudyLink,
+        onToggleHeadings: _toggleStudyHeadings,
+        onCreateSection: _createStudySection,
+        onEditSection: _editStudySection,
+        onUpdateSection: _updateStudySection,
+        onDeleteSection: _deleteStudySection,
+        onOpenSection: (section) {
+          _openStudySection(section);
+          onOpenReader?.call();
+        },
       );
 
   Widget _readerSurface() {
@@ -3883,6 +4045,14 @@ class _ReaderSessionState extends State<_ReaderSession>
     final chapterHighlight = (workspace?.highlightsEnabled ?? false)
         ? chapterBookmarks.where((p) => p.highlightEnabled).lastOrNull
         : null;
+    // Each study heading stands before the first verse it covers here.
+    final headingsBefore = <int, List<StudyReaderHeading>>{};
+    for (final heading in workspace?.readerHeadings(b, c) ?? const []) {
+      final index = section.verses.indexWhere(
+        (entry) => entry.verse >= heading.section.verse,
+      );
+      if (index >= 0) (headingsBefore[index] ??= []).add(heading);
+    }
     return [
       SliverToBoxAdapter(
         key: ValueKey('divider-$b-$c'),
@@ -3935,7 +4105,7 @@ class _ReaderSessionState extends State<_ReaderSession>
                     word.root.isNotEmpty)
                   word.root: Color(word.colorValue),
             };
-            return VerseRow(
+            final row = VerseRow(
               key: section.verseKeys[entry.verse],
               entry: entry,
               isSelected: isSelected,
@@ -4015,6 +4185,20 @@ class _ReaderSessionState extends State<_ReaderSession>
                   ? null
                   : Color(studyPassage.colorValue),
               ketivDisplay: _ketivDisplay,
+            );
+            final headings = headingsBefore[verseIndex];
+            if (headings == null) return row;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final heading in headings)
+                  _StudyHeading(
+                    key: ValueKey('study-heading-${heading.section.id}'),
+                    heading: heading,
+                    useEnglishBookNames: _englishBookNames,
+                  ),
+                row,
+              ],
             );
           },
         ),
@@ -4288,6 +4472,71 @@ class _PlanChapterChip extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text('$chapter', style: TextStyle(color: foreground)),
+      ),
+    );
+  }
+}
+
+/// A study summary's title, or one of its section headings, set inline
+/// before the verse it starts at, with its note beneath.
+class _StudyHeading extends StatelessWidget {
+  const _StudyHeading({
+    super.key,
+    required this.heading,
+    required this.useEnglishBookNames,
+  });
+
+  final StudyReaderHeading heading;
+  final bool useEnglishBookNames;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final section = heading.section;
+    final isSummary = heading.depth == 0;
+    final range = heading.summary.range!;
+    return Padding(
+      padding: EdgeInsetsDirectional.only(
+        start: (heading.depth - 1).clamp(0, 6) * 16.0,
+        top: isSummary ? 16 : 12,
+        bottom: 4,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            section.title,
+            style:
+                (isSummary
+                        ? theme.textTheme.titleMedium
+                        : heading.depth == 1
+                        ? theme.textTheme.titleSmall
+                        : theme.textTheme.labelLarge)
+                    ?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                    ),
+          ),
+          if (isSummary)
+            Text(
+              '${bookDisplayName(range.bookIndex, useEnglish: useEnglishBookNames)} '
+              '${range.reference}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          if (section.note.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                section.note,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

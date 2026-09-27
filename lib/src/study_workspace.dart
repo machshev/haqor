@@ -443,7 +443,173 @@ class StudyLink {
   }
 }
 
-enum StudyItemType { passage, word, note, link, group }
+/// A verse's place in a chapter, for ordering section headings.
+typedef StudySectionStart = ({int chapter, int verse});
+
+int _compareStarts(StudySectionStart a, StudySectionStart b) {
+  final chapter = a.chapter.compareTo(b.chapter);
+  return chapter != 0 ? chapter : a.verse.compareTo(b.verse);
+}
+
+/// A passage summary, or one of the section headings nested beneath it: an
+/// outline container like a group, but anchored to the verse its heading
+/// stands before in the reader.
+///
+/// A summary has a book and covers a whole chapter or a verse range. A
+/// heading has only the verse it starts at, in its summary's book, and runs
+/// to the next heading beside it (or its parent's end). Headings live only in
+/// a summary or another heading; any other item can live in either.
+@immutable
+class StudySection {
+  const StudySection({
+    required this.id,
+    required this.title,
+    required this.chapter,
+    required this.verse,
+    this.bookIndex,
+    this.wholeChapter = false,
+    this.endChapter,
+    this.endVerse,
+    this.note = '',
+    this.parentId,
+    this.showInReader = true,
+    this.order = 0,
+  });
+
+  final String id;
+  final String title;
+  final int chapter;
+  final int verse;
+
+  /// Present only for a summary, with its range's end.
+  final int? bookIndex;
+  final bool wholeChapter;
+  final int? endChapter;
+  final int? endVerse;
+  final String note;
+  final String? parentId;
+
+  /// A summary's headings show in the reader; headings follow their summary.
+  final bool showInReader;
+  final int order;
+
+  bool get isSummary => bookIndex != null;
+  StudySectionStart get start => (chapter: chapter, verse: verse);
+
+  /// The verses a summary covers; null for a heading.
+  StudyPassage? get range => isSummary
+      ? StudyPassage(
+          bookIndex: bookIndex!,
+          chapter: chapter,
+          verse: verse,
+          wholeChapter: wholeChapter,
+          endChapter: endChapter,
+          endVerse: endVerse,
+        )
+      : null;
+
+  bool get isValid =>
+      id.isNotEmpty &&
+      title.isNotEmpty &&
+      (isSummary
+          ? range!.isValid
+          : chapter >= 1 &&
+                verse >= 1 &&
+                !wholeChapter &&
+                endChapter == null &&
+                endVerse == null);
+
+  /// Change only the anchor or range; retain the outline place and notes.
+  StudySection withAnchor(StudySection anchor) => StudySection(
+    id: id,
+    title: title,
+    chapter: anchor.chapter,
+    verse: anchor.verse,
+    bookIndex: anchor.bookIndex,
+    wholeChapter: anchor.wholeChapter,
+    endChapter: anchor.endChapter,
+    endVerse: anchor.endVerse,
+    note: note,
+    parentId: parentId,
+    showInReader: showInReader,
+    order: order,
+  );
+
+  StudySection copyWith({
+    String? title,
+    String? note,
+    String? Function()? parentId,
+    bool? showInReader,
+    int? order,
+  }) => StudySection(
+    id: id,
+    title: title ?? this.title,
+    chapter: chapter,
+    verse: verse,
+    bookIndex: bookIndex,
+    wholeChapter: wholeChapter,
+    endChapter: endChapter,
+    endVerse: endVerse,
+    note: note ?? this.note,
+    parentId: parentId == null ? this.parentId : parentId(),
+    showInReader: showInReader ?? this.showInReader,
+    order: order ?? this.order,
+  );
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'title': title,
+    'chapter': chapter,
+    'verse': verse,
+    if (bookIndex != null) 'book': bookIndex,
+    if (wholeChapter) 'wholeChapter': true,
+    if (endChapter != null) 'endChapter': endChapter,
+    if (endVerse != null) 'endVerse': endVerse,
+    if (note.isNotEmpty) 'note': note,
+    if (parentId != null) 'parent': parentId,
+    if (!showInReader) 'inReader': false,
+    'order': order,
+  };
+
+  static StudySection? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final id = value['id'];
+    final title = value['title'];
+    final chapter = value['chapter'];
+    final verse = value['verse'];
+    if (id is! String || title is! String || chapter is! int || verse is! int) {
+      return null;
+    }
+    for (final key in ['book', 'endChapter', 'endVerse']) {
+      if (value[key] != null && value[key] is! int) return null;
+    }
+    final section = StudySection(
+      id: id,
+      title: title,
+      chapter: chapter,
+      verse: verse,
+      bookIndex: value['book'] as int?,
+      wholeChapter: value['wholeChapter'] == true,
+      endChapter: value['endChapter'] as int?,
+      endVerse: value['endVerse'] as int?,
+      note: value['note'] is String ? value['note'] as String : '',
+      parentId: value['parent'] is String ? value['parent'] as String : null,
+      showInReader: value['inReader'] is! bool || value['inReader'] as bool,
+      order: value['order'] is int ? value['order'] as int : 0,
+    );
+    return section.isValid ? section : null;
+  }
+}
+
+/// A section heading to show in the reader before the verse it starts at,
+/// [depth] levels below its [summary] (which is itself at depth 0).
+typedef StudyReaderHeading = ({
+  StudySection section,
+  StudySection summary,
+  int depth,
+});
+
+enum StudyItemType { passage, word, note, link, group, section }
 
 @immutable
 class StudyItem {
@@ -459,6 +625,7 @@ class StudyItem {
     StudyItemType.note => 'note-${(value as StudyNote).id}',
     StudyItemType.link => (value as StudyLink).key,
     StudyItemType.group => 'group-${(value as StudyGroup).id}',
+    StudyItemType.section => 'section-${(value as StudySection).id}',
   };
 
   String? get groupId => switch (type) {
@@ -467,7 +634,12 @@ class StudyItem {
     StudyItemType.note => (value as StudyNote).groupId,
     StudyItemType.link => (value as StudyLink).groupId,
     StudyItemType.group => (value as StudyGroup).parentId,
+    StudyItemType.section => (value as StudySection).parentId,
   };
+
+  /// A section heading, as opposed to a summary or any other item.
+  bool get isHeading =>
+      type == StudyItemType.section && !(value as StudySection).isSummary;
 }
 
 @immutable
@@ -524,39 +696,49 @@ class StudyWorkspace {
     required this.id,
     required this.name,
     this.highlightsEnabled = true,
+    this.headingsEnabled = true,
     this.groups = const [],
     this.passages = const [],
     this.words = const [],
     this.notes = const [],
     this.links = const [],
+    this.sections = const [],
   });
 
   final String id;
   final String name;
   final bool highlightsEnabled;
+
+  /// Whether summaries' section headings show in the reader.
+  final bool headingsEnabled;
   final List<StudyGroup> groups;
   final List<StudyPassage> passages;
   final List<StudyWord> words;
   final List<StudyNote> notes;
   final List<StudyLink> links;
+  final List<StudySection> sections;
 
   StudyWorkspace copyWith({
     String? name,
     bool? highlightsEnabled,
+    bool? headingsEnabled,
     List<StudyGroup>? groups,
     List<StudyPassage>? passages,
     List<StudyWord>? words,
     List<StudyNote>? notes,
     List<StudyLink>? links,
+    List<StudySection>? sections,
   }) => StudyWorkspace(
     id: id,
     name: name ?? this.name,
     highlightsEnabled: highlightsEnabled ?? this.highlightsEnabled,
+    headingsEnabled: headingsEnabled ?? this.headingsEnabled,
     groups: groups ?? this.groups,
     passages: passages ?? this.passages,
     words: words ?? this.words,
     notes: notes ?? this.notes,
     links: links ?? this.links,
+    sections: sections ?? this.sections,
   );
 
   /// The bookmarked link between an OT and an NT verse, if there is one.
@@ -647,6 +829,174 @@ class StudyWorkspace {
       .map((item) => item.value as StudyGroup)
       .toList(growable: false);
 
+  StudySection? sectionById(String? id) {
+    if (id == null) return null;
+    for (final section in sections) {
+      if (section.id == id) return section;
+    }
+    return null;
+  }
+
+  /// Whether [id] names a group or a section, the outline's containers.
+  bool hasContainer(String id) =>
+      groupById(id) != null || sectionById(id) != null;
+
+  /// The container holding the group or section [id].
+  String? containerParent(String id) =>
+      groupById(id)?.parentId ?? sectionById(id)?.parentId;
+
+  String? containerName(String id) =>
+      groupById(id)?.name ?? sectionById(id)?.title;
+
+  /// The summary a section belongs to: itself, or its nearest summary above.
+  StudySection? summaryOf(StudySection section) {
+    final visited = <String>{};
+    StudySection? current = section;
+    while (current != null && visited.add(current.id)) {
+      if (current.isSummary) return current;
+      current = sectionById(current.parentId);
+    }
+    return null;
+  }
+
+  /// A section's headings, in verse order.
+  List<StudySection> childHeadings(String sectionId) =>
+      sections.where((s) => s.parentId == sectionId && !s.isSummary).toList()
+        ..sort((a, b) {
+          final start = _compareStarts(a.start, b.start);
+          return start != 0 ? start : a.order.compareTo(b.order);
+        });
+
+  /// Whether a heading starting at [start] may sit directly in [parentId]:
+  /// a section, within the verses of its summary, not before the parent.
+  bool canPlaceHeading(String? parentId, StudySectionStart start) {
+    final parent = sectionById(parentId);
+    if (parent == null) return false;
+    final range = summaryOf(parent)?.range;
+    return range != null &&
+        range.containsVerse(range.bookIndex, start.chapter, start.verse) &&
+        _compareStarts(start, parent.start) >= 0;
+  }
+
+  /// Why [candidate] cannot replace (or join as) the section of its id, or
+  /// null when it can: a heading must fit its place, and neither may leave
+  /// the headings beneath it out of order or outside its verses.
+  String? sectionProblem(StudySection candidate) {
+    if (!candidate.isValid) {
+      return candidate.title.isEmpty
+          ? 'Give the section a title.'
+          : 'The end must be at or after the start.';
+    }
+    if (!candidate.isSummary &&
+        !canPlaceHeading(candidate.parentId, candidate.start)) {
+      return 'A heading must start within its summary, '
+          'and not before the heading it is under.';
+    }
+    for (final child in childHeadings(candidate.id)) {
+      if (_compareStarts(child.start, candidate.start) < 0) {
+        return 'Its subheadings must not start before it.';
+      }
+    }
+    // A summary's headings, at every depth, must stay within its verses.
+    final range = candidate.range;
+    if (range != null && !_headingsWithin(candidate.id, range)) {
+      return 'Its headings must stay within the passage.';
+    }
+    return null;
+  }
+
+  /// Every heading beneath the section [id], at any depth.
+  List<StudySection> headingsBeneath(String id) {
+    final found = <StudySection>[];
+    final visited = <String>{id};
+    final pending = childHeadings(id);
+    while (pending.isNotEmpty) {
+      final heading = pending.removeLast();
+      if (!visited.add(heading.id)) continue;
+      found.add(heading);
+      pending.addAll(childHeadings(heading.id));
+    }
+    return found;
+  }
+
+  bool _headingsWithin(String id, StudyPassage range) =>
+      headingsBeneath(id).every(
+        (heading) => range.containsVerse(
+          range.bookIndex,
+          heading.chapter,
+          heading.verse,
+        ),
+      );
+
+  /// The derived end of a section: the verse before the next heading beside
+  /// it, or else its parent's end, up to its summary's range end. The verse
+  /// is null where that is the end of a chapter, whose length is unknown.
+  ({int chapter, int? verse}) sectionEnd(StudySection section) {
+    final visited = <String>{};
+    var current = section;
+    while (visited.add(current.id)) {
+      if (current.isSummary) {
+        final range = current.range!;
+        return range.wholeChapter
+            ? (chapter: range.chapter, verse: null)
+            : (chapter: range.lastChapter, verse: range.lastVerse);
+      }
+      final parent = sectionById(current.parentId);
+      if (parent == null) break;
+      final siblings = childHeadings(parent.id);
+      final index = siblings.indexWhere((s) => s.id == current.id);
+      if (index >= 0 && index + 1 < siblings.length) {
+        final next = siblings[index + 1].start;
+        return next.verse > 1
+            ? (chapter: next.chapter, verse: next.verse - 1)
+            : (chapter: next.chapter - 1, verse: null);
+      }
+      current = parent;
+    }
+    return (chapter: section.chapter, verse: null);
+  }
+
+  /// The headings to show in the reader in [chapter] of [book], in reading
+  /// order: each shown summary starting there, and each heading beneath one
+  /// that starts there, with its depth below its summary.
+  List<StudyReaderHeading> readerHeadings(int book, int chapter) {
+    if (!headingsEnabled) return const [];
+    final headings = <StudyReaderHeading>[];
+    for (final summary in sections) {
+      final range = summary.range;
+      if (range == null ||
+          !summary.showInReader ||
+          range.bookIndex != book ||
+          chapter < range.chapter ||
+          chapter > range.lastChapter) {
+        continue;
+      }
+      final visited = <String>{};
+      void visit(StudySection section, int depth) {
+        if (!visited.add(section.id)) return;
+        if (section.chapter == chapter) {
+          headings.add((section: section, summary: summary, depth: depth));
+        }
+        for (final child in childHeadings(section.id)) {
+          visit(child, depth + 1);
+        }
+      }
+
+      visit(summary, 0);
+    }
+    // A stable sort keeps each tree's parents before children on one verse.
+    final positions = {
+      for (var i = 0; i < headings.length; i++) headings[i].section.id: i,
+    };
+    headings.sort((a, b) {
+      final verse = a.section.verse.compareTo(b.section.verse);
+      return verse != 0
+          ? verse
+          : positions[a.section.id]!.compareTo(positions[b.section.id]!);
+    });
+    return headings;
+  }
+
   List<StudyItem> itemsIn(String? groupId) {
     final items = <StudyItem>[
       for (final passage in passages)
@@ -664,10 +1014,23 @@ class StudyWorkspace {
       for (final group in groups)
         if (group.parentId == groupId)
           StudyItem._(StudyItemType.group, group, group.order),
+      for (final section in sections)
+        if (section.parentId == groupId)
+          StudyItem._(StudyItemType.section, section, section.order),
     ];
     // Retain the original list order for legacy items with tied order values.
     final positions = {for (var i = 0; i < items.length; i++) items[i]: i};
     items.sort((a, b) {
+      // A section's own items come before its headings, as the text before
+      // its first heading; the headings follow in verse order.
+      if (a.isHeading != b.isHeading) return a.isHeading ? 1 : -1;
+      if (a.isHeading) {
+        final start = _compareStarts(
+          (a.value as StudySection).start,
+          (b.value as StudySection).start,
+        );
+        if (start != 0) return start;
+      }
       final order = a.order.compareTo(b.order);
       return order != 0 ? order : positions[a]!.compareTo(positions[b]!);
     });
@@ -696,6 +1059,9 @@ class StudyWorkspace {
     }
     for (final group in groups) {
       if (group.parentId == groupId) consider(group.order);
+    }
+    for (final section in sections) {
+      if (section.parentId == groupId) consider(section.order);
     }
     return highest == null ? 0 : highest! + 1;
   }
@@ -801,17 +1167,29 @@ class StudyWorkspace {
   }
 
   bool canMoveItem(StudyItem item, String? groupId) {
-    if (groupId != null && groupById(groupId) == null) return false;
+    if (groupId != null && !hasContainer(groupId)) return false;
     if (!itemsIn(item.groupId).any((candidate) => candidate.key == item.key)) {
       return false;
     }
-    if (item.type == StudyItemType.group) {
-      final visited = <String>{(item.value as StudyGroup).id};
+    final containerId = switch (item.value) {
+      StudyGroup(:final id) || StudySection(:final id) => id,
+      _ => null,
+    };
+    if (containerId != null) {
+      final visited = <String>{containerId};
       var ancestor = groupId;
       while (ancestor != null) {
         if (!visited.add(ancestor)) return false;
-        ancestor = groupById(ancestor)?.parentId;
+        ancestor = containerParent(ancestor);
       }
+    }
+    if (item.isHeading) {
+      // A heading keeps its verse, so it may move only where it still fits,
+      // with the headings beneath it, which move along.
+      final heading = item.value as StudySection;
+      if (!canPlaceHeading(groupId, heading.start)) return false;
+      final range = summaryOf(sectionById(groupId)!)!.range!;
+      return _headingsWithin(heading.id, range);
     }
     return true;
   }
@@ -880,6 +1258,14 @@ class StudyWorkspace {
                   : group,
           ],
         ),
+        StudyItemType.section => copyWith(
+          sections: [
+            for (final section in sections)
+              section.id == (item.value as StudySection).id
+                  ? section.copyWith(parentId: () => groupId, order: order)
+                  : section,
+          ],
+        ),
       };
 
   StudyWorkspace putGroup(StudyGroup group) {
@@ -931,6 +1317,65 @@ class StudyWorkspace {
               ? link.copyWith(groupId: () => parentId)
               : link,
       ],
+      sections: [
+        for (final section in sections)
+          section.parentId == group.id
+              ? section.copyWith(parentId: () => parentId)
+              : section,
+      ],
+    );
+  }
+
+  StudyWorkspace putSection(StudySection section) {
+    final updated = List<StudySection>.of(sections);
+    final index = updated.indexWhere((candidate) => candidate.id == section.id);
+    if (index < 0) {
+      updated.add(section.copyWith(order: nextOrder(section.parentId)));
+    } else {
+      updated[index] = updated[index].parentId == section.parentId
+          ? section
+          : section.copyWith(order: nextOrder(section.parentId));
+    }
+    return copyWith(sections: updated);
+  }
+
+  /// Delete a section without deleting its study material. A heading's items
+  /// and subheadings move up to its parent. A summary's headings go with it,
+  /// and every item they held moves up to the summary's parent.
+  StudyWorkspace removeSection(StudySection section) {
+    final removed = {
+      section.id,
+      if (section.isSummary)
+        for (final heading in headingsBeneath(section.id)) heading.id,
+    };
+    final parentId = section.parentId;
+    String? reparent(String? id) => removed.contains(id) ? parentId : id;
+    return copyWith(
+      sections: [
+        for (final candidate in sections)
+          if (!removed.contains(candidate.id))
+            candidate.copyWith(parentId: () => reparent(candidate.parentId)),
+      ],
+      groups: [
+        for (final group in groups)
+          group.copyWith(parentId: () => reparent(group.parentId)),
+      ],
+      passages: [
+        for (final passage in passages)
+          passage.copyWith(groupId: () => reparent(passage.groupId)),
+      ],
+      words: [
+        for (final word in words)
+          word.copyWith(groupId: () => reparent(word.groupId)),
+      ],
+      notes: [
+        for (final note in notes)
+          note.copyWith(groupId: () => reparent(note.groupId)),
+      ],
+      links: [
+        for (final link in links)
+          link.copyWith(groupId: () => reparent(link.groupId)),
+      ],
     );
   }
 
@@ -938,12 +1383,15 @@ class StudyWorkspace {
     'id': id,
     'name': name,
     if (!highlightsEnabled) 'highlights': false,
+    if (!headingsEnabled) 'headings': false,
     'ordered': true,
     'groups': groups.map((group) => group.toJson()).toList(),
     'passages': passages.map((passage) => passage.toJson()).toList(),
     'words': words.map((word) => word.toJson()).toList(),
     'notes': notes.map((note) => note.toJson()).toList(),
     if (links.isNotEmpty) 'links': links.map((link) => link.toJson()).toList(),
+    if (sections.isNotEmpty)
+      'sections': sections.map((section) => section.toJson()).toList(),
   };
 
   static StudyWorkspace? fromJson(Object? value) {
@@ -1058,7 +1506,36 @@ class StudyWorkspace {
       }
     }
 
-    final groupIds = groups.map((group) => group.id).toSet();
+    // Sections came after mixed ordering too. Keep a heading only where it
+    // still hangs from a summary; the headings dropped leave their items to
+    // move to the top level below, like those of any missing container.
+    final rawSections = [
+      for (final section
+          in (value['sections'] is List ? value['sections'] as List : const [])
+              .map(StudySection.fromJson)
+              .whereType<StudySection>())
+        section,
+    ];
+    final sectionIds = rawSections.map((section) => section.id).toSet();
+    var sections = [
+      for (final section in rawSections)
+        section.parentId == section.id ||
+                (section.parentId != null &&
+                    !sectionIds.contains(section.parentId) &&
+                    !groups.any((group) => group.id == section.parentId))
+            ? section.copyWith(parentId: () => null)
+            : section,
+    ];
+    final anchored = StudyWorkspace(id: id, name: name, sections: sections);
+    sections = [
+      for (final section in sections)
+        if (anchored.summaryOf(section) != null) section,
+    ];
+
+    final groupIds = {
+      ...groups.map((group) => group.id),
+      ...sections.map((section) => section.id),
+    };
     groups = [
       for (final group in groups)
         group.parentId == null ||
@@ -1066,6 +1543,12 @@ class StudyWorkspace {
                 !groupIds.contains(group.parentId)
             ? group.copyWith(parentId: () => null)
             : group,
+    ];
+    sections = [
+      for (final section in sections)
+        section.parentId == null || groupIds.contains(section.parentId)
+            ? section
+            : section.copyWith(parentId: () => null),
     ];
     passages = [
       for (final passage in passages)
@@ -1169,6 +1652,9 @@ class StudyWorkspace {
     for (final link in links) {
       accountFor(link.groupId, link.order);
     }
+    for (final section in sections) {
+      accountFor(section.parentId, section.order);
+    }
     for (final group in groups) {
       final order = storedGroupOrders[group.id];
       if (order != null) accountFor(group.parentId, order);
@@ -1184,11 +1670,13 @@ class StudyWorkspace {
       id: id,
       name: name,
       highlightsEnabled: highlightsEnabled,
+      headingsEnabled: value['headings'] is! bool || value['headings'] as bool,
       groups: groups,
       passages: passages,
       words: words,
       notes: notes,
       links: links,
+      sections: sections,
     );
   }
 }

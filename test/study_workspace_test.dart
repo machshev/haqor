@@ -4,6 +4,7 @@ import 'package:haqor/src/study_workspace.dart';
 
 void main() {
   linkTests();
+  sectionTests();
 
   test(
     'switching bookmark type preserves its place and settings through storage',
@@ -521,5 +522,214 @@ void linkTests() {
     }]''').single;
     expect(workspace.links, hasLength(1));
     expect(workspace.links.single.groupId, isNull);
+  });
+}
+
+void sectionTests() {
+  // Genesis 1:1–2:3 with two headings, the second holding a subheading and
+  // a note, and a note of the summary's own before its headings.
+  const summary = StudySection(
+    id: 'sum',
+    title: 'Creation',
+    chapter: 1,
+    verse: 1,
+    bookIndex: 0,
+    endChapter: 2,
+    endVerse: 3,
+    note: 'Six days and a rest',
+  );
+  const light = StudySection(
+    id: 'light',
+    title: 'Light',
+    chapter: 1,
+    verse: 3,
+    parentId: 'sum',
+  );
+  const land = StudySection(
+    id: 'land',
+    title: 'Land and seas',
+    chapter: 1,
+    verse: 9,
+    parentId: 'sum',
+  );
+  const plants = StudySection(
+    id: 'plants',
+    title: 'Plants',
+    chapter: 1,
+    verse: 11,
+    parentId: 'land',
+  );
+  StudyWorkspace build() => const StudyWorkspace(id: 's', name: 'Study')
+      .putSection(summary)
+      .putNote(const StudyNote(id: 'intro', text: 'Intro', groupId: 'sum'))
+      // Added out of verse order: headings sort by verse, not insertion.
+      .putSection(land)
+      .putSection(light)
+      .putSection(plants)
+      .putNote(const StudyNote(id: 'seas', text: 'Seas', groupId: 'land'));
+
+  test('summaries round-trip and list their items before verse-ordered '
+      'headings', () {
+    final workspace = decodeStudyWorkspaces(
+      encodeStudyWorkspaces([build().copyWith(headingsEnabled: false)]),
+    ).single;
+    expect(workspace.headingsEnabled, isFalse);
+    expect(workspace.sections, hasLength(4));
+    final stored = workspace.sectionById('sum')!;
+    expect(stored.toJson(), summary.toJson());
+    expect(stored.range!.reference, '1:1–2:3');
+    expect(workspace.itemsIn(null).single.key, 'section-sum');
+    expect(workspace.itemsIn('sum').map((i) => i.key), [
+      'note-intro',
+      'section-light',
+      'section-land',
+    ]);
+    expect(workspace.itemsIn('land').map((i) => i.key), [
+      'note-seas',
+      'section-plants',
+    ]);
+    expect(workspace.summaryOf(workspace.sectionById('plants')!)?.id, 'sum');
+  });
+
+  test('a heading runs to the next beside it or its parent\'s end', () {
+    final workspace = build();
+    expect(workspace.sectionEnd(light), (chapter: 1, verse: 8));
+    expect(workspace.sectionEnd(plants), (chapter: 2, verse: 3));
+    expect(workspace.sectionEnd(land), (chapter: 2, verse: 3));
+    final chapter = workspace.putSection(
+      const StudySection(
+        id: 'rest',
+        title: 'Rest',
+        chapter: 2,
+        verse: 1,
+        parentId: 'sum',
+      ),
+    );
+    // The chapter's length is unknown, so its end has no verse.
+    expect(chapter.sectionEnd(land), (chapter: 1, verse: null));
+  });
+
+  test('headings stay within their summary and after their parent', () {
+    final workspace = build();
+    expect(workspace.canPlaceHeading('sum', (chapter: 2, verse: 3)), isTrue);
+    expect(workspace.canPlaceHeading('sum', (chapter: 2, verse: 4)), isFalse);
+    expect(workspace.canPlaceHeading('land', (chapter: 1, verse: 8)), isFalse);
+    expect(workspace.canPlaceHeading(null, (chapter: 1, verse: 5)), isFalse);
+    // Headings live only in sections; summaries and other items anywhere.
+    final lightItem = workspace.itemsIn('sum')[1];
+    final plantsItem = workspace.itemsIn('land').last;
+    expect(workspace.canMoveItem(lightItem, null), isFalse);
+    expect(workspace.canMoveItem(plantsItem, 'sum'), isTrue);
+    expect(workspace.canMoveItem(lightItem, 'land'), isFalse);
+    expect(
+      workspace.canMoveItem(workspace.itemsIn(null).single, 'plants'),
+      isFalse,
+    ); // Into its own heading.
+    expect(
+      workspace.sectionProblem(
+        light.withAnchor(
+          const StudySection(id: '', title: '', chapter: 3, verse: 1),
+        ),
+      ),
+      isNotNull,
+    );
+    // Shrinking the summary may not strand its headings.
+    expect(
+      workspace.sectionProblem(
+        summary.withAnchor(
+          const StudySection(
+            id: '',
+            title: '',
+            chapter: 1,
+            verse: 1,
+            bookIndex: 0,
+            endChapter: 1,
+            endVerse: 10,
+          ),
+        ),
+      ),
+      'Its headings must stay within the passage.',
+    );
+    // Nor move a heading after its own subheadings.
+    expect(
+      workspace.sectionProblem(
+        land.withAnchor(
+          const StudySection(id: '', title: '', chapter: 1, verse: 12),
+        ),
+      ),
+      'Its subheadings must not start before it.',
+    );
+    expect(workspace.sectionProblem(summary.copyWith(title: '')), isNotNull);
+    expect(workspace.sectionProblem(summary), isNull);
+  });
+
+  test(
+    'removing a heading lifts its contents; a summary takes its headings',
+    () {
+      var workspace = build();
+      final lifted = workspace.removeSection(land);
+      expect(lifted.sectionById('land'), isNull);
+      expect(lifted.sectionById('plants')!.parentId, 'sum');
+      expect(lifted.notes.firstWhere((n) => n.id == 'seas').groupId, 'sum');
+
+      workspace = workspace.putGroup(const StudyGroup(id: 'g', name: 'Talk'));
+      workspace = workspace.moveItem(workspace.itemsIn(null).first, 'g');
+      workspace = workspace.removeSection(workspace.sectionById('sum')!);
+      expect(workspace.sections, isEmpty);
+      expect(workspace.itemsIn('g').map((i) => i.key), [
+        'note-intro',
+        'note-seas',
+      ]);
+    },
+  );
+
+  test('the reader shows shown summaries\' headings in each chapter', () {
+    final workspace = build().putSection(
+      const StudySection(
+        id: 'rest',
+        title: 'Rest',
+        chapter: 2,
+        verse: 1,
+        parentId: 'sum',
+      ),
+    );
+    List<(String, int)> shown(StudyWorkspace w, int chapter) => [
+      for (final h in w.readerHeadings(0, chapter)) (h.section.id, h.depth),
+    ];
+    expect(shown(workspace, 1), [
+      ('sum', 0),
+      ('light', 1),
+      ('land', 1),
+      ('plants', 2),
+    ]);
+    expect(shown(workspace, 2), [('rest', 1)]);
+    expect(shown(workspace, 3), isEmpty);
+    expect(workspace.readerHeadings(1, 1), isEmpty);
+    expect(shown(workspace.copyWith(headingsEnabled: false), 1), isEmpty);
+    expect(
+      shown(workspace.putSection(summary.copyWith(showInReader: false)), 1),
+      isEmpty,
+    );
+  });
+
+  test('headings without a summary above them are dropped on load', () {
+    final workspace = decodeStudyWorkspaces('''[{
+      "id": "s", "name": "Study", "ordered": true,
+      "groups": [{"id": "g", "name": "Group", "order": 0}],
+      "notes": [{"id": "n", "text": "Kept", "group": "orphan", "order": 1}],
+      "sections": [
+        {"id": "sum", "title": "Summary", "book": 0, "chapter": 1,
+         "verse": 1, "wholeChapter": true, "parent": "g", "order": 0},
+        {"id": "h", "title": "Heading", "chapter": 1, "verse": 2,
+         "parent": "sum", "order": 0},
+        {"id": "orphan", "title": "Orphan", "chapter": 1, "verse": 2,
+         "parent": "g", "order": 1},
+        {"id": "loose", "title": "Loose", "chapter": 1, "verse": 2},
+        {"id": "untitled", "title": "", "book": 0, "chapter": 1, "verse": 1}
+      ]
+    }]''').single;
+    expect(workspace.sections.map((s) => s.id), ['sum', 'h']);
+    expect(workspace.sectionById('sum')!.parentId, 'g');
+    expect(workspace.notes.single.groupId, isNull);
   });
 }
