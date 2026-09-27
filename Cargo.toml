@@ -6,3 +6,9 @@
 [workspace]
 resolver = "3"
 members = ["native/*"]
+
+# Debug `flutter run` builds the Rust hub with this dev profile. Optimise
+# dependencies (haqor-core included) so the app stays usable on a phone,
+# while the thin hub crate itself still rebuilds quickly.
+[profile.dev.package."*"]
+opt-level = 2
