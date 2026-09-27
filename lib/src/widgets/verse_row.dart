@@ -517,8 +517,11 @@ class _VerseRowState extends State<VerseRow> {
     // The verse number and its marks open the verse's first line, as in a
     // printed Bible, rather than standing in a margin column: a column would
     // indent every line by however wide that verse's marks happen to be.
+    //
+    // The text is always right to left, whatever the app's own direction, so
+    // the gaps are fixed sides rather than directional ones.
     final verseMarks = Padding(
-      padding: const EdgeInsetsDirectional.only(end: 6),
+      padding: const EdgeInsets.only(left: 6),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         textDirection: TextDirection.rtl,
@@ -534,7 +537,7 @@ class _VerseRowState extends State<VerseRow> {
           ),
           if (widget.studyNote)
             Padding(
-              padding: const EdgeInsetsDirectional.only(start: 2),
+              padding: const EdgeInsets.only(right: 2),
               child: Icon(
                 Icons.sticky_note_2_outlined,
                 size: 12,
@@ -577,7 +580,10 @@ class _VerseRowState extends State<VerseRow> {
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: SizedBox(
                 height: widget.fontSize * 1.6,
-                child: Center(child: verseMarks),
+                // Only as wide as the marks: a wrap offers each child its
+                // full width, which a plain `Center` would take, leaving the
+                // marks alone on a line of their own.
+                child: Center(widthFactor: 1, child: verseMarks),
               ),
             ),
             for (final (i, glossPosition) in verseGlossPositions(

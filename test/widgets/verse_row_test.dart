@@ -131,6 +131,13 @@ void main() {
         lineHeight,
         reason: 'at font size $fontSize',
       );
+      // The number opens the line at its right edge: inside the row's 12px of
+      // horizontal padding, and the 3px selectable text keeps for its caret.
+      expect(
+        tester.getRect(find.text('23')).right,
+        closeTo(tester.getRect(find.byType(VerseRow)).right - 12 - 3, 0.01),
+        reason: 'at font size $fontSize',
+      );
       expect(
         verseRowScrollExtent(fontSize: fontSize, fontFamily: 'Cardo'),
         lineHeight,
@@ -177,6 +184,18 @@ void main() {
     expect(
       tester.getSize(find.byType(VerseRow)).height,
       tester.getSize(find.byType(Wrap)).height,
+    );
+
+    // The marks open the verse's first line, at its right edge, rather than
+    // taking a line of their own.
+    final mark = tester.getRect(find.byIcon(Icons.link));
+    final firstWord = tester.getRect(find.text('דָבָר'));
+    expect(mark.left, greaterThan(firstWord.right));
+    expect(mark.center.dy, lessThan(firstWord.bottom));
+    expect(
+      tester.getRect(find.byType(VerseRow)).right - mark.right,
+      lessThan(40),
+      reason: 'the marks sit at the right edge, not centred',
     );
   });
 
@@ -691,7 +710,13 @@ void main() {
         .reduce(max);
 
     expect(lastLineTop, greaterThan(firstLineTop));
-    expect(lastLineRight, closeTo(firstLineRight, 0.01));
+    // Only the first line is indented, by the verse number opening it; the
+    // continuation starts at the edge where the number does.
+    final number = tester.getRect(find.text('א׳'));
+    expect(number.left, greaterThan(firstLineRight));
+    expect(lastLineRight, greaterThan(firstLineRight));
+    // Less the word column's own 3px of horizontal padding.
+    expect(lastLineRight, closeTo(number.right - 3, 0.01));
   });
 
   group('ketiv', () {
