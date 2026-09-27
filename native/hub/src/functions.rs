@@ -42,15 +42,17 @@ fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
 /// Every lexicon's entries for a root family, as the Lexicon tab's lexemes:
 /// the BDB entries given, with Klein's and Jastrow's for the same word beside
 /// them. `related` names more of the family by spelling — a Peshitta word's
-/// SEDRA lexemes.
+/// SEDRA lexemes. `word` is the word looked up, whose shin or sin keeps out
+/// the other root spelled with the same letters.
 fn lexicon_rows(
     bible: &Bible,
     root: &str,
     bdb: Vec<BdbEntry>,
     related: &[String],
+    word: &str,
 ) -> Vec<LexemeSummary> {
     bible
-        .root_lexemes(root, bdb, related)
+        .root_lexemes(root, bdb, related, word)
         .unwrap_or_else(|e| {
             debug_print!("root_lexemes({root:?}) error: {e:?}");
             Vec::new()
@@ -778,7 +780,7 @@ pub async fn get_word_info(bible: SharedBible) {
                             is_root: entry.is_root,
                         });
                     }
-                    let lexicon = lexicon_rows(&bible, &entry.root, tree, &[]);
+                    let lexicon = lexicon_rows(&bible, &entry.root, tree, &[], &entry.headword);
                     WordInfo {
                         request_id: req.request_id,
                         found: true,
@@ -862,6 +864,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         &first.root,
                         bible.hebrew_bdb_by_root(&first.root).unwrap_or_default(),
                         &lexemes,
+                        "",
                     );
                     let gloss = first.meanings.first().cloned().unwrap_or_default();
                     WordInfo {
@@ -980,7 +983,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         .collect();
                     let lexemes: Vec<String> =
                         sedra_entries.iter().map(|e| e.lexeme.clone()).collect();
-                    let lexicon = lexicon_rows(&bible, &selected, tree, &lexemes);
+                    let lexicon = lexicon_rows(&bible, &selected, tree, &lexemes, &info.word);
                     // The headline describes this occurrence, not merely its
                     // dictionary lemma. Keep the BDB entries below as lexeme
                     // definitions, while rendering proclitics and noun/verb
