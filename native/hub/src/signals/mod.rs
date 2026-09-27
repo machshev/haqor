@@ -339,6 +339,44 @@ pub struct Quotations {
     pub entries: Vec<QuotationEntry>,
 }
 
+/// Ask for the thematic cross references of one verse: the key words and
+/// phrases the *Treasury of Scripture Knowledge* links to other passages.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetThematicReferences {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+}
+
+/// A passage a [`ThematicReferenceEntry`] points to: one verse, or a run of
+/// verses ending at `last_chapter:last_verse` of the same book.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ThematicTarget {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub last_chapter: u8,
+    pub last_verse: u8,
+}
+
+/// One key phrase of a verse, in the King James Version's wording as the TSK
+/// gives it, and the passages it links to in the TSK's order.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ThematicReferenceEntry {
+    pub phrase: String,
+    pub targets: Vec<ThematicTarget>,
+}
+
+/// Reply to [`GetThematicReferences`], phrases in reading order. Echoes the
+/// request so a listener can ignore replies for a verse it no longer shows.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct ThematicReferences {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub entries: Vec<ThematicReferenceEntry>,
+}
+
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetWordInfo {
     /// Echoed in the [`WordInfo`] reply. Replies carry nothing else that says
@@ -418,7 +456,7 @@ pub struct BdbSummary {
     /// Lexicon tab groups a root's lexemes under a heading per class (proper
     /// names, in particular, crowd out the root's actual semantic range).
     pub pos_category: String,
-    /// Which lexicon the entry is from: `bdb`, `klein` or `jastrow`. The sheet
+    /// Which lexicon the entry is from: `bdb`, `klein`, `jastrow` or `sedra`. The sheet
     /// badges each row with it.
     pub source: String,
     /// The period or language the source marks the entry with (Klein's `NH`,
@@ -440,7 +478,10 @@ pub struct LexemeSummary {
     /// The bucket the Lexicon tab heads the lexeme under; see
     /// [`BdbSummary::pos_category`].
     pub pos_category: String,
-    /// BDB's entries, then Klein's, then Jastrow's.
+    /// True when one of the entries is the looked-up word's own lexeme (SEDRA
+    /// flags the Peshitta word's), for the Lexicon tab to mark.
+    pub is_current: bool,
+    /// BDB's entries, then Klein's, Jastrow's and SEDRA's.
     pub entries: Vec<BdbSummary>,
 }
 
@@ -466,40 +507,20 @@ pub struct DictionaryEntry {
 }
 
 #[derive(Debug, Serialize, SignalPiece)]
-pub struct SedraSummary {
-    pub lexeme: String,
-    pub meaning: String,
-    /// True for the lexeme of the word that was looked up (vs. sibling lexemes
-    /// of the same root shown for context).
-    pub is_current: bool,
-}
-
-#[derive(Debug, Serialize, SignalPiece)]
 pub struct WordOccurrence {
     pub book: u8,
     pub chapter: u8,
     pub verse: u8,
 }
 
-/// An NT occurrence tagged with which lexeme of the root tree it belongs to, so
-/// the UI can filter occurrences by lexeme. `lexeme_index` aligns with the order
-/// of `sedra_entries`. `words` holds the distinct word forms in that verse.
+/// One token of a root anywhere in the canon: where it stands, the surface
+/// form read there, its lexeme and its parse. One row per token, so the tab can
+/// count true frequency, highlight the exact word, and filter by form, lexeme
+/// or parse. OT and NT tokens are described alike, so one filter cuts across
+/// both testaments. The filter inventories are derived on the Dart side from
+/// the distinct `surface` / `lexeme` / `parse` values.
 #[derive(Debug, Serialize, SignalPiece)]
-pub struct SedraOccurrence {
-    pub book: u8,
-    pub chapter: u8,
-    pub verse: u8,
-    pub lexeme_index: u32,
-    pub words: Vec<String>,
-}
-
-/// One OT token of a root: where it stands, the surface form read there, and
-/// its parse. One row per token, so the tab can count true frequency, highlight
-/// the exact word, and filter by form or by parse (the OT analogue of
-/// `SedraOccurrence`'s lexeme filter). Both filter inventories are derived on
-/// the Dart side from the distinct `surface` / `parse` values.
-#[derive(Debug, Serialize, SignalPiece)]
-pub struct HebrewOccurrence {
+pub struct Occurrence {
     pub book: u8,
     pub chapter: u8,
     pub verse: u8,
@@ -507,6 +528,9 @@ pub struct HebrewOccurrence {
     /// the displayed text do not count, matching `verseGlossPositions`.
     pub position: u32,
     pub surface: String,
+    /// The lexicon headword the token belongs to where its source names one
+    /// (SEDRA's lexeme, for an NT token). Empty otherwise.
+    pub lexeme: String,
     /// The parse component by component, so the tab can filter one dimension at
     /// a time instead of on the cross-product of whole labels.
     pub parse: OccurrenceParse,
@@ -515,13 +539,18 @@ pub struct HebrewOccurrence {
     pub parse_label: String,
 }
 
-/// One token's parse, split into the dimensions the filter groups by. A field is
+/// One token's parse, split into the dimensions the filter groups by, in the one
+/// vocabulary Hebrew and Aramaic share where their categories agree. A field is
 /// empty where the analysis does not carry it (an infinitive has no person), and
 /// all are empty for a token with no readable analysis.
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct OccurrenceParse {
     pub part_of_speech: String,
+    /// The stem as its language names it (Qal, Peal, …).
     pub stem: String,
+    /// The stem's family across both languages (`Simple` for Qal and Peal,
+    /// `Causative` for Hiphil and Aphel, …).
+    pub stem_family: String,
     pub tense: String,
     pub person: String,
     pub gender: String,
@@ -561,7 +590,6 @@ pub struct WordInfo {
     pub vav_con: bool,
     /// The root family by lexeme, each gathering every lexicon's entries.
     pub lexemes: Vec<LexemeSummary>,
-    pub sedra_entries: Vec<SedraSummary>,
     pub person: Option<String>,
     pub state: Option<String>,
     pub tense: Option<String>,
@@ -581,18 +609,12 @@ pub struct WordOccurrences {
     /// The [`GetWordOccurrences::request_id`] this answers.
     pub request_id: u32,
     pub found: bool,
+    /// The verses of the looked-up surface itself, for a word with no root to
+    /// scan: the sheet's fallback when `tokens` is empty.
     pub occurrences: Vec<WordOccurrence>,
-    /// NT only. The OT side reads its verse list off the distinct references in
-    /// `hebrew_occurrences`, rather than paying for a second scan of the corpus
-    /// to learn what that list already says.
-    pub root_occurrences: Vec<WordOccurrence>,
-    pub sedra_occurrences: Vec<SedraOccurrence>,
-    /// OT (Hebrew Bible) occurrences of the same consonantal root, for the NT
-    /// word info "OT" filter. Empty for roots without a Hebrew cognate.
-    pub ot_occurrences: Vec<WordOccurrence>,
-    /// OT root occurrences tagged with their surface form, for the OT word
-    /// info per-form filter. Empty for NT lookups.
-    pub hebrew_occurrences: Vec<HebrewOccurrence>,
+    /// Every token of the word's root across the canon — the root's own
+    /// testament and its cognates in the other — in canonical order.
+    pub tokens: Vec<Occurrence>,
 }
 
 // ---------------------------------------------------------------------------

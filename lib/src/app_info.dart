@@ -79,6 +79,16 @@ const dataSourceCredits = <DataSourceCredit>[
     url: 'https://www.sefaria.org/Jastrow',
   ),
   DataSourceCredit(
+    title: 'Treasury of Scripture Knowledge',
+    description:
+        'The thematic cross references of each verse\'s key phrases (Samuel '
+        'Bagster & Sons, 1830s; commonly credited to R. A. Torrey), from the '
+        'data file published by Just Verses, with its King James verse '
+        'numbers re-numbered onto the Hebrew text.',
+    licence: 'Public domain, as Just Verses distributes it',
+    url: 'http://www.justverses.com/jv/app/downloadTSK.vm',
+  ),
+  DataSourceCredit(
     title: 'STEP Bible TAHOT',
     description: 'Context-sensitive interlinear translations.',
     licence: 'CC BY 4.0',

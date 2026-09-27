@@ -280,6 +280,12 @@ Targumim, the Talmud Babli and Yerushalmi, and the Midrashic Literature*
 [TAHOT dataset](https://github.com/STEPBible/STEPBible-Data), licensed CC BY
 4.0.
 
+**Thematic cross references** — *The Treasury of Scripture Knowledge*
+(Samuel Bagster & Sons, 1830s; commonly credited to R. A. Torrey), from the
+data file published by [Just Verses](http://www.justverses.com/jv/app/downloadTSK.vm),
+which describes its downloads as public domain biblical information. Its King
+James verse numbers are re-numbered onto the Hebrew text.
+
 **Syriac New Testament** — the text of the British and Foreign Bible Society's
 edition, with lexical and morphological data from SEDRA:
 

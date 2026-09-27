@@ -4,16 +4,17 @@ use crate::signals::{
     BdbSummary, BuildInfo, CalibrationProbe, ChapterText, CrossReferenceEntry, CrossReferences,
     DictionaryEntry, FinishCalibration, GetBuildInfo, GetCalibrationProbe, GetChapter,
     GetCrossReferences, GetDictionaryEntry, GetNextStudyItem, GetOnboardingStatus, GetQuotations,
-    GetSeenConcepts, GetStudyState, GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats,
-    GetVerseText, GetVerseTexts, GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard,
-    HebrewOccurrence, IssueReportStatus, KetivEntry, LexemeSummary, LexiconEntryOverrideStatus,
-    OccurrenceParse, OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus,
-    QuotationEntry, Quotations, ResetTutor, RootChoice, SaveIssueReport, SaveLexiconEntryOverride,
-    SaveStudyState, SaveTutorGloss, SedraOccurrence, SedraSummary, SeenConcept, SeenConcepts,
-    SetAlphabetKnown, SetTutorSettings, StudyItem, StudyState, SubmitMisreads, SubmitReview,
-    SuffixCard, SyncProgress, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats,
-    VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry, VocabList,
-    WordCard, WordInfo, WordOccurrence, WordOccurrences,
+    GetSeenConcepts, GetStudyState, GetThematicReferences, GetTutorGlossOverrideStats,
+    GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts, GetVocab, GetWordInfo,
+    GetWordOccurrences, GlyphCard, GrammarCard, IssueReportStatus, KetivEntry, LexemeSummary,
+    LexiconEntryOverrideStatus, Occurrence, OccurrenceParse, OnboardingStatus,
+    OptimizeTutorGlossOverrides, ProgressSyncStatus, QuotationEntry, Quotations, ResetTutor,
+    RootChoice, SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState, SaveTutorGloss,
+    SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem, StudyState,
+    SubmitMisreads, SubmitReview, SuffixCard, SyncProgress, ThematicReferenceEntry,
+    ThematicReferences, ThematicTarget, TutorGlossOverrideStats, TutorProgress, TutorSettings,
+    TutorStats, VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry,
+    VocabList, WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -25,7 +26,8 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use haqor_core::bible::{
-    BdbEntry, Bible, LexiconEntry, LexiconSource, QuotationFilter, QuotationScope, inflected_gloss,
+    BdbEntry, Bible, LexiconEntry, LexiconSource, QuotationFilter, QuotationScope, RootRef,
+    SedraLexemeSummary, inflected_gloss,
 };
 use haqor_core::tutor::{self, Grade, Track};
 use rinf::{DartSignal, RustSignal, debug_print};
@@ -40,17 +42,16 @@ fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
 }
 
 /// Every lexicon's entries for a root family, as the Lexicon tab's lexemes:
-/// the BDB entries given, with Klein's and Jastrow's for the same word beside
-/// them. `related` names more of the family by spelling — a Peshitta word's
-/// SEDRA lexemes.
+/// the BDB entries and SEDRA lexemes given, with Klein's and Jastrow's for the
+/// same word beside them.
 fn lexicon_rows(
     bible: &Bible,
     root: &str,
     bdb: Vec<BdbEntry>,
-    related: &[String],
+    sedra: Vec<SedraLexemeSummary>,
 ) -> Vec<LexemeSummary> {
     bible
-        .root_lexemes(root, bdb, related)
+        .root_lexemes(root, bdb, sedra)
         .unwrap_or_else(|e| {
             debug_print!("root_lexemes({root:?}) error: {e:?}");
             Vec::new()
@@ -59,6 +60,7 @@ fn lexicon_rows(
         .map(|l| LexemeSummary {
             headword: l.headword,
             pos_category: l.pos_category.to_string(),
+            is_current: l.is_current,
             entries: l.entries.into_iter().map(lexicon_summary).collect(),
         })
         .collect()
@@ -778,7 +780,7 @@ pub async fn get_word_info(bible: SharedBible) {
                             is_root: entry.is_root,
                         });
                     }
-                    let lexicon = lexicon_rows(&bible, &entry.root, tree, &[]);
+                    let lexicon = lexicon_rows(&bible, &entry.root, tree, Vec::new());
                     WordInfo {
                         request_id: req.request_id,
                         found: true,
@@ -794,7 +796,6 @@ pub async fn get_word_info(bible: SharedBible) {
                         article: false,
                         vav_con: false,
                         lexemes: lexicon,
-                        sedra_entries: Vec::new(),
                         person: None,
                         state: None,
                         tense: None,
@@ -820,7 +821,6 @@ pub async fn get_word_info(bible: SharedBible) {
                         article: false,
                         vav_con: false,
                         lexemes: Vec::new(),
-                        sedra_entries: Vec::new(),
                         person: None,
                         state: None,
                         tense: None,
@@ -912,7 +912,6 @@ pub async fn get_word_info(bible: SharedBible) {
                         article: false,
                         vav_con: false,
                         lexemes: Vec::new(),
-                        sedra_entries: Vec::new(),
                         person: None,
                         state: None,
                         tense: None,
@@ -1032,7 +1031,6 @@ pub async fn get_word_info(bible: SharedBible) {
                         article: false,
                         vav_con: false,
                         lexemes: Vec::new(),
-                        sedra_entries: Vec::new(),
                         person: None,
                         state: None,
                         tense: None,
@@ -1706,6 +1704,44 @@ pub async fn get_quotations(bible: SharedBible) {
             request_id: req.request_id,
             book: req.book,
             total,
+            entries,
+        }
+        .send_signal_to_dart();
+    }
+}
+
+pub async fn get_thematic_references(bible: SharedBible) {
+    let receiver = GetThematicReferences::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let references = lock(&bible)
+            .thematic_references(req.book, req.chapter, req.verse)
+            .unwrap_or_else(|e| {
+                debug_print!("get_thematic_references error: {:?}", e);
+                Vec::new()
+            });
+        let entries = references
+            .into_iter()
+            .map(|r| ThematicReferenceEntry {
+                phrase: r.phrase,
+                targets: r
+                    .targets
+                    .into_iter()
+                    .map(|t| ThematicTarget {
+                        book: t.first.book,
+                        chapter: t.first.chapter,
+                        verse: t.first.verse,
+                        last_chapter: t.last.chapter,
+                        last_verse: t.last.verse,
+                    })
+                    .collect(),
+            })
+            .collect();
+        ThematicReferences {
+            book: req.book,
+            chapter: req.chapter,
+            verse: req.verse,
             entries,
         }
         .send_signal_to_dart();

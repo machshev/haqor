@@ -26,6 +26,7 @@ class _FakeRust {
   final List<GetVerseTexts> verseTextRequests = [];
   final List<GetCrossReferences> crossReferenceRequests = [];
   final List<GetQuotations> quotationRequests = [];
+  final List<GetThematicReferences> thematicRequests = [];
 
   void onWordInfo(GetWordInfo request) => wordRequests.add(request);
   void onOccurrences(GetWordOccurrences request) =>
@@ -1914,6 +1915,7 @@ Future<_FakeRust> _pumpWorkspace(WidgetTester tester, Size size) async {
         sendVerseTextsRequest: rust.onVerseTexts,
         sendCrossReferencesRequest: rust.crossReferenceRequests.add,
         sendQuotationsRequest: rust.quotationRequests.add,
+        sendThematicReferencesRequest: rust.thematicRequests.add,
       ),
     ),
   );

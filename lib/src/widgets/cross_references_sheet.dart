@@ -76,8 +76,10 @@ enum CrossReferenceLinks { all, otherTestament, sameTestament }
 /// Two views share the panel. The overview lists every quotation touching the
 /// current chapter — or the whole book, optionally narrowed to a chapter range —
 /// grouped by verse. A verse's own view lists its links strongest first, with
-/// the matched words highlighted on both sides; its back button returns to the
-/// overview. Tapping a linked verse opens it in the reader.
+/// the matched words highlighted on both sides, and beside them the verse's
+/// thematic references: the passages the Treasury of Scripture Knowledge
+/// links to each of its key phrases. Its back button returns to the overview.
+/// Tapping a linked verse opens it in the reader.
 class CrossReferencesPanel extends StatefulWidget {
   const CrossReferencesPanel({
     super.key,
@@ -94,6 +96,7 @@ class CrossReferencesPanel extends StatefulWidget {
     this.onNavigateToPassage,
     this.sendRequest,
     this.sendQuotationsRequest,
+    this.sendThematicReferencesRequest,
     this.sendVerseTextsRequest,
   });
 
@@ -132,6 +135,7 @@ class CrossReferencesPanel extends StatefulWidget {
   /// Test seams: how requests reach Rust, which a widget test cannot load.
   final void Function(GetCrossReferences)? sendRequest;
   final void Function(GetQuotations)? sendQuotationsRequest;
+  final void Function(GetThematicReferences)? sendThematicReferencesRequest;
   final void Function(GetVerseTexts)? sendVerseTextsRequest;
 
   @override
@@ -297,6 +301,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
         onToggleLinkBookmark: widget.onToggleLinkBookmark,
         onNavigateToPassage: widget.onNavigateToPassage,
         sendRequest: widget.sendRequest,
+        sendThematicRequest: widget.sendThematicReferencesRequest,
       );
     }
     return _overview(context);
@@ -640,6 +645,15 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
 /// One verse's links, strongest first, with the matched words highlighted on
 /// both sides. Choosing a link shows its words on the verse itself; tapping
 /// the linked verse opens it in the reader.
+/// The two lists of a verse's own view.
+enum _VerseSection {
+  /// Quotations and parallels found by aligning roots.
+  links,
+
+  /// The Treasury of Scripture Knowledge's references for its key phrases.
+  thematic,
+}
+
 class _VerseLinks extends StatefulWidget {
   const _VerseLinks({
     super.key,
@@ -658,6 +672,7 @@ class _VerseLinks extends StatefulWidget {
     this.onToggleLinkBookmark,
     this.onNavigateToPassage,
     this.sendRequest,
+    this.sendThematicRequest,
   });
 
   final VerseTextCache cache;
@@ -680,6 +695,7 @@ class _VerseLinks extends StatefulWidget {
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
   final void Function(GetCrossReferences)? sendRequest;
+  final void Function(GetThematicReferences)? sendThematicRequest;
 
   @override
   State<_VerseLinks> createState() => _VerseLinksState();
@@ -687,9 +703,27 @@ class _VerseLinks extends StatefulWidget {
 
 class _VerseLinksState extends State<_VerseLinks> {
   StreamSubscription<RustSignalPack<CrossReferences>>? _sub;
+  StreamSubscription<RustSignalPack<ThematicReferences>>? _thematicSub;
 
   /// Null until the reply arrives.
   List<CrossReferenceEntry>? _entries;
+
+  /// The verse's thematic references (the Treasury of Scripture Knowledge's),
+  /// null until their reply arrives.
+  List<ThematicReferenceEntry>? _thematic;
+
+  /// The list the reader picked, if they have.
+  _VerseSection? _chosenSection;
+
+  /// Which list shows: the one picked, else the quotations and parallels —
+  /// unless the verse has none and does have thematic references.
+  _VerseSection get _section {
+    final chosen = _chosenSection;
+    if (chosen != null) return chosen;
+    final noLinks = _entries?.isEmpty ?? false;
+    final thematic = _thematic?.isNotEmpty ?? false;
+    return noLinks && thematic ? _VerseSection.thematic : _VerseSection.links;
+  }
 
   /// The linked verse whose matched words are shown on the source verse.
   int _focused = 0;
@@ -739,11 +773,34 @@ class _VerseLinksState extends State<_VerseLinks> {
     } else {
       request.sendSignalToRust();
     }
+
+    _thematicSub = ThematicReferences.rustSignalStream.listen((pack) {
+      final reply = pack.message;
+      if (reply.book != widget.book ||
+          reply.chapter != widget.chapter ||
+          reply.verse != widget.verse ||
+          !mounted) {
+        return;
+      }
+      setState(() => _thematic = reply.entries);
+    });
+    final thematicRequest = GetThematicReferences(
+      book: widget.book,
+      chapter: widget.chapter,
+      verse: widget.verse,
+    );
+    final sendThematic = widget.sendThematicRequest;
+    if (sendThematic != null) {
+      sendThematic(thematicRequest);
+    } else {
+      thematicRequest.sendSignalToRust();
+    }
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _thematicSub?.cancel();
     super.dispose();
   }
 
@@ -755,6 +812,8 @@ class _VerseLinksState extends State<_VerseLinks> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final entries = _entries;
+    final thematic = _thematic;
+    final section = _section;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -793,9 +852,11 @@ class _VerseLinksState extends State<_VerseLinks> {
             ],
           ),
         ),
-        if (entries == null)
+        // The quotations show as soon as they arrive; only whether the verse
+        // has nothing at all waits for the thematic references too.
+        if (entries == null || (entries.isEmpty && thematic == null))
           const Expanded(child: Center(child: CircularProgressIndicator()))
-        else if (entries.isEmpty)
+        else if (entries.isEmpty && (thematic?.isEmpty ?? false))
           const Expanded(
             child: Center(
               child: Text('No cross references found for this verse.'),
@@ -805,24 +866,151 @@ class _VerseLinksState extends State<_VerseLinks> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: OccurrenceVerseRow(
-              key: ValueKey('source-$_focused'),
+              key: ValueKey('source-$section-$_focused'),
               cache: widget.cache,
               displayRef: _ref(widget.book, widget.chapter, widget.verse),
               bookIndex: widget.book - 1,
               chapter: widget.chapter,
               verse: widget.verse,
               highlightWords: const [],
-              positions: entries[_focused.clamp(0, entries.length - 1)]
-                  .sourcePositions,
+              positions: section == _VerseSection.links && entries.isNotEmpty
+                  ? entries[_focused.clamp(0, entries.length - 1)]
+                        .sourcePositions
+                  : const [],
               isCurrent: true,
               englishOnly: widget.englishOnly,
               useEnglishBookNames: widget.useEnglishBookNames,
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: SegmentedButton<_VerseSection>(
+              key: const ValueKey('verse-section'),
+              showSelectedIcon: false,
+              segments: [
+                ButtonSegment(
+                  value: _VerseSection.links,
+                  label: Text('Quotations (${entries.length})'),
+                ),
+                ButtonSegment(
+                  value: _VerseSection.thematic,
+                  label: Text(
+                    thematic == null
+                        ? 'Thematic'
+                        : 'Thematic (${_targetCount(thematic)})',
+                  ),
+                ),
+              ],
+              selected: {section},
+              onSelectionChanged: (s) =>
+                  setState(() => _chosenSection = s.first),
+            ),
+          ),
           const Divider(height: 17),
-          Expanded(child: _entryList(context, entries)),
+          Expanded(
+            child: section == _VerseSection.links
+                ? entries.isEmpty
+                      ? const Center(
+                          child: Text('No quotations or parallels found.'),
+                        )
+                      : _entryList(context, entries)
+                : thematic == null
+                ? const Center(child: CircularProgressIndicator())
+                : thematic.isEmpty
+                ? const Center(child: Text('No thematic references.'))
+                : _thematicList(context, thematic),
+          ),
         ],
       ],
+    );
+  }
+
+  static int _targetCount(List<ThematicReferenceEntry> thematic) =>
+      thematic.fold(0, (n, e) => n + e.targets.length);
+
+  /// A target's reference: one verse, or a run of verses.
+  String _targetRef(ThematicTarget t) {
+    final start = _ref(t.book, t.chapter, t.verse);
+    if (t.lastChapter == t.chapter && t.lastVerse == t.verse) return start;
+    if (t.lastChapter == t.chapter) return '$start–${t.lastVerse}';
+    return '$start–${t.lastChapter}:${t.lastVerse}';
+  }
+
+  /// The Treasury of Scripture Knowledge's references: each key phrase of the
+  /// verse, in its King James wording, then the passages it points to, each
+  /// shown by its first verse.
+  Widget _thematicList(
+    BuildContext context,
+    List<ThematicReferenceEntry> thematic,
+  ) {
+    final theme = Theme.of(context);
+    final navigate = widget.onNavigateToPassage;
+    final rows = <Widget Function()>[];
+    for (final entry in thematic) {
+      rows.add(
+        () => Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+          child: Text(
+            '“${entry.phrase}”',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      );
+      for (final target in entry.targets) {
+        final ranged =
+            target.lastChapter != target.chapter ||
+            target.lastVerse != target.verse;
+        if (ranged) {
+          // The verse row names only the first verse it shows.
+          rows.add(
+            () => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                _targetRef(target),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          );
+        }
+        rows.add(
+          () => OccurrenceVerseRow(
+            cache: widget.cache,
+            displayRef: _targetRef(target),
+            bookIndex: target.book - 1,
+            chapter: target.chapter,
+            verse: target.verse,
+            highlightWords: const [],
+            englishOnly: widget.englishOnly,
+            useEnglishBookNames: widget.useEnglishBookNames,
+            onTap: navigate == null
+                ? null
+                : () => navigate(target.book - 1, target.chapter, target.verse),
+          ),
+        );
+      }
+    }
+    rows.add(
+      () => Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Text(
+          'From the Treasury of Scripture Knowledge.',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+    return ListView.separated(
+      key: const ValueKey('thematic-list'),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+      itemCount: rows.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, i) => rows[i](),
     );
   }
 

@@ -14,6 +14,25 @@ class _FakeRust {
   final List<GetVerseTexts> verseRequests = [];
   final List<GetQuotations> quotationRequests = [];
 
+  final List<GetThematicReferences> thematicRequests = [];
+
+  void deliverThematic(
+    int book,
+    int chapter,
+    int verse,
+    List<ThematicReferenceEntry> entries,
+  ) {
+    assignRustSignal['ThematicReferences']!(
+      ThematicReferences(
+        book: book,
+        chapter: chapter,
+        verse: verse,
+        entries: entries,
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+  }
+
   void deliverQuotations(int total, List<QuotationEntry> entries) {
     assignRustSignal['Quotations']!(
       Quotations(
@@ -106,6 +125,7 @@ Future<_FakeRust> _pump(
             onNavigateToPassage: onNavigate,
             sendRequest: rust.requests.add,
             sendQuotationsRequest: rust.quotationRequests.add,
+            sendThematicReferencesRequest: rust.thematicRequests.add,
             sendVerseTextsRequest: rust.verseRequests.add,
           ),
         ),
@@ -206,13 +226,108 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
     rust.deliver(40, 1, 23, const []);
+    rust.deliverThematic(40, 1, 23, const []);
     await tester.pump();
     expect(
       find.text('No cross references found for this verse.'),
       findsOneWidget,
     );
   });
+
+  testWidgets('a verse without quotations opens on its thematic references', (
+    tester,
+  ) async {
+    final opened = <(int, int, int)>[];
+    final rust = await _pump(
+      tester,
+      onNavigate: (b, c, v) => opened.add((b, c, v)),
+    );
+    expect(rust.thematicRequests.single.verse, 23);
+    rust.deliver(40, 1, 23, const []);
+    await tester.pump();
+    // Whether there is anything to show waits for the thematic reply.
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    rust.deliverThematic(40, 1, 23, [
+      ThematicReferenceEntry(
+        phrase: 'a virgin',
+        targets: [
+          _target(book: 12, chapter: 7, verse: 14),
+          _target(book: 1, chapter: 3, verse: 15),
+        ],
+      ),
+      ThematicReferenceEntry(
+        phrase: 'Emmanuel',
+        targets: [
+          _target(book: 12, chapter: 8, verse: 8, lastVerse: 10),
+          _target(book: 12, chapter: 9, verse: 5, lastChapter: 10),
+        ],
+      ),
+    ]);
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Quotations (0)'), findsOneWidget);
+    expect(find.text('Thematic (4)'), findsOneWidget);
+    expect(find.text('“a virgin”'), findsOneWidget);
+    expect(find.text('“Emmanuel”'), findsOneWidget);
+    expect(find.textContaining('Isaiah 7:14'), findsOneWidget);
+    expect(find.text('Isaiah 8:8–10'), findsOneWidget);
+    expect(find.text('Isaiah 9:5–10:5'), findsOneWidget);
+
+    await tester.tap(find.textContaining('Genesis 3:15'));
+    expect(opened, [(0, 3, 15)]);
+  });
+
+  testWidgets('the thematic references are a second list beside the links', (
+    tester,
+  ) async {
+    final rust = await _pump(tester);
+    rust.deliver(40, 1, 23, [_entry(book: 12, chapter: 7, verse: 14)]);
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    // The links show before the thematic reply arrives.
+    expect(find.text('Strong match · 2 words'), findsOneWidget);
+
+    rust.deliverThematic(40, 1, 23, [
+      ThematicReferenceEntry(
+        phrase: 'a virgin',
+        targets: [_target(book: 1, chapter: 3, verse: 15)],
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    expect(find.text('“a virgin”'), findsNothing);
+
+    await tester.tap(find.text('Thematic (1)'));
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    expect(find.text('“a virgin”'), findsOneWidget);
+    expect(find.text('Strong match · 2 words'), findsNothing);
+    // No link is focused, so the source verse shows no matched words.
+    expect(_highlighted(tester)['Matthew 1:23'], isEmpty);
+
+    await tester.tap(find.text('Quotations (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Strong match · 2 words'), findsOneWidget);
+  });
 }
+
+ThematicTarget _target({
+  required int book,
+  required int chapter,
+  required int verse,
+  int? lastChapter,
+  int? lastVerse,
+}) => ThematicTarget(
+  book: book,
+  chapter: chapter,
+  verse: verse,
+  lastChapter: lastChapter ?? chapter,
+  lastVerse: lastVerse ?? (lastChapter == null ? verse : 5),
+);
 
 QuotationEntry _quote({
   required int verse,
@@ -453,6 +568,7 @@ void dockedTests() {
             onClose: () => closed++,
             sendRequest: rust.requests.add,
             sendQuotationsRequest: rust.quotationRequests.add,
+            sendThematicReferencesRequest: rust.thematicRequests.add,
             sendVerseTextsRequest: rust.verseRequests.add,
           ),
         ),
@@ -506,6 +622,7 @@ void bookmarkTests() {
               },
               sendRequest: rust.requests.add,
               sendQuotationsRequest: rust.quotationRequests.add,
+              sendThematicReferencesRequest: rust.thematicRequests.add,
               sendVerseTextsRequest: rust.verseRequests.add,
             ),
           ),
@@ -554,6 +671,7 @@ void bookmarkTests() {
               },
               sendRequest: rust.requests.add,
               sendQuotationsRequest: rust.quotationRequests.add,
+              sendThematicReferencesRequest: rust.thematicRequests.add,
               sendVerseTextsRequest: rust.verseRequests.add,
             ),
           ),
