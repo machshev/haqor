@@ -244,56 +244,35 @@ class StudyWorkspacePanel extends StatelessWidget {
     ),
   );
 
+  /// The gap before an item, or after a container's last one.
+  Widget _dropGap(
+    StudyWorkspace workspace,
+    String? groupId, {
+    required int index,
+    required int depth,
+  }) => _OutlineDropTarget(
+    key: ValueKey('drop-${groupId ?? 'top'}-$index'),
+    workspace: workspace,
+    base: (groupId: groupId, index: index, depth: depth),
+    onMoveItem: onMoveItem,
+  );
+
+  /// An item's row: others dropped on it reorder around it, and the item
+  /// itself, moved across the indent area, changes level.
   Widget _rowDropTarget(
     StudyWorkspace workspace,
     StudyItem target,
     int targetIndex, {
+    required int depth,
     required Widget child,
-  }) {
-    int insertionIndex(StudyItem dragged) {
-      final siblings = workspace.itemsIn(target.groupId);
-      final sourceIndex = siblings.indexWhere(
-        (item) => item.key == dragged.key,
-      );
-      // Dropping on a row while moving down places the item after that row;
-      // moving up places it before. Explicit gaps still allow exact insertion.
-      return sourceIndex >= 0 && sourceIndex < targetIndex
-          ? targetIndex + 1
-          : targetIndex;
-    }
-
-    return DragTarget<StudyItem>(
-      key: ValueKey('reorder-${target.key}'),
-      onWillAcceptWithDetails: (details) =>
-          details.data.key != target.key &&
-          workspace.canMoveItem(details.data, target.groupId),
-      onAcceptWithDetails: (details) => onMoveItem(
-        details.data,
-        target.groupId,
-        insertionIndex(details.data),
-      ),
-      builder: (context, candidates, rejected) {
-        final below =
-            candidates.isNotEmpty &&
-            insertionIndex(candidates.first!) > targetIndex;
-        final indicator = BorderSide(
-          width: 2,
-          color: candidates.isEmpty
-              ? Colors.transparent
-              : Theme.of(context).colorScheme.primary,
-        );
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(
-              top: below ? BorderSide.none : indicator,
-              bottom: below ? indicator : BorderSide.none,
-            ),
-          ),
-          child: child,
-        );
-      },
-    );
-  }
+  }) => _OutlineDropTarget(
+    key: ValueKey('reorder-${target.key}'),
+    workspace: workspace,
+    base: (groupId: target.groupId, index: targetIndex, depth: depth),
+    row: target,
+    onMoveItem: onMoveItem,
+    child: child,
+  );
 
   String _itemLabel(StudyItem item) => switch (item.type) {
     StudyItemType.passage => _reference(item.value as StudyPassage),
@@ -320,14 +299,7 @@ class StudyWorkspacePanel extends StatelessWidget {
         _ => null,
       };
       if (containerId != null && ancestors.contains(containerId)) continue;
-      children.add(
-        _dropTarget(
-          workspace,
-          groupId,
-          index: index,
-          child: const SizedBox(height: 2, width: double.infinity),
-        ),
-      );
+      children.add(_dropGap(workspace, groupId, index: index, depth: depth));
       final handle = _OutlineDragHandle(item: item, label: _itemLabel(item));
       if (item.type == StudyItemType.group) {
         final group = item.value as StudyGroup;
@@ -391,6 +363,7 @@ class StudyWorkspacePanel extends StatelessWidget {
             workspace,
             item,
             index,
+            depth: depth,
             child: Row(
               key: ValueKey(item.key),
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -404,15 +377,16 @@ class StudyWorkspacePanel extends StatelessWidget {
       }
     }
     children.add(
-      _dropTarget(
-        workspace,
-        groupId,
-        index: items.length,
-        child: const SizedBox(height: 2, width: double.infinity),
-      ),
+      _dropGap(workspace, groupId, index: items.length, depth: depth),
     );
     return children;
   }
+
+  // An expanded group or heading marks only where it starts. Material's
+  // default also draws a bar after the children, which stacks up with the
+  // next tile's bar and reads as a stray separator.
+  ShapeBorder _expandedTileShape(BuildContext context) =>
+      Border(top: BorderSide(color: Theme.of(context).dividerColor));
 
   Widget _groupTile(
     BuildContext context,
@@ -425,113 +399,118 @@ class StudyWorkspacePanel extends StatelessWidget {
     required int index,
   }) => Padding(
     padding: EdgeInsetsDirectional.only(start: depth * 12.0),
-    child: ExpansionTile(
-      key: PageStorageKey((workspace.id, group.id)),
-      initiallyExpanded: true,
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      tilePadding: const EdgeInsetsDirectional.only(end: 0),
-      childrenPadding: EdgeInsets.zero,
-      controlAffinity: ListTileControlAffinity.leading,
-      title: _dropTarget(
-        workspace,
-        group.id,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Text(
-            group.name,
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-          ),
-        ),
-      ),
-      trailing: _rowDropTarget(
-        workspace,
-        item,
-        index,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            PopupMenuButton<_GroupAction>(
-              tooltip: 'Group options',
-              onSelected: (action) {
-                switch (action) {
-                  case _GroupAction.addPassage:
-                    onBookmarkCurrent(group.id);
-                  case _GroupAction.addNote:
-                    onCreateNote(group.id);
-                  case _GroupAction.addGroup:
-                    onCreateGroup(group.id);
-                  case _GroupAction.addSummary:
-                    onCreateSection?.call(group.id);
-                  case _GroupAction.edit:
-                    onEditGroup(group);
-                  case _GroupAction.delete:
-                    onDeleteGroup(group);
-                }
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(
-                  value: _GroupAction.addNote,
-                  child: ListTile(
-                    leading: Icon(Icons.note_add_outlined),
-                    title: Text('Add note'),
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: _GroupAction.addPassage,
-                  child: ListTile(
-                    leading: Icon(Icons.bookmark_add_outlined),
-                    title: Text('Add current passage'),
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: _GroupAction.addGroup,
-                  child: ListTile(
-                    leading: Icon(Icons.create_new_folder_outlined),
-                    title: Text('Add subgroup'),
-                  ),
-                ),
-                if (onCreateSection != null)
-                  const PopupMenuItem(
-                    value: _GroupAction.addSummary,
-                    child: ListTile(
-                      leading: Icon(Icons.toc),
-                      title: Text('Add passage summary'),
-                    ),
-                  ),
-                const PopupMenuItem(
-                  value: _GroupAction.edit,
-                  child: ListTile(
-                    leading: Icon(Icons.edit_note),
-                    title: Text('Edit group'),
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: _GroupAction.delete,
-                  child: ListTile(
-                    leading: Icon(Icons.delete_outline),
-                    title: Text('Delete group'),
-                  ),
-                ),
-              ],
-            ),
-            handle,
-          ],
-        ),
-      ),
-      children: [
-        ..._itemsAt(
-          context,
+    child: _OutlineExpansion.tile(
+      (workspace.id, group.id),
+      (key, expanded) => ExpansionTile(
+        key: key,
+        initiallyExpanded: expanded,
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        tilePadding: const EdgeInsetsDirectional.only(end: 0),
+        childrenPadding: EdgeInsets.zero,
+        shape: _expandedTileShape(context),
+        controlAffinity: ListTileControlAffinity.leading,
+        title: _dropTarget(
           workspace,
           group.id,
-          depth: depth + 1,
-          ancestors: ancestors,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(
+              group.name,
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ),
         ),
-        if (workspace.itemsIn(group.id).isEmpty)
-          const _SectionEmpty(text: 'This group is empty.'),
-      ],
+        trailing: _rowDropTarget(
+          workspace,
+          item,
+          index,
+          depth: depth,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PopupMenuButton<_GroupAction>(
+                tooltip: 'Group options',
+                onSelected: (action) {
+                  switch (action) {
+                    case _GroupAction.addPassage:
+                      onBookmarkCurrent(group.id);
+                    case _GroupAction.addNote:
+                      onCreateNote(group.id);
+                    case _GroupAction.addGroup:
+                      onCreateGroup(group.id);
+                    case _GroupAction.addSummary:
+                      onCreateSection?.call(group.id);
+                    case _GroupAction.edit:
+                      onEditGroup(group);
+                    case _GroupAction.delete:
+                      onDeleteGroup(group);
+                  }
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: _GroupAction.addNote,
+                    child: ListTile(
+                      leading: Icon(Icons.note_add_outlined),
+                      title: Text('Add note'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: _GroupAction.addPassage,
+                    child: ListTile(
+                      leading: Icon(Icons.bookmark_add_outlined),
+                      title: Text('Add current passage'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: _GroupAction.addGroup,
+                    child: ListTile(
+                      leading: Icon(Icons.create_new_folder_outlined),
+                      title: Text('Add subgroup'),
+                    ),
+                  ),
+                  if (onCreateSection != null)
+                    const PopupMenuItem(
+                      value: _GroupAction.addSummary,
+                      child: ListTile(
+                        leading: Icon(Icons.toc),
+                        title: Text('Add passage summary'),
+                      ),
+                    ),
+                  const PopupMenuItem(
+                    value: _GroupAction.edit,
+                    child: ListTile(
+                      leading: Icon(Icons.edit_note),
+                      title: Text('Edit group'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: _GroupAction.delete,
+                    child: ListTile(
+                      leading: Icon(Icons.delete_outline),
+                      title: Text('Delete group'),
+                    ),
+                  ),
+                ],
+              ),
+              handle,
+            ],
+          ),
+        ),
+        children: [
+          ..._itemsAt(
+            context,
+            workspace,
+            group.id,
+            depth: depth + 1,
+            ancestors: ancestors,
+          ),
+          if (workspace.itemsIn(group.id).isEmpty)
+            const _SectionEmpty(text: 'This group is empty.'),
+        ],
+      ),
     ),
   );
 
@@ -551,167 +530,177 @@ class StudyWorkspacePanel extends StatelessWidget {
     return Padding(
       key: ValueKey(item.key),
       padding: EdgeInsetsDirectional.only(start: depth * 12.0),
-      child: ExpansionTile(
-        key: PageStorageKey((workspace.id, section.id)),
-        initiallyExpanded: true,
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        tilePadding: const EdgeInsetsDirectional.only(end: 0),
-        childrenPadding: EdgeInsets.zero,
-        controlAffinity: ListTileControlAffinity.leading,
-        title: _dropTarget(
-          workspace,
-          section.id,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: _OutlineExpansion.tile(
+        (workspace.id, section.id),
+        (key, expanded) => ExpansionTile(
+          key: key,
+          initiallyExpanded: expanded,
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          tilePadding: const EdgeInsetsDirectional.only(end: 0),
+          childrenPadding: EdgeInsets.zero,
+          shape: _expandedTileShape(context),
+          controlAffinity: ListTileControlAffinity.leading,
+          title: _dropTarget(
+            workspace,
+            section.id,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(_sectionIcon(section), size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          section.title,
+                          style:
+                              (section.isSummary
+                                      ? theme.textTheme.titleSmall
+                                      : theme.textTheme.bodyMedium)
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                  InkWell(
+                    onTap: open == null ? null : () => open(section),
+                    child: Text(
+                      _sectionReference(workspace, section),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  if (section.note.isNotEmpty)
+                    MarkdownNote(
+                      section.note,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          trailing: _rowDropTarget(
+            workspace,
+            item,
+            index,
+            depth: depth,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  children: [
-                    Icon(_sectionIcon(section), size: 16),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        section.title,
-                        style:
-                            (section.isSummary
-                                    ? theme.textTheme.titleSmall
-                                    : theme.textTheme.bodyMedium)
-                                ?.copyWith(fontWeight: FontWeight.w600),
+                if (section.isSummary &&
+                    (!section.showInReader || !workspace.headingsEnabled))
+                  Tooltip(
+                    message: 'Not shown in the reader',
+                    child: Icon(
+                      Icons.visibility_off_outlined,
+                      size: 16,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                PopupMenuButton<_SectionAction>(
+                  tooltip: section.isSummary
+                      ? 'Summary options'
+                      : 'Heading options',
+                  onSelected: (action) {
+                    switch (action) {
+                      case _SectionAction.addHeading:
+                        create?.call(section.id);
+                      case _SectionAction.addPassage:
+                        onBookmarkCurrent(section.id);
+                      case _SectionAction.addNote:
+                        onCreateNote(section.id);
+                      case _SectionAction.addGroup:
+                        onCreateGroup(section.id);
+                      case _SectionAction.showInReader:
+                        onUpdateSection?.call(
+                          section.copyWith(showInReader: !section.showInReader),
+                        );
+                      case _SectionAction.edit:
+                        onEditSection?.call(section);
+                      case _SectionAction.delete:
+                        onDeleteSection?.call(section);
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    if (section.isSummary)
+                      CheckedPopupMenuItem(
+                        value: _SectionAction.showInReader,
+                        checked: section.showInReader,
+                        child: const Text('Show headings in reader'),
+                      ),
+                    const PopupMenuItem(
+                      value: _SectionAction.addHeading,
+                      child: ListTile(
+                        leading: Icon(Icons.subdirectory_arrow_right),
+                        title: Text('Add section heading'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: _SectionAction.addNote,
+                      child: ListTile(
+                        leading: Icon(Icons.note_add_outlined),
+                        title: Text('Add note'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: _SectionAction.addPassage,
+                      child: ListTile(
+                        leading: Icon(Icons.bookmark_add_outlined),
+                        title: Text('Add current passage'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: _SectionAction.addGroup,
+                      child: ListTile(
+                        leading: Icon(Icons.create_new_folder_outlined),
+                        title: Text('Add subgroup'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _SectionAction.edit,
+                      child: ListTile(
+                        leading: const Icon(Icons.edit_note),
+                        title: Text(
+                          section.isSummary ? 'Edit summary' : 'Edit heading',
+                        ),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _SectionAction.delete,
+                      child: ListTile(
+                        leading: const Icon(Icons.delete_outline),
+                        title: Text(
+                          section.isSummary
+                              ? 'Delete summary'
+                              : 'Delete heading',
+                        ),
                       ),
                     ),
                   ],
                 ),
-                InkWell(
-                  onTap: open == null ? null : () => open(section),
-                  child: Text(
-                    _sectionReference(workspace, section),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                if (section.note.isNotEmpty)
-                  MarkdownNote(section.note, style: theme.textTheme.bodySmall),
+                handle,
               ],
             ),
           ),
-        ),
-        trailing: _rowDropTarget(
-          workspace,
-          item,
-          index,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (section.isSummary &&
-                  (!section.showInReader || !workspace.headingsEnabled))
-                Tooltip(
-                  message: 'Not shown in the reader',
-                  child: Icon(
-                    Icons.visibility_off_outlined,
-                    size: 16,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              PopupMenuButton<_SectionAction>(
-                tooltip: section.isSummary
-                    ? 'Summary options'
-                    : 'Heading options',
-                onSelected: (action) {
-                  switch (action) {
-                    case _SectionAction.addHeading:
-                      create?.call(section.id);
-                    case _SectionAction.addPassage:
-                      onBookmarkCurrent(section.id);
-                    case _SectionAction.addNote:
-                      onCreateNote(section.id);
-                    case _SectionAction.addGroup:
-                      onCreateGroup(section.id);
-                    case _SectionAction.showInReader:
-                      onUpdateSection?.call(
-                        section.copyWith(showInReader: !section.showInReader),
-                      );
-                    case _SectionAction.edit:
-                      onEditSection?.call(section);
-                    case _SectionAction.delete:
-                      onDeleteSection?.call(section);
-                  }
-                },
-                itemBuilder: (_) => [
-                  if (section.isSummary)
-                    CheckedPopupMenuItem(
-                      value: _SectionAction.showInReader,
-                      checked: section.showInReader,
-                      child: const Text('Show headings in reader'),
-                    ),
-                  const PopupMenuItem(
-                    value: _SectionAction.addHeading,
-                    child: ListTile(
-                      leading: Icon(Icons.subdirectory_arrow_right),
-                      title: Text('Add section heading'),
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: _SectionAction.addNote,
-                    child: ListTile(
-                      leading: Icon(Icons.note_add_outlined),
-                      title: Text('Add note'),
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: _SectionAction.addPassage,
-                    child: ListTile(
-                      leading: Icon(Icons.bookmark_add_outlined),
-                      title: Text('Add current passage'),
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: _SectionAction.addGroup,
-                    child: ListTile(
-                      leading: Icon(Icons.create_new_folder_outlined),
-                      title: Text('Add subgroup'),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: _SectionAction.edit,
-                    child: ListTile(
-                      leading: const Icon(Icons.edit_note),
-                      title: Text(
-                        section.isSummary ? 'Edit summary' : 'Edit heading',
-                      ),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: _SectionAction.delete,
-                    child: ListTile(
-                      leading: const Icon(Icons.delete_outline),
-                      title: Text(
-                        section.isSummary ? 'Delete summary' : 'Delete heading',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              handle,
-            ],
-          ),
-        ),
-        children: [
-          ..._itemsAt(
-            context,
-            workspace,
-            section.id,
-            depth: depth + 1,
-            ancestors: ancestors,
-          ),
-          if (workspace.itemsIn(section.id).isEmpty)
-            const _SectionEmpty(
-              text: 'Add section headings, notes or passages here.',
+          children: [
+            ..._itemsAt(
+              context,
+              workspace,
+              section.id,
+              depth: depth + 1,
+              ancestors: ancestors,
             ),
-        ],
+            if (workspace.itemsIn(section.id).isEmpty)
+              const _SectionEmpty(
+                text: 'Add section headings, notes or passages here.',
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1245,42 +1234,426 @@ class StudyWorkspacePanel extends StatelessWidget {
             Expanded(
               child: workspace == null
                   ? _EmptyWorkspace(onCreate: onCreate)
-                  : ListView(
-                      key: PageStorageKey('study-outline-${workspace.id}'),
-                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
-                      children: [
-                        _dropTarget(
-                          workspace,
-                          null,
-                          child: _OutlineHeader(
-                            onBookmarkCurrent: () => onBookmarkCurrent(null),
-                            onCreateGroup: () => onCreateGroup(null),
-                            onCreateNote: () => onCreateNote(null),
-                            onCreateSummary: onCreateSection == null
-                                ? null
-                                : () => onCreateSection!(null),
+                  : _OutlineDragScope(
+                      child: _OutlineExpansion(
+                        child: ListView(
+                          key: PageStorageKey('study-outline-${workspace.id}'),
+                          padding: const EdgeInsets.fromLTRB(
+                            _outlinePadding,
+                            0,
+                            _outlinePadding,
+                            24,
                           ),
+                          children: [
+                            _dropTarget(
+                              workspace,
+                              null,
+                              child: _OutlineHeader(
+                                onBookmarkCurrent: () =>
+                                    onBookmarkCurrent(null),
+                                onCreateGroup: () => onCreateGroup(null),
+                                onCreateNote: () => onCreateNote(null),
+                                onCreateSummary: onCreateSection == null
+                                    ? null
+                                    : () => onCreateSection!(null),
+                              ),
+                            ),
+                            ..._itemsAt(
+                              context,
+                              workspace,
+                              null,
+                              ancestors: const {},
+                            ),
+                            if (workspace.groups.isEmpty &&
+                                workspace.passages.isEmpty &&
+                                workspace.words.isEmpty &&
+                                workspace.notes.isEmpty &&
+                                workspace.links.isEmpty &&
+                                workspace.sections.isEmpty)
+                              const _SectionEmpty(
+                                text:
+                                    'Bookmark a passage or word, or create a group '
+                                    'to begin a study or talk outline.',
+                              ),
+                          ],
                         ),
-                        ..._itemsAt(
-                          context,
-                          workspace,
-                          null,
-                          ancestors: const {},
-                        ),
-                        if (workspace.groups.isEmpty &&
-                            workspace.passages.isEmpty &&
-                            workspace.words.isEmpty &&
-                            workspace.notes.isEmpty &&
-                            workspace.links.isEmpty &&
-                            workspace.sections.isEmpty)
-                          const _SectionEmpty(
-                            text:
-                                'Bookmark a passage or word, or create a group '
-                                'to begin a study or talk outline.',
-                          ),
-                      ],
+                      ),
                     ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shared state for one drag through the outline: how far in the pointer is,
+/// which picks the level; the drop target it was last over; and where the
+/// item will land, for the dragged chip to name.
+///
+/// The drag handles sit at the end of each row, close to the panel's edge, so
+/// the pointer soon strays past every target. The last target keeps its
+/// place while the pointer stays level with it, and a drop out there lands
+/// where it shows.
+class _OutlineDragScope extends StatefulWidget {
+  const _OutlineDragScope({required this.child});
+
+  final Widget child;
+
+  static _OutlineDragScopeState? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_OutlineDragNotifier>()?.scope;
+
+  @override
+  State<_OutlineDragScope> createState() => _OutlineDragScopeState();
+}
+
+class _OutlineDragScopeState extends State<_OutlineDragScope> {
+  final destination = ValueNotifier<String?>(null);
+  _OutlineDropTargetState? _current;
+
+  void _enter(_OutlineDropTargetState target) {
+    if (_current != target) _current?._reset();
+    _current = target;
+  }
+
+  void _forget(_OutlineDropTargetState target) {
+    if (_current == target) _current = null;
+  }
+
+  /// Follows the pointer beyond the last target's sides.
+  void dragged(StudyItem item, Offset pointer) {
+    final current = _current;
+    if (current == null || !current.mounted) return;
+    if (current._levelWith(pointer)) {
+      current._update(item, pointer);
+    } else {
+      current._reset();
+      _current = null;
+      destination.value = null;
+    }
+  }
+
+  /// A drop beside the last target, rather than on one.
+  void dropped(StudyItem item) {
+    final current = _current;
+    _current = null;
+    if (current != null && current.mounted) current._drop(item);
+  }
+
+  /// How far [pointer] is in from the outline's leading edge, where its
+  /// rows start.
+  double? indentAt(Offset pointer) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    final local = box.globalToLocal(pointer).dx;
+    return (Directionality.of(context) == TextDirection.rtl
+            ? box.size.width - local
+            : local) -
+        _outlinePadding;
+  }
+
+  void ended() {
+    _current?._reset();
+    _current = null;
+    destination.value = null;
+  }
+
+  @override
+  void dispose() {
+    destination.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (_) => destination.value = null,
+    child: _OutlineDragNotifier(scope: this, child: widget.child),
+  );
+}
+
+class _OutlineDragNotifier extends InheritedWidget {
+  const _OutlineDragNotifier({required this.scope, required super.child});
+
+  final _OutlineDragScopeState scope;
+
+  @override
+  bool updateShouldNotify(_OutlineDragNotifier old) => scope != old.scope;
+}
+
+/// A place in the outline: a position among a container's items, and how far
+/// it is indented.
+typedef _OutlinePlace = ({String? groupId, int index, int depth});
+
+/// The outline's inset from the panel's sides.
+const _outlinePadding = 8.0;
+
+/// The width of each level's band in the indent area at the start of the
+/// outline. While dragging, the band under the pointer picks the level the
+/// item lands at; beyond the deepest band, it stays at the natural level of
+/// the place it is over. The bands are wider than the rows' own indents so
+/// they are easy to hit with a finger.
+const _levelBand = 28.0;
+
+String? _containerIdOf(StudyItem item) => switch (item.value) {
+  StudyGroup(:final id) || StudySection(:final id) => id,
+  _ => null,
+};
+
+/// Where [dragged] lands when dropped at [base] with the pointer [indent]
+/// pixels in from the outline's leading edge. Shallower levels place it after
+/// each enclosing container in turn; deeper ones at the end of the container
+/// just above, then of that container's last, and so on. Levels that can't
+/// take the item are passed over on the way back to [base]; null means
+/// nowhere fits.
+_OutlinePlace? _resolvePlace(
+  StudyWorkspace workspace,
+  StudyItem dragged,
+  _OutlinePlace base,
+  double? indent,
+) {
+  final levels = <_OutlinePlace>[base];
+  final visited = <String>{};
+  var id = base.groupId;
+  var depth = base.depth;
+  while (id != null && visited.add(id)) {
+    final parent = workspace.containerParent(id);
+    final at = workspace
+        .itemsIn(parent)
+        .indexWhere((item) => _containerIdOf(item) == id);
+    if (at < 0) break;
+    levels.insert(0, (groupId: parent, index: at + 1, depth: --depth));
+    id = parent;
+  }
+  final baseLevel = levels.length - 1;
+  var container = base.groupId;
+  var before = base.index;
+  depth = base.depth;
+  visited.clear();
+  while (true) {
+    final items = workspace.itemsIn(container);
+    var above = before - 1;
+    // The gap just below the dragged item is the same place as the one above.
+    if (above >= 0 && above < items.length && items[above].key == dragged.key) {
+      above--;
+    }
+    if (above < 0 || above >= items.length) break;
+    final inner = _containerIdOf(items[above]);
+    if (inner == null || !visited.add(inner)) break;
+    container = inner;
+    before = workspace.itemsIn(inner).length;
+    levels.add((groupId: inner, index: before, depth: ++depth));
+  }
+  var target = baseLevel;
+  final band = indent == null ? null : (indent / _levelBand).floor();
+  if (band != null && band <= levels.last.depth) {
+    target = (band - levels.first.depth).clamp(0, levels.length - 1);
+  }
+  while (!workspace.canMoveItem(dragged, levels[target].groupId)) {
+    if (target == baseLevel) return null;
+    target += target > baseLevel ? -1 : 1;
+  }
+  return levels[target];
+}
+
+/// Accepts drops on the outline. A gap takes the item at its place; a row
+/// takes other items before or after it, and its own item when it changes
+/// level. Either way the pointer's band in the indent area picks the level,
+/// and the target draws an insertion line at the level it will land on.
+class _OutlineDropTarget extends StatefulWidget {
+  const _OutlineDropTarget({
+    super.key,
+    required this.workspace,
+    required this.base,
+    required this.onMoveItem,
+    this.row,
+    this.child,
+  });
+
+  final StudyWorkspace workspace;
+  final _OutlinePlace base;
+  final StudyItem? row;
+  final Widget? child;
+  final void Function(StudyItem item, String? groupId, int? index) onMoveItem;
+
+  @override
+  State<_OutlineDropTarget> createState() => _OutlineDropTargetState();
+}
+
+class _OutlineDropTargetState extends State<_OutlineDropTarget> {
+  _OutlinePlace? _place;
+
+  bool _isOwnRow(StudyItem dragged) => widget.row?.key == dragged.key;
+
+  /// The place at the level the pointer started on. Dropping on another row
+  /// while moving down places the item after that row; moving up places it
+  /// before.
+  _OutlinePlace _basePlace(StudyItem dragged) {
+    final base = widget.base;
+    final row = widget.row;
+    if (row == null || _isOwnRow(dragged)) return base;
+    final siblings = widget.workspace.itemsIn(row.groupId);
+    final source = siblings.indexWhere((item) => item.key == dragged.key);
+    return source >= 0 && source < base.index
+        ? (groupId: base.groupId, index: base.index + 1, depth: base.depth)
+        : base;
+  }
+
+  _OutlinePlace? _placeFor(StudyItem dragged, Offset pointer) {
+    final place = _resolvePlace(
+      widget.workspace,
+      dragged,
+      _basePlace(dragged),
+      _OutlineDragScope.of(context)?.indentAt(pointer),
+    );
+    // The item's own row only moves it once it changes level.
+    if (_isOwnRow(dragged) && place?.depth == widget.base.depth) return null;
+    return place;
+  }
+
+  /// Whether [pointer] is beside this target, above its bottom and below its
+  /// top, however far to either side.
+  bool _levelWith(Offset pointer) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return false;
+    final top = box.localToGlobal(Offset.zero).dy;
+    return pointer.dy >= top && pointer.dy < top + box.size.height;
+  }
+
+  void _update(StudyItem dragged, Offset pointer) {
+    final place = _placeFor(dragged, pointer);
+    if (place != _place) setState(() => _place = place);
+    _OutlineDragScope.of(context)?.destination.value = place == null
+        ? null
+        : _placeLabel(place);
+  }
+
+  void _reset() {
+    if (mounted && _place != null) setState(() => _place = null);
+  }
+
+  void _drop(StudyItem dragged) {
+    final place = _place;
+    _reset();
+    _OutlineDragScope.of(context)?.destination.value = null;
+    if (place != null) widget.onMoveItem(dragged, place.groupId, place.index);
+  }
+
+  String _placeLabel(_OutlinePlace place) {
+    final id = place.groupId;
+    if (id == null) return 'Top level';
+    return 'In ${widget.workspace.containerName(id) ?? ''}';
+  }
+
+  _OutlineDragScopeState? _scope;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scope = _OutlineDragScope.of(context);
+  }
+
+  @override
+  void deactivate() {
+    _scope?._forget(this);
+    super.deactivate();
+  }
+
+  @override
+  Widget build(BuildContext context) => DragTarget<StudyItem>(
+    onWillAcceptWithDetails: (details) {
+      // Whether a drop fits depends on the pointer's level, which keeps
+      // changing, so accept and decide on each move.
+      _OutlineDragScope.of(context)?._enter(this);
+      _update(details.data, details.offset);
+      return true;
+    },
+    onMove: (details) => _update(details.data, details.offset),
+    onAcceptWithDetails: (details) {
+      _OutlineDragScope.of(context)?._forget(this);
+      _drop(details.data);
+    },
+    builder: (context, candidates, rejected) {
+      final place = _place;
+      final child = widget.child;
+      if (child == null) {
+        return place == null
+            ? const SizedBox(height: 2, width: double.infinity)
+            : _InsertionLine(depth: place.depth, label: _placeLabel(place));
+      }
+      // Another item marks the edge of the row it will go beside, and the
+      // dragged chip names the level; the row's own item only has the chip.
+      if (place == null ||
+          place.groupId != widget.base.groupId ||
+          (widget.row != null &&
+              candidates.isNotEmpty &&
+              _isOwnRow(candidates.first!))) {
+        return child;
+      }
+      final after = place.index > widget.base.index;
+      final line = BorderSide(
+        width: 2,
+        color: Theme.of(context).colorScheme.primary,
+      );
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            top: after ? BorderSide.none : line,
+            bottom: after ? line : BorderSide.none,
+          ),
+        ),
+        child: child,
+      );
+    },
+  );
+}
+
+/// Where a dropped item will go: a line starting at its level's band, under
+/// the pointer, captioned with the group or heading it will be in.
+class _InsertionLine extends StatelessWidget {
+  const _InsertionLine({required this.depth, required this.label});
+
+  final int depth;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.primary;
+    return Padding(
+      padding: EdgeInsetsDirectional.only(start: depth * _levelBand, end: 4),
+      child: SizedBox(
+        height: 32,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 14),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: color, width: 2),
+                  ),
+                ),
+                Expanded(child: Container(height: 3, color: color)),
+              ],
+            ),
+            const SizedBox(height: 4),
           ],
         ),
       ),
@@ -1328,6 +1701,7 @@ class _OutlineDragHandleState extends State<_OutlineDragHandle>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final destination = _OutlineDragScope.of(context)?.destination;
     return Draggable<StudyItem>(
       key: ValueKey('drag-${widget.item.key}'),
       data: widget.item,
@@ -1345,8 +1719,14 @@ class _OutlineDragHandleState extends State<_OutlineDragHandle>
       onDragUpdate: (details) {
         _dragPosition = details.globalPosition;
         _scrollAtPointer();
+        _OutlineDragScope.of(
+          context,
+        )?.dragged(widget.item, details.globalPosition);
       },
-      onDragEnd: (_) {
+      onDragEnd: (details) {
+        final scope = _OutlineDragScope.of(context);
+        if (!details.wasAccepted) scope?.dropped(widget.item);
+        scope?.ended();
         _dragPosition = null;
         _autoScroller?.stopAutoScroll();
         _dragging = false;
@@ -1359,10 +1739,37 @@ class _OutlineDragHandleState extends State<_OutlineDragHandle>
           width: 220,
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: Text(
-              widget.label,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (destination != null)
+                  ValueListenableBuilder(
+                    valueListenable: destination,
+                    builder: (context, place, _) => place == null
+                        ? const SizedBox.shrink()
+                        : Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '→ $place',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                          ),
+                  ),
+              ],
             ),
           ),
         ),
@@ -1372,7 +1779,7 @@ class _OutlineDragHandleState extends State<_OutlineDragHandle>
         child: Icon(Icons.drag_handle, size: 20, color: Colors.grey),
       ),
       child: Tooltip(
-        message: 'Drag to reorder or move into a group',
+        message: 'Drag to move; drag toward the left to choose its level',
         child: MouseRegion(
           cursor: SystemMouseCursors.grab,
           child: const Padding(
@@ -1383,6 +1790,73 @@ class _OutlineDragHandleState extends State<_OutlineDragHandle>
       ),
     );
   }
+}
+
+/// Expands or collapses every group and heading in the outline at once.
+/// Each tile otherwise keeps its own state, so setting them all starts a new
+/// generation of tiles, which open in the chosen state.
+class _OutlineExpansion extends StatefulWidget {
+  const _OutlineExpansion({required this.child});
+
+  final Widget child;
+
+  static _OutlineExpansionState? of(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<_OutlineExpansionScope>()
+      ?.state;
+
+  /// An expandable tile for the container [id], built with the key and
+  /// starting state for the current generation.
+  static Widget tile(
+    Object id,
+    Widget Function(Key key, bool expanded) build,
+  ) => Builder(
+    builder: (context) {
+      final scope = context
+          .dependOnInheritedWidgetOfExactType<_OutlineExpansionScope>();
+      return build(
+        PageStorageKey((id, scope?.generation ?? 0)),
+        scope?.expanded ?? true,
+      );
+    },
+  );
+
+  @override
+  State<_OutlineExpansion> createState() => _OutlineExpansionState();
+}
+
+class _OutlineExpansionState extends State<_OutlineExpansion> {
+  var _generation = 0;
+  var _expanded = true;
+
+  void setAll({required bool expanded}) => setState(() {
+    _generation++;
+    _expanded = expanded;
+  });
+
+  @override
+  Widget build(BuildContext context) => _OutlineExpansionScope(
+    state: this,
+    generation: _generation,
+    expanded: _expanded,
+    child: widget.child,
+  );
+}
+
+class _OutlineExpansionScope extends InheritedWidget {
+  const _OutlineExpansionScope({
+    required this.state,
+    required this.generation,
+    required this.expanded,
+    required super.child,
+  });
+
+  final _OutlineExpansionState state;
+  final int generation;
+  final bool expanded;
+
+  @override
+  bool updateShouldNotify(_OutlineExpansionScope old) =>
+      generation != old.generation;
 }
 
 class _OutlineHeader extends StatelessWidget {
@@ -1410,6 +1884,18 @@ class _OutlineHeader extends StatelessWidget {
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
+        ),
+        IconButton(
+          tooltip: 'Collapse all',
+          icon: const Icon(Icons.unfold_less),
+          onPressed: () =>
+              _OutlineExpansion.of(context)?.setAll(expanded: false),
+        ),
+        IconButton(
+          tooltip: 'Expand all',
+          icon: const Icon(Icons.unfold_more),
+          onPressed: () =>
+              _OutlineExpansion.of(context)?.setAll(expanded: true),
         ),
         PopupMenuButton<_OutlineAction>(
           tooltip: 'Add study item',

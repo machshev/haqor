@@ -797,4 +797,237 @@ void sectionTileTests() {
     expect(headingsEnabled, isFalse);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('the indent band under the pointer picks the level', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1366, 744);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var workspace = const StudyWorkspace(id: 'indent', name: 'Indent study')
+        .putGroup(const StudyGroup(id: 'a', name: 'First group'))
+        .putGroup(const StudyGroup(id: 'inner', name: 'Inner', parentId: 'a'))
+        .putNote(const StudyNote(id: 'loose', text: 'Loose note'));
+    workspace = workspace.moveItem(
+      workspace.itemsIn(null).firstWhere((item) => item.key == 'note-loose'),
+      null,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 380,
+              child: StatefulBuilder(
+                builder: (context, setState) => StudyWorkspacePanel(
+                  workspaces: [workspace],
+                  activeWorkspace: workspace,
+                  currentPassage: const StudyPassage(
+                    bookIndex: 0,
+                    chapter: 1,
+                    verse: 1,
+                  ),
+                  useEnglishBookNames: true,
+                  onCreate: () {},
+                  onSelect: (_) {},
+                  onRename: () {},
+                  onDelete: () {},
+                  onToggleHighlights: (_) {},
+                  onCreateGroup: (_) {},
+                  onEditGroup: (_) {},
+                  onDeleteGroup: (_) {},
+                  onBookmarkCurrent: (_) {},
+                  onOpenPassage: (_) {},
+                  onEditPassage: (_) {},
+                  onUpdatePassage: (_) {},
+                  onRemovePassage: (_) {},
+                  onEditWord: (_) {},
+                  onUpdateWord: (_) {},
+                  onSwitchWordKind: (_) {},
+                  onRemoveWord: (_) {},
+                  onOpenWord: (_) {},
+                  onCreateNote: (_) {},
+                  onEditNote: (_) {},
+                  onUpdateNote: (_) {},
+                  onRemoveNote: (_) {},
+                  onMoveItem: (item, groupId, index) => setState(() {
+                    workspace = workspace.moveItem(item, groupId, index: index);
+                  }),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(workspace.itemsIn(null).map((item) => item.key), [
+      'group-a',
+      'note-loose',
+    ]);
+
+    // The middle of level [depth]'s band in the indent area.
+    double band(int depth) =>
+        tester.getRect(find.byType(ListView)).left + 8 + depth * 28 + 14;
+
+    // Picks [item] up by its handle, moves left to [depth]'s band on its own
+    // row, and drops it there.
+    Future<void> moveTo(String item, int depth, {String? expectLabel}) async {
+      final handle = tester.getCenter(find.byKey(ValueKey('drag-$item')));
+      final gesture = await tester.startGesture(
+        handle,
+        kind: PointerDeviceKind.mouse,
+      );
+      await gesture.moveBy(const Offset(-20, 0));
+      await tester.pump();
+      await gesture.moveTo(Offset(band(depth), handle.dy));
+      await tester.pump();
+      if (expectLabel != null) {
+        expect(find.text('→ $expectLabel'), findsOneWidget);
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+
+    // Deeper bands, though left of the handle, nest the note in the group
+    // above, then in that group's last group.
+    await moveTo('note-loose', 1, expectLabel: 'In First group');
+    expect(workspace.itemsIn('a').map((item) => item.key), [
+      'group-inner',
+      'note-loose',
+    ]);
+    await moveTo('note-loose', 2, expectLabel: 'In Inner');
+    expect(workspace.itemsIn('inner').map((item) => item.key), ['note-loose']);
+
+    // Shallower bands place it just after each enclosing group.
+    await moveTo('note-loose', 1, expectLabel: 'In First group');
+    expect(workspace.itemsIn('a').map((item) => item.key), [
+      'group-inner',
+      'note-loose',
+    ]);
+    await moveTo('note-loose', 0, expectLabel: 'Top level');
+    expect(workspace.itemsIn(null).map((item) => item.key), [
+      'group-a',
+      'note-loose',
+    ]);
+
+    // Dragging away from the indent area keeps the level, and on its own
+    // row changes nothing, however far the pointer wanders.
+    final loose = tester.getCenter(
+      find.byKey(const ValueKey('drag-note-loose')),
+    );
+    var gesture = await tester.startGesture(
+      loose,
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(-20, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(40, 0));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(workspace.itemsIn(null).map((item) => item.key), [
+      'group-a',
+      'note-loose',
+    ]);
+
+    // Over a gap the band picks the level too: after the group's last item,
+    // the top band lands at the top level.
+    final inner = tester.getCenter(
+      find.byKey(const ValueKey('drag-group-inner')),
+    );
+    gesture = await tester.startGesture(inner, kind: PointerDeviceKind.mouse);
+    await gesture.moveBy(const Offset(0, 10));
+    await tester.pump();
+    final gap = tester.getCenter(find.byKey(const ValueKey('drop-a-1')));
+    await gesture.moveTo(Offset(band(0), gap.dy));
+    await tester.pump();
+    expect(find.text('Top level'), findsOneWidget);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(workspace.itemsIn(null).map((item) => item.key), [
+      'group-a',
+      'group-inner',
+      'note-loose',
+    ]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('collapse all and expand all set every group at once', (
+    tester,
+  ) async {
+    final workspace = const StudyWorkspace(id: 'fold', name: 'Fold study')
+        .putGroup(const StudyGroup(id: 'a', name: 'First group'))
+        .putGroup(const StudyGroup(id: 'inner', name: 'Inner', parentId: 'a'))
+        .putNote(
+          const StudyNote(id: 'deep', text: 'Deep note', groupId: 'inner'),
+        );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 380,
+            height: 760,
+            child: StudyWorkspacePanel(
+              workspaces: [workspace],
+              activeWorkspace: workspace,
+              currentPassage: const StudyPassage(
+                bookIndex: 0,
+                chapter: 1,
+                verse: 1,
+              ),
+              useEnglishBookNames: true,
+              onCreate: () {},
+              onSelect: (_) {},
+              onRename: () {},
+              onDelete: () {},
+              onToggleHighlights: (_) {},
+              onCreateGroup: (_) {},
+              onEditGroup: (_) {},
+              onDeleteGroup: (_) {},
+              onBookmarkCurrent: (_) {},
+              onOpenPassage: (_) {},
+              onEditPassage: (_) {},
+              onUpdatePassage: (_) {},
+              onRemovePassage: (_) {},
+              onEditWord: (_) {},
+              onUpdateWord: (_) {},
+              onSwitchWordKind: (_) {},
+              onRemoveWord: (_) {},
+              onOpenWord: (_) {},
+              onCreateNote: (_) {},
+              onEditNote: (_) {},
+              onUpdateNote: (_) {},
+              onRemoveNote: (_) {},
+              onMoveItem: (_, _, _) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Inner'), findsOneWidget);
+    expect(find.text('Deep note'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Collapse all'));
+    await tester.pumpAndSettle();
+    expect(find.text('First group'), findsOneWidget);
+    expect(find.text('Inner'), findsNothing);
+    expect(find.text('Deep note'), findsNothing);
+
+    // Opening one group by hand leaves the ones inside it collapsed.
+    await tester.tap(find.text('First group'));
+    await tester.pumpAndSettle();
+    expect(find.text('Inner'), findsOneWidget);
+    expect(find.text('Deep note'), findsNothing);
+
+    await tester.tap(find.byTooltip('Expand all'));
+    await tester.pumpAndSettle();
+    expect(find.text('Inner'), findsOneWidget);
+    expect(find.text('Deep note'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
