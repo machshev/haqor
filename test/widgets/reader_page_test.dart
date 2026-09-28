@@ -386,6 +386,8 @@ void main() {
     // Clear any chapter-load notice lying over the heading.
     ScaffoldMessenger.of(tester.element(heading)).removeCurrentSnackBar();
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Firmament'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Firmament'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Edit heading'));

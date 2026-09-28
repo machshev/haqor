@@ -4368,6 +4368,7 @@ class _ReaderSessionState extends State<_ReaderSession>
                     key: ValueKey('study-heading-${heading.section.id}'),
                     heading: heading,
                     useEnglishBookNames: _englishBookNames,
+                    textSize: _fontSize,
                     onAction: (action) => switch (action) {
                       _StudyHeadingAction.edit => _editStudySection(
                         heading.section,
@@ -4668,11 +4669,20 @@ class _StudyHeading extends StatelessWidget {
     super.key,
     required this.heading,
     required this.useEnglishBookNames,
+    required this.textSize,
     required this.onAction,
   });
 
+  /// Title sizes by depth, as multiples of the verse text's size: a step
+  /// smaller for each level down, never below the text itself, which the
+  /// deepest levels share.
+  static const _headingScales = [1.4, 1.3, 1.2, 1.1, 1.0];
+
   final StudyReaderHeading heading;
   final bool useEnglishBookNames;
+
+  /// The reader's verse text size.
+  final double textSize;
   final ValueChanged<_StudyHeadingAction> onAction;
 
   @override
@@ -4692,16 +4702,16 @@ class _StudyHeading extends StatelessWidget {
         children: [
           Text(
             section.title,
-            style:
-                (isSummary
-                        ? theme.textTheme.titleMedium
-                        : heading.depth == 1
-                        ? theme.textTheme.titleSmall
-                        : theme.textTheme.labelLarge)
-                    ?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.primary,
-                    ),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontSize:
+                  textSize *
+                  _headingScales[heading.depth.clamp(
+                    0,
+                    _headingScales.length - 1,
+                  )],
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.primary,
+            ),
           ),
           if (isSummary)
             Text(
