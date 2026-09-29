@@ -252,12 +252,15 @@ class _ChartPainter extends CustomPainter {
         Offset(plot.right, y(v)),
         gridPaint,
       );
-      _text(
-        canvas,
-        v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1),
-        Offset(plot.left - 6, y(v)),
-        align: TextAlign.right,
-      );
+      // Counts are whole numbers: a fractional gridline goes unlabelled.
+      if (v == v.roundToDouble()) {
+        _text(
+          canvas,
+          v.toInt().toString(),
+          Offset(plot.left - 6, y(v)),
+          align: TextAlign.right,
+        );
+      }
     }
 
     final n = points.length;

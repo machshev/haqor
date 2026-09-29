@@ -1029,8 +1029,8 @@ pub struct BuildInfo {
 
 // --- memorisation ------------------------------------------------------------
 //
-// Learning passages by heart (see `haqor_core::memorise`). Books use the
-// core's 1-based numbering, like `GetChapter`.
+// Learning passages by heart, in order (see `haqor_core::memorise`). Books
+// use the core's 1-based numbering, like `GetChapter`.
 
 /// Ask for every passage being learnt; the reply is [`MemoryPassages`].
 #[derive(Debug, Deserialize, DartSignal)]
@@ -1056,13 +1056,14 @@ pub struct DeleteMemoryPassage {
 }
 
 /// One verse of a passage for its heatmap. `strength` runs 0 (not started),
-/// 1–2 (climbing the cue ladder), 3 (learnt), 4 (established), 5 (mature).
+/// 1–2 (in its learning steps), 3 (learnt), 4 (established), 5 (mature).
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct MemoryVerseState {
     pub chapter: u8,
     pub verse: u8,
     pub strength: u8,
     pub due: bool,
+    pub section_start: bool,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]
@@ -1091,10 +1092,56 @@ pub struct MemoryPassages {
     pub saved_id: String,
 }
 
-/// Ask for the next verse to practise in `passage_id` (empty = every
-/// passage). `extra_new` starts a new verse even past today's ration.
-/// `utc_offset` (seconds east of UTC) decides which local day it is. The
-/// reply is [`MemoryItem`].
+/// Ask for how a passage is shaped into lines and sections; the reply is
+/// [`MemoryLayout`].
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetMemoryLayout {
+    pub passage_id: String,
+}
+
+/// Set where a verse's lines start (word indexes, never 0) — or restore the
+/// default split with `default_lines` — and whether a section starts at it
+/// (`section_start`: -1 default, 0 no, 1 yes). The reply is the passage's
+/// [`MemoryLayout`].
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SetMemoryLayout {
+    pub passage_id: String,
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub line_starts: Vec<u8>,
+    pub default_lines: bool,
+    pub section_start: i8,
+}
+
+/// Restore a passage's default lines and sections; the reply is its
+/// [`MemoryLayout`].
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct ResetMemoryLayout {
+    pub passage_id: String,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct MemoryLayoutVerse {
+    pub chapter: u8,
+    pub verse: u8,
+    pub words: Vec<String>,
+    pub line_starts: Vec<u8>,
+    pub section_start: bool,
+    pub custom_lines: bool,
+    pub custom_section: bool,
+}
+
+#[derive(Debug, Serialize, RustSignal)]
+pub struct MemoryLayout {
+    pub passage_id: String,
+    pub verses: Vec<MemoryLayoutVerse>,
+}
+
+/// Ask for the next card in `passage_id` (empty = every passage).
+/// `extra_new` starts a new verse even past today's ration. `utc_offset`
+/// (seconds east of UTC) decides which local day it is. The reply is
+/// [`MemoryItem`].
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetNextMemoryCard {
     pub passage_id: String,
@@ -1102,45 +1149,53 @@ pub struct GetNextMemoryCard {
     pub utc_offset: i64,
 }
 
-/// Ask for one particular verse's card — at recall when `recall`, as a
-/// run-through asks, else at its current stage. The reply is [`MemoryItem`].
+/// Ask to recite every learnt verse of a passage now; the reply is
+/// [`MemoryItem`] (`"done"` when nothing is learnt yet).
 #[derive(Debug, Deserialize, DartSignal)]
-pub struct GetMemoryCard {
+pub struct GetMemoryRun {
     pub passage_id: String,
-    pub book: u8,
-    pub chapter: u8,
-    pub verse: u8,
-    pub recall: bool,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct MemoryWord {
     pub text: String,
-    pub hidden: bool,
-    /// What is still shown of a hidden word (its first letter), else empty.
-    pub hint: String,
     pub gloss: String,
     pub translit: String,
 }
 
-/// One verse to practise. `stage` is its rung on the cue ladder: 0 read,
-/// 1 light cloze, 2 heavy cloze, 3 first letters, 4 recall.
+/// One line of a verse on a card.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct MemorySegment {
+    pub chapter: u8,
+    pub verse: u8,
+    pub line: u8,
+    pub line_count: u8,
+    pub words: Vec<MemoryWord>,
+}
+
+/// One card. `purpose` is `"preview"` or `"read"` (text shown, to read
+/// aloud), or `"recall"`, `"chain"`, `"review"` or `"run"` (text hidden, to
+/// recite). A learning card (preview/read/recall/chain) is step `step` of
+/// `step_count` for the target verse.
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct MemoryCard {
     pub passage_id: String,
     pub book: u8,
-    pub chapter: u8,
-    pub verse: u8,
-    pub stage: u8,
-    pub words: Vec<MemoryWord>,
-    /// The end of the previous verse, to chain from.
+    pub purpose: String,
+    pub title: String,
+    pub prompt: String,
+    pub segments: Vec<MemorySegment>,
+    /// The line before the first segment, to carry on from.
     pub cue: String,
-    pub translation: String,
+    pub target_chapter: u8,
+    pub target_verse: u8,
+    pub step: u32,
+    pub step_count: u32,
     pub is_new: bool,
-    pub is_review: bool,
-    pub position: i64,
-    pub total: i64,
-    pub due_remaining: i64,
+    pub position: u32,
+    pub total: u32,
+    pub section: u32,
+    pub section_count: u32,
 }
 
 /// `kind` is `"card"` (with `card`), `"done"` (nothing due; `next_due_epoch`
@@ -1154,32 +1209,38 @@ pub struct MemoryItem {
     pub can_learn_more: bool,
 }
 
-/// Grade a verse (0 Again, 1 Hard, 2 Good, 3 Easy). `run_through` marks an
-/// answer from reciting a passage in order, where a verse need not be due.
+/// How a card went. `grade` (0 Again, 1 Hard, 2 Good, 3 Easy) is the
+/// learner's grade for the card; `chapters`/`verses`/`grades` grade each
+/// verse recited, in parallel. Echo the card's purpose, target and step.
 /// The reply is [`MemoryReviewResult`]; the app then asks for the next card.
 #[derive(Debug, Deserialize, DartSignal)]
-pub struct SubmitMemoryReview {
+pub struct SubmitMemoryRecital {
     pub passage_id: String,
     pub book: u8,
-    pub chapter: u8,
-    pub verse: u8,
+    pub purpose: String,
+    pub target_chapter: u8,
+    pub target_verse: u8,
+    pub step: u32,
     pub grade: u8,
-    pub run_through: bool,
+    pub chapters: Vec<u8>,
+    pub verses: Vec<u8>,
+    pub grades: Vec<u8>,
     pub utc_offset: i64,
 }
 
 /// What an answer earned, for the app's celebration.
 #[derive(Debug, Serialize, RustSignal)]
 pub struct MemoryReviewResult {
-    pub book: u8,
-    pub chapter: u8,
-    pub verse: u8,
+    pub purpose: String,
+    pub target_chapter: u8,
+    pub target_verse: u8,
     pub xp: i64,
-    pub stage_before: u8,
-    pub stage_after: u8,
-    pub interval_days: i64,
     pub first_graduation: bool,
+    pub section_completed: bool,
     pub completed_passages: Vec<String>,
+    /// Verses forgotten in a recital, now back in learning.
+    pub relearn: i64,
+    pub interval_days: i64,
     pub total_xp: i64,
     pub level_before: i64,
     pub level_after: i64,

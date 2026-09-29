@@ -11,6 +11,7 @@ import '../widgets/book_selector.dart';
 import '../widgets/chapter_selector.dart';
 import 'memorise_charts.dart';
 import 'memorise_drill.dart';
+import 'memorise_shape.dart';
 
 /// Seconds east of UTC, so the core counts days (goal, streak) locally.
 int memoryUtcOffset() => DateTime.now().timeZoneOffset.inSeconds;
@@ -35,32 +36,26 @@ Future<bool> _useEnglishBookNames() async {
   return prefs.getBool('english_book_names') ?? false;
 }
 
-/// Add a whole chapter as a passage (from the reader) and open the
-/// memorisation dashboard.
+/// Add a whole chapter as a passage (from the reader), open the memorisation
+/// dashboard, and go straight on to shaping it.
 Future<void> memoriseChapter(
   BuildContext context,
   int bookIndex,
   int chapter,
-) async {
-  SaveMemoryPassage(
-    book: bookIndex + 1,
-    startChapter: chapter,
-    startVerse: 1,
-    endChapter: chapter,
-    endVerse: 255,
-    title: '',
-  ).sendSignalToRust();
-  scheduleProgressSync();
-  await Navigator.of(
-    context,
-  ).push(MaterialPageRoute(builder: (_) => const MemorisePage()));
-}
+) => Navigator.of(context).push(
+  MaterialPageRoute(
+    builder: (_) => MemorisePage(addChapter: (bookIndex + 1, chapter)),
+  ),
+);
 
 /// The memorisation dashboard: level, daily goal and streak; the passages
 /// being learnt with a heatmap of every verse; activity graphs; and
 /// achievements.
 class MemorisePage extends StatefulWidget {
-  const MemorisePage({super.key});
+  const MemorisePage({super.key, this.addChapter});
+
+  /// A (book, chapter) to add as a passage on opening, then shape.
+  final (int, int)? addChapter;
 
   @override
   State<MemorisePage> createState() => _MemorisePageState();
@@ -74,12 +69,21 @@ class _MemorisePageState extends State<MemorisePage> {
   MemoryStats? _stats;
   bool _english = false;
 
+  /// A passage is being added: open its shaping page when it arrives.
+  bool _shapeNext = false;
+
   @override
   void initState() {
     super.initState();
     _passagesSub = MemoryPassages.rustSignalStream.listen((pack) {
       if (!mounted) return;
       setState(() => _passages = pack.message.passages);
+      final saved = pack.message.savedId;
+      if (_shapeNext && saved.isNotEmpty) {
+        _shapeNext = false;
+        final passage = pack.message.passages.where((p) => p.id == saved);
+        if (passage.isNotEmpty) _shape(passage.first, offerStart: true);
+      }
       // Any change to the passages moves the counts too.
       GetMemoryStats(utcOffset: memoryUtcOffset()).sendSignalToRust();
     });
@@ -94,6 +98,19 @@ class _MemorisePageState extends State<MemorisePage> {
       if (mounted) setState(() => _english = english);
     });
     _refresh();
+    final add = widget.addChapter;
+    if (add != null) {
+      _shapeNext = true;
+      SaveMemoryPassage(
+        book: add.$1,
+        startChapter: add.$2,
+        startVerse: 1,
+        endChapter: add.$2,
+        endVerse: 255,
+        title: '',
+      ).sendSignalToRust();
+      scheduleProgressSync();
+    }
   }
 
   void _refresh() {
@@ -124,18 +141,29 @@ class _MemorisePageState extends State<MemorisePage> {
   }
 
   Future<void> _runThrough(MemoryPassageEntry passage) async {
-    final verses = [
-      for (final v in passage.verses)
-        if (v.strength >= 3) (v.chapter, v.verse),
-    ];
-    if (verses.isEmpty) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MemoryDrillPage(
           passageId: passage.id,
           title: passageTitle(passage, useEnglish: _english),
+          run: true,
+        ),
+      ),
+    );
+    _refresh();
+  }
+
+  Future<void> _shape(
+    MemoryPassageEntry passage, {
+    bool offerStart = false,
+  }) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MemoryShapePage(
+          passageId: passage.id,
           book: passage.book,
-          runThrough: verses,
+          title: passageTitle(passage, useEnglish: _english),
+          offerStart: offerStart,
         ),
       ),
     );
@@ -143,13 +171,19 @@ class _MemorisePageState extends State<MemorisePage> {
   }
 
   Future<void> _addPassage() async {
+    // Set before the sheet saves, so its reply cannot beat the flag.
+    _shapeNext = true;
     final added = await showModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (_) => _AddPassageSheet(useEnglish: _english),
     );
-    if (added == true) scheduleProgressSync();
+    if (added == true) {
+      scheduleProgressSync();
+    } else {
+      _shapeNext = false;
+    }
   }
 
   Future<void> _rename(MemoryPassageEntry passage) async {
@@ -292,6 +326,7 @@ class _MemorisePageState extends State<MemorisePage> {
                       useEnglish: _english,
                       onPractise: () => _practise(passage: p),
                       onRunThrough: p.learnt > 0 ? () => _runThrough(p) : null,
+                      onShape: () => _shape(p),
                       onRename: () => _rename(p),
                       onDelete: () => _delete(p),
                     ),
@@ -518,7 +553,7 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-enum _PassageAction { runThrough, rename, delete }
+enum _PassageAction { shape, runThrough, rename, delete }
 
 class _PassageCard extends StatelessWidget {
   const _PassageCard({
@@ -526,6 +561,7 @@ class _PassageCard extends StatelessWidget {
     required this.useEnglish,
     required this.onPractise,
     required this.onRunThrough,
+    required this.onShape,
     required this.onRename,
     required this.onDelete,
   });
@@ -534,6 +570,7 @@ class _PassageCard extends StatelessWidget {
   final bool useEnglish;
   final VoidCallback onPractise;
   final VoidCallback? onRunThrough;
+  final VoidCallback onShape;
   final VoidCallback onRename;
   final VoidCallback onDelete;
 
@@ -590,17 +627,25 @@ class _PassageCard extends StatelessWidget {
                   PopupMenuButton<_PassageAction>(
                     tooltip: 'Passage options',
                     onSelected: (action) => switch (action) {
+                      _PassageAction.shape => onShape(),
                       _PassageAction.runThrough => onRunThrough?.call(),
                       _PassageAction.rename => onRename(),
                       _PassageAction.delete => onDelete(),
                     },
                     itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: _PassageAction.shape,
+                        child: ListTile(
+                          leading: Icon(Icons.wrap_text),
+                          title: Text('Shape lines & sections'),
+                        ),
+                      ),
                       PopupMenuItem(
                         value: _PassageAction.runThrough,
                         enabled: onRunThrough != null,
                         child: const ListTile(
                           leading: Icon(Icons.playlist_play),
-                          title: Text('Recite what I know'),
+                          title: Text('Recite the passage so far'),
                         ),
                       ),
                       const PopupMenuItem(
@@ -673,7 +718,9 @@ class _VerseHeatmap extends StatelessWidget {
       spacing: 2,
       runSpacing: 2,
       children: [
-        for (final v in verses)
+        for (final v in verses) ...[
+          // A wider gap marks where a new section begins.
+          if (v.sectionStart && v != verses.first) const SizedBox(width: 8),
           Tooltip(
             triggerMode: TooltipTriggerMode.tap,
             message:
@@ -702,6 +749,7 @@ class _VerseHeatmap extends StatelessWidget {
                   : null,
             ),
           ),
+        ],
       ],
     );
   }

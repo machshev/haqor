@@ -6,62 +6,95 @@ import 'package:haqor/src/memorise/memorise_charts.dart';
 import 'package:haqor/src/memorise/memorise_drill.dart';
 import 'package:haqor/src/memorise/memorise_page.dart';
 
-MemoryCard _card({
-  required int stage,
-  List<bool>? hidden,
-  List<String>? hints,
-}) {
-  const text = ['יְהוָה', 'רֹעִי', 'לֹא', 'אֶחְסָר׃'];
-  return MemoryCard(
-    passageId: 'p',
-    book: 27,
-    chapter: 23,
-    verse: 1,
-    stage: stage,
-    words: [
-      for (var i = 0; i < text.length; i++)
-        MemoryWord(
-          text: text[i],
-          hidden: hidden?[i] ?? false,
-          hint: hints?[i] ?? '',
-          gloss: 'g$i',
-          translit: 't$i',
-        ),
-    ],
-    cue: '',
-    translation: 'Yahweh my shepherd not I lack',
-    isNew: stage == 0,
-    isReview: false,
-    position: 1,
-    total: 6,
-    dueRemaining: 0,
-  );
-}
+MemorySegment _segment(int verse, List<String> words, {int line = 0}) =>
+    MemorySegment(
+      chapter: 23,
+      verse: verse,
+      line: line,
+      lineCount: 1,
+      words: [
+        for (var i = 0; i < words.length; i++)
+          MemoryWord(
+            text: words[i],
+            gloss: 'g$verse.$i',
+            translit: 't$verse.$i',
+          ),
+      ],
+    );
 
-Future<List<int>> _pumpDrill(WidgetTester tester, MemoryCard card) async {
-  final grades = <int>[];
+MemoryCard _card(String purpose, List<MemorySegment> segments) => MemoryCard(
+  passageId: 'p',
+  book: 27,
+  purpose: purpose,
+  title: 'Title',
+  prompt: 'Picture the scene.',
+  segments: segments,
+  cue: '…הַמָּיִם',
+  targetChapter: 23,
+  targetVerse: segments.last.verse,
+  step: 1,
+  stepCount: 4,
+  isNew: false,
+  position: 1,
+  total: 6,
+  section: 1,
+  sectionCount: 2,
+);
+
+typedef _Submitted = List<(int, List<(int, int, int)>)>;
+
+Future<_Submitted> _pump(WidgetTester tester, MemoryCard card) async {
+  final submitted = <(int, List<(int, int, int)>)>[];
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
-        body: MemoryVerseDrill(
+        body: MemoryRecitalView(
           card: card,
-          runThrough: false,
-          runPosition: null,
-          onGrade: grades.add,
+          onSubmit: (grade, verses) => submitted.add((grade, verses)),
         ),
       ),
     ),
   );
-  return grades;
+  await tester.pump();
+  return submitted;
+}
+
+bool _visible(WidgetTester tester, String word) {
+  final opacity = find.ancestor(
+    of: find.text(word),
+    matching: find.byType(Opacity),
+  );
+  return opacity.evaluate().isEmpty ||
+      tester.widget<Opacity>(opacity.first).opacity > 0;
 }
 
 void main() {
-  test('a check suggests a grade from the share of hidden words missed', () {
+  test('a check suggests a grade from the share of words missed', () {
     expect(suggestedMemoryGrade(0, 8), 2);
     expect(suggestedMemoryGrade(2, 8), 1);
     expect(suggestedMemoryGrade(3, 8), 0);
     expect(suggestedMemoryGrade(1, 2), 1, reason: 'one slip is never Forgot');
-    expect(suggestedMemoryGrade(2, 2), 0);
+  });
+
+  test('each verse is graded on its own misses, shifted by the choice', () {
+    // Verse 1 perfect, verse 2 mostly forgotten; overall suggestion Forgot.
+    expect(
+      memoryVerseGrades(
+        missedPerVerse: [0, 3],
+        wordsPerVerse: [4, 4],
+        chosen: 0,
+      ),
+      [2, 0],
+    );
+    // Choosing Hard over the suggested Forgot lifts both a step.
+    expect(
+      memoryVerseGrades(
+        missedPerVerse: [0, 3],
+        wordsPerVerse: [4, 4],
+        chosen: 1,
+      ),
+      [3, 1],
+    );
   });
 
   test(
@@ -99,52 +132,67 @@ void main() {
     },
   );
 
-  testWidgets('reading a new verse shows every word with its help', (
-    tester,
-  ) async {
-    final grades = await _pumpDrill(tester, _card(stage: 0));
-    expect(find.text('רֹעִי'), findsOneWidget);
-    expect(find.text('t1'), findsOneWidget);
-    expect(find.text('g1'), findsOneWidget);
+  testWidgets('a read card shows every word with its help', (tester) async {
+    final submitted = await _pump(
+      tester,
+      _card('read', [
+        _segment(1, ['יְהוָה', 'רֹעִי']),
+      ]),
+    );
+    expect(_visible(tester, 'רֹעִי'), isTrue);
+    expect(find.text('t1.1'), findsOneWidget);
+    expect(find.text('g1.1'), findsOneWidget);
+    expect(find.text('Picture the scene.'), findsOneWidget);
+    expect(find.text('…הַמָּיִם'), findsOneWidget, reason: 'the cue line');
     await tester.tap(find.text('I have read it aloud'));
-    expect(grades, [2]);
+    expect(submitted.single.$1, 2);
+    expect(submitted.single.$2, [(23, 1, 2)]);
   });
 
-  testWidgets('peeking at a gap counts it as missed and lowers the grade', (
+  testWidgets('a recital hides every word and reveals them in order', (
     tester,
   ) async {
-    final grades = await _pumpDrill(
+    final submitted = await _pump(
       tester,
-      _card(
-        stage: 3,
-        hidden: [true, true, true, true],
-        hints: ['י', 'ר', 'ל', 'א'],
-      ),
+      _card('chain', [
+        _segment(1, ['יְהוָה', 'רֹעִי', 'לֹא', 'אֶחְסָר']),
+        _segment(2, ['בִּנְאוֹת', 'דֶּשֶׁא', 'יַרְבִּיצֵנִי', 'עַל']),
+      ]),
     );
-    // First letters are shown; the words themselves are laid out invisibly.
-    expect(find.text('ר'), findsOneWidget);
-    final hidden = tester.widget<Opacity>(
-      find.ancestor(of: find.text('רֹעִי'), matching: find.byType(Opacity)),
-    );
-    expect(hidden.opacity, 0);
+    for (final w in ['יְהוָה', 'רֹעִי', 'בִּנְאוֹת']) {
+      expect(_visible(tester, w), isFalse, reason: 'all hidden, no gaps');
+    }
+    expect(find.text('Forgot'), findsNothing);
 
-    // Peek at one word of four, then check: a quarter missed suggests Hard.
-    await tester.tap(find.text('ר'));
+    // Recite verse 1 word by word; tapping the next gap works too.
+    await tester.tap(find.text('Next word'));
     await tester.pump();
-    await tester.tap(find.text('Check'));
-    await tester.pump();
-    expect(find.text('1 missed — tap a word to change it.'), findsOneWidget);
-    final hard = tester.widget<FilledButton>(
-      find.ancestor(of: find.text('Hard'), matching: find.byType(FilledButton)),
-    );
-    expect(hard, isNotNull);
-
-    // Un-marking it after the check makes it word perfect again.
+    expect(_visible(tester, 'יְהוָה'), isTrue);
+    expect(_visible(tester, 'רֹעִי'), isFalse);
     await tester.tap(find.text('רֹעִי'));
     await tester.pump();
-    expect(find.textContaining('Word perfect'), findsOneWidget);
-    await tester.tap(find.text('Good'));
-    expect(grades, [2]);
+    expect(_visible(tester, 'רֹעִי'), isTrue);
+    await tester.tap(find.text('Next word'));
+    await tester.tap(find.text('Next word'));
+    await tester.pump();
+    // Verse 2: miss the first word, then reveal the rest.
+    await tester.tap(find.text('Missed it'));
+    await tester.pump();
+    expect(_visible(tester, 'בִּנְאוֹת'), isTrue);
+    await tester.tap(find.text('Reveal the rest'));
+    await tester.pump();
+    expect(_visible(tester, 'עַל'), isTrue);
+    expect(find.text('1 missed — tap a word to change it.'), findsOneWidget);
+
+    // One slip in eight words suggests Hard overall; verse 1 was perfect.
+    final hard = find.ancestor(
+      of: find.text('Hard'),
+      matching: find.byType(FilledButton),
+    );
+    expect(hard, findsOneWidget);
+    await tester.tap(find.text('Hard'));
+    expect(submitted.single.$1, 1);
+    expect(submitted.single.$2, [(23, 1, 2), (23, 2, 1)]);
   });
 
   testWidgets('a chart shows a point\'s value when tapped', (tester) async {

@@ -143,8 +143,11 @@ async fn main() {
     spawn(memorise::save_memory_passage(bible.clone()));
     spawn(memorise::delete_memory_passage(bible.clone()));
     spawn(memorise::get_next_memory_card(bible.clone()));
-    spawn(memorise::get_memory_card(bible.clone()));
-    spawn(memorise::submit_memory_review(bible.clone()));
+    spawn(memorise::get_memory_layout(bible.clone()));
+    spawn(memorise::set_memory_layout(bible.clone()));
+    spawn(memorise::reset_memory_layout(bible.clone()));
+    spawn(memorise::get_memory_run(bible.clone()));
+    spawn(memorise::submit_memory_recital(bible.clone()));
     spawn(memorise::get_memory_stats(bible.clone()));
     spawn(memorise::set_memory_settings(bible.clone()));
     spawn(sync_progress(bible, data_dir));

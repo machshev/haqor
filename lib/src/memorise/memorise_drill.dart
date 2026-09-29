@@ -1,47 +1,55 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
 import '../tutor/progress_sync.dart';
 import 'memorise_page.dart' show memoryUtcOffset;
 
-const _stageNames = [
-  'Read it aloud',
-  'Fill the gaps',
-  'Fill the gaps',
-  'First letters',
-  'From memory',
-];
-
-const _stageHelp = [
-  'Read the verse aloud two or three times, following the meaning.',
-  'Say the whole verse aloud. Tap a gap only if you are stuck.',
-  'Most words are hidden now. Say the whole verse, then check.',
-  'Only first letters are left. Recite the verse, then check.',
-  'Recite the verse from memory, then check yourself.',
-];
-
 const _gradeLabels = ['Forgot', 'Hard', 'Good', 'Easy'];
 
-/// Practise the verses of one passage (or of all passages when `passageId`
-/// is empty), one card at a time as the scheduler offers them. With
-/// `runThrough`, instead recite the given verses of `book` in order, each
-/// from memory.
+/// The grade a check suggests: nothing missed is Good; a single slip, or up
+/// to a quarter of the words, Hard; more than that Forgot.
+int suggestedMemoryGrade(int missed, int words) {
+  if (missed == 0) return 2;
+  return missed == 1 || missed <= words / 4 ? 1 : 0;
+}
+
+/// Each verse's grade for a recital: its own suggestion, moved by however
+/// far the learner's overall grade departs from the overall suggestion.
+List<int> memoryVerseGrades({
+  required List<int> missedPerVerse,
+  required List<int> wordsPerVerse,
+  required int chosen,
+}) {
+  final missed = missedPerVerse.fold(0, (a, b) => a + b);
+  final words = wordsPerVerse.fold(0, (a, b) => a + b);
+  final shift = chosen - suggestedMemoryGrade(missed, words);
+  return [
+    for (var i = 0; i < missedPerVerse.length; i++)
+      (suggestedMemoryGrade(missedPerVerse[i], wordsPerVerse[i]) + shift).clamp(
+        0,
+        3,
+      ),
+  ];
+}
+
+/// Practise one passage (or all passages when `passageId` is empty), card by
+/// card as the scheduler offers them — or, with `run`, recite everything
+/// learnt of the passage once.
 class MemoryDrillPage extends StatefulWidget {
   const MemoryDrillPage({
     super.key,
     required this.passageId,
     required this.title,
-    this.book,
-    this.runThrough,
+    this.run = false,
   });
 
   final String passageId;
   final String title;
-  final int? book;
-  final List<(int, int)>? runThrough;
+  final bool run;
 
   @override
   State<MemoryDrillPage> createState() => _MemoryDrillPageState();
@@ -53,13 +61,16 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
   MemoryItem? _item;
   int _seq = 0;
   bool _waiting = true;
-  int _runIndex = 0;
+  bool _runDone = false;
   int _sessionXp = 0;
-  int _sessionAnswers = 0;
+  int _sessionCards = 0;
   int _sessionLearnt = 0;
   MemoryReviewResult? _lastResult;
 
-  bool get _isRunThrough => widget.runThrough != null;
+  /// A short note on what the last answer earned, shown over the top of the
+  /// card without blocking it.
+  String? _note;
+  Timer? _noteTimer;
 
   @override
   void initState() {
@@ -80,14 +91,14 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
   void dispose() {
     _itemSub?.cancel();
     _resultSub?.cancel();
+    _noteTimer?.cancel();
     super.dispose();
   }
 
   void _requestNext({bool extraNew = false}) {
     setState(() => _waiting = true);
-    final run = widget.runThrough;
-    if (run != null) {
-      if (_runIndex >= run.length) {
+    if (widget.run) {
+      if (_runDone) {
         setState(() {
           _item = MemoryItem(
             kind: 'done',
@@ -97,16 +108,9 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
           );
           _waiting = false;
         });
-        return;
+      } else {
+        GetMemoryRun(passageId: widget.passageId).sendSignalToRust();
       }
-      final (chapter, verse) = run[_runIndex];
-      GetMemoryCard(
-        passageId: widget.passageId,
-        book: widget.book ?? 1,
-        chapter: chapter,
-        verse: verse,
-        recall: true,
-      ).sendSignalToRust();
       return;
     }
     GetNextMemoryCard(
@@ -116,18 +120,22 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
     ).sendSignalToRust();
   }
 
-  void _grade(MemoryCard card, int grade) {
-    SubmitMemoryReview(
-      passageId: widget.passageId,
+  void _submit(MemoryCard card, int grade, List<(int, int, int)> verses) {
+    SubmitMemoryRecital(
+      passageId: card.passageId,
       book: card.book,
-      chapter: card.chapter,
-      verse: card.verse,
+      purpose: card.purpose,
+      targetChapter: card.targetChapter,
+      targetVerse: card.targetVerse,
+      step: card.step,
       grade: grade,
-      runThrough: _isRunThrough,
+      chapters: [for (final v in verses) v.$1],
+      verses: [for (final v in verses) v.$2],
+      grades: [for (final v in verses) v.$3],
       utcOffset: memoryUtcOffset(),
     ).sendSignalToRust();
     scheduleProgressSync();
-    if (_isRunThrough) _runIndex++;
+    if (widget.run) _runDone = true;
     _requestNext();
   }
 
@@ -136,40 +144,42 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
     final r = pack.message;
     setState(() {
       _sessionXp += r.xp;
-      _sessionAnswers++;
+      _sessionCards++;
       if (r.firstGraduation) _sessionLearnt++;
       _lastResult = r;
     });
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
     final notes = <String>[
-      '+${r.xp} XP',
-      if (r.firstGraduation) 'verse ${r.chapter}:${r.verse} learnt!',
-      if (!r.firstGraduation && r.intervalDays > 0 && r.stageBefore >= 4)
-        'next in ${r.intervalDays} ${r.intervalDays == 1 ? 'day' : 'days'}',
+      if (r.xp > 0) '+${r.xp} XP',
+      if (r.firstGraduation) '${r.targetChapter}:${r.targetVerse} learnt!',
+      if (r.relearn > 0)
+        '${r.relearn} ${r.relearn == 1 ? 'verse' : 'verses'} to go over again',
+      if (r.purpose == 'run' && r.intervalDays > 0)
+        'next run-through in ${r.intervalDays} days',
       if (r.goalReachedNow) 'daily goal reached!',
+      if (r.levelAfter > r.levelBefore) 'level ${r.levelAfter}!',
     ];
-    messenger.showSnackBar(
-      SnackBar(
-        duration: const Duration(milliseconds: 1400),
-        behavior: SnackBarBehavior.floating,
-        content: Text(notes.join(' · ')),
-      ),
-    );
+    if (notes.isNotEmpty) {
+      _noteTimer?.cancel();
+      setState(() => _note = notes.join(' · '));
+      _noteTimer = Timer(const Duration(milliseconds: 1800), () {
+        if (mounted) setState(() => _note = null);
+      });
+    }
     if (r.completedPassages.isNotEmpty) {
       await _celebrate(
         icon: Icons.verified,
         title: 'Passage complete!',
         body:
             'Every verse of ${widget.title} is now learnt by heart. Keep '
-            'reviewing and it will stay with you.',
+            'reciting it and it will stay with you.',
       );
-    }
-    if (r.levelAfter > r.levelBefore) {
+    } else if (r.sectionCompleted) {
       await _celebrate(
-        icon: Icons.military_tech,
-        title: 'Level ${r.levelAfter}!',
-        body: '${r.totalXp} XP earned so far.',
+        icon: Icons.auto_awesome,
+        title: 'Section learnt!',
+        body:
+            'You can recite this whole section. It will come back for review '
+            'as one piece, so it stays joined together.',
       );
     }
   }
@@ -189,6 +199,7 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
         content: Text(body, textAlign: TextAlign.center),
         actions: [
           FilledButton(
+            autofocus: true,
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Keep going'),
           ),
@@ -206,7 +217,7 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: theme.colorScheme.surface,
-        title: Text(_isRunThrough ? 'Recite ${widget.title}' : widget.title),
+        title: Text(widget.run ? 'Recite ${widget.title}' : widget.title),
         bottom: result == null
             ? null
             : PreferredSize(
@@ -233,176 +244,334 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
           ),
         ],
       ),
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 150),
-        child: _waiting || item == null
-            ? const Center(
-                key: ValueKey('memory-loading'),
-                child: CircularProgressIndicator(),
-              )
-            : card != null
-            ? KeyedSubtree(
-                key: ValueKey(_seq),
-                child: MemoryVerseDrill(
-                  card: card,
-                  runThrough: _isRunThrough,
-                  runPosition: _isRunThrough
-                      ? (_runIndex + 1, widget.runThrough!.length)
-                      : null,
-                  onGrade: (grade) => _grade(card, grade),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 150),
+              child: _waiting || item == null
+                  ? const Center(
+                      key: ValueKey('memory-loading'),
+                      child: CircularProgressIndicator(),
+                    )
+                  : card != null
+                  ? KeyedSubtree(
+                      key: ValueKey(_seq),
+                      child: MemoryRecitalView(
+                        card: card,
+                        onSubmit: (grade, verses) =>
+                            _submit(card, grade, verses),
+                      ),
+                    )
+                  : _DoneView(
+                      key: const ValueKey('memory-done'),
+                      item: item,
+                      run: widget.run,
+                      sessionXp: _sessionXp,
+                      sessionCards: _sessionCards,
+                      sessionLearnt: _sessionLearnt,
+                      streakDays: result?.streakDays ?? 0,
+                      onLearnMore: () => _requestNext(extraNew: true),
+                    ),
+            ),
+          ),
+          Positioned(
+            top: 8,
+            left: 16,
+            right: 16,
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _note == null ? 0 : 1,
+                duration: const Duration(milliseconds: 200),
+                child: Center(
+                  child: Material(
+                    elevation: 2,
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
+                      ),
+                      child: Text(
+                        _note ?? '',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              )
-            : _DoneView(
-                key: const ValueKey('memory-done'),
-                item: item,
-                runThrough: _isRunThrough,
-                sessionXp: _sessionXp,
-                sessionAnswers: _sessionAnswers,
-                sessionLearnt: _sessionLearnt,
-                streakDays: result?.streakDays ?? 0,
-                onLearnMore: () => _requestNext(extraNew: true),
               ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// One verse on the cue ladder. Hidden words are gaps (or first letters);
-/// tapping a gap peeks at it and counts it as missed. "Check" reveals the
-/// verse, where any word can be tapped to mark it missed, and the grade
-/// buttons suggest a grade from how much was missed.
-class MemoryVerseDrill extends StatefulWidget {
-  const MemoryVerseDrill({
+/// A word's place on a card: its segment, and its index within the segment.
+typedef _WordRef = ({int segment, int word});
+
+/// One card. A read card shows its lines in full, with transliteration and
+/// glosses, to read aloud. A recital card hides every word: the learner
+/// recites, revealing each word in turn as they say it ("Next word"), or
+/// marking the one they could not bring to mind ("Missed it") — or reveals
+/// the rest at once. Once everything is showing, any word can be tapped to
+/// mark it missed or not, and the grade buttons suggest a grade.
+class MemoryRecitalView extends StatefulWidget {
+  const MemoryRecitalView({
     super.key,
     required this.card,
-    required this.runThrough,
-    required this.runPosition,
-    required this.onGrade,
+    required this.onSubmit,
   });
 
   final MemoryCard card;
-  final bool runThrough;
-  final (int, int)? runPosition;
-  final ValueChanged<int> onGrade;
+
+  /// The card's grade, and each verse's (chapter, verse, grade).
+  final void Function(int grade, List<(int, int, int)> verses) onSubmit;
 
   @override
-  State<MemoryVerseDrill> createState() => _MemoryVerseDrillState();
+  State<MemoryRecitalView> createState() => _MemoryRecitalViewState();
 }
 
-class _MemoryVerseDrillState extends State<MemoryVerseDrill> {
+class _MemoryRecitalViewState extends State<MemoryRecitalView> {
+  late final List<_WordRef> _order = [
+    for (var s = 0; s < widget.card.segments.length; s++)
+      for (var w = 0; w < widget.card.segments[s].words.length; w++)
+        (segment: s, word: w),
+  ];
+  late final List<GlobalKey> _keys = [for (final _ in _order) GlobalKey()];
   final _missed = <int>{};
-  bool _checked = false;
-  bool _showMeaning = false;
-  bool _showTranslit = false;
+  final _focus = FocusNode();
+  int _revealed = 0;
+  late bool _showMeaning = !_hidden;
+  late bool _showSounds = !_hidden;
 
   MemoryCard get _card => widget.card;
-  bool get _reading => _card.stage == 0;
+  bool get _hidden => !(_card.purpose == 'preview' || _card.purpose == 'read');
+  bool get _complete => !_hidden || _revealed >= _order.length;
 
-  int get _hiddenCount => _card.words.where((w) => w.hidden).length;
-
-  int get _suggestedGrade => suggestedMemoryGrade(
-    _missed.length,
-    _hiddenCount == 0 ? _card.words.length : _hiddenCount,
-  );
-
-  void _tapWord(int i) {
-    final word = _card.words[i];
-    setState(() {
-      if (_checked) {
-        _missed.contains(i) ? _missed.remove(i) : _missed.add(i);
-      } else if (word.hidden) {
-        _missed.add(i);
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Not while a dialog is over the page: it keeps the keyboard.
+      if (mounted && (ModalRoute.of(context)?.isCurrent ?? true)) {
+        _focus.requestFocus();
       }
     });
   }
 
   @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _next({bool missed = false}) {
+    if (_revealed >= _order.length) return;
+    setState(() {
+      if (missed) _missed.add(_revealed);
+      _revealed++;
+    });
+    // Keep the word being recited in view on a long recital.
+    final key = _keys[_revealed.clamp(0, _keys.length - 1)];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = key.currentContext;
+      if (target != null && target.mounted) {
+        Scrollable.ensureVisible(
+          target,
+          alignment: 0.4,
+          duration: const Duration(milliseconds: 200),
+        );
+      }
+    });
+  }
+
+  void _revealAll() => setState(() => _revealed = _order.length);
+
+  void _toggleMissed(int i) =>
+      setState(() => _missed.contains(i) ? _missed.remove(i) : _missed.add(i));
+
+  /// Verses on the card in order, with their missed and total word counts.
+  List<(int, int, int, int)> _verseTallies() {
+    final out = <(int, int, int, int)>[];
+    for (var i = 0; i < _order.length; i++) {
+      final seg = _card.segments[_order[i].segment];
+      final missed = _missed.contains(i) ? 1 : 0;
+      if (out.isNotEmpty &&
+          out.last.$1 == seg.chapter &&
+          out.last.$2 == seg.verse) {
+        final last = out.removeLast();
+        out.add((last.$1, last.$2, last.$3 + missed, last.$4 + 1));
+      } else {
+        out.add((seg.chapter, seg.verse, missed, 1));
+      }
+    }
+    return out;
+  }
+
+  int get _suggested => suggestedMemoryGrade(_missed.length, _order.length);
+
+  void _grade(int grade) {
+    final tallies = _verseTallies();
+    final grades = _hidden
+        ? memoryVerseGrades(
+            missedPerVerse: [for (final t in tallies) t.$3],
+            wordsPerVerse: [for (final t in tallies) t.$4],
+            chosen: grade,
+          )
+        : [for (final _ in tallies) grade];
+    widget.onSubmit(grade, [
+      for (var i = 0; i < tallies.length; i++)
+        (tallies[i].$1, tallies[i].$2, grades[i]),
+    ]);
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (!_hidden) {
+      if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.space) {
+        _grade(2);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+    if (_complete) {
+      final digit = [
+        LogicalKeyboardKey.digit1,
+        LogicalKeyboardKey.digit2,
+        LogicalKeyboardKey.digit3,
+        LogicalKeyboardKey.digit4,
+      ].indexOf(key);
+      if (digit >= 0) {
+        _grade(digit);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.enter) {
+        _grade(_suggested);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+    if (key == LogicalKeyboardKey.space ||
+        key == LogicalKeyboardKey.arrowLeft) {
+      _next();
+    } else if (key == LogicalKeyboardKey.keyX ||
+        key == LogicalKeyboardKey.backspace) {
+      _next(missed: true);
+    } else if (key == LogicalKeyboardKey.enter) {
+      _revealAll();
+    } else {
+      return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final position = widget.runPosition;
-    return SafeArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      '${_card.chapter}:${_card.verse}',
-                      style: theme.textTheme.titleLarge,
-                    ),
-                    const SizedBox(width: 12),
-                    if (!widget.runThrough) _StageLadder(stage: _card.stage),
-                    const Spacer(),
-                    Text(
-                      position != null
-                          ? '${position.$1} of ${position.$2}'
-                          : _card.total > 0
-                          ? 'verse ${_card.position} of ${_card.total}'
-                          : '',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _card.isNew
-                      ? 'New verse · ${_stageNames[0]}'
-                      : _card.isReview
-                      ? 'Review · ${_stageNames[4]}'
-                      : _stageNames[_card.stage.clamp(0, 4)],
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                Text(
-                  _stageHelp[_card.stage.clamp(0, 4)],
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                if (_card.cue.isNotEmpty && !_reading)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(
-                      '…${_card.cue}',
-                      textDirection: TextDirection.rtl,
-                      style: _hebrewStyle(
-                        theme,
-                        20,
-                      ).copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    ),
-                  ),
-                Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: Wrap(
-                    spacing: 10,
-                    runSpacing: 14,
+    final learning = _card.stepCount > 0;
+    var index = 0;
+    final lines = <Widget>[];
+    for (final seg in _card.segments) {
+      final first = index;
+      index += seg.words.length;
+      lines.add(
+        _LineRow(
+          segment: seg,
+          firstIndex: first,
+          keys: _keys,
+          hidden: _hidden,
+          revealed: _revealed,
+          missed: _missed,
+          showMeaning: _showMeaning,
+          showSounds: _showSounds,
+          complete: _complete,
+          onTapWord: (i) {
+            if (!_hidden) return;
+            if (_complete) {
+              _toggleMissed(i);
+            } else if (i == _revealed) {
+              _next();
+            }
+          },
+        ),
+      );
+    }
+    return Focus(
+      focusNode: _focus,
+      onKeyEvent: _onKey,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                children: [
+                  Row(
                     children: [
-                      for (var i = 0; i < _card.words.length; i++)
-                        _WordTile(
-                          word: _card.words[i],
-                          revealed:
-                              _reading ||
-                              _checked ||
-                              !_card.words[i].hidden ||
-                              _missed.contains(i),
-                          missed: _missed.contains(i),
-                          showGloss: _reading || _showMeaning,
-                          showTranslit: _reading || _showTranslit,
-                          onTap: _reading ? null : () => _tapWord(i),
+                      Expanded(
+                        child: Text(
+                          _card.title,
+                          style: theme.textTheme.titleMedium,
+                        ),
+                      ),
+                      if (_card.total > 0)
+                        Text(
+                          'verse ${_card.position} of ${_card.total}'
+                          '${_card.sectionCount > 1 ? ' · section ${_card.section}/${_card.sectionCount}' : ''}',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 20),
-                if (!_reading)
+                  if (learning) ...[
+                    const SizedBox(height: 6),
+                    _StepDots(step: _card.step, count: _card.stepCount),
+                  ],
+                  const SizedBox(height: 10),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        _hidden
+                            ? Icons.record_voice_over_outlined
+                            : Icons.visibility_outlined,
+                        size: 18,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _card.prompt,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  if (_card.cue.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        _card.cue,
+                        textDirection: TextDirection.rtl,
+                        style: memoryHebrewStyle(
+                          theme,
+                          20,
+                        ).copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ...lines,
+                  const SizedBox(height: 16),
                   Wrap(
                     spacing: 8,
                     children: [
@@ -413,96 +582,116 @@ class _MemoryVerseDrillState extends State<MemoryVerseDrill> {
                       ),
                       FilterChip(
                         label: const Text('Sounds'),
-                        selected: _showTranslit,
-                        onSelected: (v) => setState(() => _showTranslit = v),
+                        selected: _showSounds,
+                        onSelected: (v) => setState(() => _showSounds = v),
                       ),
                     ],
                   ),
-                if ((_reading || _showMeaning) && _card.translation.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(
-                      _card.translation,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontStyle: FontStyle.italic,
-                        color: theme.colorScheme.onSurfaceVariant,
+                  if (_hidden && _complete)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16),
+                      child: Text(
+                        _missed.isEmpty
+                            ? 'Word perfect? Tap any word you got wrong.'
+                            : '${_missed.length} missed — tap a word to change it.',
+                        style: theme.textTheme.bodySmall,
                       ),
                     ),
-                  ),
-                if (_checked)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: Text(
-                      _missed.isEmpty
-                          ? 'Word perfect? Tap any word you got wrong.'
-                          : '${_missed.length} missed — tap a word to change it.',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-              ],
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: _controls(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _controls() {
+    const tall = Size.fromHeight(52);
+    if (!_hidden) {
+      return FilledButton.icon(
+        onPressed: () => _grade(2),
+        icon: const Icon(Icons.record_voice_over),
+        label: Text(
+          _card.purpose == 'preview'
+              ? 'I have read the section aloud'
+              : 'I have read it aloud',
+        ),
+        style: FilledButton.styleFrom(minimumSize: tall),
+      );
+    }
+    if (!_complete) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _next(missed: true),
+                  icon: const Icon(Icons.close),
+                  label: const Text('Missed it'),
+                  style: OutlinedButton.styleFrom(minimumSize: tall),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: FilledButton.icon(
+                  onPressed: _next,
+                  icon: const Icon(Icons.check),
+                  label: const Text('Next word'),
+                  style: FilledButton.styleFrom(minimumSize: tall),
+                ),
+              ),
+            ],
+          ),
+          TextButton(
+            onPressed: _revealAll,
+            child: Text(
+              _revealed == 0
+                  ? 'Recite it all first, then reveal'
+                  : 'Reveal the rest',
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: _reading
-                ? FilledButton.icon(
-                    onPressed: () => widget.onGrade(2),
-                    icon: const Icon(Icons.record_voice_over),
-                    label: const Text('I have read it aloud'),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        for (var g = 0; g < 4; g++) ...[
+          if (g > 0) const SizedBox(width: 8),
+          Expanded(
+            child: g == _suggested
+                ? FilledButton(
+                    onPressed: () => _grade(g),
                     style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
+                      minimumSize: tall,
+                      padding: EdgeInsets.zero,
                     ),
+                    child: Text(_gradeLabels[g]),
                   )
-                : !_checked
-                ? FilledButton.icon(
-                    onPressed: () => setState(() => _checked = true),
-                    icon: const Icon(Icons.visibility),
-                    label: const Text('Check'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
+                : OutlinedButton(
+                    onPressed: () => _grade(g),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: tall,
+                      padding: EdgeInsets.zero,
                     ),
-                  )
-                : Row(
-                    children: [
-                      for (var g = 0; g < 4; g++) ...[
-                        if (g > 0) const SizedBox(width: 8),
-                        Expanded(
-                          child: g == _suggestedGrade
-                              ? FilledButton(
-                                  onPressed: () => widget.onGrade(g),
-                                  style: FilledButton.styleFrom(
-                                    minimumSize: const Size.fromHeight(52),
-                                    padding: EdgeInsets.zero,
-                                  ),
-                                  child: Text(_gradeLabels[g]),
-                                )
-                              : OutlinedButton(
-                                  onPressed: () => widget.onGrade(g),
-                                  style: OutlinedButton.styleFrom(
-                                    minimumSize: const Size.fromHeight(52),
-                                    padding: EdgeInsets.zero,
-                                  ),
-                                  child: Text(_gradeLabels[g]),
-                                ),
-                        ),
-                      ],
-                    ],
+                    child: Text(_gradeLabels[g]),
                   ),
           ),
         ],
-      ),
+      ],
     );
   }
 }
 
-/// The grade a check suggests: nothing missed is Good; a single slip, or up
-/// to a quarter of the hidden words, Hard; more than that Forgot.
-int suggestedMemoryGrade(int missed, int hidden) {
-  if (missed == 0) return 2;
-  return missed == 1 || missed <= hidden / 4 ? 1 : 0;
-}
-
-TextStyle _hebrewStyle(ThemeData theme, double size) =>
+TextStyle memoryHebrewStyle(ThemeData theme, double size) =>
     (theme.textTheme.bodyLarge ?? const TextStyle()).copyWith(
       fontFamily: 'Cardo',
       fontFamilyFallback: const ['Noto Serif Hebrew'],
@@ -510,27 +699,32 @@ TextStyle _hebrewStyle(ThemeData theme, double size) =>
       height: 1.4,
     );
 
-/// Five dots for the cue ladder, filled up to the verse's stage.
-class _StageLadder extends StatelessWidget {
-  const _StageLadder({required this.stage});
+/// A learning step's place in its verse's script.
+class _StepDots extends StatelessWidget {
+  const _StepDots({required this.step, required this.count});
 
-  final int stage;
+  final int step;
+  final int count;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Semantics(
-      label: 'Stage ${stage + 1} of 5',
+      label: 'Step ${step + 1} of $count',
       child: Row(
         children: [
-          for (var i = 0; i < 5; i++)
+          for (var i = 0; i < count; i++)
             Container(
               width: 8,
               height: 8,
               margin: const EdgeInsets.only(right: 3),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: i <= stage ? scheme.primary : scheme.outlineVariant,
+                color: i < step
+                    ? scheme.primary
+                    : i == step
+                    ? scheme.tertiary
+                    : scheme.outlineVariant,
               ),
             ),
         ],
@@ -539,34 +733,117 @@ class _StageLadder extends StatelessWidget {
   }
 }
 
+/// One line of a verse, right to left, its verse number leading the verse's
+/// first line.
+class _LineRow extends StatelessWidget {
+  const _LineRow({
+    required this.segment,
+    required this.firstIndex,
+    required this.keys,
+    required this.hidden,
+    required this.revealed,
+    required this.missed,
+    required this.showMeaning,
+    required this.showSounds,
+    required this.complete,
+    required this.onTapWord,
+  });
+
+  final MemorySegment segment;
+  final int firstIndex;
+  final List<GlobalKey> keys;
+  final bool hidden;
+  final int revealed;
+  final Set<int> missed;
+  final bool showMeaning;
+  final bool showSounds;
+  final bool complete;
+  final ValueChanged<int> onTapWord;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 40,
+              child: segment.line == 0
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        '${segment.verse}',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    )
+                  : null,
+            ),
+            Expanded(
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (var w = 0; w < segment.words.length; w++)
+                    KeyedSubtree(
+                      key: keys[firstIndex + w],
+                      child: _WordTile(
+                        word: segment.words[w],
+                        shown: !hidden || firstIndex + w < revealed,
+                        isNext:
+                            hidden && !complete && firstIndex + w == revealed,
+                        missed: missed.contains(firstIndex + w),
+                        showMeaning: showMeaning,
+                        showSounds: showSounds,
+                        onTap: () => onTapWord(firstIndex + w),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _WordTile extends StatelessWidget {
   const _WordTile({
     required this.word,
-    required this.revealed,
+    required this.shown,
+    required this.isNext,
     required this.missed,
-    required this.showGloss,
-    required this.showTranslit,
+    required this.showMeaning,
+    required this.showSounds,
     required this.onTap,
   });
 
   final MemoryWord word;
-  final bool revealed;
+  final bool shown;
+  final bool isNext;
   final bool missed;
-  final bool showGloss;
-  final bool showTranslit;
-  final VoidCallback? onTap;
+  final bool showMeaning;
+  final bool showSounds;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final style = _hebrewStyle(
+    final style = memoryHebrewStyle(
       theme,
       28,
     ).copyWith(color: missed ? scheme.error : scheme.onSurface);
-    // A gap keeps the word's own width (the text is laid out but invisible),
-    // so the verse's shape stays a cue; a first-letter hint sits at its start.
-    final Widget hebrew = revealed
+    // A hidden word keeps its own width (laid out invisibly), so the shape of
+    // the line stays; the next word to recite is underlined more strongly.
+    final Widget hebrew = shown
         ? Text(word.text, style: style)
         : Stack(
             children: [
@@ -575,16 +852,12 @@ class _WordTile extends StatelessWidget {
                 child: Container(
                   decoration: BoxDecoration(
                     border: Border(
-                      bottom: BorderSide(color: scheme.primary, width: 2),
+                      bottom: BorderSide(
+                        color: isNext ? scheme.primary : scheme.outlineVariant,
+                        width: isNext ? 3 : 2,
+                      ),
                     ),
                   ),
-                  alignment: AlignmentDirectional.centerStart,
-                  child: word.hint.isEmpty
-                      ? null
-                      : Text(
-                          word.hint,
-                          style: style.copyWith(color: scheme.primary),
-                        ),
                 ),
               ),
             ],
@@ -601,13 +874,13 @@ class _WordTile extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             hebrew,
-            if (revealed && showTranslit && word.translit.isNotEmpty)
+            if (shown && showSounds && word.translit.isNotEmpty)
               Text(
                 word.translit,
                 textDirection: TextDirection.ltr,
                 style: small,
               ),
-            if (revealed && showGloss && word.gloss.isNotEmpty)
+            if (shown && showMeaning && word.gloss.isNotEmpty)
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 120),
                 child: Text(
@@ -628,18 +901,18 @@ class _DoneView extends StatelessWidget {
   const _DoneView({
     super.key,
     required this.item,
-    required this.runThrough,
+    required this.run,
     required this.sessionXp,
-    required this.sessionAnswers,
+    required this.sessionCards,
     required this.sessionLearnt,
     required this.streakDays,
     required this.onLearnMore,
   });
 
   final MemoryItem item;
-  final bool runThrough;
+  final bool run;
   final int sessionXp;
-  final int sessionAnswers;
+  final int sessionCards;
   final int sessionLearnt;
   final int streakDays;
   final VoidCallback onLearnMore;
@@ -676,21 +949,21 @@ class _DoneView extends StatelessWidget {
             Text(
               empty
                   ? 'No passages yet'
-                  : runThrough
-                  ? 'Recited!'
+                  : run
+                  ? (sessionCards > 0 ? 'Recited!' : 'Nothing learnt yet')
                   : 'All caught up',
               style: theme.textTheme.headlineSmall,
             ),
             const SizedBox(height: 8),
-            if (sessionAnswers > 0)
+            if (sessionCards > 0)
               Text(
-                '$sessionAnswers answers · +$sessionXp XP'
+                '$sessionCards ${sessionCards == 1 ? 'card' : 'cards'} · +$sessionXp XP'
                 '${sessionLearnt > 0 ? ' · $sessionLearnt new ${sessionLearnt == 1 ? 'verse' : 'verses'} learnt' : ''}'
                 '${streakDays > 0 ? ' · $streakDays-day streak' : ''}',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium,
               ),
-            if (next.isNotEmpty && !runThrough) ...[
+            if (next.isNotEmpty && !run) ...[
               const SizedBox(height: 4),
               Text(
                 next,
@@ -700,13 +973,13 @@ class _DoneView extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 24),
-            if (item.canLearnMore && !runThrough)
+            if (item.canLearnMore && !run)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: FilledButton.icon(
                   onPressed: onLearnMore,
                   icon: const Icon(Icons.add),
-                  label: const Text('Learn another verse'),
+                  label: const Text('Learn the next verse'),
                 ),
               ),
             TextButton(

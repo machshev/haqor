@@ -1,16 +1,17 @@
 //! Handlers for learning passages by heart (see `haqor_core::memorise`).
 
 use haqor_core::bible::Bible;
-use haqor_core::memorise::{self as core, MemorySettings};
+use haqor_core::memorise::{self as core, MemoryPurpose, MemorySettings, MemoryVerseGrade};
 use haqor_core::tutor::Grade;
 use rinf::{DartSignal, RustSignal, debug_print};
 
 use crate::functions::{SharedBible, lock, now_epoch, persist_browser_progress};
 use crate::signals::{
-    DeleteMemoryPassage, GetMemoryCard, GetMemoryPassages, GetMemoryStats, GetNextMemoryCard,
-    MemoryAchievement, MemoryCard, MemoryDay, MemoryItem, MemoryPassageEntry, MemoryPassages,
-    MemoryReviewResult, MemoryStats, MemoryVerseState, MemoryWord, SaveMemoryPassage,
-    SetMemorySettings, SubmitMemoryReview,
+    DeleteMemoryPassage, GetMemoryLayout, GetMemoryPassages, GetMemoryRun, GetMemoryStats,
+    GetNextMemoryCard, MemoryAchievement, MemoryCard, MemoryDay, MemoryItem, MemoryLayout,
+    MemoryLayoutVerse, MemoryPassageEntry, MemoryPassages, MemoryReviewResult, MemorySegment,
+    MemoryStats, MemoryVerseState, MemoryWord, ResetMemoryLayout, SaveMemoryPassage,
+    SetMemoryLayout, SetMemorySettings, SubmitMemoryRecital,
 };
 
 /// Days of history and forecast the dashboard graphs.
@@ -39,6 +40,7 @@ fn send_passages(bible: &Bible, saved_id: String) {
                             verse: v.verse,
                             strength: v.strength,
                             due: v.due,
+                            section_start: v.section_start,
                         })
                         .collect(),
                     learnt: s.learnt,
@@ -55,31 +57,68 @@ fn send_passages(bible: &Bible, saved_id: String) {
     }
 }
 
+fn send_layout(bible: &Bible, passage_id: &str) {
+    match bible.memory_layout(passage_id) {
+        Ok(verses) => MemoryLayout {
+            passage_id: passage_id.to_string(),
+            verses: verses
+                .into_iter()
+                .map(|v| MemoryLayoutVerse {
+                    chapter: v.chapter,
+                    verse: v.verse,
+                    words: v.words,
+                    line_starts: v
+                        .line_starts
+                        .into_iter()
+                        .map(|i| i.min(255) as u8)
+                        .collect(),
+                    section_start: v.section_start,
+                    custom_lines: v.custom_lines,
+                    custom_section: v.custom_section,
+                })
+                .collect(),
+        }
+        .send_signal_to_dart(),
+        Err(e) => debug_print!("memory layout error: {e:?}"),
+    }
+}
+
 fn to_signal_card(card: core::MemoryCard) -> MemoryCard {
     MemoryCard {
         passage_id: card.passage_id,
         book: card.book,
-        chapter: card.chapter,
-        verse: card.verse,
-        stage: card.stage,
-        words: card
-            .words
+        purpose: card.purpose.as_str().to_string(),
+        title: card.title,
+        prompt: card.prompt,
+        segments: card
+            .segments
             .into_iter()
-            .map(|w| MemoryWord {
-                text: w.text,
-                hidden: w.hidden,
-                hint: w.hint,
-                gloss: w.gloss,
-                translit: w.translit,
+            .map(|s| MemorySegment {
+                chapter: s.chapter,
+                verse: s.verse,
+                line: s.line.min(255) as u8,
+                line_count: s.line_count.min(255) as u8,
+                words: s
+                    .words
+                    .into_iter()
+                    .map(|w| MemoryWord {
+                        text: w.text,
+                        gloss: w.gloss,
+                        translit: w.translit,
+                    })
+                    .collect(),
             })
             .collect(),
         cue: card.cue,
-        translation: card.translation,
+        target_chapter: card.target_chapter,
+        target_verse: card.target_verse,
+        step: card.step as u32,
+        step_count: card.step_count as u32,
         is_new: card.is_new,
-        is_review: card.is_review,
-        position: card.position,
-        total: card.total,
-        due_remaining: card.due_remaining,
+        position: card.position as u32,
+        total: card.total as u32,
+        section: card.section as u32,
+        section_count: card.section_count as u32,
     }
 }
 
@@ -204,6 +243,61 @@ pub async fn delete_memory_passage(bible: SharedBible) {
     }
 }
 
+pub async fn get_memory_layout(bible: SharedBible) {
+    let receiver = GetMemoryLayout::get_dart_signal_receiver();
+    while let Some(pack) = receiver.recv().await {
+        send_layout(&lock(&bible), &pack.message.passage_id);
+    }
+}
+
+pub async fn set_memory_layout(bible: SharedBible) {
+    let receiver = SetMemoryLayout::get_dart_signal_receiver();
+    while let Some(pack) = receiver.recv().await {
+        let r = pack.message;
+        let bible = lock(&bible);
+        let now = now_epoch();
+        let starts: Vec<usize> = r.line_starts.iter().map(|&i| usize::from(i)).collect();
+        let section = match r.section_start {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        };
+        let result = bible
+            .set_memory_line_starts(
+                r.book,
+                r.chapter,
+                r.verse,
+                (!r.default_lines).then_some(&starts[..]),
+                now,
+            )
+            .and_then(|()| {
+                bible.set_memory_section_start(r.book, r.chapter, r.verse, section, now)
+            });
+        match result {
+            Ok(()) => {
+                persist_browser_progress(&bible);
+                send_layout(&bible, &r.passage_id);
+            }
+            Err(e) => debug_print!("set_memory_layout error: {e:?}"),
+        }
+    }
+}
+
+pub async fn reset_memory_layout(bible: SharedBible) {
+    let receiver = ResetMemoryLayout::get_dart_signal_receiver();
+    while let Some(pack) = receiver.recv().await {
+        let id = pack.message.passage_id;
+        let bible = lock(&bible);
+        match bible.reset_memory_layout(&id, now_epoch()) {
+            Ok(()) => {
+                persist_browser_progress(&bible);
+                send_layout(&bible, &id);
+            }
+            Err(e) => debug_print!("reset_memory_layout error: {e:?}"),
+        }
+    }
+}
+
 pub async fn get_next_memory_card(bible: SharedBible) {
     let receiver = GetNextMemoryCard::get_dart_signal_receiver();
     while let Some(pack) = receiver.recv().await {
@@ -216,57 +310,73 @@ pub async fn get_next_memory_card(bible: SharedBible) {
     }
 }
 
-pub async fn get_memory_card(bible: SharedBible) {
-    let receiver = GetMemoryCard::get_dart_signal_receiver();
+pub async fn get_memory_run(bible: SharedBible) {
+    let receiver = GetMemoryRun::get_dart_signal_receiver();
     while let Some(pack) = receiver.recv().await {
-        let r = pack.message;
         let bible = lock(&bible);
-        let stage = r.recall.then_some(core::STAGE_RECALL);
-        match bible.memory_card(
-            &r.passage_id,
-            r.book,
-            r.chapter,
-            r.verse,
-            stage,
-            now_epoch(),
-        ) {
-            Ok(card) => to_signal_item(core::MemoryItem::Card(card)).send_signal_to_dart(),
-            Err(e) => debug_print!("get_memory_card error: {e:?}"),
+        match bible.memory_run_card(&pack.message.passage_id) {
+            Ok(card) => to_signal_item(card.map_or(
+                core::MemoryItem::Done {
+                    next_due_epoch: 0,
+                    can_learn_more: false,
+                },
+                core::MemoryItem::Card,
+            ))
+            .send_signal_to_dart(),
+            Err(e) => debug_print!("get_memory_run error: {e:?}"),
         }
     }
 }
 
-pub async fn submit_memory_review(bible: SharedBible) {
-    let receiver = SubmitMemoryReview::get_dart_signal_receiver();
+pub async fn submit_memory_recital(bible: SharedBible) {
+    let receiver = SubmitMemoryRecital::get_dart_signal_receiver();
     while let Some(pack) = receiver.recv().await {
         let r = pack.message;
-        let Some(grade) = Grade::from_i64(i64::from(r.grade)) else {
-            debug_print!("submit_memory_review: bad grade {}", r.grade);
+        let (Some(purpose), Some(grade)) = (
+            MemoryPurpose::parse(&r.purpose),
+            Grade::from_i64(i64::from(r.grade)),
+        ) else {
+            debug_print!("submit_memory_recital: bad purpose or grade {r:?}");
             continue;
         };
+        let verses: Vec<MemoryVerseGrade> = r
+            .chapters
+            .iter()
+            .zip(&r.verses)
+            .zip(&r.grades)
+            .filter_map(|((&chapter, &verse), &g)| {
+                Some(MemoryVerseGrade {
+                    chapter,
+                    verse,
+                    grade: Grade::from_i64(i64::from(g))?,
+                })
+            })
+            .collect();
+        let target = (r.target_verse > 0).then_some((r.target_chapter, r.target_verse));
         let bible = lock(&bible);
-        match bible.submit_memory_review(
+        match bible.submit_memory_recital(
             &r.passage_id,
             r.book,
-            r.chapter,
-            r.verse,
+            purpose,
+            target,
+            r.step as usize,
             grade,
-            r.run_through,
+            &verses,
             now_epoch(),
             r.utc_offset,
         ) {
             Ok(o) => {
                 persist_browser_progress(&bible);
                 MemoryReviewResult {
-                    book: r.book,
-                    chapter: r.chapter,
-                    verse: r.verse,
+                    purpose: r.purpose,
+                    target_chapter: r.target_chapter,
+                    target_verse: r.target_verse,
                     xp: o.xp,
-                    stage_before: o.stage_before,
-                    stage_after: o.stage_after,
-                    interval_days: o.interval_days,
                     first_graduation: o.first_graduation,
+                    section_completed: o.section_completed,
                     completed_passages: o.completed_passages,
+                    relearn: o.relearn,
+                    interval_days: o.interval_days,
                     total_xp: o.total_xp,
                     level_before: o.level_before,
                     level_after: o.level_after,
@@ -277,7 +387,7 @@ pub async fn submit_memory_review(bible: SharedBible) {
                 }
                 .send_signal_to_dart();
             }
-            Err(e) => debug_print!("submit_memory_review error: {e:?}"),
+            Err(e) => debug_print!("submit_memory_recital error: {e:?}"),
         }
     }
 }
