@@ -1173,10 +1173,10 @@ pub struct MemorySegment {
     pub words: Vec<MemoryWord>,
 }
 
-/// One card. `purpose` is `"preview"` or `"read"` (text shown, to read
-/// aloud), or `"recall"`, `"chain"`, `"review"` or `"run"` (text hidden, to
-/// recite). A learning card (preview/read/recall/chain) is step `step` of
-/// `step_count` for the target verse.
+/// One card. `purpose` is `"read"` (text shown, to read aloud), or
+/// `"recall"`, `"chain"`, `"review"` or `"run"` (text hidden, to recite). A
+/// learning card (read/recall/chain) is step `step` of `step_count` for the
+/// target verse.
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct MemoryCard {
     pub passage_id: String,

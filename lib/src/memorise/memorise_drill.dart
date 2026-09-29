@@ -350,7 +350,7 @@ class _MemoryRecitalViewState extends State<MemoryRecitalView> {
   late bool _showSounds = !_hidden;
 
   MemoryCard get _card => widget.card;
-  bool get _hidden => !(_card.purpose == 'preview' || _card.purpose == 'read');
+  bool get _hidden => _card.purpose != 'read';
   bool get _complete => !_hidden || _revealed >= _order.length;
 
   @override
@@ -616,11 +616,7 @@ class _MemoryRecitalViewState extends State<MemoryRecitalView> {
       return FilledButton.icon(
         onPressed: () => _grade(2),
         icon: const Icon(Icons.record_voice_over),
-        label: Text(
-          _card.purpose == 'preview'
-              ? 'I have read the section aloud'
-              : 'I have read it aloud',
-        ),
+        label: const Text('I have read it aloud'),
         style: FilledButton.styleFrom(minimumSize: tall),
       );
     }
