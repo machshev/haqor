@@ -1083,6 +1083,8 @@ pub struct MemoryPassageEntry {
     pub due: i64,
     pub mastery_pct: i64,
     pub last_studied_epoch: i64,
+    /// The next verse to start waits for its section to be shaped.
+    pub needs_shaping: bool,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
@@ -1099,10 +1101,9 @@ pub struct GetMemoryLayout {
     pub passage_id: String,
 }
 
-/// Set where a verse's lines start (word indexes, never 0) — or restore the
-/// default split with `default_lines` — and whether a section starts at it
-/// (`section_start`: -1 default, 0 no, 1 yes). The reply is the passage's
-/// [`MemoryLayout`].
+/// Set where a verse's lines start (word indexes, never 0; none keeps it
+/// whole) — or, with `shaped` false, leave it unshaped — and whether a section
+/// starts at it. The reply is the passage's [`MemoryLayout`].
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct SetMemoryLayout {
     pub passage_id: String,
@@ -1110,15 +1111,8 @@ pub struct SetMemoryLayout {
     pub chapter: u8,
     pub verse: u8,
     pub line_starts: Vec<u8>,
-    pub default_lines: bool,
-    pub section_start: i8,
-}
-
-/// Restore a passage's default lines and sections; the reply is its
-/// [`MemoryLayout`].
-#[derive(Debug, Deserialize, DartSignal)]
-pub struct ResetMemoryLayout {
-    pub passage_id: String,
+    pub shaped: bool,
+    pub section_start: bool,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]
@@ -1126,15 +1120,21 @@ pub struct MemoryLayoutVerse {
     pub chapter: u8,
     pub verse: u8,
     pub words: Vec<String>,
+    /// Each word's gloss, in parallel with `words` (empty where unknown).
+    pub glosses: Vec<String>,
     pub line_starts: Vec<u8>,
     pub section_start: bool,
-    pub custom_lines: bool,
-    pub custom_section: bool,
+    /// The learner has decided this verse's lines (kept whole counts).
+    pub shaped: bool,
+    /// Every verse of this verse's section is shaped, so it can be learnt.
+    pub ready: bool,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
 pub struct MemoryLayout {
     pub passage_id: String,
+    /// The passage's book (0 if it is gone).
+    pub book: u8,
     pub verses: Vec<MemoryLayoutVerse>,
 }
 
@@ -1200,13 +1200,15 @@ pub struct MemoryCard {
 
 /// `kind` is `"card"` (with `card`), `"done"` (nothing due; `next_due_epoch`
 /// is when the next review falls, 0 if none, and `can_learn_more` says a
-/// verse is left to start) or `"empty"` (no passages yet).
+/// verse is left to start; `shape_passage_id` names a passage whose next
+/// verse waits for its section to be shaped) or `"empty"` (no passages yet).
 #[derive(Debug, Serialize, RustSignal)]
 pub struct MemoryItem {
     pub kind: String,
     pub card: Option<MemoryCard>,
     pub next_due_epoch: i64,
     pub can_learn_more: bool,
+    pub shape_passage_id: String,
 }
 
 /// How a card went. `grade` (0 Again, 1 Hard, 2 Good, 3 Easy) is the

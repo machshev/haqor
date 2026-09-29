@@ -116,6 +116,7 @@ void main() {
             due: 0,
             masteryPct: 0,
             lastStudiedEpoch: 0,
+            needsShaping: false,
           );
       expect(
         passageReference(p(23, 1, 23, 6), useEnglish: true),

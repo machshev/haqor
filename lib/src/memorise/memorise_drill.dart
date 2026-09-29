@@ -7,6 +7,7 @@ import 'package:rinf/rinf.dart';
 import '../bindings/bindings.dart';
 import '../tutor/progress_sync.dart';
 import 'memorise_page.dart' show memoryUtcOffset;
+import 'memorise_shape.dart';
 
 const _gradeLabels = ['Forgot', 'Hard', 'Good', 'Easy'];
 
@@ -105,6 +106,7 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
             card: null,
             nextDueEpoch: 0,
             canLearnMore: false,
+            shapePassageId: '',
           );
           _waiting = false;
         });
@@ -118,6 +120,21 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
       extraNew: extraNew,
       utcOffset: memoryUtcOffset(),
     ).sendSignalToRust();
+  }
+
+  /// Open the shaping page for the passage whose next section waits on it,
+  /// and carry on from there when the learner comes back.
+  Future<void> _shape(String passageId) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MemoryShapePage(
+          passageId: passageId,
+          title: passageId == widget.passageId ? widget.title : '',
+          exit: ShapeExit.resume,
+        ),
+      ),
+    );
+    if (mounted) _requestNext();
   }
 
   void _submit(MemoryCard card, int grade, List<(int, int, int)> verses) {
@@ -272,6 +289,7 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
                       sessionLearnt: _sessionLearnt,
                       streakDays: result?.streakDays ?? 0,
                       onLearnMore: () => _requestNext(extraNew: true),
+                      onShape: () => _shape(item.shapePassageId),
                     ),
             ),
           ),
@@ -903,6 +921,7 @@ class _DoneView extends StatelessWidget {
     required this.sessionLearnt,
     required this.streakDays,
     required this.onLearnMore,
+    required this.onShape,
   });
 
   final MemoryItem item;
@@ -912,6 +931,7 @@ class _DoneView extends StatelessWidget {
   final int sessionLearnt;
   final int streakDays;
   final VoidCallback onLearnMore;
+  final VoidCallback onShape;
 
   String _nextDue() {
     if (item.nextDueEpoch <= 0) return '';
@@ -929,6 +949,8 @@ class _DoneView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final empty = item.kind == 'empty';
+    // The next verse waits for its section to be shaped.
+    final shape = !run && item.shapePassageId.isNotEmpty;
     final next = _nextDue();
     return Center(
       child: Padding(
@@ -937,7 +959,11 @@ class _DoneView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              empty ? Icons.playlist_add : Icons.celebration,
+              empty
+                  ? Icons.playlist_add
+                  : shape && !item.canLearnMore
+                  ? Icons.wrap_text
+                  : Icons.celebration,
               size: 56,
               color: theme.colorScheme.primary,
             ),
@@ -947,6 +973,8 @@ class _DoneView extends StatelessWidget {
                   ? 'No passages yet'
                   : run
                   ? (sessionCards > 0 ? 'Recited!' : 'Nothing learnt yet')
+                  : shape && !item.canLearnMore
+                  ? 'Shape the next section'
                   : 'All caught up',
               style: theme.textTheme.headlineSmall,
             ),
@@ -968,6 +996,16 @@ class _DoneView extends StatelessWidget {
                 ),
               ),
             ],
+            if (shape && !item.canLearnMore) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Read it through, work out what each verse says, and mark '
+                'where its lines break. Learning carries on as soon as the '
+                'section is shaped.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
             const SizedBox(height: 24),
             if (item.canLearnMore && !run)
               Padding(
@@ -977,6 +1015,21 @@ class _DoneView extends StatelessWidget {
                   icon: const Icon(Icons.add),
                   label: const Text('Learn the next verse'),
                 ),
+              ),
+            if (shape)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: item.canLearnMore
+                    ? OutlinedButton.icon(
+                        onPressed: onShape,
+                        icon: const Icon(Icons.wrap_text),
+                        label: const Text('Shape the next section'),
+                      )
+                    : FilledButton.icon(
+                        onPressed: onShape,
+                        icon: const Icon(Icons.wrap_text),
+                        label: const Text('Shape the next section'),
+                      ),
               ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),

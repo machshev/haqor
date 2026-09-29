@@ -10,7 +10,7 @@ use crate::signals::{
     DeleteMemoryPassage, GetMemoryLayout, GetMemoryPassages, GetMemoryRun, GetMemoryStats,
     GetNextMemoryCard, MemoryAchievement, MemoryCard, MemoryDay, MemoryItem, MemoryLayout,
     MemoryLayoutVerse, MemoryPassageEntry, MemoryPassages, MemoryReviewResult, MemorySegment,
-    MemoryStats, MemoryVerseState, MemoryWord, ResetMemoryLayout, SaveMemoryPassage,
+    MemoryStats, MemoryVerseState, MemoryWord, SaveMemoryPassage,
     SetMemoryLayout, SetMemorySettings, SubmitMemoryRecital,
 };
 
@@ -48,6 +48,7 @@ fn send_passages(bible: &Bible, saved_id: String) {
                     due: s.due,
                     mastery_pct: s.mastery_pct,
                     last_studied_epoch: s.last_studied_epoch,
+                    needs_shaping: s.needs_shaping,
                 })
                 .collect(),
             saved_id,
@@ -58,23 +59,32 @@ fn send_passages(bible: &Bible, saved_id: String) {
 }
 
 fn send_layout(bible: &Bible, passage_id: &str) {
+    let book = match bible.memory_passage(passage_id) {
+        Ok(p) => p.map_or(0, |p| p.book),
+        Err(e) => {
+            debug_print!("memory layout error: {e:?}");
+            return;
+        }
+    };
     match bible.memory_layout(passage_id) {
         Ok(verses) => MemoryLayout {
             passage_id: passage_id.to_string(),
+            book,
             verses: verses
                 .into_iter()
                 .map(|v| MemoryLayoutVerse {
                     chapter: v.chapter,
                     verse: v.verse,
                     words: v.words,
+                    glosses: v.glosses,
                     line_starts: v
                         .line_starts
                         .into_iter()
                         .map(|i| i.min(255) as u8)
                         .collect(),
                     section_start: v.section_start,
-                    custom_lines: v.custom_lines,
-                    custom_section: v.custom_section,
+                    shaped: v.shaped,
+                    ready: v.ready,
                 })
                 .collect(),
         }
@@ -129,21 +139,25 @@ fn to_signal_item(item: core::MemoryItem) -> MemoryItem {
             card: Some(to_signal_card(card)),
             next_due_epoch: 0,
             can_learn_more: true,
+            shape_passage_id: String::new(),
         },
         core::MemoryItem::Done {
             next_due_epoch,
             can_learn_more,
+            shape_passage_id,
         } => MemoryItem {
             kind: "done".to_string(),
             card: None,
             next_due_epoch,
             can_learn_more,
+            shape_passage_id,
         },
         core::MemoryItem::Empty => MemoryItem {
             kind: "empty".to_string(),
             card: None,
             next_due_epoch: 0,
             can_learn_more: false,
+            shape_passage_id: String::new(),
         },
     }
 }
@@ -257,21 +271,16 @@ pub async fn set_memory_layout(bible: SharedBible) {
         let bible = lock(&bible);
         let now = now_epoch();
         let starts: Vec<usize> = r.line_starts.iter().map(|&i| usize::from(i)).collect();
-        let section = match r.section_start {
-            0 => Some(false),
-            1 => Some(true),
-            _ => None,
-        };
         let result = bible
             .set_memory_line_starts(
                 r.book,
                 r.chapter,
                 r.verse,
-                (!r.default_lines).then_some(&starts[..]),
+                r.shaped.then_some(&starts[..]),
                 now,
             )
             .and_then(|()| {
-                bible.set_memory_section_start(r.book, r.chapter, r.verse, section, now)
+                bible.set_memory_section_start(r.book, r.chapter, r.verse, r.section_start, now)
             });
         match result {
             Ok(()) => {
@@ -279,21 +288,6 @@ pub async fn set_memory_layout(bible: SharedBible) {
                 send_layout(&bible, &r.passage_id);
             }
             Err(e) => debug_print!("set_memory_layout error: {e:?}"),
-        }
-    }
-}
-
-pub async fn reset_memory_layout(bible: SharedBible) {
-    let receiver = ResetMemoryLayout::get_dart_signal_receiver();
-    while let Some(pack) = receiver.recv().await {
-        let id = pack.message.passage_id;
-        let bible = lock(&bible);
-        match bible.reset_memory_layout(&id, now_epoch()) {
-            Ok(()) => {
-                persist_browser_progress(&bible);
-                send_layout(&bible, &id);
-            }
-            Err(e) => debug_print!("reset_memory_layout error: {e:?}"),
         }
     }
 }
@@ -319,6 +313,7 @@ pub async fn get_memory_run(bible: SharedBible) {
                 core::MemoryItem::Done {
                     next_due_epoch: 0,
                     can_learn_more: false,
+                    shape_passage_id: String::new(),
                 },
                 core::MemoryItem::Card,
             ))

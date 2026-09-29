@@ -82,7 +82,7 @@ class _MemorisePageState extends State<MemorisePage> {
       if (_shapeNext && saved.isNotEmpty) {
         _shapeNext = false;
         final passage = pack.message.passages.where((p) => p.id == saved);
-        if (passage.isNotEmpty) _shape(passage.first, offerStart: true);
+        if (passage.isNotEmpty) _shape(passage.first, exit: ShapeExit.start);
       }
       // Any change to the passages moves the counts too.
       GetMemoryStats(utcOffset: memoryUtcOffset()).sendSignalToRust();
@@ -155,19 +155,20 @@ class _MemorisePageState extends State<MemorisePage> {
 
   Future<void> _shape(
     MemoryPassageEntry passage, {
-    bool offerStart = false,
+    ShapeExit exit = ShapeExit.none,
   }) async {
-    await Navigator.of(context).push(
+    final learn = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => MemoryShapePage(
           passageId: passage.id,
-          book: passage.book,
           title: passageTitle(passage, useEnglish: _english),
-          offerStart: offerStart,
+          exit: exit,
         ),
       ),
     );
     _refresh();
+    // "Start learning": practise from here, so the list refreshes after.
+    if (learn == true && mounted) await _practise(passage: passage);
   }
 
   Future<void> _addPassage() async {
@@ -533,9 +534,10 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Pick a chapter or a run of verses. You will learn it a verse at a '
-            'time: read it, fill in the gaps, recite from first letters, then '
-            'from memory — and review it just before you would forget.',
+            'Pick a chapter or a run of verses. First work out what it says and '
+            'mark where its lines and sections break; then learn it a line and '
+            'a verse at a time, reciting from memory, and review it just before '
+            'you would forget.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
@@ -619,6 +621,14 @@ class _PassageCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  // Learning waits on the learner shaping the next section.
+                  if (passage.needsShaping)
+                    ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      avatar: const Icon(Icons.wrap_text, size: 18),
+                      label: const Text('Shape next'),
+                      onPressed: onShape,
+                    ),
                   if (passage.due > 0)
                     Chip(
                       visualDensity: VisualDensity.compact,

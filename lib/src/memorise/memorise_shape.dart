@@ -5,31 +5,47 @@ import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
 import '../tutor/progress_sync.dart';
-import 'memorise_drill.dart';
+import 'memorise_drill.dart' show memoryHebrewStyle;
+
+/// Where the shaping page leads once a section is ready.
+enum ShapeExit {
+  /// Just back to wherever it was opened from.
+  none,
+
+  /// "Start learning": the page that opened it then starts practice (after
+  /// adding a passage).
+  start,
+
+  /// "Carry on learning" returns to the practice that sent the learner here.
+  resume,
+}
 
 /// Shape a passage for learning: where each verse breaks into lines (the
 /// pauses and emphasis the learner hears in it) and where the passage breaks
-/// into sections learnt as one piece. Reading a passage through closely
-/// enough to shape it is itself a first step in learning it.
+/// into sections learnt as one piece.
 ///
-/// Tapping a word ends a line after it (or joins the line back up); tapping a
-/// verse number starts a new section there (or joins it to the one before).
+/// Nothing is shaped for the learner, and a verse is not learnt until its
+/// section is shaped: working out what a verse says, and so where it pauses,
+/// is the first step in remembering it. Only the section at hand needs doing
+/// before learning can begin; the rest can be shaped as it is reached.
+///
+/// Tapping a word ends a line after it (or joins the line back up), and
+/// "Keep whole" settles a verse that is one line; each word's gloss sits
+/// under it. Tapping a verse number starts a new section there (or joins it
+/// to the one before).
 class MemoryShapePage extends StatefulWidget {
   const MemoryShapePage({
     super.key,
     required this.passageId,
-    required this.book,
     required this.title,
-    this.offerStart = false,
+    this.exit = ShapeExit.none,
   });
 
   final String passageId;
-  final int book;
-  final String title;
 
-  /// Show a "Start learning" button that opens practice (after adding a
-  /// passage).
-  final bool offerStart;
+  /// The passage's name; empty when not known (practising every passage).
+  final String title;
+  final ShapeExit exit;
 
   @override
   State<MemoryShapePage> createState() => _MemoryShapePageState();
@@ -38,13 +54,18 @@ class MemoryShapePage extends StatefulWidget {
 class _MemoryShapePageState extends State<MemoryShapePage> {
   StreamSubscription<RustSignalPack<MemoryLayout>>? _sub;
   List<MemoryLayoutVerse>? _verses;
+  int _book = 0;
+  bool _glosses = true;
 
   @override
   void initState() {
     super.initState();
     _sub = MemoryLayout.rustSignalStream.listen((pack) {
       if (!mounted || pack.message.passageId != widget.passageId) return;
-      setState(() => _verses = pack.message.verses);
+      setState(() {
+        _book = pack.message.book;
+        _verses = pack.message.verses;
+      });
     });
     GetMemoryLayout(passageId: widget.passageId).sendSignalToRust();
   }
@@ -55,19 +76,22 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
     super.dispose();
   }
 
-  void _send(MemoryLayoutVerse v, {List<int>? lineStarts, bool? sectionStart}) {
+  /// Store a verse's shape; any change to its lines, or keeping it whole,
+  /// settles it as shaped.
+  void _send(
+    MemoryLayoutVerse v, {
+    List<int>? lineStarts,
+    bool? sectionStart,
+    bool settle = false,
+  }) {
     SetMemoryLayout(
       passageId: widget.passageId,
-      book: widget.book,
+      book: _book,
       chapter: v.chapter,
       verse: v.verse,
       lineStarts: lineStarts ?? v.lineStarts,
-      defaultLines: lineStarts == null && !v.customLines,
-      sectionStart: sectionStart != null
-          ? (sectionStart ? 1 : 0)
-          : v.customSection
-          ? (v.sectionStart ? 1 : 0)
-          : -1,
+      shaped: v.shaped || settle || lineStarts != null,
+      sectionStart: sectionStart ?? v.sectionStart,
     ).sendSignalToRust();
     scheduleProgressSync();
   }
@@ -82,35 +106,13 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
     _send(v, lineStarts: starts);
   }
 
+  void _keepWhole(MemoryLayoutVerse v) => _send(v, settle: true);
+
   void _toggleSection(MemoryLayoutVerse v) =>
       _send(v, sectionStart: !v.sectionStart);
 
-  Future<void> _reset() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Use the suggested shape?'),
-        content: const Text(
-          'Every line break and section is put back to the suggestion: '
-          'longer verses split at their main pause, sections of about four '
-          'verses.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Reset'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    ResetMemoryLayout(passageId: widget.passageId).sendSignalToRust();
-    scheduleProgressSync();
-  }
+  /// Back to where the learner came from, with `true`: go on and learn.
+  void _leave() => Navigator.of(context).pop(true);
 
   @override
   Widget build(BuildContext context) {
@@ -122,15 +124,19 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
       if (sections.isEmpty || v.sectionStart) sections.add([]);
       sections.last.add(v);
     }
+    final anyReady = verses?.any((v) => v.ready) ?? false;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: theme.colorScheme.surface,
-        title: Text('Shape ${widget.title}'),
+        title: Text(
+          widget.title.isEmpty ? 'Shape the passage' : 'Shape ${widget.title}',
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.auto_fix_high),
-            tooltip: 'Use the suggested shape',
-            onPressed: verses == null ? null : _reset,
+            icon: const Icon(Icons.translate),
+            isSelected: _glosses,
+            tooltip: _glosses ? 'Hide word meanings' : 'Show word meanings',
+            onPressed: () => setState(() => _glosses = !_glosses),
           ),
         ],
       ),
@@ -148,17 +154,18 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Read it through aloud, and mark where you pause.',
+                          'Work out what it says, then mark where it pauses.',
                           style: theme.textTheme.titleSmall,
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Tap a word to end a line after it. Tap a verse '
-                          'number to start a new section there. Each line is '
-                          'learnt on its own, then joined to the lines before '
-                          'it; each section is learnt, and reviewed, as one '
-                          'piece. Deciding where the breaks fall is the first '
-                          'step in learning it.',
+                          'Read each verse aloud with the meanings under its '
+                          'words, and split it where the sense breaks: tap a '
+                          'word to end a line after it, or keep a short verse '
+                          'whole. Then tap the verse number where the next '
+                          'section begins. A section can be learnt once every '
+                          'verse in it is shaped — shape the first one now, '
+                          'and the rest as you reach them.',
                           style: theme.textTheme.bodySmall,
                         ),
                       ],
@@ -171,23 +178,31 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
                     index: s,
                     verses: sections[s],
                     first: s == 0,
+                    last: s + 1 == sections.length,
+                    glosses: _glosses,
                     onToggleBreak: _toggleBreak,
+                    onKeepWhole: _keepWhole,
                     onToggleSection: _toggleSection,
                   ),
               ],
             ),
-      floatingActionButton: widget.offerStart && verses != null
+      floatingActionButton: widget.exit != ShapeExit.none && verses != null
           ? FloatingActionButton.extended(
-              onPressed: () => Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (_) => MemoryDrillPage(
-                    passageId: widget.passageId,
-                    title: widget.title,
-                  ),
-                ),
-              ),
+              onPressed: anyReady ? _leave : null,
+              backgroundColor: anyReady
+                  ? null
+                  : theme.colorScheme.surfaceContainerHighest,
+              foregroundColor: anyReady
+                  ? null
+                  : theme.colorScheme.onSurfaceVariant,
               icon: const Icon(Icons.play_arrow),
-              label: const Text('Start learning'),
+              label: Text(
+                !anyReady
+                    ? 'Shape a section to start'
+                    : widget.exit == ShapeExit.start
+                    ? 'Start learning'
+                    : 'Carry on learning',
+              ),
             )
           : null,
     );
@@ -199,14 +214,20 @@ class _SectionCard extends StatelessWidget {
     required this.index,
     required this.verses,
     required this.first,
+    required this.last,
+    required this.glosses,
     required this.onToggleBreak,
+    required this.onKeepWhole,
     required this.onToggleSection,
   });
 
   final int index;
   final List<MemoryLayoutVerse> verses;
   final bool first;
+  final bool last;
+  final bool glosses;
   final void Function(MemoryLayoutVerse, int) onToggleBreak;
+  final ValueChanged<MemoryLayoutVerse> onKeepWhole;
   final ValueChanged<MemoryLayoutVerse> onToggleSection;
 
   @override
@@ -216,6 +237,11 @@ class _SectionCard extends StatelessWidget {
         ? '${verses.first.chapter}:${verses.first.verse}'
         : '${verses.first.chapter}:${verses.first.verse}–'
               '${verses.last.verse}';
+    final ready = verses.first.ready;
+    final left = verses.where((v) => !v.shaped).length;
+    final status = ready
+        ? 'ready to learn'
+        : '$left of ${verses.length} to shape';
     return Card(
       elevation: 0,
       color: theme.colorScheme.surfaceContainerLow,
@@ -225,18 +251,50 @@ class _SectionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Section ${index + 1} · $span',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: theme.colorScheme.primary,
-              ),
+            Row(
+              children: [
+                if (ready) ...[
+                  Icon(
+                    Icons.check_circle,
+                    size: 18,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Expanded(
+                  child: Text(
+                    'Section ${index + 1} · $span · $status',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: ready
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
             ),
+            // The last section runs to the end of the passage: closing it
+            // sooner is the way to start sooner.
+            if (last && !ready && verses.length > 1)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'This section runs to the end of the passage. Tap the '
+                  'number of the verse where the next section starts, and '
+                  'only the verses before it need shaping.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             const SizedBox(height: 8),
             for (var i = 0; i < verses.length; i++)
               _VerseShape(
                 verse: verses[i],
                 canStartSection: !(first && i == 0),
+                glosses: glosses,
                 onToggleBreak: (w) => onToggleBreak(verses[i], w),
+                onKeepWhole: () => onKeepWhole(verses[i]),
                 onToggleSection: () => onToggleSection(verses[i]),
               ),
           ],
@@ -250,13 +308,17 @@ class _VerseShape extends StatelessWidget {
   const _VerseShape({
     required this.verse,
     required this.canStartSection,
+    required this.glosses,
     required this.onToggleBreak,
+    required this.onKeepWhole,
     required this.onToggleSection,
   });
 
   final MemoryLayoutVerse verse;
   final bool canStartSection;
+  final bool glosses;
   final ValueChanged<int> onToggleBreak;
+  final VoidCallback onKeepWhole;
   final VoidCallback onToggleSection;
 
   @override
@@ -302,31 +364,60 @@ class _VerseShape extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (var l = 0; l + 1 < bounds.length; l++)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Wrap(
-                        spacing: 2,
-                        runSpacing: 4,
-                        children: [
-                          for (var w = bounds[l]; w < bounds[l + 1]; w++)
-                            _ShapeWord(
-                              text: verse.words[w],
-                              endsLine:
-                                  w + 1 == bounds[l + 1] &&
-                                  w + 1 < verse.words.length,
-                              canBreak: w + 1 < verse.words.length,
-                              onTap: () => onToggleBreak(w),
-                            ),
-                        ],
+              child: Opacity(
+                // An unshaped verse stays faded until the learner settles it.
+                opacity: verse.shaped ? 1 : 0.7,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var l = 0; l + 1 < bounds.length; l++)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Wrap(
+                          spacing: 2,
+                          runSpacing: 4,
+                          children: [
+                            for (var w = bounds[l]; w < bounds[l + 1]; w++)
+                              _ShapeWord(
+                                text: verse.words[w],
+                                gloss: glosses && w < verse.glosses.length
+                                    ? verse.glosses[w]
+                                    : '',
+                                endsLine:
+                                    w + 1 == bounds[l + 1] &&
+                                    w + 1 < verse.words.length,
+                                canBreak: w + 1 < verse.words.length,
+                                onTap: () => onToggleBreak(w),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
+            const SizedBox(width: 4),
+            if (verse.shaped)
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Icon(
+                  Icons.check_circle,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                  semanticLabel: 'shaped',
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: OutlinedButton(
+                  onPressed: onKeepWhole,
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: const Text('Keep whole'),
+                ),
+              ),
           ],
         ),
       ),
@@ -337,12 +428,14 @@ class _VerseShape extends StatelessWidget {
 class _ShapeWord extends StatelessWidget {
   const _ShapeWord({
     required this.text,
+    required this.gloss,
     required this.endsLine,
     required this.canBreak,
     required this.onTap,
   });
 
   final String text;
+  final String gloss;
   final bool endsLine;
   final bool canBreak;
   final VoidCallback onTap;
@@ -357,11 +450,29 @@ class _ShapeWord extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(text, style: memoryHebrewStyle(theme, 22)),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(text, style: memoryHebrewStyle(theme, 22)),
+                if (gloss.isNotEmpty)
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 110),
+                    child: Text(
+                      gloss,
+                      textDirection: TextDirection.ltr,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             if (endsLine)
               Padding(
-                padding: const EdgeInsetsDirectional.only(start: 4),
+                padding: const EdgeInsetsDirectional.only(start: 4, top: 6),
                 child: Icon(
                   Icons.keyboard_return,
                   size: 16,
