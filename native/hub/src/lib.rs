@@ -2,6 +2,7 @@
 //! entry point of the Rust logic.
 
 mod functions;
+mod memorise;
 mod signals;
 
 use std::path::{Path, PathBuf};
@@ -138,6 +139,14 @@ async fn main() {
     spawn(save_tutor_gloss(bible.clone()));
     spawn(get_tutor_gloss_override_stats(bible.clone()));
     spawn(optimize_tutor_gloss_overrides(bible.clone()));
+    spawn(memorise::get_memory_passages(bible.clone()));
+    spawn(memorise::save_memory_passage(bible.clone()));
+    spawn(memorise::delete_memory_passage(bible.clone()));
+    spawn(memorise::get_next_memory_card(bible.clone()));
+    spawn(memorise::get_memory_card(bible.clone()));
+    spawn(memorise::submit_memory_review(bible.clone()));
+    spawn(memorise::get_memory_stats(bible.clone()));
+    spawn(memorise::set_memory_settings(bible.clone()));
     spawn(sync_progress(bible, data_dir));
 
     // Keep the main function running until Dart shutdown.

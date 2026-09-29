@@ -38,7 +38,7 @@ use rinf::{DartSignal, RustSignal, debug_print};
 /// inconsistent and the connection can keep being used.
 pub type SharedBible = Arc<Mutex<Bible>>;
 
-fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
+pub(crate) fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
     bible.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -108,7 +108,7 @@ pub async fn get_dictionary_entry(bible: SharedBible) {
 /// Browser SQLite lives in the WASM heap.  Save it after every successful
 /// learner write so the Dart host can persist it between PWA launches.
 #[cfg(target_arch = "wasm32")]
-fn persist_browser_progress(bible: &Bible) {
+pub(crate) fn persist_browser_progress(bible: &Bible) {
     use rinf::RustSignalBinary;
 
     match bible.progress_snapshot_bytes() {
@@ -118,7 +118,7 @@ fn persist_browser_progress(bible: &Bible) {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn persist_browser_progress(_: &Bible) {}
+pub(crate) fn persist_browser_progress(_: &Bible) {}
 
 const MAX_SYNC_SNAPSHOT_BYTES: usize = 64 * 1024 * 1024;
 
@@ -1090,7 +1090,7 @@ fn empty_word_occurrences(request_id: u32) -> WordOccurrences {
 
 /// Wall-clock now in epoch seconds (the SM-2 scheduler's time base). Tutor
 /// state is day-grained, so second precision is ample.
-fn now_epoch() -> i64 {
+pub(crate) fn now_epoch() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)

@@ -1026,3 +1026,227 @@ pub struct BuildInfo {
     pub core_version: String,
     pub data_version: String,
 }
+
+// --- memorisation ------------------------------------------------------------
+//
+// Learning passages by heart (see `haqor_core::memorise`). Books use the
+// core's 1-based numbering, like `GetChapter`.
+
+/// Ask for every passage being learnt; the reply is [`MemoryPassages`].
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetMemoryPassages {}
+
+/// Add a passage to learn (an inclusive verse range in one book). The reply
+/// is [`MemoryPassages`] with `saved_id` naming it; the range is clipped to
+/// verses that exist, so a whole chapter can be sent as verses 1..=255.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SaveMemoryPassage {
+    pub book: u8,
+    pub start_chapter: u8,
+    pub start_verse: u8,
+    pub end_chapter: u8,
+    pub end_verse: u8,
+    pub title: String,
+}
+
+/// Stop learning a passage. What was learnt of its verses is kept.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct DeleteMemoryPassage {
+    pub id: String,
+}
+
+/// One verse of a passage for its heatmap. `strength` runs 0 (not started),
+/// 1–2 (climbing the cue ladder), 3 (learnt), 4 (established), 5 (mature).
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct MemoryVerseState {
+    pub chapter: u8,
+    pub verse: u8,
+    pub strength: u8,
+    pub due: bool,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct MemoryPassageEntry {
+    pub id: String,
+    pub book: u8,
+    pub start_chapter: u8,
+    pub start_verse: u8,
+    pub end_chapter: u8,
+    pub end_verse: u8,
+    /// Empty when the learner gave no name; the app shows the reference.
+    pub title: String,
+    pub created_epoch: i64,
+    pub verses: Vec<MemoryVerseState>,
+    pub learnt: i64,
+    pub mature: i64,
+    pub due: i64,
+    pub mastery_pct: i64,
+    pub last_studied_epoch: i64,
+}
+
+#[derive(Debug, Serialize, RustSignal)]
+pub struct MemoryPassages {
+    pub passages: Vec<MemoryPassageEntry>,
+    /// The passage a [`SaveMemoryPassage`] just added, else empty.
+    pub saved_id: String,
+}
+
+/// Ask for the next verse to practise in `passage_id` (empty = every
+/// passage). `extra_new` starts a new verse even past today's ration.
+/// `utc_offset` (seconds east of UTC) decides which local day it is. The
+/// reply is [`MemoryItem`].
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetNextMemoryCard {
+    pub passage_id: String,
+    pub extra_new: bool,
+    pub utc_offset: i64,
+}
+
+/// Ask for one particular verse's card — at recall when `recall`, as a
+/// run-through asks, else at its current stage. The reply is [`MemoryItem`].
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetMemoryCard {
+    pub passage_id: String,
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub recall: bool,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct MemoryWord {
+    pub text: String,
+    pub hidden: bool,
+    /// What is still shown of a hidden word (its first letter), else empty.
+    pub hint: String,
+    pub gloss: String,
+    pub translit: String,
+}
+
+/// One verse to practise. `stage` is its rung on the cue ladder: 0 read,
+/// 1 light cloze, 2 heavy cloze, 3 first letters, 4 recall.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct MemoryCard {
+    pub passage_id: String,
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub stage: u8,
+    pub words: Vec<MemoryWord>,
+    /// The end of the previous verse, to chain from.
+    pub cue: String,
+    pub translation: String,
+    pub is_new: bool,
+    pub is_review: bool,
+    pub position: i64,
+    pub total: i64,
+    pub due_remaining: i64,
+}
+
+/// `kind` is `"card"` (with `card`), `"done"` (nothing due; `next_due_epoch`
+/// is when the next review falls, 0 if none, and `can_learn_more` says a
+/// verse is left to start) or `"empty"` (no passages yet).
+#[derive(Debug, Serialize, RustSignal)]
+pub struct MemoryItem {
+    pub kind: String,
+    pub card: Option<MemoryCard>,
+    pub next_due_epoch: i64,
+    pub can_learn_more: bool,
+}
+
+/// Grade a verse (0 Again, 1 Hard, 2 Good, 3 Easy). `run_through` marks an
+/// answer from reciting a passage in order, where a verse need not be due.
+/// The reply is [`MemoryReviewResult`]; the app then asks for the next card.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SubmitMemoryReview {
+    pub passage_id: String,
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub grade: u8,
+    pub run_through: bool,
+    pub utc_offset: i64,
+}
+
+/// What an answer earned, for the app's celebration.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct MemoryReviewResult {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub xp: i64,
+    pub stage_before: u8,
+    pub stage_after: u8,
+    pub interval_days: i64,
+    pub first_graduation: bool,
+    pub completed_passages: Vec<String>,
+    pub total_xp: i64,
+    pub level_before: i64,
+    pub level_after: i64,
+    pub today_xp: i64,
+    pub daily_goal_xp: i64,
+    pub goal_reached_now: bool,
+    pub streak_days: i64,
+}
+
+/// Ask for the memorisation dashboard; the reply is [`MemoryStats`].
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetMemoryStats {
+    pub utc_offset: i64,
+}
+
+/// Change the daily ration of new verses and the daily XP goal; the reply
+/// is [`MemoryStats`] showing the stored (clamped) values.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SetMemorySettings {
+    pub new_per_day: i64,
+    pub daily_goal_xp: i64,
+    pub utc_offset: i64,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct MemoryDay {
+    pub day: i64,
+    pub xp: i64,
+    pub reviews: i64,
+    pub learnt_total: i64,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct MemoryAchievement {
+    pub key: String,
+    pub title: String,
+    pub description: String,
+    pub progress: i64,
+    pub target: i64,
+    pub earned: bool,
+}
+
+#[derive(Debug, Serialize, RustSignal)]
+pub struct MemoryStats {
+    pub total_xp: i64,
+    pub level: i64,
+    pub level_xp: i64,
+    pub level_span: i64,
+    pub today_xp: i64,
+    pub daily_goal_xp: i64,
+    pub new_per_day: i64,
+    pub streak_days: i64,
+    pub best_streak_days: i64,
+    pub goal_days: i64,
+    pub verses_learnt: i64,
+    pub verses_mature: i64,
+    pub verses_learning: i64,
+    pub verses_total: i64,
+    pub due_now: i64,
+    pub passages_completed: i64,
+    pub passages_total: i64,
+    pub reviews_total: i64,
+    pub accuracy_pct: i64,
+    /// The last 30 days, oldest first.
+    pub history: Vec<MemoryDay>,
+    /// Reviews due on each of the next 14 days (index 0 = today, overdue
+    /// included).
+    pub forecast: Vec<i64>,
+    pub achievements: Vec<MemoryAchievement>,
+}

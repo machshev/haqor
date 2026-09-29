@@ -13,6 +13,7 @@ import 'bible_data.dart';
 import 'christadelphian_readings.dart';
 import 'bindings/bindings.dart' hide StudyItem;
 import 'issue_reporting.dart';
+import 'memorise/memorise_page.dart';
 import 'study_workspace.dart';
 import 'tutor/onboarding.dart';
 import 'tutor/progress_sync.dart';
@@ -172,6 +173,7 @@ enum _ReaderMenuAction {
   crossReferences,
   readingPlan,
   tutor,
+  memorise,
   reportIssue,
   settings,
   about,
@@ -180,7 +182,11 @@ enum _ReaderMenuAction {
 enum _ResolvedReaderLayout { focus, split, threePanel }
 
 /// What a verse number's menu offers.
-enum _VerseMenuAction { crossReferences, chapterCrossReferences }
+enum _VerseMenuAction {
+  crossReferences,
+  chapterCrossReferences,
+  memoriseChapter,
+}
 
 enum _WordMenuAction {
   open,
@@ -1050,6 +1056,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _ReaderMenuAction.studyWorkspace,
     _ReaderMenuAction.readingPlan,
     _ReaderMenuAction.tutor,
+    _ReaderMenuAction.memorise,
     if (_activeReader?._adminMode ?? false) _ReaderMenuAction.reportIssue,
     _ReaderMenuAction.settings,
     _ReaderMenuAction.about,
@@ -1067,6 +1074,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           'Reading plan',
         ),
         _ReaderMenuAction.tutor => (Icons.school_outlined, 'Tutor'),
+        _ReaderMenuAction.memorise => (Icons.psychology_outlined, 'Memorise'),
         _ReaderMenuAction.reportIssue => (
           Icons.flag_outlined,
           'Report an issue',
@@ -3755,6 +3763,13 @@ class _ReaderSessionState extends State<_ReaderSession>
             title: Text('Chapter cross references'),
           ),
         ),
+        const PopupMenuItem(
+          value: _VerseMenuAction.memoriseChapter,
+          child: ListTile(
+            leading: Icon(Icons.psychology_outlined),
+            title: Text('Memorise this chapter'),
+          ),
+        ),
       ],
     );
     if (!mounted) return;
@@ -3763,6 +3778,8 @@ class _ReaderSessionState extends State<_ReaderSession>
         widget.onCrossReferencesRequested(bookIndex, chapter, verse);
       case _VerseMenuAction.chapterCrossReferences:
         widget.onCrossReferencesRequested(bookIndex, chapter, null);
+      case _VerseMenuAction.memoriseChapter:
+        await memoriseChapter(context, bookIndex, chapter);
       case null:
         break;
     }
@@ -4045,6 +4062,10 @@ class _ReaderSessionState extends State<_ReaderSession>
         Navigator.of(
           context,
         ).push(MaterialPageRoute(builder: (_) => const TutorEntryPage()));
+      case _ReaderMenuAction.memorise:
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const MemorisePage()));
       case _ReaderMenuAction.reportIssue:
         _reportGeneralIssue();
       case _ReaderMenuAction.settings:
