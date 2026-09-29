@@ -128,6 +128,12 @@ Future<void> _pumpSheet(
   await tester.pumpAndSettle();
 }
 
+/// Unfold the [i]th lexeme's entries, which start folded when it has several.
+Future<void> _openLexeme(WidgetTester tester, [int i = 0]) async {
+  await tester.tap(find.byKey(ValueKey('lexeme-group-$i')));
+  await tester.pumpAndSettle();
+}
+
 /// Tap the linked span reading [text]. Entry bodies are [SelectableText], whose
 /// spans the text-range finders cannot reach, so the span's own recognizer is
 /// fired — the last match, being the topmost preview's.
@@ -154,6 +160,7 @@ void main() {
     tester,
   ) async {
     await _pumpSheet(tester, syriac: false);
+    await _openLexeme(tester);
     expect(find.byTooltip(LexiconSource.bdb.title), findsOneWidget);
     expect(find.byTooltip(LexiconSource.klein.title), findsOneWidget);
     expect(find.byTooltip(LexiconSource.jastrow.title), findsOneWidget);
@@ -167,6 +174,7 @@ void main() {
     tester,
   ) async {
     await _pumpSheet(tester, syriac: false);
+    await _openLexeme(tester);
     await tester.tap(find.text('well-being, welfare'));
     await tester.pumpAndSettle();
     expect(find.textContaining('well-being.'), findsOneWidget);
@@ -182,6 +190,7 @@ void main() {
   ) async {
     final asked = <GetDictionaryEntry>[];
     await _pumpSheet(tester, syriac: false, onDictionaryRequest: asked.add);
+    await _openLexeme(tester);
     await tester.tap(find.text('well-being, welfare'));
     await tester.pumpAndSettle();
 
@@ -269,6 +278,7 @@ void main() {
         ),
       ],
     );
+    await _openLexeme(tester, 1);
     expect(find.byTooltip(LexiconSource.sedra.title), findsOneWidget);
     expect(find.byTooltip(LexiconSource.bdb.title), findsOneWidget);
     expect(find.byTooltip(LexiconSource.klein.title), findsOneWidget);
@@ -326,6 +336,7 @@ void _groupedLexemeTests() {
           ),
         ],
       );
+      await _openLexeme(tester);
       // The headword once, over all five entries, and no stray numeral on it.
       // The sheet reorders the points for display, so match them as a set.
       String points(String s) => String.fromCharCodes(s.runes.toList()..sort());
@@ -384,11 +395,62 @@ void _groupedLexemeTests() {
         ),
       ],
     );
+    await _openLexeme(tester);
     String points(String s) => String.fromCharCodes(s.runes.toList()..sort());
     Finder hebrew(String word) => find.byWidgetPredicate(
       (w) => w is Text && w.data != null && points(w.data!) == points(word),
     );
     expect(hebrew('שִׁרְיוֹן'), findsOneWidget);
     expect(hebrew('שִׁרְיָן'), findsOneWidget);
+  });
+
+  testWidgets("a word's entries start folded under its fullest gloss", (
+    tester,
+  ) async {
+    await _pumpSheet(
+      tester,
+      syriac: false,
+      lexemes: [
+        LexemeSummary(
+          headword: 'יִשְׂרָאֵל',
+          posCategory: 'proper',
+          isCurrent: false,
+          entries: [
+            entry('bdb', '', 'see שׂרה').copyWith(posCategory: 'other'),
+            entry('bdb', '', 'Israel; Ēl persisteth; persevereth'),
+            entry('klein', '', 'Israel'),
+            // A clipped Jastrow excerpt, longer but no definition.
+            entry('jastrow', '', 'Israel, the people. Ber. 4ᵃ ב׳ וכ׳ and it…'),
+          ],
+        ),
+      ],
+    );
+    expect(find.text('Israel; Ēl persisteth; persevereth'), findsOneWidget);
+    expect(find.text('×4'), findsOneWidget);
+    expect(find.byTooltip(LexiconSource.klein.title), findsNothing);
+
+    await _openLexeme(tester);
+    expect(find.byTooltip(LexiconSource.klein.title), findsOneWidget);
+    expect(find.text('see שׂרה'), findsOneWidget);
+
+    await _openLexeme(tester);
+    expect(find.byTooltip(LexiconSource.klein.title), findsNothing);
+  });
+
+  testWidgets("the looked-up word's own lexeme starts open", (tester) async {
+    await _pumpSheet(
+      tester,
+      syriac: true,
+      lexemes: [
+        LexemeSummary(
+          headword: 'שֶׁבֶת',
+          posCategory: 'noun',
+          isCurrent: true,
+          entries: [entry('sedra', '', 'rest'), entry('bdb', '', 'cessation')],
+        ),
+      ],
+    );
+    expect(find.text('rest'), findsOneWidget);
+    expect(find.text('cessation'), findsOneWidget);
   });
 }

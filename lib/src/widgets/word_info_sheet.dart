@@ -164,6 +164,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   StreamSubscription<RustSignalPack<WordInfo>>? _sub;
   WordInfo? _info;
   final Set<(int, int)> _expandedBdb = {};
+  // Lexemes with several entries start folded to one summary row, the looked-up
+  // word's own open (see [_lexemeExpanded]); these are the ones the reader has
+  // toggled from that.
+  final Set<int> _toggledLexemes = {};
   late final TabController _tabController;
   bool _adminMode = false;
   // OT-only: which of the word's roots the Lexicon and Occurrences tabs show.
@@ -405,6 +409,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       _parse.clear();
       _books.clear();
       _expandedBdb.clear();
+      _toggledLexemes.clear();
       _occ = null;
       _occRequested = false;
     });
@@ -1056,6 +1061,30 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     );
   }
 
+  bool _lexemeExpanded(int i, LexemeSummary lexeme) =>
+      lexeme.isCurrent != _toggledLexemes.contains(i);
+
+  /// The gloss a folded lexeme reads as: the longest of its entries', which
+  /// tends to be the fullest. Cross-references ("see שׂרה", filed under another
+  /// part of speech) and Jastrow's clipped citation excerpts (ending in "…")
+  /// give way to a real definition when the lexeme has one.
+  static String _lexemeGloss(LexemeSummary lexeme) {
+    final entries = lexeme.entries.where((e) => e.gloss.isNotEmpty);
+    for (final keep in <bool Function(BdbSummary)>[
+      (e) => e.posCategory == lexeme.posCategory && !e.gloss.endsWith('…'),
+      (e) => !e.gloss.endsWith('…'),
+      (e) => true,
+    ]) {
+      final candidates = entries.where(keep);
+      if (candidates.isNotEmpty) {
+        return candidates
+            .reduce((a, b) => b.gloss.length > a.gloss.length ? b : a)
+            .gloss;
+      }
+    }
+    return '';
+  }
+
   Widget _buildLexiconTab(
     BuildContext context,
     ScrollController scrollController,
@@ -1169,41 +1198,81 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           headword: lexeme.headword,
         );
       }
+      final expanded = _lexemeExpanded(i, lexeme);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(child: Divider(color: theme.colorScheme.outlineVariant)),
-              const SizedBox(width: 8),
-              headwordButton(lexeme.headword),
-            ],
-          ),
-          Container(
-            margin: const EdgeInsetsDirectional.only(start: 8, bottom: 4),
-            padding: const EdgeInsetsDirectional.only(start: 4),
-            decoration: BoxDecoration(
-              border: BorderDirectional(
-                start: BorderSide(
-                  color: theme.colorScheme.outlineVariant,
-                  width: 2,
-                ),
+          InkWell(
+            key: ValueKey('lexeme-group-$i'),
+            borderRadius: BorderRadius.circular(6),
+            onTap: () => setState(() {
+              if (!_toggledLexemes.remove(i)) _toggledLexemes.add(i);
+            }),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message: '${lexeme.entries.length} entries',
+                    child: Text(
+                      '×${lexeme.entries.length}',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Folded, the group reads as its fullest gloss; open, its
+                  // entries below give their own.
+                  Expanded(
+                    child: expanded
+                        ? Divider(color: theme.colorScheme.outlineVariant)
+                        : Text(
+                            _lexemeGloss(lexeme),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                  ),
+                  const SizedBox(width: 8),
+                  headwordButton(lexeme.headword),
+                ],
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final (j, e) in lexeme.entries.indexed)
-                  buildBdbRow(
-                    (i, j),
-                    e,
-                    headword: _sameHeadword(e.headword, lexeme.headword)
-                        ? null
-                        : e.headword,
-                  ),
-              ],
-            ),
           ),
+          if (expanded)
+            Container(
+              margin: const EdgeInsetsDirectional.only(start: 8, bottom: 4),
+              padding: const EdgeInsetsDirectional.only(start: 4),
+              decoration: BoxDecoration(
+                border: BorderDirectional(
+                  start: BorderSide(
+                    color: theme.colorScheme.outlineVariant,
+                    width: 2,
+                  ),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (j, e) in lexeme.entries.indexed)
+                    buildBdbRow(
+                      (i, j),
+                      e,
+                      headword: _sameHeadword(e.headword, lexeme.headword)
+                          ? null
+                          : e.headword,
+                    ),
+                ],
+              ),
+            ),
         ],
       );
     }
