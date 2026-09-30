@@ -3,7 +3,7 @@
 use haqor_core::bible::Bible;
 use haqor_core::memorise::{self as core, MemoryPurpose, MemorySettings, MemoryVerseGrade};
 use haqor_core::tutor::Grade;
-use rinf::{DartSignal, RustSignal, debug_print};
+use rinf::{DartSignal, RustSignal};
 
 use crate::functions::{SharedBible, lock, now_epoch, persist_browser_progress, send_failure};
 use crate::signals::{
@@ -323,30 +323,53 @@ pub async fn get_memory_run(bible: SharedBible) {
     }
 }
 
+/// Check a recital before it touches any progress: a purpose or grade the core
+/// does not know, per-verse lists of different lengths, or a per-verse grade
+/// out of range rejects the whole recital rather than recording a part of it.
+fn parse_recital(
+    r: &SubmitMemoryRecital,
+) -> Result<(MemoryPurpose, Grade, Vec<MemoryVerseGrade>), String> {
+    let purpose = MemoryPurpose::parse(&r.purpose)
+        .ok_or_else(|| format!("Unknown recital purpose {:?}.", r.purpose))?;
+    let grade = Grade::from_i64(i64::from(r.grade))
+        .ok_or_else(|| format!("Recital grade {} is out of range.", r.grade))?;
+    if r.chapters.len() != r.verses.len() || r.verses.len() != r.grades.len() {
+        return Err(format!(
+            "Recital lists differ in length ({} chapters, {} verses, {} grades).",
+            r.chapters.len(),
+            r.verses.len(),
+            r.grades.len()
+        ));
+    }
+    let verses = r
+        .chapters
+        .iter()
+        .zip(&r.verses)
+        .zip(&r.grades)
+        .map(|((&chapter, &verse), &g)| {
+            Ok(MemoryVerseGrade {
+                chapter,
+                verse,
+                grade: Grade::from_i64(i64::from(g)).ok_or_else(|| {
+                    format!("Grade {g} for verse {chapter}:{verse} is out of range.")
+                })?,
+            })
+        })
+        .collect::<Result<_, String>>()?;
+    Ok((purpose, grade, verses))
+}
+
 pub async fn submit_memory_recital(bible: SharedBible) {
     let receiver = SubmitMemoryRecital::get_dart_signal_receiver();
     while let Some(pack) = receiver.recv().await {
         let r = pack.message;
-        let (Some(purpose), Some(grade)) = (
-            MemoryPurpose::parse(&r.purpose),
-            Grade::from_i64(i64::from(r.grade)),
-        ) else {
-            debug_print!("submit_memory_recital: bad purpose or grade {r:?}");
-            continue;
+        let (purpose, grade, verses) = match parse_recital(&r) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                send_failure("memory_recital", r.passage_id, e);
+                continue;
+            }
         };
-        let verses: Vec<MemoryVerseGrade> = r
-            .chapters
-            .iter()
-            .zip(&r.verses)
-            .zip(&r.grades)
-            .filter_map(|((&chapter, &verse), &g)| {
-                Some(MemoryVerseGrade {
-                    chapter,
-                    verse,
-                    grade: Grade::from_i64(i64::from(g))?,
-                })
-            })
-            .collect();
         let target = (r.target_verse > 0).then_some((r.target_chapter, r.target_verse));
         let bible = lock(&bible);
         match bible.submit_memory_recital(
@@ -410,5 +433,63 @@ pub async fn set_memory_settings(bible: SharedBible) {
             }
             Err(e) => send_failure("memory_stats", "", e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn recital() -> SubmitMemoryRecital {
+        SubmitMemoryRecital {
+            passage_id: "p".to_string(),
+            book: 27,
+            purpose: "review".to_string(),
+            target_chapter: 23,
+            target_verse: 2,
+            step: 0,
+            grade: 2,
+            chapters: vec![23, 23],
+            verses: vec![1, 2],
+            grades: vec![2, 3],
+            utc_offset: 0,
+        }
+    }
+
+    #[test]
+    fn a_well_formed_recital_is_accepted_whole() {
+        let (purpose, grade, verses) = parse_recital(&recital()).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(purpose, MemoryPurpose::Review);
+        assert_eq!(grade, Grade::Good);
+        assert_eq!(verses.len(), 2);
+        assert_eq!(verses[1].verse, 2);
+        assert_eq!(verses[1].grade, Grade::Easy);
+    }
+
+    #[test]
+    fn a_bad_purpose_or_grade_rejects_the_recital() {
+        let mut r = recital();
+        r.purpose = "cram".to_string();
+        assert!(parse_recital(&r).is_err());
+        let mut r = recital();
+        r.grade = 4;
+        assert!(parse_recital(&r).is_err());
+    }
+
+    #[test]
+    fn mismatched_lists_reject_the_recital_instead_of_truncating() {
+        let mut r = recital();
+        r.grades.pop();
+        assert!(parse_recital(&r).is_err());
+        let mut r = recital();
+        r.chapters.push(23);
+        assert!(parse_recital(&r).is_err());
+    }
+
+    #[test]
+    fn an_out_of_range_verse_grade_rejects_the_recital_instead_of_dropping_it() {
+        let mut r = recital();
+        r.grades[0] = 9;
+        assert!(parse_recital(&r).is_err());
     }
 }
