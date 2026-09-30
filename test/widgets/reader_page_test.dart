@@ -1829,6 +1829,29 @@ void main() {
       rust.pending.where((r) => r.chapter == 1 && r.includeRoots),
       isNotEmpty,
     );
+
+    // The chapter's verses now come with roots, so a further answer that
+    // changes nothing about the request does not ask again.
+    for (var i = 0; i < 5 && rust.pending.isNotEmpty; i++) {
+      rust.deliverAll();
+      await tester.pump();
+    }
+    assignRustSignal['StudyState']!(
+      StudyState(
+        found: true,
+        workspacesJson: study.encodeStudyWorkspaces([
+          const study.StudyWorkspace(
+            id: 'study',
+            name: 'Synced again',
+            words: [study.StudyWord(root: 'אמר', surface: 'אמר')],
+          ),
+        ]),
+        activeWorkspaceId: 'study',
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    expect(rust.pending, isEmpty);
   });
 
   testWidgets('scrolling forward across many chapters never shifts content', (

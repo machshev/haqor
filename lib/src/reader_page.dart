@@ -2820,7 +2820,11 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   void _refreshLoadedChaptersForStudyRoots() {
     for (final section in List<_Section>.of(_sections)) {
-      _dropCachedChapter(section.bookIndex, section.chapter);
+      // Nothing to ask again when the verses came with what is wanted now.
+      if (section.request ==
+          _chapterRequest(section.bookIndex, section.chapter)) {
+        continue;
+      }
       _fetchChapter(section.bookIndex, section.chapter, force: true);
     }
   }
@@ -3298,12 +3302,6 @@ class _ReaderSessionState extends State<_ReaderSession>
     return verses;
   }
 
-  void _dropCachedChapter(int bookIndex, int chapter) {
-    _chapterCache.removeWhere(
-      (key, _) => key.$1 == bookIndex + 1 && key.$2 == chapter,
-    );
-  }
-
   void _fetchChapter(
     int bookIndex,
     int chapter, {
@@ -3373,7 +3371,6 @@ class _ReaderSessionState extends State<_ReaderSession>
     _staleFetches.addAll(_pendingFetches);
     for (final section in List<_Section>.of(_sections)) {
       if (section.bookIndex >= 39) continue;
-      _dropCachedChapter(section.bookIndex, section.chapter);
       _fetchChapter(section.bookIndex, section.chapter, force: true);
     }
   }
