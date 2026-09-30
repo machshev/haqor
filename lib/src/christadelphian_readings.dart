@@ -171,7 +171,7 @@ January	 41	 45	 27
 January	 42,43	 46-48	 28
 January	 44,45	 49	 Romans 1, 2
 January	 46,47	 50	 3, 4
-January	 48,50	 51,52	 5, 6
+January	 48-50	 51,52	 5, 6
 January	 Exodus 1, 2	 53-55	 7, 8
 January	 3, 4	 56,57	 9
 February	Exodus 5,6	Psalm 58,59	Romans 10,11

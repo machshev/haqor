@@ -26,4 +26,22 @@ void main() {
       '2 Samuel 12',
     );
   });
+
+  test('reads every chapter of Genesis exactly once', () {
+    final chapters = <int>[];
+    for (var day = 0; day < 365; day++) {
+      final date = DateTime.utc(2027, 1, 1).add(Duration(days: day));
+      for (final reading in christadelphianReadingsFor(date)) {
+        if (reading.bookIndex != 0) continue;
+        final listed = reading.reference.substring('Genesis '.length);
+        for (final part in listed.split(',')) {
+          final bounds = part.split('-').map((n) => int.parse(n.trim()));
+          chapters.addAll([
+            for (var c = bounds.first; c <= bounds.last; c++) c,
+          ]);
+        }
+      }
+    }
+    expect(chapters, [for (var c = 1; c <= 50; c++) c]);
+  });
 }
