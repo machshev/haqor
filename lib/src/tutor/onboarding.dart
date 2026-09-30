@@ -140,8 +140,9 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
   }
 
   void _knowsAlphabet(bool known) {
-    if (known) _send(SetAlphabetKnown(known: true));
     if (!known || _tierCount == 0) {
+      // Nothing to calibrate, so there is no later point to record it.
+      if (known) _send(SetAlphabetKnown(known: true));
       setState(() => _step = _OnboardStep.done);
       return;
     }
@@ -192,6 +193,8 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
   }
 
   void _finishCalibration() {
+    // Recorded only now: leaving part-way must not count as onboarded.
+    _send(SetAlphabetKnown(known: true));
     _send(FinishCalibration(minOccurrences: _cutoff));
     setState(() => _step = _OnboardStep.done);
   }
@@ -218,7 +221,7 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
       case _OnboardStep.calibrating:
         return _CalibrationView(probe: _probe, onAnswer: _answer);
       case _OnboardStep.done:
-        return const StudyFlowPage();
+        return StudyFlowPage(sendRequest: widget.sendRequest);
     }
   }
 }

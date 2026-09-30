@@ -83,4 +83,50 @@ void main() {
     expect(probes.last.tier, probe.tier);
     await tester.pumpWidget(const SizedBox());
   });
+
+  Future<List<Object>> calibrate(WidgetTester tester) async {
+    final sent = await pump(tester);
+    assignRustSignal['OnboardingStatus']!(
+      const OnboardingStatus(needed: true, tierCount: 1).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Yes, I can already read Hebrew'));
+    await tester.pump();
+    assignRustSignal['CalibrationProbe']!(
+      const CalibrationProbe(
+        found: true,
+        book: 1,
+        chapter: 1,
+        verse: 1,
+        text: 'בראשית',
+        tier: 0,
+        minOccurrences: 9,
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    return sent;
+  }
+
+  testWidgets('leaving calibration part-way does not record the alphabet', (
+    tester,
+  ) async {
+    final sent = await calibrate(tester);
+    expect(find.text('I can read this'), findsOneWidget);
+    expect(sent.whereType<SetAlphabetKnown>(), isEmpty);
+    expect(sent.whereType<FinishCalibration>(), isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('finishing calibration records the alphabet with the cutoff', (
+    tester,
+  ) async {
+    final sent = await calibrate(tester);
+    await tester.tap(find.text('I can read this'));
+    await tester.pump();
+    expect(sent.whereType<SetAlphabetKnown>().single.known, isTrue);
+    expect(sent.whereType<FinishCalibration>().single.minOccurrences, 9);
+    await tester.pumpWidget(const SizedBox());
+  });
 }
