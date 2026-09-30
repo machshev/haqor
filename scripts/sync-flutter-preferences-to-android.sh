@@ -11,12 +11,14 @@
 #   scripts/sync-flutter-preferences-to-android.sh --serial SERIAL
 #   scripts/sync-flutter-preferences-to-android.sh --source PATH --package ID
 #   scripts/sync-flutter-preferences-to-android.sh --dry-run
+#   scripts/sync-flutter-preferences-to-android.sh --render --source PATH
 set -euo pipefail
 
 package='org.haqor'
 serial=''
 source_file="${XDG_DATA_HOME:-$HOME/.local/share}/org.haqor/shared_preferences.json"
 dry_run=false
+render_only=false
 
 usage() {
   printf '%s\n' \
@@ -24,7 +26,8 @@ usage() {
     '  scripts/sync-flutter-preferences-to-android.sh' \
     '  scripts/sync-flutter-preferences-to-android.sh --serial SERIAL' \
     '  scripts/sync-flutter-preferences-to-android.sh --source PATH --package ID' \
-    '  scripts/sync-flutter-preferences-to-android.sh --dry-run'
+    '  scripts/sync-flutter-preferences-to-android.sh --dry-run' \
+    '  scripts/sync-flutter-preferences-to-android.sh --render --source PATH'
 }
 
 while (($#)); do
@@ -45,6 +48,11 @@ while (($#)); do
       dry_run=true
       shift
       ;;
+    --render)
+      # Print the converted XML and stop, touching no device.
+      render_only=true
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -62,7 +70,9 @@ done
   exit 2
 }
 
-for command in adb jq; do
+required_commands=(jq)
+"$render_only" || required_commands+=(adb)
+for command in "${required_commands[@]}"; do
   command -v "$command" >/dev/null || {
     echo "Missing required command: $command" >&2
     exit 1
@@ -89,7 +99,50 @@ jq -e '
   exit 1
 }
 
+# Android's legacy Flutter API stores doubles and string lists as specially
+# prefixed strings. The app currently uses this API through getInstance().
+# A whole number such as 0.0 is indistinguishable from an int once parsed, so
+# the keys the app saves with setDouble are listed; storing one as a long makes
+# getDouble throw. Keep the list in step with the setDouble calls in lib/.
+render_android_preferences() {
+  jq -r --argjson double_keys '[
+      "flutter.cross_reference_min_score",
+      "flutter.font_size",
+      "flutter.reader_side_panel_width",
+      "flutter.reader_tiled_panel_width"
+    ]' '
+    def esc:
+      gsub("&"; "&amp;") |
+      gsub("<"; "&lt;") |
+      gsub(">"; "&gt;") |
+      gsub("\""; "&quot;");
+    def pref:
+      .key as $key | .value as $value |
+      if ($value | type) == "boolean" then
+        "    <boolean name=\"\($key | esc)\" value=\"\($value)\" />"
+      elif ($value | type) == "number" and
+           (($double_keys | index($key) != null) or $value != ($value | floor)) then
+        "    <string name=\"\($key | esc)\">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu\($value)</string>"
+      elif ($value | type) == "number" then
+        "    <long name=\"\($key | esc)\" value=\"\($value)\" />"
+      elif ($value | type) == "array" then
+        "    <string name=\"\($key | esc)\">\(("VGhpcyBpcyB0aGUgcHJlZml4IGZvciBhIGxpc3Qu!" + ($value | tojson)) | esc)</string>"
+      else
+        "    <string name=\"\($key | esc)\">\($value | esc)</string>"
+      end;
+    "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\" ?>",
+    "<map>",
+    (to_entries[] | pref),
+    "</map>"
+  ' "$source_file"
+}
+
 preference_count="$(jq 'length' "$source_file")"
+
+if "$render_only"; then
+  render_android_preferences
+  exit 0
+fi
 
 if "$dry_run"; then
   echo "Would copy $preference_count Flutter preferences from $source_file to $package."
@@ -132,36 +185,6 @@ backup="$remote_prefs.before-desktop-sync-$(date -u +%Y%m%dT%H%M%SZ)"
 
 "${adb_device[@]}" shell "am force-stop $package"
 app_shell "mkdir -p shared_prefs; rm -f '$remote_stage'; if test -f '$remote_prefs'; then cp '$remote_prefs' '$backup'; fi"
-
-# Android's legacy Flutter API stores doubles and string lists as specially
-# prefixed strings. The app currently uses this API through getInstance().
-render_android_preferences() {
-  jq -r '
-    def esc:
-      gsub("&"; "&amp;") |
-      gsub("<"; "&lt;") |
-      gsub(">"; "&gt;") |
-      gsub("\""; "&quot;");
-    def pref:
-      .key as $key | .value as $value |
-      if ($value | type) == "boolean" then
-        "    <boolean name=\"\($key | esc)\" value=\"\($value)\" />"
-      elif ($value | type) == "number" and
-           ($key == "flutter.font_size" or $value != ($value | floor)) then
-        "    <string name=\"\($key | esc)\">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu\($value)</string>"
-      elif ($value | type) == "number" then
-        "    <long name=\"\($key | esc)\" value=\"\($value)\" />"
-      elif ($value | type) == "array" then
-        "    <string name=\"\($key | esc)\">\(("VGhpcyBpcyB0aGUgcHJlZml4IGZvciBhIGxpc3Qu!" + ($value | tojson)) | esc)</string>"
-      else
-        "    <string name=\"\($key | esc)\">\($value | esc)</string>"
-      end;
-    "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\" ?>",
-    "<map>",
-    (to_entries[] | pref),
-    "</map>"
-  ' "$source_file"
-}
 
 if ! render_android_preferences | app_shell "cat > '$remote_stage'"; then
   app_shell "rm -f '$remote_stage'" || true

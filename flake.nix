@@ -54,6 +54,7 @@
           nativeBuildInputs = [pkgs.pkg-config];
           buildInputs = with pkgs; [
             sqlitebrowser
+            jq # scripts/sync-flutter-preferences-to-android.sh
 
             # Flutter deps
             flutter
