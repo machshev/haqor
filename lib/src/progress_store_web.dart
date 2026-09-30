@@ -40,8 +40,12 @@ class ProgressStore {
         .objectStore(_storeName)
         .get(key.toJS);
     request.onsuccess = ((web.Event _) {
-      final value = request.result;
-      done.complete(value == null ? null : (value as JSUint8Array).toDart);
+      try {
+        final value = request.result;
+        done.complete(value == null ? null : (value as JSUint8Array).toDart);
+      } catch (error) {
+        done.completeError('stored value is not bytes: $error');
+      }
     }).toJS;
     request.onerror = ((web.Event _) {
       done.completeError(_describe(request.error, 'could not read storage'));

@@ -11,16 +11,18 @@ import 'bindings/bindings.dart';
 import 'boot_failure.dart';
 import 'boot_status.dart';
 import 'db_asset_web.dart';
+import 'progress_load.dart';
 import 'progress_store_web.dart';
 import 'snapshot_writer.dart';
 
 /// One curated runtime database; the generation databases are not shipped
 /// (haqor-core doc/adr/0006-single-runtime-database.md).
 const _dbFiles = ['haqor.db'];
+
+/// Progress is stored as bytes in IndexedDB under this key. It is also the
+/// localStorage key the old base64 copy was kept under.
 const _progressKey = 'web_progress_sqlite_v1';
 
-/// Progress is stored as bytes in IndexedDB under these keys. The first is also
-/// the localStorage key the old base64 copy was kept under.
 /// Where a saved progress snapshot Rust could not restore is kept, so it is not
 /// lost when the app opens with fresh progress.
 const _progressBackupKey = 'web_progress_sqlite_v1_unreadable';
@@ -80,17 +82,6 @@ Future<String?> initializeDatabases({bool reinstall = false}) async {
         'saved.';
   }
   final store = _store;
-  // A retry comes back through here; one listener is enough.
-  if (store != null && _persistence == null) {
-    final writer = _writer = SnapshotWriter(
-      write: (snapshot) => store.write(_progressKey, snapshot),
-      onFailure: _saveFailed,
-    );
-    _persistence = ProgressSnapshot.rustSignalStream.listen(
-      (pack) => writer.schedule(pack.binary),
-    );
-    _flushOnLeaving();
-  }
 
   final bundle = BytesBuilder(copy: false);
   for (final name in _dbFiles) {
@@ -109,7 +100,22 @@ Future<String?> initializeDatabases({bool reinstall = false}) async {
   reportBootStatus('Preparing the text…');
   // Progress used to be one base64 string in localStorage; it is moved across
   // once it has opened.
-  var persisted = await store?.read(_progressKey);
+  var persisted = store == null
+      ? null
+      : await readStoredProgress(() => store.read(_progressKey));
+  // Saving starts only once the stored snapshot has been read, so that nothing
+  // can be written over one that could not be. A retry comes back through here;
+  // one listener is enough.
+  if (store != null && _persistence == null) {
+    final writer = _writer = SnapshotWriter(
+      write: (snapshot) => store.write(_progressKey, snapshot),
+      onFailure: _saveFailed,
+    );
+    _persistence = ProgressSnapshot.rustSignalStream.listen(
+      (pack) => writer.schedule(pack.binary),
+    );
+    _flushOnLeaving();
+  }
   final legacy = persisted == null ? prefs.getString(_progressKey) : null;
   var unreadable = false;
   if (legacy != null) {
