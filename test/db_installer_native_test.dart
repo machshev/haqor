@@ -15,18 +15,23 @@ void main() {
 
   File at(String name) => File('${dir.path}/$name');
 
-  Future<void> install({bool reinstall = false, String version = 'v2'}) =>
-      installDatabases(
-        dir,
-        reinstall: reinstall,
-        bundled: version,
-        loadAsset: _asset,
-      );
+  Future<void> install({
+    bool reinstall = false,
+    String version = 'v2',
+    Future<File> Function(File, String)? rename,
+  }) => installDatabases(
+    dir,
+    reinstall: reinstall,
+    bundled: version,
+    loadAsset: _asset,
+    rename: rename ?? (from, to) => from.rename(to),
+  );
 
   test('a fresh install writes the database and the marker', () async {
     await install();
     expect(at('haqor.db').readAsStringSync(), 'corpus v2');
     expect(at('.version').readAsStringSync(), startsWith('v2'));
+    expect(at('haqor.db.installing').existsSync(), isFalse);
   });
 
   test('a current, intact install is left alone', () async {
@@ -68,5 +73,38 @@ void main() {
     at('.version').writeAsStringSync('v1');
     await install();
     expect(at('haqor.db').readAsStringSync(), 'corpus v2');
+  });
+
+  Future<File> blocked(File from, String to) =>
+      throw const FileSystemException('in use');
+
+  test(
+    'a database that cannot be replaced is kept and the update retried',
+    () async {
+      at('haqor.db').writeAsStringSync('corpus v1');
+      at('.version').writeAsStringSync('v1');
+      await install(rename: blocked);
+      expect(at('haqor.db').readAsStringSync(), 'corpus v1');
+      expect(at('haqor.db.installing').existsSync(), isFalse);
+      expect(at('.version').readAsStringSync(), 'v1');
+    },
+  );
+
+  test(
+    'a requested reinstall that cannot replace the database throws',
+    () async {
+      at('haqor.db').writeAsStringSync('corpus v1');
+      await expectLater(
+        install(reinstall: true, rename: blocked),
+        throwsA(isA<FileSystemException>()),
+      );
+    },
+  );
+
+  test('a first install that cannot write the database throws', () async {
+    await expectLater(
+      install(rename: blocked),
+      throwsA(isA<FileSystemException>()),
+    );
   });
 }

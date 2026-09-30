@@ -74,28 +74,53 @@ bool _installedIntact(Directory dbDir, String? marker, String bundled) {
   return true;
 }
 
+Future<File> _rename(File from, String to) => from.rename(to);
+
 /// Install the databases into [dbDir] unless they are already current and
 /// intact.
+///
+/// Each database is written to a temporary file and renamed over the old one,
+/// so a crash never leaves a half-written `haqor.db`, and another running
+/// instance that has the old file open keeps reading it. On Windows an open
+/// file cannot be replaced: the rename fails, and unless [reinstall] was asked
+/// for, the current copy is kept and the update waits for the next launch
+/// instead of failing the boot over a file another instance is using.
+///
+/// [rename] is the seam that lets a test stand in for that failure.
 Future<void> installDatabases(
   Directory dbDir, {
   required bool reinstall,
   required String bundled,
   required Future<Uint8List> Function(String name) loadAsset,
+  Future<File> Function(File from, String to) rename = _rename,
 }) async {
   final marker = File('${dbDir.path}${Platform.pathSeparator}.version');
   final installed = await marker.exists() ? await marker.readAsString() : null;
   if (reinstall || !_installedIntact(dbDir, installed, bundled)) {
     await dbDir.create(recursive: true);
-    if (await marker.exists()) await marker.delete();
     final sizes = <String, int>{};
+    var replaced = true;
     for (final name in _dbFiles) {
+      final target = File('${dbDir.path}${Platform.pathSeparator}$name');
       final bytes = await loadAsset(name);
-      await File(
-        '${dbDir.path}${Platform.pathSeparator}$name',
-      ).writeAsBytes(bytes, flush: true);
-      sizes[name] = bytes.length;
+      final temp = File('${target.path}.installing');
+      await temp.writeAsBytes(bytes, flush: true);
+      try {
+        await rename(temp, target.path);
+        sizes[name] = bytes.length;
+      } on FileSystemException {
+        try {
+          await temp.delete();
+        } on FileSystemException {
+          // Overwritten by the next install.
+        }
+        if (reinstall || !await target.exists()) rethrow;
+        replaced = false;
+      }
     }
-    await marker.writeAsString(_marker(bundled, sizes), flush: true);
+    if (replaced) {
+      await marker.writeAsString(_marker(bundled, sizes), flush: true);
+    }
   }
 }
 
