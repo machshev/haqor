@@ -15,10 +15,13 @@ pub struct SetDataDir {
 /// retries by sending it again. `progress_reset` is set on the web when the
 /// saved progress could not be restored and the app opened with fresh progress;
 /// `message` is then the reason, and otherwise the reason for a failure.
+/// `progress_unreadable` marks a failure to open the progress database itself, which
+/// only moving it aside clears.
 #[derive(Debug, Serialize, RustSignal)]
 pub struct BootStatus {
     pub failed: bool,
     pub progress_reset: bool,
+    pub progress_unreadable: bool,
     pub message: String,
 }
 

@@ -13,17 +13,18 @@ import 'tutor/progress_sync.dart';
 Future<Widget> initializeAppRuntime() async {
   await initializeRust(assignRustSignal);
   String? notice;
-  String? failure;
+  BootFailure? failure;
   try {
     notice = await initializeDatabases();
   } on BootFailure catch (error) {
-    failure = error.message;
+    failure = error;
   }
   return BootGate(
     start: initializeDatabases,
     reinstall: canReinstallDatabases
         ? () => initializeDatabases(reinstall: true)
         : null,
+    resetProgress: canResetProgress ? startWithFreshProgress : null,
     onReady: () {
       unawaited(migrateLegacyFlaggedWords());
       unawaited(syncProgressNow());

@@ -22,6 +22,11 @@ const _progressBackupKey = 'web_progress_sqlite_v1_unreadable';
 /// nothing installed to replace; a retry fetches them again.
 const canReinstallDatabases = false;
 
+/// Web progress is reset by [initializeDatabases] itself, with no button.
+const canResetProgress = false;
+
+Future<String?> startWithFreshProgress() async => null;
+
 StreamSubscription<void>? _persistence;
 
 /// Load the immutable SQLite assets into the WebAssembly runtime. The Rust

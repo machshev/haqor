@@ -7,9 +7,13 @@ import 'bindings/bindings.dart';
 
 /// Rust could not open the databases. [message] is its reason.
 class BootFailure implements Exception {
-  const BootFailure(this.message);
+  const BootFailure(this.message, {this.progressUnreadable = false});
 
   final String message;
+
+  /// It was the learner's progress database that would not open, rather than
+  /// the app's own databases.
+  final bool progressUnreadable;
 
   @override
   String toString() => message;
@@ -19,7 +23,12 @@ class BootFailure implements Exception {
 /// when all is well, a notice for the learner when the app opened with fresh
 /// progress, or a [BootFailure] when it could not open at all.
 String? bootNotice(BootStatus status) {
-  if (status.failed) throw BootFailure(status.message);
+  if (status.failed) {
+    throw BootFailure(
+      status.message,
+      progressUnreadable: status.progressUnreadable,
+    );
+  }
   return status.progressReset ? status.message : null;
 }
 
@@ -42,6 +51,7 @@ class BootGate extends StatefulWidget {
     required this.start,
     required this.child,
     this.reinstall,
+    this.resetProgress,
     this.onReady,
     this.initialFailure,
     this.initialNotice,
@@ -50,11 +60,15 @@ class BootGate extends StatefulWidget {
   /// Open the databases again, as at startup.
   final Future<String?> Function() start;
   final Future<String?> Function()? reinstall;
+
+  /// Set the unreadable progress database aside and open again with fresh
+  /// progress. Offered only when the progress database is what failed.
+  final Future<String?> Function()? resetProgress;
   final Widget child;
 
   /// Work that needs the databases, run once they are open.
   final VoidCallback? onReady;
-  final String? initialFailure;
+  final BootFailure? initialFailure;
   final String? initialNotice;
 
   @override
@@ -62,7 +76,7 @@ class BootGate extends StatefulWidget {
 }
 
 class _BootGateState extends State<BootGate> {
-  late String? _failure = widget.initialFailure;
+  late BootFailure? _failure = widget.initialFailure;
   bool _busy = false;
 
   @override
@@ -98,10 +112,35 @@ class _BootGateState extends State<BootGate> {
     } on BootFailure catch (failure) {
       if (!mounted) return;
       setState(() {
-        _failure = failure.message;
+        _failure = failure;
         _busy = false;
       });
     }
+  }
+
+  Future<void> _confirmReset(Future<String?> Function() reset) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Start with fresh progress?'),
+        content: const Text(
+          'Your progress file cannot be opened. Haqor will set it aside, not '
+          'delete it, and start again with empty progress. The old file is '
+          'kept beside the databases and you will be told where.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Start fresh'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) await _attempt(reset);
   }
 
   @override
@@ -112,6 +151,9 @@ class _BootGateState extends State<BootGate> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final reinstall = widget.reinstall;
+    final resetProgress = failure.progressUnreadable
+        ? widget.resetProgress
+        : null;
     final theme = Theme.of(context);
     return Scaffold(
       body: Center(
@@ -129,7 +171,7 @@ class _BootGateState extends State<BootGate> {
               ),
               const SizedBox(height: 8),
               SelectableText(
-                failure,
+                failure.message,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium,
               ),
@@ -143,6 +185,13 @@ class _BootGateState extends State<BootGate> {
                 TextButton(
                   onPressed: () => _attempt(reinstall),
                   child: const Text('Reinstall the databases'),
+                ),
+              ],
+              if (resetProgress != null) ...[
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => _confirmReset(resetProgress),
+                  child: const Text('Start with fresh progress'),
                 ),
               ],
             ],

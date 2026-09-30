@@ -14,6 +14,9 @@ const _dbFiles = ['haqor.db'];
 /// replaced. The learner's `progress.db` sits beside them and is never touched.
 const canReinstallDatabases = true;
 
+/// A progress database that will not open can be set aside and replaced.
+const canResetProgress = true;
+
 /// Copy the SQLite databases from the asset bundle into app-local storage,
 /// where Rust opens them file-backed. Throws a [BootFailure] if they cannot be
 /// installed or Rust cannot open them; with [reinstall] the installed copies
@@ -51,4 +54,29 @@ Future<String> _install(bool reinstall) async {
     await marker.writeAsString(bundled, flush: true);
   }
   return dbDir.path;
+}
+
+/// Move an unreadable `progress.db` (and any SQLite sidecar files, which belong
+/// to it) aside as `progress.db.unreadable-<timestamp>`, and return the new
+/// path of the database. The learner's data is kept, not deleted.
+Future<String> setAsideProgress(Directory dbDir, DateTime now) async {
+  final stamp = now.toUtc().toIso8601String().replaceAll(RegExp(r'[-:.]'), '');
+  final base = '${dbDir.path}${Platform.pathSeparator}progress.db';
+  final backup = '$base.unreadable-$stamp';
+  for (final suffix in ['', '-wal', '-shm', '-journal']) {
+    final file = File('$base$suffix');
+    if (await file.exists()) await file.rename('$backup$suffix');
+  }
+  return backup;
+}
+
+/// Set the progress database aside and open again with fresh progress. Returns
+/// a notice saying where the old file went.
+Future<String?> startWithFreshProgress() async {
+  final support = await getApplicationSupportDirectory();
+  final dbDir = Directory('${support.path}${Platform.pathSeparator}db');
+  final backup = await setAsideProgress(dbDir, DateTime.now());
+  final notice = await initializeDatabases();
+  return notice ??
+      'Started with fresh progress. The old progress file was kept as $backup';
 }

@@ -60,10 +60,16 @@ where
 
 /// Tell Dart how opening the databases went, so its boot sequence can move on
 /// or show the reason and offer a retry.
-fn report_boot(failed: bool, progress_reset: bool, message: impl Into<String>) {
+fn report_boot(
+    failed: bool,
+    progress_reset: bool,
+    progress_unreadable: bool,
+    message: impl Into<String>,
+) {
     BootStatus {
         failed,
         progress_reset,
+        progress_unreadable,
         message: message.into(),
     }
     .send_signal_to_dart();
@@ -71,9 +77,9 @@ fn report_boot(failed: bool, progress_reset: bool, message: impl Into<String>) {
 
 /// Report a failed attempt. Rust keeps waiting for another [`SetDataDir`], which
 /// is how Dart retries.
-fn boot_failed(message: String) {
+fn boot_failed(message: String, progress_unreadable: bool) {
     debug_print!("{message}");
-    report_boot(true, false, message);
+    report_boot(true, false, progress_unreadable, message);
 }
 
 /// Wait for Dart to send the directory the database assets were copied to,
@@ -88,10 +94,10 @@ async fn open_bible() -> Option<(SharedBible, PathBuf)> {
         if path == "web" {
             match open_web_bible(signal_pack.binary) {
                 Ok((bible, reset)) => {
-                    report_boot(false, reset.is_some(), reset.unwrap_or_default());
+                    report_boot(false, reset.is_some(), false, reset.unwrap_or_default());
                     return Some((Arc::new(Mutex::new(bible)), PathBuf::new()));
                 }
-                Err(e) => boot_failed(format!("Could not open the browser databases: {e}")),
+                Err(e) => boot_failed(format!("Could not open the browser databases: {e}"), false),
             }
             continue;
         }
@@ -101,16 +107,22 @@ async fn open_bible() -> Option<(SharedBible, PathBuf)> {
                 // alongside the read-only corpus DBs in the same app-data dir.
                 let progress = Path::new(&path).join("progress.db");
                 if let Err(e) = bible.attach_progress(&progress) {
-                    boot_failed(format!(
-                        "Could not open the progress database at {}: {e}",
-                        progress.display()
-                    ));
+                    boot_failed(
+                        format!(
+                            "Could not open the progress database at {}: {e}",
+                            progress.display()
+                        ),
+                        true,
+                    );
                     continue;
                 }
-                report_boot(false, false, "");
+                report_boot(false, false, false, "");
                 return Some((Arc::new(Mutex::new(bible)), PathBuf::from(path)));
             }
-            Err(e) => boot_failed(format!("Could not open the databases at {path}: {e}")),
+            Err(e) => boot_failed(
+                format!("Could not open the databases at {path}: {e}"),
+                false,
+            ),
         }
     }
     None
