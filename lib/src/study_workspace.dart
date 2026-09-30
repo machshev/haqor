@@ -1663,8 +1663,8 @@ class StudyWorkspace {
       for (final group in groups) {
         Map? rawGroup;
         for (final raw in [
-          ...?value['groups'] as List?,
-          ...?value['themes'] as List?,
+          if (value['groups'] is List) ...value['groups'] as List,
+          if (value['themes'] is List) ...value['themes'] as List,
         ]) {
           if (raw is Map && raw['id'] == group.id) {
             rawGroup = raw;
@@ -1751,19 +1751,26 @@ class StudyWorkspace {
 int _storedColor(Object? raw, int fallback) =>
     raw is int && raw >= 0 && raw <= 0xffffffff ? raw : fallback;
 
-List<StudyWorkspace> decodeStudyWorkspaces(String? value) {
-  if (value == null || value.isEmpty) return [];
+/// The workspaces in [value], or null when it is missing or not a well-formed
+/// list of them, so callers can tell corrupt data from an empty set.
+List<StudyWorkspace>? tryDecodeStudyWorkspaces(String? value) {
+  if (value == null || value.isEmpty) return null;
   try {
     final decoded = jsonDecode(value);
-    if (decoded is! List) return [];
+    if (decoded is! List) return null;
     return decoded
         .map(StudyWorkspace.fromJson)
         .whereType<StudyWorkspace>()
         .toList();
   } on FormatException {
-    return [];
+    return null;
+  } on TypeError {
+    return null;
   }
 }
+
+List<StudyWorkspace> decodeStudyWorkspaces(String? value) =>
+    tryDecodeStudyWorkspaces(value) ?? [];
 
 String encodeStudyWorkspaces(List<StudyWorkspace> workspaces) =>
     jsonEncode(workspaces.map((workspace) => workspace.toJson()).toList());

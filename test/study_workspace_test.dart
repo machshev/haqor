@@ -789,4 +789,18 @@ void sectionTests() {
     walk(null);
     expect(reached, {'a', 'b', 'x', 'y', 'z', 'ok'});
   });
-}
+
+  test('malformed or misshapen payloads are told apart from empty ones', () {
+    expect(tryDecodeStudyWorkspaces(null), isNull);
+    expect(tryDecodeStudyWorkspaces(''), isNull);
+    expect(tryDecodeStudyWorkspaces('{not json'), isNull);
+    expect(tryDecodeStudyWorkspaces('{"id": "s"}'), isNull);
+    expect(tryDecodeStudyWorkspaces('[]'), isEmpty);
+    // Wrong shapes inside a workspace do not throw a TypeError.
+    final shaped = tryDecodeStudyWorkspaces(
+      '[{"id": "s", "name": "S", "themes": {"a": 1}, '
+      '"groups": [{"id": "g", "name": "G"}]}]',
+    );
+    expect(shaped!.single.id, 's');
+    expect(decodeStudyWorkspaces('{not json'), isEmpty);
+  });}
