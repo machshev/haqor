@@ -111,17 +111,69 @@ void main() {
     await tester.tap(find.text('I have read it aloud'));
     await tester.pump();
     expect(sent.whereType<SubmitMemoryRecital>(), hasLength(1));
+    expect(sent.whereType<GetNextMemoryCard>(), hasLength(1));
 
     _fail(requestMemoryRecital, 'p', 'database is locked');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.textContaining('not saved'), findsOneWidget);
+    // The next card is asked for once the answer has failed.
+    expect(sent.whereType<GetNextMemoryCard>(), hasLength(2));
 
     await tester.tap(find.text('Try again'));
     await tester.pump();
     expect(sent.whereType<SubmitMemoryRecital>(), hasLength(2));
 
     // Let the deferred progress sync and the next-card timeout run out.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('the next card is asked for only after the answer is recorded', (
+    tester,
+  ) async {
+    final sent = await pump(tester);
+    _deliver(
+      'MemoryItem',
+      const MemoryItem(
+        kind: 'card',
+        card: _card,
+        nextDueEpoch: 0,
+        canLearnMore: true,
+        shapePassageId: '',
+      ).bincodeSerialize(),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.text('I have read it aloud'));
+    await tester.pump();
+    expect(sent.whereType<SubmitMemoryRecital>(), hasLength(1));
+    expect(sent.whereType<GetNextMemoryCard>(), hasLength(1));
+
+    _deliver(
+      'MemoryReviewResult',
+      const MemoryReviewResult(
+        purpose: 'read',
+        targetChapter: 23,
+        targetVerse: 1,
+        xp: 5,
+        firstGraduation: false,
+        sectionCompleted: false,
+        completedPassages: [],
+        relearn: 0,
+        intervalDays: 0,
+        totalXp: 5,
+        levelBefore: 1,
+        levelAfter: 1,
+        todayXp: 5,
+        dailyGoalXp: 50,
+        goalReachedNow: false,
+        streakDays: 1,
+      ).bincodeSerialize(),
+    );
+    await tester.pump();
+    expect(sent.whereType<GetNextMemoryCard>(), hasLength(2));
+    expect(sent.last, isA<GetNextMemoryCard>());
+
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 3));
   });

@@ -75,6 +75,9 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
   String? _error;
   // The answer last sent, kept so a failure to record it can be retried.
   SubmitMemoryRecital? _lastRecital;
+  // Set until the answer just sent is acknowledged; the next card is only
+  // asked for then, so it never overtakes the answer on its own channel.
+  bool _awaitingRecital = false;
   bool _runDone = false;
   int _sessionXp = 0;
   int _sessionCards = 0;
@@ -131,20 +134,36 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
     });
   }
 
-  /// The answer just given could not be recorded. The next card is already on
-  /// its way, so offer to send the answer again rather than block on it.
   void _onRecitalFailed(RequestFailed failure) {
     final recital = _lastRecital;
     if (!mounted || recital == null || failure.key != recital.passageId) return;
+    _recitalLost(failure.message);
+  }
+
+  /// The answer just given could not be recorded. Offer to send it again, and
+  /// carry on to the next card rather than block on it.
+  void _recitalLost(String message) {
+    final recital = _lastRecital;
+    if (recital == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Your answer was not saved: ${failure.message}'),
+        content: Text('Your answer was not saved: $message'),
         action: SnackBarAction(
           label: 'Try again',
           onPressed: () => _send(recital),
         ),
       ),
     );
+    _recitalAnswered();
+  }
+
+  /// The answer has been acknowledged, or given up on: now ask for the next
+  /// card, so it cannot be computed before the answer is recorded.
+  void _recitalAnswered() {
+    if (!_awaitingRecital) return;
+    _awaitingRecital = false;
+    _timer.stop();
+    _requestNext();
   }
 
   @override
@@ -226,15 +245,23 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
       utcOffset: memoryUtcOffset(),
     );
     _lastRecital = recital;
+    _awaitingRecital = true;
+    setState(() {
+      _waiting = true;
+      _error = null;
+    });
+    _timer.start(() {
+      if (mounted) _recitalLost('Haqor did not answer.');
+    });
     _send(recital);
     scheduleProgressSync();
     if (widget.run) _runDone = true;
-    _requestNext();
   }
 
   Future<void> _onResult(RustSignalPack<MemoryReviewResult> pack) async {
     if (!mounted) return;
     final r = pack.message;
+    _recitalAnswered();
     setState(() {
       _sessionXp += r.xp;
       _sessionCards++;
