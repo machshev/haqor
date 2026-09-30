@@ -188,6 +188,10 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   /// as the word sheet's occurrence lists.
   bool _englishOnly = false;
 
+  /// Request ids are handed out app-wide, not per panel: the reply stream is a
+  /// broadcast, so a late reply to a closed panel would otherwise carry the id
+  /// a new panel waits on and fill it with another book's references.
+  static int _nextRequestId = 1;
   int _requestId = 0;
   bool _loading = true;
   int _total = 0;
@@ -209,7 +213,11 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
     });
     _sub = Quotations.rustSignalStream.listen((pack) {
       final reply = pack.message;
-      if (reply.requestId != _requestId || !mounted) return;
+      if (reply.requestId != _requestId ||
+          reply.book != widget.book ||
+          !mounted) {
+        return;
+      }
       setState(() {
         _loading = false;
         _total = reply.total;
@@ -218,7 +226,11 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
     });
     _thematicSub = ThematicOverview.rustSignalStream.listen((pack) {
       final reply = pack.message;
-      if (reply.requestId != _requestId || !mounted) return;
+      if (reply.requestId != _requestId ||
+          reply.book != widget.book ||
+          !mounted) {
+        return;
+      }
       setState(() {
         _loading = false;
         _thematicTotal = reply.total;
@@ -284,7 +296,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
     final chapterScope = _scope == CrossReferenceScope.chapter;
     if (_overviewSection == _Section.thematic) {
       final request = GetThematicOverview(
-        requestId: ++_requestId,
+        requestId: _requestId = _nextRequestId++,
         book: widget.book,
         firstChapter: chapterScope ? widget.chapter : _firstChapter,
         lastChapter: chapterScope ? widget.chapter : _lastChapter,
@@ -300,7 +312,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
       return;
     }
     final request = GetQuotations(
-      requestId: ++_requestId,
+      requestId: _requestId = _nextRequestId++,
       book: widget.book,
       firstChapter: chapterScope ? widget.chapter : _firstChapter,
       lastChapter: chapterScope ? widget.chapter : _lastChapter,

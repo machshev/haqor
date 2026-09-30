@@ -474,6 +474,42 @@ void overviewTests() {
     await tester.pump();
     expect(rust.thematicOverviewRequests.last.offset, 3);
   });
+  testWidgets('a late reply to a closed panel does not reach the next one', (
+    tester,
+  ) async {
+    final closed = await _pump(tester, verse: null);
+    final staleId = closed.quotationRequests.single.requestId;
+    await tester.pumpWidget(const SizedBox());
+    final rust = await _pump(tester, verse: null);
+    final request = rust.quotationRequests.single;
+    expect(request.requestId, isNot(staleId));
+
+    // The closed panel's reply, then one for another book under this
+    // panel's own id: neither is this panel's answer.
+    for (final (id, book) in [(staleId, 40), (request.requestId, 41)]) {
+      assignRustSignal['Quotations']!(
+        Quotations(
+          requestId: id,
+          book: book,
+          total: 1,
+          entries: [
+            _quote(verse: 23, otherBook: 12, otherChapter: 7, otherVerse: 14),
+          ],
+        ).bincodeSerialize(),
+        Uint8List(0),
+      );
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('1 links'), findsNothing);
+    }
+
+    rust.deliverQuotations(1, [
+      _quote(verse: 23, otherBook: 12, otherChapter: 7, otherVerse: 14),
+    ]);
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
   testWidgets('with no verse it opens the chapter overview grouped by verse', (
     tester,
   ) async {
