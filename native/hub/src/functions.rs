@@ -746,6 +746,49 @@ fn to_signal_tokens(occurrences: Vec<haqor_core::bible::Occurrence>) -> Vec<Occu
         .collect()
 }
 
+/// The OT word a request is about: resolved at its place in the text when the
+/// request names one, so a homograph takes the reading of that token, and by
+/// its surface alone otherwise.
+fn hebrew_word_in_context(
+    bible: &Bible,
+    word: &str,
+    book: Option<u8>,
+    chapter: Option<u8>,
+    verse: Option<u8>,
+    position: Option<u32>,
+) -> Option<haqor_core::bible::HebrewWord> {
+    match (book, chapter, verse, position) {
+        (Some(book), Some(chapter), Some(verse), Some(position)) => {
+            bible.hebrew_word_info_at(word, book, chapter, verse, position as usize)
+        }
+        _ => bible.hebrew_word_info(word),
+    }
+}
+
+/// Every root the word can be read under, the resolved one first.
+fn root_choices(bible: &Bible, word: &str, resolved: &str) -> Vec<RootChoice> {
+    bible
+        .hebrew_root_options(word, resolved)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|o| RootChoice {
+            root: o.root,
+            gloss: o.gloss,
+            is_primary: o.is_primary,
+        })
+        .collect()
+}
+
+/// The root a request reads the word under: the one it asked for when the word
+/// can be read under it, else the `resolved` one. A stale or foreign root
+/// would otherwise send the lexicon or the concordance after the wrong word.
+fn selected_root(requested: Option<&str>, options: &[RootChoice], resolved: &str) -> String {
+    requested
+        .filter(|root| options.iter().any(|o| o.root == *root))
+        .unwrap_or(resolved)
+        .to_string()
+}
+
 pub async fn get_word_info(bible: SharedBible) {
     let receiver = GetWordInfo::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
@@ -900,36 +943,24 @@ pub async fn get_word_info(bible: SharedBible) {
             // OpenScriptures BDB lexicon (`lexicon.db`) by consonantal root for
             // glossed root trees. `hebrew_word_info` normalises the lookup
             // itself, so the raw word is passed through.
-            let contextual = match (req.book, req.chapter, req.verse, req.position) {
-                (Some(book), Some(chapter), Some(verse), Some(position)) => {
-                    bible.hebrew_word_info_at(&req.word, book, chapter, verse, position as usize)
-                }
-                _ => bible.hebrew_word_info(&req.word),
-            };
+            let contextual = hebrew_word_in_context(
+                &bible,
+                &req.word,
+                req.book,
+                req.chapter,
+                req.verse,
+                req.position,
+            );
             match contextual {
                 Some(info) => {
                     // Every root the word can be read under, the resolved one
                     // first. A compound name has one per element, and which of
                     // them the reader wants is theirs to say — so the sheet is
                     // sent the list, and may ask for another one's lexicon.
-                    let roots = bible
-                        .hebrew_root_options(&info.word, &info.root)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|o| RootChoice {
-                            root: o.root,
-                            gloss: o.gloss,
-                            is_primary: o.is_primary,
-                        })
-                        .collect::<Vec<_>>();
+                    let roots = root_choices(&bible, &info.word, &info.root);
                     // The selection only redirects the lexicon; the morphology
                     // below still describes the token that was tapped.
-                    let selected = req
-                        .root
-                        .as_deref()
-                        .filter(|root| roots.iter().any(|o| o.root == *root))
-                        .unwrap_or(&info.root)
-                        .to_string();
+                    let selected = selected_root(req.root.as_deref(), &roots, &info.root);
                     // Match core's lexicon-coverage lookup: rooted words use
                     // the root tree, while rootless function words are looked
                     // up by their surface form and prefix.
@@ -1043,20 +1074,27 @@ pub async fn get_word_occurrences(bible: SharedBible) {
                     .hebrew_surface_occurrences(&req.word)
                     .unwrap_or_default(),
             );
-            match bible.hebrew_word_info(&req.word) {
+            // The token's own reading, as `get_word_info` resolves it: a
+            // homograph's root depends on where it stands.
+            let contextual = hebrew_word_in_context(
+                &bible,
+                &req.word,
+                req.book,
+                req.chapter,
+                req.verse,
+                req.position,
+            );
+            match contextual {
                 Some(info) => {
                     // A compound name belongs to each of its roots, and the
                     // sheet says which one the reader is reading it under.
-                    let root = req
-                        .root
-                        .as_deref()
-                        .filter(|root| !root.is_empty())
-                        .unwrap_or(&info.root);
+                    let roots = root_choices(&bible, &info.word, &info.root);
+                    let root = selected_root(req.root.as_deref(), &roots, &info.root);
                     WordOccurrences {
                         request_id: req.request_id,
                         found: true,
                         occurrences,
-                        tokens: tokens(RootRef::Hebrew(root)),
+                        tokens: tokens(RootRef::Hebrew(&root)),
                     }
                     .send_signal_to_dart()
                 }
@@ -1766,5 +1804,24 @@ mod tests {
     fn headers_error_at_end_of_stream() {
         let mut truncated = "Content-Length: 7\r\n".as_bytes();
         assert!(read_content_length(&mut truncated).is_err());
+    }
+
+    fn choice(root: &str, is_primary: bool) -> RootChoice {
+        RootChoice {
+            root: root.to_string(),
+            gloss: String::new(),
+            is_primary,
+        }
+    }
+
+    #[test]
+    fn a_requested_root_is_used_only_when_the_word_reads_under_it() {
+        let options = [choice("אלה", true), choice("עזר", false)];
+        assert_eq!(selected_root(Some("עזר"), &options, "אלה"), "עזר");
+        // A root the word has no reading under, such as a previous word's,
+        // falls back to the resolved one rather than scanning for it.
+        assert_eq!(selected_root(Some("מלכ"), &options, "אלה"), "אלה");
+        assert_eq!(selected_root(Some(""), &options, "אלה"), "אלה");
+        assert_eq!(selected_root(None, &options, "אלה"), "אלה");
     }
 }

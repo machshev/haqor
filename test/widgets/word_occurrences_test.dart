@@ -238,6 +238,34 @@ List<String> _visibleRefs(WidgetTester tester) {
 }
 
 void main() {
+  testWidgets('the occurrences request names the token it was opened from', (
+    tester,
+  ) async {
+    // A homograph's root depends on where it stands, so Rust resolves it from
+    // the same verse and position the lexicon tab's request carries.
+    final rust = await _pumpOccurrences(
+      tester,
+      [_occurrence(book: 1, chapter: 1, verse: 1)],
+      at: (book: 1, chapter: 2, verse: 3),
+      position: 4,
+    );
+
+    final request = rust.occurrenceRequests.single;
+    expect(
+      (request.book, request.chapter, request.verse, request.position),
+      (1, 2, 3, 4),
+    );
+    expect(
+      (
+        rust.infoRequests.single.book,
+        rust.infoRequests.single.chapter,
+        rust.infoRequests.single.verse,
+        rust.infoRequests.single.position,
+      ),
+      (1, 2, 3, 4),
+    );
+  });
+
   testWidgets('the list opens on the verse the reader came from', (
     tester,
   ) async {

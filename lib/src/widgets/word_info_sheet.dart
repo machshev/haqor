@@ -388,6 +388,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       requestId: id,
       word: widget.word,
       syriac: widget.syriac,
+      book: widget.book,
+      chapter: widget.chapter,
+      verse: widget.verse,
+      position: widget.position,
       root: _selectedRoot,
     );
     final send = widget.sendOccurrencesRequest;

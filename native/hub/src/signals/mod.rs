@@ -469,6 +469,13 @@ pub struct GetWordOccurrences {
     /// Echoed in the [`WordOccurrences`] reply, as in [`GetWordInfo::request_id`].
     pub request_id: u32,
     pub word: String,
+    /// The reader location of the tapped token, as in [`GetWordInfo::book`]. A
+    /// homograph's root depends on where it stands, so with all four the root
+    /// is resolved from that token's own analysis, as the lexicon tab's was.
+    pub book: Option<u8>,
+    pub chapter: Option<u8>,
+    pub verse: Option<u8>,
+    pub position: Option<u32>,
     pub syriac: bool,
     /// Which root to list occurrences of, as in [`GetWordInfo::root`]. The
     /// surface's own occurrences are the same list either way; the root scan is
