@@ -1514,12 +1514,17 @@ pub async fn get_onboarding_status(bible: SharedBible) {
     let receiver = GetOnboardingStatus::get_dart_signal_receiver();
     while let Some(_pack) = receiver.recv().await {
         let bible = lock(&bible);
-        let needed = bible.needs_onboarding().unwrap_or_else(|e| {
-            debug_print!("get_onboarding_status error: {:?}", e);
-            false
-        });
-        let tier_count = bible.calibration_tier_count().unwrap_or(0);
-        OnboardingStatus { needed, tier_count }.send_signal_to_dart();
+        // A database error must not read as "no onboarding needed", which
+        // would skip calibration for a learner who has never done it.
+        match bible
+            .needs_onboarding()
+            .and_then(|needed| Ok((needed, bible.calibration_tier_count()?)))
+        {
+            Ok((needed, tier_count)) => {
+                OnboardingStatus { needed, tier_count }.send_signal_to_dart()
+            }
+            Err(e) => send_failure("onboarding_status", "", e),
+        }
     }
 }
 

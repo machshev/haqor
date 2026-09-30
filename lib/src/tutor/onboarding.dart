@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
+import '../request_failure.dart';
 import 'loading_message.dart';
 import 'study_flow.dart';
 import 'transliterate.dart';
@@ -22,7 +23,11 @@ enum _OnboardStep { loading, askAlphabet, calibrating, done }
 /// [StudyFlowPage] once any progress already exists (see
 /// `Bible::needs_onboarding` on the Rust side).
 class TutorEntryPage extends StatefulWidget {
-  const TutorEntryPage({super.key});
+  const TutorEntryPage({super.key, this.sendRequest});
+
+  /// Stands in for the signal to Rust so a test can capture the page's
+  /// requests (`sendSignalToRust` needs the native library).
+  final void Function(Object request)? sendRequest;
 
   @override
   State<TutorEntryPage> createState() => _TutorEntryPageState();
@@ -31,6 +36,13 @@ class TutorEntryPage extends StatefulWidget {
 class _TutorEntryPageState extends State<TutorEntryPage> {
   StreamSubscription<RustSignalPack<OnboardingStatus>>? _statusSub;
   StreamSubscription<RustSignalPack<CalibrationProbe>>? _probeSub;
+  final List<StreamSubscription<RequestFailed>> _failureSubs = [];
+  final RequestTimer _timer = RequestTimer();
+  // Set when Rust fails or never answers the status or probe being waited
+  // on; the page then offers `_retry`. A status that could not be read must
+  // not be taken for "no onboarding needed", which would skip calibration.
+  String? _error;
+  VoidCallback? _retry;
 
   _OnboardStep _step = _OnboardStep.loading;
   int _tierCount = 0;
@@ -54,20 +66,70 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
     super.initState();
     _statusSub = OnboardingStatus.rustSignalStream.listen(_onStatus);
     _probeSub = CalibrationProbe.rustSignalStream.listen(_onProbe);
-    GetOnboardingStatus().sendSignalToRust();
+    for (final request in [requestOnboardingStatus, requestCalibrationProbe]) {
+      _failureSubs.add(
+        listenForFailure(request, (failure) {
+          if (mounted) _fail(failure.message);
+        }),
+      );
+    }
+    _requestStatus();
   }
 
   @override
   void dispose() {
     _statusSub?.cancel();
     _probeSub?.cancel();
+    for (final sub in _failureSubs) {
+      sub.cancel();
+    }
+    _timer.stop();
     super.dispose();
   }
 
+  void _send(Object request) {
+    final hook = widget.sendRequest;
+    if (hook != null) return hook(request);
+    switch (request) {
+      case GetOnboardingStatus():
+        request.sendSignalToRust();
+      case GetCalibrationProbe():
+        request.sendSignalToRust();
+      case SetAlphabetKnown():
+        request.sendSignalToRust();
+      case FinishCalibration():
+        request.sendSignalToRust();
+    }
+  }
+
+  /// Send [request] and wait for its reply, giving up with an error that
+  /// asks again.
+  void _await(Object request) {
+    void again() {
+      if (mounted) setState(() => _error = null);
+      _await(request);
+    }
+
+    _timer.start(() {
+      if (mounted) _fail('Haqor did not answer.');
+    });
+    _retry = again;
+    _send(request);
+  }
+
+  void _fail(String message) {
+    _timer.stop();
+    setState(() => _error = message);
+  }
+
+  void _requestStatus() => _await(GetOnboardingStatus());
+
   void _onStatus(RustSignalPack<OnboardingStatus> pack) {
     if (!mounted) return;
+    _timer.stop();
     final s = pack.message;
     setState(() {
+      _error = null;
       if (!s.needed) {
         _step = _OnboardStep.done;
       } else {
@@ -78,7 +140,7 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
   }
 
   void _knowsAlphabet(bool known) {
-    if (known) SetAlphabetKnown(known: true).sendSignalToRust();
+    if (known) _send(SetAlphabetKnown(known: true));
     if (!known || _tierCount == 0) {
       setState(() => _step = _OnboardStep.done);
       return;
@@ -98,13 +160,14 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
     final mid = _lo + (_hi - _lo) ~/ 2;
     _pendingTier = mid;
     setState(() => _probe = null);
-    GetCalibrationProbe(tier: mid).sendSignalToRust();
+    _await(GetCalibrationProbe(tier: mid));
   }
 
   void _onProbe(RustSignalPack<CalibrationProbe> pack) {
     if (!mounted) return;
     final p = pack.message;
     if (p.tier != _pendingTier) return; // stale reply from an earlier step
+    _timer.stop();
     if (!p.found) {
       // No verse anchors this tier (edge of the corpus) — treat as unread
       // and keep narrowing.
@@ -129,12 +192,22 @@ class _TutorEntryPageState extends State<TutorEntryPage> {
   }
 
   void _finishCalibration() {
-    FinishCalibration(minOccurrences: _cutoff).sendSignalToRust();
+    _send(FinishCalibration(minOccurrences: _cutoff));
     setState(() => _step = _OnboardStep.done);
   }
 
   @override
   Widget build(BuildContext context) {
+    final error = _error;
+    if (error != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Setting up your tutor')),
+        body: RequestErrorView(
+          message: 'Could not set up your tutor: $error',
+          onRetry: _retry ?? _requestStatus,
+        ),
+      );
+    }
     switch (_step) {
       case _OnboardStep.loading:
         return const Scaffold(
