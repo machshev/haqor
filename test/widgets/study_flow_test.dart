@@ -73,4 +73,58 @@ void main() {
     expect(find.byType(RequestErrorView), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('a verse that cannot be fetched offers a retry', (tester) async {
+    final sent = await pump(tester);
+    assignRustSignal['StudyItem']!(
+      _readVerse().bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    expect(sent.whereType<GetVerseText>(), hasLength(1));
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    assignRustSignal['RequestFailed']!(
+      const RequestFailed(
+        request: requestVerseText,
+        key: '1:1:1',
+        message: 'no such verse',
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    expect(find.textContaining('no such verse'), findsOneWidget);
+
+    await tester.tap(find.text('Try again'));
+    await tester.pump();
+    expect(sent.whereType<GetVerseText>(), hasLength(2));
+    expect(find.textContaining('no such verse'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 }
+
+StudyItem _readVerse() => const StudyItem(
+  kind: 'read_verse',
+  verse: VerseCard(
+    book: 1,
+    chapter: 1,
+    verse: 1,
+    examples: [],
+    words: ['בְּרֵאשִׁית'],
+    names: [false],
+    text: '',
+    translit: '',
+  ),
+  progress: TutorProgress(
+    lettersKnown: 0,
+    lettersTotal: 0,
+    vowelsKnown: 0,
+    vowelsTotal: 0,
+    grammarKnown: 0,
+    grammarTotal: 0,
+    wordsKnown: 0,
+    versesGrammarUnlocked: 0,
+    versesReadable: 0,
+    totalVerses: 0,
+  ),
+);

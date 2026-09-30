@@ -233,6 +233,8 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         request.sendSignalToRust();
       case SubmitMisreads():
         request.sendSignalToRust();
+      case GetVerseText():
+        request.sendSignalToRust();
     }
   }
 
@@ -482,6 +484,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
           card: item.verse!,
           onContinue: _next,
           onMisread: _submitMisread,
+          send: _send,
         );
       case 'done':
         return const _DoneView();
@@ -2106,10 +2109,15 @@ class _ReadVerseView extends StatefulWidget {
   /// misread, so the app can demote just those instead of gating the whole
   /// verse on one blanket grade.
   final void Function(List<String> misread) onMisread;
+
+  /// Sends a request to Rust (the page's seam, so a test can capture it).
+  final void Function(Object request) send;
+
   const _ReadVerseView({
     required this.card,
     required this.onContinue,
     required this.onMisread,
+    required this.send,
   });
 
   @override
@@ -2118,8 +2126,12 @@ class _ReadVerseView extends StatefulWidget {
 
 class _ReadVerseViewState extends State<_ReadVerseView> {
   StreamSubscription<RustSignalPack<VerseText>>? _sub;
+  StreamSubscription<RequestFailed>? _failureSub;
+  final RequestTimer _timer = RequestTimer();
   int _book = 0, _chapter = 0, _verse = 0;
   String? _text;
+  // Set when the verse could not be fetched; shown in place of the spinner.
+  String? _error;
   String _translit = '';
   // Null while the learner hasn't answered "could you read this?" yet; once
   // set to false, the word picker is shown for flagging misread words.
@@ -2136,10 +2148,18 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
           m.chapter == _chapter &&
           m.verse == _verse &&
           !m.englishOnly) {
+        _timer.stop();
         setState(() {
           _text = m.text;
           _translit = m.translit;
         });
+      }
+    });
+    _failureSub = listenForFailure(requestVerseText, (failure) {
+      if (mounted &&
+          _text == null &&
+          failure.key == '$_book:$_chapter:$_verse') {
+        _fail(failure.message);
       }
     });
     _load(widget.card.book, widget.card.chapter, widget.card.verse);
@@ -2148,7 +2168,14 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
   @override
   void dispose() {
     _sub?.cancel();
+    _failureSub?.cancel();
+    _timer.stop();
     super.dispose();
+  }
+
+  void _fail(String message) {
+    _timer.stop();
+    setState(() => _error = message);
   }
 
   void _load(int book, int chapter, int verse) {
@@ -2167,16 +2194,22 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
       _verse = verse;
       _text = own ? card.text : null;
       _translit = own ? card.translit : '';
+      _error = null;
       _readOk = null;
       _misread.clear();
     });
     if (own) return;
-    GetVerseText(
-      book: book,
-      chapter: chapter,
-      verse: verse,
-      englishOnly: false,
-    ).sendSignalToRust();
+    _timer.start(() {
+      if (mounted && _text == null) _fail('Haqor did not answer.');
+    });
+    widget.send(
+      GetVerseText(
+        book: book,
+        chapter: chapter,
+        verse: verse,
+        englishOnly: false,
+      ),
+    );
   }
 
   void _finish() {
@@ -2280,7 +2313,12 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
                 ),
               ),
               const SizedBox(height: 20),
-              if (_text == null)
+              if (_error != null)
+                RequestErrorView(
+                  message: 'Could not load this verse: $_error',
+                  onRetry: () => _load(_book, _chapter, _verse),
+                )
+              else if (_text == null)
                 const Padding(
                   padding: EdgeInsets.all(24),
                   child: CircularProgressIndicator(),

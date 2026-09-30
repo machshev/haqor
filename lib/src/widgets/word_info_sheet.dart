@@ -10,6 +10,7 @@ import '../app_settings.dart';
 import '../bindings/bindings.dart';
 import '../bible_data.dart';
 import '../issue_reporting.dart';
+import '../request_failure.dart';
 import '../surface.dart';
 import '../study_workspace.dart';
 import '../tutor/progress_sync.dart';
@@ -664,7 +665,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     if (parsed == null) return;
     showDialog<void>(
       context: context,
-      builder: (ctx) => _BibleRefPreviewDialog(
+      builder: (ctx) => BibleRefPreviewDialog(
         displayRef: href,
         bookIndex: parsed.bookIndex,
         chapter: parsed.chapter,
@@ -3979,13 +3980,16 @@ class _DictionaryEntryPreviewDialogState
   }
 }
 
-class _BibleRefPreviewDialog extends StatefulWidget {
-  const _BibleRefPreviewDialog({
+/// A Bible reference's verse, previewed over the word sheet.
+class BibleRefPreviewDialog extends StatefulWidget {
+  const BibleRefPreviewDialog({
+    super.key,
     required this.displayRef,
     required this.bookIndex,
     required this.chapter,
     required this.verse,
     this.onNavigate,
+    this.sendVerseText,
   });
 
   final String displayRef;
@@ -3994,17 +3998,31 @@ class _BibleRefPreviewDialog extends StatefulWidget {
   final int verse;
   final VoidCallback? onNavigate;
 
+  /// Stands in for the signal to Rust so a test can capture the request.
+  final void Function(GetVerseText)? sendVerseText;
+
   @override
-  State<_BibleRefPreviewDialog> createState() => _BibleRefPreviewDialogState();
+  State<BibleRefPreviewDialog> createState() => _BibleRefPreviewDialogState();
 }
 
-class _BibleRefPreviewDialogState extends State<_BibleRefPreviewDialog> {
+class _BibleRefPreviewDialogState extends State<BibleRefPreviewDialog> {
   StreamSubscription<RustSignalPack<VerseText>>? _sub;
+  StreamSubscription<RequestFailed>? _failureSub;
+  final RequestTimer _timer = RequestTimer();
   String? _verseText;
+  // Set when the verse could not be fetched; shown in place of the spinner.
+  String? _error;
 
   @override
   void initState() {
     super.initState();
+    _request();
+  }
+
+  void _request() {
+    _sub?.cancel();
+    _failureSub?.cancel();
+    if (_error != null) setState(() => _error = null);
     final targetBook = widget.bookIndex + 1;
     _sub = VerseText.rustSignalStream.listen((pack) {
       final msg = pack.message;
@@ -4013,21 +4031,42 @@ class _BibleRefPreviewDialogState extends State<_BibleRefPreviewDialog> {
           msg.chapter == widget.chapter &&
           msg.verse == widget.verse &&
           !msg.englishOnly) {
+        _timer.stop();
         setState(() => _verseText = msg.text);
         _sub?.cancel();
+        _failureSub?.cancel();
       }
     });
-    GetVerseText(
+    _failureSub = listenForFailure(requestVerseText, (failure) {
+      if (mounted) _fail(failure.message);
+    }, key: '$targetBook:${widget.chapter}:${widget.verse}');
+    _timer.start(() {
+      if (mounted && _verseText == null) _fail('Haqor did not answer.');
+    });
+    final request = GetVerseText(
       book: targetBook,
       chapter: widget.chapter,
       verse: widget.verse,
       englishOnly: false,
-    ).sendSignalToRust();
+    );
+    final send = widget.sendVerseText;
+    if (send != null) {
+      send(request);
+    } else {
+      request.sendSignalToRust();
+    }
+  }
+
+  void _fail(String message) {
+    _timer.stop();
+    setState(() => _error = message);
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _failureSub?.cancel();
+    _timer.stop();
     super.dispose();
   }
 
@@ -4049,7 +4088,12 @@ class _BibleRefPreviewDialogState extends State<_BibleRefPreviewDialog> {
           ),
         ],
       ),
-      content: _verseText == null
+      content: _error != null
+          ? RequestErrorView(
+              message: 'Could not load this verse: $_error',
+              onRetry: _request,
+            )
+          : _verseText == null
           ? const SizedBox(
               height: 60,
               child: Center(child: CircularProgressIndicator()),
