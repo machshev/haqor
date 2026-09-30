@@ -950,6 +950,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       onOpenWord: _openInspectorWord,
       initialRoot: selected.root.isEmpty ? null : selected.root,
       syriac: selected.bookIndex >= 39,
+      ntSyriac: _activeReader?._ntSyriac ?? false,
       book: selected.chapter == null ? null : selected.bookIndex + 1,
       chapter: selected.chapter,
       verse: selected.verse,

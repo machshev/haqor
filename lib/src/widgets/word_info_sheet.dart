@@ -89,6 +89,7 @@ class WordInfoSheet extends StatefulWidget {
     required this.syriac,
     this.bdbId,
     this.initialRoot,
+    this.ntSyriac = false,
     this.readerGloss,
     this.book,
     this.chapter,
@@ -111,6 +112,11 @@ class WordInfoSheet extends StatefulWidget {
 
   final String word;
   final bool syriac;
+
+  /// The reader is set to show the NT in Syriac script, so the occurrence rows
+  /// show their NT verses in it too. Distinct from [syriac], which says the
+  /// word being looked up is an NT one, whatever script it is displayed in.
+  final bool ntSyriac;
   final String? initialRoot;
 
   /// Lets the reader replace a docked inspector and retain its word history.
@@ -728,6 +734,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       builder: (ctx) => WordInfoSheet(
         word: word,
         syriac: bdbId == null ? widget.syriac : false,
+        ntSyriac: widget.ntSyriac,
         bdbId: bdbId,
         sendInfoRequest: widget.sendInfoRequest,
         sendOccurrencesRequest: widget.sendOccurrencesRequest,
@@ -1994,6 +2001,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       positions: v.positions,
       isCurrent: _isCurrentVerse(v),
       englishOnly: _occurrenceVerseEnglishOnly,
+      syriac: widget.ntSyriac && bookIndex >= 39,
       useEnglishBookNames: widget.useEnglishBookNames,
       onTap: widget.onNavigateToPassage == null
           ? null
@@ -2400,6 +2408,7 @@ class OccurrenceVerseRow extends StatelessWidget {
     required this.verse,
     required this.highlightWords,
     required this.englishOnly,
+    this.syriac = false,
     required this.useEnglishBookNames,
     this.positions = const [],
     this.isCurrent = false,
@@ -2418,6 +2427,10 @@ class OccurrenceVerseRow extends StatelessWidget {
   /// unrelated homograph standing in the same verse.
   final List<int> positions;
   final bool englishOnly;
+
+  /// Show the verse in Syriac script (an NT verse, with the reader set to it).
+  /// Ignored with [englishOnly].
+  final bool syriac;
   final bool useEnglishBookNames;
 
   /// The verse the reader was looking at when the sheet opened.
@@ -2442,6 +2455,7 @@ class OccurrenceVerseRow extends StatelessWidget {
         chapter: chapter,
         verse: verse,
         englishOnly: englishOnly,
+        syriac: syriac,
       ),
       builder: (context, data, _) {
         return InkWell(

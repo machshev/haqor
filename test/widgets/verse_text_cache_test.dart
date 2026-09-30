@@ -96,6 +96,50 @@ void main() {
     expect(sent.map((r) => r.englishOnly).toSet(), {true, false});
   });
 
+  test('Syriac script is its own mode, cached and requested apart', () async {
+    final sent = <GetVerseTexts>[];
+    final cache = VerseTextCache(send: sent.add);
+    addTearDown(cache.dispose);
+
+    final hebrew = cache.textFor(
+      book: 40,
+      chapter: 1,
+      verse: 1,
+      englishOnly: false,
+    );
+    final syriac = cache.textFor(
+      book: 40,
+      chapter: 1,
+      verse: 1,
+      englishOnly: false,
+      syriac: true,
+    );
+    // Glosses have no script, so the flag changes nothing for them.
+    final gloss = cache.textFor(
+      book: 40,
+      chapter: 1,
+      verse: 1,
+      englishOnly: true,
+      syriac: true,
+    );
+    expect(syriac, isNot(same(hebrew)));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(sent, hasLength(3));
+    expect(sent.map((r) => (r.englishOnly, r.syriac)).toSet(), {
+      (false, false),
+      (false, true),
+      (true, false),
+    });
+
+    // A reply fills the row of the mode it was asked in, not its neighbours.
+    _reply(sent.firstWhere((r) => r.syriac));
+    await Future<void>.delayed(Duration.zero);
+    expect(syriac.value?.text, 'verse 40:1:1');
+    expect(hebrew.value, isNull);
+    expect(gloss.value, isNull);
+  });
+
   test('long lists are split into batches of the requested size', () async {
     final sent = <GetVerseTexts>[];
     final cache = VerseTextCache(batchSize: 10, send: sent.add);

@@ -53,7 +53,7 @@ class VerseTextCache {
 
   final Map<String, ValueNotifier<VerseTextData?>> _entries = {};
   final List<String> _queue = [];
-  final Map<int, List<String>> _inflight = {};
+  final Map<int, ({String mode, List<String> keys})> _inflight = {};
   StreamSubscription<RustSignalPack<VerseTexts>>? _sub;
   bool _flushScheduled = false;
   bool _disposed = false;
@@ -63,8 +63,13 @@ class VerseTextCache {
   /// claim the other's replies and fill their rows with the wrong verses.
   static int _nextRequestId = 1;
 
-  static String _key(int book, int chapter, int verse, bool englishOnly) =>
-      '$book:$chapter:$verse:${englishOnly ? 'e' : 'h'}';
+  /// The mode letter a key ends in: `e` for glosses, `s` for Syriac script
+  /// and `h` for Hebrew. Glosses have no script, so `englishOnly` wins.
+  static String _mode(bool englishOnly, bool syriac) =>
+      englishOnly ? 'e' : (syriac ? 's' : 'h');
+
+  static String _key(int book, int chapter, int verse, String mode) =>
+      '$book:$chapter:$verse:$mode';
 
   /// The text of one verse, fetched on first ask. Null until it arrives.
   ValueListenable<VerseTextData?> textFor({
@@ -72,8 +77,9 @@ class VerseTextCache {
     required int chapter,
     required int verse,
     required bool englishOnly,
+    bool syriac = false,
   }) {
-    final key = _key(book, chapter, verse, englishOnly);
+    final key = _key(book, chapter, verse, _mode(englishOnly, syriac));
     final existing = _entries[key];
     if (existing != null) return existing;
     final notifier = ValueNotifier<VerseTextData?>(null);
@@ -97,25 +103,26 @@ class VerseTextCache {
     _sub ??= VerseTexts.rustSignalStream.listen(_receive);
     // A request is single-mode and the key carries the mode, so group before
     // batching: a mode toggle mid-scroll splits into one request per mode.
-    final byMode = <bool, List<String>>{};
+    final byMode = <String, List<String>>{};
     for (final key in _queue) {
-      (byMode[key.endsWith(':e')] ??= []).add(key);
+      (byMode[key.substring(key.length - 1)] ??= []).add(key);
     }
     _queue.clear();
-    for (final MapEntry(key: englishOnly, value: keys) in byMode.entries) {
+    for (final MapEntry(key: mode, value: keys) in byMode.entries) {
       for (var i = 0; i < keys.length; i += batchSize) {
-        _sendBatch(englishOnly, keys.skip(i).take(batchSize).toList());
+        _sendBatch(mode, keys.skip(i).take(batchSize).toList());
       }
     }
   }
 
-  void _sendBatch(bool englishOnly, List<String> keys) {
+  void _sendBatch(String mode, List<String> keys) {
     final requestId = _nextRequestId++;
-    _inflight[requestId] = keys;
+    _inflight[requestId] = (mode: mode, keys: keys);
     _send(
       GetVerseTexts(
         requestId: requestId,
-        englishOnly: englishOnly,
+        englishOnly: mode == 'e',
+        syriac: mode == 's',
         refs: [
           for (final key in keys)
             if (key.split(':') case [final book, final chapter, final verse, _])
@@ -137,12 +144,7 @@ class VerseTextCache {
     if (asked == null) return;
     final filled = <String>{};
     for (final verse in message.verses) {
-      final key = _key(
-        verse.book,
-        verse.chapter,
-        verse.verse,
-        message.englishOnly,
-      );
+      final key = _key(verse.book, verse.chapter, verse.verse, asked.mode);
       filled.add(key);
       _entries[key]?.value = VerseTextData(
         text: verse.text,
@@ -152,7 +154,7 @@ class VerseTextCache {
     }
     // Anything asked for and not returned is unreadable; settle it so the row
     // stops waiting.
-    for (final key in asked) {
+    for (final key in asked.keys) {
       if (filled.contains(key)) continue;
       final entry = _entries[key];
       if (entry != null && entry.value == null) {

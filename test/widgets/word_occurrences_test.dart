@@ -22,7 +22,13 @@ const _words = ['אחד', 'בָּרָא', 'בָּרָא', 'ארבע', 'חמש', 
 class _FakeRust {
   final List<GetVerseTexts> verseRequests = [];
 
-  void onVerseTextsRequest(GetVerseTexts request) => verseRequests.add(request);
+  /// Every verse-text request ever made, including those already answered.
+  final List<GetVerseTexts> allVerseRequests = [];
+
+  void onVerseTextsRequest(GetVerseTexts request) {
+    verseRequests.add(request);
+    allVerseRequests.add(request);
+  }
 
   final List<GetWordInfo> infoRequests = [];
   final List<GetWordOccurrences> occurrenceRequests = [];
@@ -142,6 +148,7 @@ Future<_FakeRust> _pumpOccurrences(
   String word = 'בָּרָא',
   WordProximity? proximity,
   bool syriac = false,
+  bool ntSyriac = false,
 }) async {
   SharedPreferences.setMockInitialValues({
     'occurrence_verse_english_only': false,
@@ -155,6 +162,7 @@ Future<_FakeRust> _pumpOccurrences(
           child: WordInfoSheet(
             word: word,
             syriac: syriac,
+            ntSyriac: ntSyriac,
             book: at?.book,
             chapter: at?.chapter,
             verse: at?.verse,
@@ -264,6 +272,34 @@ void main() {
       ),
       (1, 2, 3, 4),
     );
+  });
+
+  testWidgets('with the reader set to Syriac, NT rows ask for Syriac text', (
+    tester,
+  ) async {
+    final rust = await _pumpOccurrences(tester, [
+      _occurrence(book: 1, chapter: 1, verse: 1),
+      _occurrence(book: 40, chapter: 1, verse: 1),
+    ], ntSyriac: true);
+    // _pumpOccurrences has answered the first batch; look at what it asked.
+    await _showAllForms(tester);
+
+    final asked = <(int, bool)>{
+      for (final request in rust.allVerseRequests)
+        for (final ref in request.refs) (ref.book, request.syriac),
+    };
+    expect(asked, {(1, false), (40, true)});
+  });
+
+  testWidgets('with the reader in Hebrew, NT rows ask for Hebrew text', (
+    tester,
+  ) async {
+    final rust = await _pumpOccurrences(tester, [
+      _occurrence(book: 40, chapter: 1, verse: 1),
+    ]);
+
+    expect(rust.allVerseRequests.every((r) => !r.syriac), isTrue);
+    expect(rust.allVerseRequests, isNotEmpty);
   });
 
   testWidgets('the list opens on the verse the reader came from', (

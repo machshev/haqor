@@ -587,6 +587,12 @@ pub async fn get_verse_texts(bible: SharedBible) {
                     let (source_words, gloss_words): (Vec<String>, Vec<String>) =
                         pairs.into_iter().unzip();
                     (gloss_words.join(" "), gloss_words, source_words)
+                } else if req.syriac {
+                    (
+                        bible.get_syriac(r.book, r.chapter, r.verse).ok()?,
+                        Vec::new(),
+                        Vec::new(),
+                    )
                 } else {
                     (
                         bible.get(r.book, r.chapter, r.verse).ok()?,

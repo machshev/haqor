@@ -189,6 +189,10 @@ pub struct GetVerseTexts {
     pub request_id: u32,
     pub refs: Vec<VerseRef>,
     pub english_only: bool,
+    /// When true, return the verses in Syriac script, as the reader shows an NT
+    /// chapter with that setting on. Ignored with `english_only`, which has no
+    /// script to choose.
+    pub syriac: bool,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
