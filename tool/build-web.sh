@@ -13,9 +13,13 @@ fi
 
 # Building Rust's standard library for a shared-memory WASM target requires
 # the nightly compiler sources as well as the target itself. Keep this setup
-# here so local builds and CI use the same complete toolchain.
-rustup toolchain install nightly --profile minimal --component rust-src
-rustup target add --toolchain nightly wasm32-unknown-unknown
+# here so local builds and CI use the same complete toolchain. The nightly is
+# pinned to a date so a new nightly cannot break -Z build-std unnoticed; the
+# flake cannot pin it because rinf needs a rustup-managed toolchain. To move it,
+# change the date and run this script.
+nightly="nightly-2026-09-27"
+rustup toolchain install "$nightly" --profile minimal --component rust-src
+rustup target add --toolchain "$nightly" wasm32-unknown-unknown
 
 # Rinf's threaded wasm command omits __heap_base, which wasm-bindgen needs
 # while preparing the module. Build the same hub with that one additional
@@ -38,7 +42,7 @@ if [[ "$installed_wasm_bindgen_version" != "$wasm_bindgen_version" ]]; then
     cargo install wasm-bindgen-cli --version "$wasm_bindgen_version" --locked
 fi
 
-cargo +nightly build --release --target wasm32-unknown-unknown \
+cargo "+$nightly" build --release --target wasm32-unknown-unknown \
   -Z build-std=std,panic_abort -p hub
 wasm-bindgen target/wasm32-unknown-unknown/release/hub.wasm \
   --out-dir web/pkg --no-typescript --target web --out-name hub

@@ -30,7 +30,7 @@ runs:
         path: |
           ~/.rustup
           ~/.cargo
-        key: rust-home-${{ runner.os }}-${{ hashFiles('haqor/rust-toolchain.toml', 'haqor/pubspec.yaml') }}
+        key: rust-home-${{ runner.os }}-${{ hashFiles('haqor/rust-toolchain.toml', 'haqor/pubspec.yaml', 'haqor/tool/build-web.sh') }}
 
     - name: Bootstrap Rust toolchain and rinf_cli
       shell: bash
