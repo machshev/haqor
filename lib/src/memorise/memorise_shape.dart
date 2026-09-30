@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
+import '../request_failure.dart';
 import '../tutor/progress_sync.dart';
 import 'memorise_drill.dart' show memoryHebrewStyle;
 
@@ -39,9 +40,14 @@ class MemoryShapePage extends StatefulWidget {
     required this.passageId,
     required this.title,
     this.exit = ShapeExit.none,
+    this.sendRequest,
   });
 
   final String passageId;
+
+  /// Stands in for the signal to Rust so a test can capture the page's
+  /// requests (`sendSignalToRust` needs the native library).
+  final void Function(Object request)? sendRequest;
 
   /// The passage's name; empty when not known (practising every passage).
   final String title;
@@ -53,7 +59,11 @@ class MemoryShapePage extends StatefulWidget {
 
 class _MemoryShapePageState extends State<MemoryShapePage> {
   StreamSubscription<RustSignalPack<MemoryLayout>>? _sub;
+  StreamSubscription<RequestFailed>? _failureSub;
+  final RequestTimer _timer = RequestTimer();
   List<MemoryLayoutVerse>? _verses;
+  // Set when the layout could not be loaded; shown in place of the spinner.
+  String? _error;
   int _book = 0;
   bool _glosses = true;
 
@@ -62,18 +72,61 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
     super.initState();
     _sub = MemoryLayout.rustSignalStream.listen((pack) {
       if (!mounted || pack.message.passageId != widget.passageId) return;
+      _timer.stop();
       setState(() {
         _book = pack.message.book;
         _verses = pack.message.verses;
+        _error = null;
       });
     });
-    GetMemoryLayout(passageId: widget.passageId).sendSignalToRust();
+    _failureSub = listenForFailure(requestMemoryLayout, _onFailed);
+    _load();
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _failureSub?.cancel();
+    _timer.stop();
     super.dispose();
+  }
+
+  void _request(Object request) {
+    final hook = widget.sendRequest;
+    if (hook != null) return hook(request);
+    switch (request) {
+      case GetMemoryLayout():
+        request.sendSignalToRust();
+      case SetMemoryLayout():
+        request.sendSignalToRust();
+    }
+  }
+
+  void _load() {
+    if (_error != null) setState(() => _error = null);
+    _timer.start(() {
+      if (mounted && _verses == null) _fail('Haqor did not answer.');
+    });
+    _request(GetMemoryLayout(passageId: widget.passageId));
+  }
+
+  void _fail(String message) {
+    _timer.stop();
+    setState(() => _error = message);
+  }
+
+  /// Rust could not load the layout (shown in place of the spinner) or could
+  /// not store an edit to it (the shape on screen is then still the old one,
+  /// so say so).
+  void _onFailed(RequestFailed failure) {
+    if (!mounted || failure.key != widget.passageId) return;
+    if (_verses == null) {
+      _fail(failure.message);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Could not save that change: ${failure.message}')),
+    );
   }
 
   /// Store a verse's shape; any change to its lines, or keeping it whole,
@@ -84,15 +137,17 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
     bool? sectionStart,
     bool settle = false,
   }) {
-    SetMemoryLayout(
-      passageId: widget.passageId,
-      book: _book,
-      chapter: v.chapter,
-      verse: v.verse,
-      lineStarts: lineStarts ?? v.lineStarts,
-      shaped: v.shaped || settle || lineStarts != null,
-      sectionStart: sectionStart ?? v.sectionStart,
-    ).sendSignalToRust();
+    _request(
+      SetMemoryLayout(
+        passageId: widget.passageId,
+        book: _book,
+        chapter: v.chapter,
+        verse: v.verse,
+        lineStarts: lineStarts ?? v.lineStarts,
+        shaped: v.shaped || settle || lineStarts != null,
+        sectionStart: sectionStart ?? v.sectionStart,
+      ),
+    );
     scheduleProgressSync();
   }
 
@@ -140,7 +195,12 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
           ),
         ],
       ),
-      body: verses == null
+      body: _error != null
+          ? RequestErrorView(
+              message: 'Could not load the passage: $_error',
+              onRetry: _load,
+            )
+          : verses == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
