@@ -22,6 +22,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,6 +42,49 @@ use std::fmt::Display;
 /// the connection is still sound and keeps being used after a handler panic
 /// (which [`crate::supervise`] recovers from).
 pub type SharedBible = Arc<Mutex<Bible>>;
+
+/// A second connection to the corpus alone, opened by [`crate::open_bible`] on
+/// native. The corpus is immutable, so this is a cheap extra handle that shares
+/// no lock with the main one, and heavy read-only queries run on it off the
+/// runtime thread ([`read_corpus`]) instead of holding the main connection
+/// against the reader and the tutor. It has no progress database attached, so
+/// it is only for queries that do not depend on learner data.
+static CORPUS_READER: OnceLock<SharedBible> = OnceLock::new();
+
+/// Keep the corpus-only connection [`read_corpus`] runs heavy queries on.
+pub(crate) fn set_corpus_reader(reader: Bible) {
+    let _ = CORPUS_READER.set(Arc::new(Mutex::new(reader)));
+}
+
+/// Run a heavy, read-only corpus query without stalling the other handlers.
+/// On native it goes to a blocking thread and the corpus-only connection, so
+/// the runtime thread and the main connection stay free meanwhile. The browser
+/// has no threads to hand it to and only the one connection, so the query runs
+/// where it is, as it always did. An `Err` is a query that panicked.
+pub(crate) async fn read_corpus<T: Send + 'static>(
+    bible: &SharedBible,
+    query: impl FnOnce(&Bible) -> T + Send + 'static,
+) -> Result<T, String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(reader) = CORPUS_READER.get() {
+        return run_blocking(reader.clone(), query).await;
+    }
+    Ok(query(&lock(bible)))
+}
+
+/// Run `query` on a blocking thread against what `handle` guards. A panic in it
+/// is returned as an error and leaves the handle usable for the next query.
+#[cfg(not(target_arch = "wasm32"))]
+async fn run_blocking<H: Send + 'static, T: Send + 'static>(
+    handle: Arc<Mutex<H>>,
+    query: impl FnOnce(&H) -> T + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(move || {
+        query(&handle.lock().unwrap_or_else(PoisonError::into_inner))
+    })
+    .await
+    .map_err(|e| format!("corpus query stopped unexpectedly: {e}"))
+}
 
 pub(crate) fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
     bible.lock().unwrap_or_else(PoisonError::into_inner)
@@ -1040,6 +1084,32 @@ pub async fn get_word_info(bible: SharedBible) {
     }
 }
 
+/// A root to scan the canon for, owned so the scan can move to another thread.
+enum ScanRoot {
+    Hebrew(String),
+    Sedra(i64),
+}
+
+/// Every token of `root` across the canon. This is the heaviest query the
+/// sheets make, so it runs off the runtime on [`read_corpus`].
+async fn root_tokens(bible: &SharedBible, root: ScanRoot) -> Vec<Occurrence> {
+    let tokens = read_corpus(bible, move |bible| {
+        let root = match &root {
+            ScanRoot::Hebrew(root) => RootRef::Hebrew(root),
+            ScanRoot::Sedra(key_root) => RootRef::Sedra(*key_root),
+        };
+        to_signal_tokens(bible.root_occurrences(root).unwrap_or_else(|e| {
+            debug_print!("root_occurrences({root:?}) error: {e:?}");
+            Vec::new()
+        }))
+    })
+    .await;
+    tokens.unwrap_or_else(|e| {
+        debug_print!("root_occurrences error: {e}");
+        Vec::new()
+    })
+}
+
 /// Lazy occurrence lookup, split out of [`get_word_info`] so the Occurrences tab
 /// can defer the full-text root scans until it is actually opened. Re-derives
 /// the root from the (cheap) lexicon lookup, then scans the canon for it: the
@@ -1048,71 +1118,79 @@ pub async fn get_word_info(bible: SharedBible) {
 pub async fn get_word_occurrences(bible: SharedBible) {
     let receiver = GetWordOccurrences::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
-        let bible = lock(&bible);
         let req = signal_pack.message;
         debug_print!("{:?}", req);
 
-        let tokens = |root: RootRef| {
-            to_signal_tokens(bible.root_occurrences(root).unwrap_or_else(|e| {
-                debug_print!("root_occurrences({root:?}) error: {e:?}");
-                Vec::new()
-            }))
-        };
-        if req.syriac {
-            let words = bible
-                .sedra_word_info(&strip_trope(&req.word))
-                .unwrap_or_default();
-            match words.first() {
-                Some(first) => WordOccurrences {
-                    request_id: req.request_id,
-                    found: true,
-                    occurrences: Vec::new(),
-                    tokens: tokens(RootRef::Sedra(first.key_root)),
+        // The word is resolved under the lock, which also has the learner's
+        // corrections; the scan that follows needs neither and runs without it.
+        let (mut reply, scan) = {
+            let bible = lock(&bible);
+            if req.syriac {
+                let words = bible
+                    .sedra_word_info(&strip_trope(&req.word))
+                    .unwrap_or_default();
+                match words.first() {
+                    Some(first) => (
+                        WordOccurrences {
+                            request_id: req.request_id,
+                            found: true,
+                            occurrences: Vec::new(),
+                            tokens: Vec::new(),
+                        },
+                        Some(ScanRoot::Sedra(first.key_root)),
+                    ),
+                    None => (empty_word_occurrences(req.request_id), None),
                 }
-                .send_signal_to_dart(),
-                None => empty_word_occurrences(req.request_id).send_signal_to_dart(),
-            }
-        } else {
-            // Even a word the parse engine can't analyse is still a surface
-            // form of the text — its own occurrences keep the sheet useful.
-            let occurrences = to_signal_occurrences(
-                bible
-                    .hebrew_surface_occurrences(&req.word)
-                    .unwrap_or_default(),
-            );
-            // The token's own reading, as `get_word_info` resolves it: a
-            // homograph's root depends on where it stands.
-            let contextual = hebrew_word_in_context(
-                &bible,
-                &req.word,
-                req.book,
-                req.chapter,
-                req.verse,
-                req.position,
-            );
-            match contextual {
-                Some(info) => {
-                    // A compound name belongs to each of its roots, and the
-                    // sheet says which one the reader is reading it under.
-                    let roots = root_choices(&bible, &info.word, &info.root);
-                    let root = selected_root(req.root.as_deref(), &roots, &info.root);
-                    WordOccurrences {
-                        request_id: req.request_id,
-                        found: true,
-                        occurrences,
-                        tokens: tokens(RootRef::Hebrew(&root)),
+            } else {
+                // Even a word the parse engine can't analyse is still a surface
+                // form of the text — its own occurrences keep the sheet useful.
+                let occurrences = to_signal_occurrences(
+                    bible
+                        .hebrew_surface_occurrences(&req.word)
+                        .unwrap_or_default(),
+                );
+                // The token's own reading, as `get_word_info` resolves it: a
+                // homograph's root depends on where it stands.
+                let contextual = hebrew_word_in_context(
+                    &bible,
+                    &req.word,
+                    req.book,
+                    req.chapter,
+                    req.verse,
+                    req.position,
+                );
+                match contextual {
+                    Some(info) => {
+                        // A compound name belongs to each of its roots, and the
+                        // sheet says which one the reader is reading it under.
+                        let roots = root_choices(&bible, &info.word, &info.root);
+                        let root = selected_root(req.root.as_deref(), &roots, &info.root);
+                        (
+                            WordOccurrences {
+                                request_id: req.request_id,
+                                found: true,
+                                occurrences,
+                                tokens: Vec::new(),
+                            },
+                            Some(ScanRoot::Hebrew(root)),
+                        )
                     }
-                    .send_signal_to_dart()
+                    None => (
+                        WordOccurrences {
+                            request_id: req.request_id,
+                            found: !occurrences.is_empty(),
+                            occurrences,
+                            tokens: Vec::new(),
+                        },
+                        None,
+                    ),
                 }
-                None => WordOccurrences {
-                    request_id: req.request_id,
-                    found: !occurrences.is_empty(),
-                    occurrences,
-                    tokens: Vec::new(),
-                }
-                .send_signal_to_dart(),
             }
+        };
+        if let Some(root) = scan {
+            reply.tokens = root_tokens(&bible, root).await;
         }
+        reply.send_signal_to_dart();
     }
 }
 
@@ -1661,14 +1739,24 @@ pub async fn get_quotations(bible: SharedBible) {
                 _ => QuotationScope::All,
             },
         };
-        let bible = lock(&bible);
-        let (total, quotations) = match (
-            bible.quotation_count(filter),
-            bible.quotations(filter, req.limit, req.offset),
-        ) {
-            (Ok(total), Ok(quotations)) => (total, quotations),
-            (count, page) => {
+        // Counting and paging walk the whole link table, so both run together
+        // off the runtime.
+        let (limit, offset) = (req.limit, req.offset);
+        let found = read_corpus(&bible, move |bible| {
+            (
+                bible.quotation_count(filter),
+                bible.quotations(filter, limit, offset),
+            )
+        })
+        .await;
+        let (total, quotations) = match found {
+            Ok((Ok(total), Ok(quotations))) => (total, quotations),
+            Ok((count, page)) => {
                 debug_print!("get_quotations error: {:?} {:?}", count.err(), page.err());
+                (0, Vec::new())
+            }
+            Err(e) => {
+                debug_print!("get_quotations error: {e}");
                 (0, Vec::new())
             }
         };
@@ -1829,5 +1917,37 @@ mod tests {
         assert_eq!(selected_root(Some("מלכ"), &options, "אלה"), "אלה");
         assert_eq!(selected_root(Some(""), &options, "אלה"), "אלה");
         assert_eq!(selected_root(None, &options, "אלה"), "אלה");
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod reader_tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[::tokio::test(flavor = "current_thread")]
+    async fn a_slow_query_does_not_stall_the_runtime_thread() {
+        let handle = Arc::new(Mutex::new(7u32));
+        let started = Instant::now();
+        let slow = tokio::spawn(run_blocking(handle.clone(), |n| {
+            std::thread::sleep(Duration::from_millis(300));
+            *n
+        }));
+        // Everything else that shares the thread keeps being served meanwhile.
+        let mut ticks = 0;
+        while started.elapsed() < Duration::from_millis(200) {
+            ::tokio::time::sleep(Duration::from_millis(10)).await;
+            ticks += 1;
+        }
+        assert!(ticks >= 10, "runtime thread was blocked: {ticks} ticks");
+        assert_eq!(slow.await.ok(), Some(Ok(7)));
+    }
+
+    #[::tokio::test(flavor = "current_thread")]
+    async fn a_panicking_query_is_an_error_and_the_handle_still_works() {
+        let handle = Arc::new(Mutex::new(1u32));
+        let failed = run_blocking(handle.clone(), |_| -> u32 { panic!("bad query") }).await;
+        assert!(failed.is_err());
+        assert_eq!(run_blocking(handle, |n| *n + 1).await, Ok(2));
     }
 }

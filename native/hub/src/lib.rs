@@ -21,8 +21,8 @@ use functions::{
     get_thematic_references, get_tutor_gloss_override_stats, get_tutor_settings, get_tutor_stats,
     get_verse_text, get_verse_texts, get_word_info, get_word_occurrences,
     optimize_tutor_gloss_overrides, reset_tutor, save_issue_report, save_lexicon_entry_override,
-    save_study_state, save_tutor_gloss, set_alphabet_known, set_tutor_settings, submit_misreads,
-    submit_review, sync_progress,
+    save_study_state, save_tutor_gloss, set_alphabet_known, set_corpus_reader, set_tutor_settings,
+    submit_misreads, submit_review, sync_progress,
 };
 use signals::{BootStatus, SetDataDir};
 
@@ -115,6 +115,13 @@ async fn open_bible() -> Option<(SharedBible, PathBuf)> {
                         true,
                     );
                     continue;
+                }
+                // A second, corpus-only handle for the heavy read-only queries.
+                // The corpus is immutable, so it costs nothing if it cannot be
+                // had: those queries then share the main connection.
+                match Bible::open(Path::new(&path)) {
+                    Ok(reader) => set_corpus_reader(reader),
+                    Err(e) => debug_print!("no separate corpus reader: {e}"),
                 }
                 report_boot(false, false, false, "");
                 return Some((Arc::new(Mutex::new(bible)), PathBuf::from(path)));
