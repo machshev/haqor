@@ -126,7 +126,10 @@ class _ProgressSyncSheetState extends State<_ProgressSyncSheet> {
         });
       }
     }
-    if (mounted && !sync) setState(() => _saving = false);
+    // Turning sync off has no status to wait for, even when asked to sync.
+    if (mounted && (!sync || serverUrl.isEmpty)) {
+      setState(() => _saving = false);
+    }
   }
 
   @override
