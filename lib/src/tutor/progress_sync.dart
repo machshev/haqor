@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,6 +9,10 @@ import '../bindings/bindings.dart';
 
 const _serverUrlKey = 'progress_sync_server_url';
 const _tokenKey = 'progress_sync_token';
+
+/// LAN sync needs TCP and file access that the browser's WebAssembly build of
+/// the core does not have, so on the web it is neither offered nor started.
+bool progressSyncSupported = !kIsWeb;
 
 Timer? _scheduledSync;
 
@@ -31,6 +36,7 @@ void _sendSync(String serverUrl, String token) {
 /// Synchronise after a short quiet period, so quickly flagging several words
 /// in a verse creates one LAN request rather than one per tap.
 void scheduleProgressSync() {
+  if (!progressSyncSupported) return;
   _scheduledSync?.cancel();
   _scheduledSync = Timer(const Duration(seconds: 2), () {
     syncProgressNow();
@@ -42,6 +48,7 @@ void scheduleProgressSync() {
 /// Returns false when sync has not been configured, otherwise true once the
 /// request has been handed to Rust.
 Future<bool> syncProgressNow({VoidCallback? onRequest}) async {
+  if (!progressSyncSupported) return false;
   final prefs = await SharedPreferences.getInstance();
   final serverUrl = prefs.getString(_serverUrlKey)?.trim() ?? '';
   final token = prefs.getString(_tokenKey)?.trim() ?? '';

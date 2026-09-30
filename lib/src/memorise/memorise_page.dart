@@ -352,23 +352,24 @@ class _MemorisePageState extends State<MemorisePage> {
                 builder: (_) => _SettingsSheet(stats: stats),
               ),
             ),
-          IconButton(
-            icon: const Icon(Icons.sync),
-            tooltip: 'Sync progress now',
-            onPressed: () async {
-              final started = await syncProgressNow();
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    started
-                        ? 'Syncing progress…'
-                        : 'Configure LAN sync in App settings first.',
+          if (progressSyncSupported)
+            IconButton(
+              icon: const Icon(Icons.sync),
+              tooltip: 'Sync progress now',
+              onPressed: () async {
+                final started = await syncProgressNow();
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      started
+                          ? 'Syncing progress…'
+                          : 'Configure LAN sync in App settings first.',
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
+                );
+              },
+            ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(

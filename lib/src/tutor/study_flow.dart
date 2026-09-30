@@ -391,11 +391,12 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
             tooltip: 'Study pace',
             onPressed: () => showStudySettings(context),
           ),
-          IconButton(
-            icon: const Icon(Icons.restart_alt),
-            tooltip: 'Sync progress now',
-            onPressed: _manualSyncPending ? null : _syncNow,
-          ),
+          if (progressSyncSupported)
+            IconButton(
+              icon: const Icon(Icons.restart_alt),
+              tooltip: 'Sync progress now',
+              onPressed: _manualSyncPending ? null : _syncNow,
+            ),
         ],
       ),
       body: _error != null

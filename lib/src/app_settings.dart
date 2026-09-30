@@ -569,18 +569,20 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
                 ),
               ),
               const SizedBox(height: 24),
-              const _SectionLabel('Sync'),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.sync),
-                title: const Text('Sync over your LAN'),
-                subtitle: const Text(
-                  'Keep progress, corrections and reports in sync with your personal server.',
+              if (progressSyncSupported) ...[
+                const _SectionLabel('Sync'),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.sync),
+                  title: const Text('Sync over your LAN'),
+                  subtitle: const Text(
+                    'Keep progress, corrections and reports in sync with your personal server.',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => showProgressSyncSettings(context),
                 ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => showProgressSyncSettings(context),
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
+              ],
               const _SectionLabel('Admin'),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
