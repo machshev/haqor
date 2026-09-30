@@ -26,6 +26,14 @@ if [[ ! -f "$src/haqor.db" ]]; then
   exit 1
 fi
 
+# Resolve everything that can fail before touching assets/db, and write
+# version.txt last: it is what makes an installed copy reinstall, so it must
+# only ever describe a complete sync.
+if [[ "${1:-}" != "--keep" ]]; then
+  app_id="$(sed -n 's/^set(APPLICATION_ID "\([^"]*\)").*/\1/p' "$here/../linux/CMakeLists.txt")"
+  test -n "$app_id" || { echo "no APPLICATION_ID in linux/CMakeLists.txt" >&2; exit 1; }
+fi
+
 mkdir -p "$dst"
 # Only the runtime database ships. The four generation databases beside it are
 # its inputs.
@@ -45,8 +53,7 @@ if [[ "${1:-}" == "--keep" ]]; then
 fi
 
 # Force a reinstall on this machine by removing the version marker from the
-# app-support db dir (path mirrors path_provider + APPLICATION_ID).
-app_id="$(grep -oP 'set\(APPLICATION_ID "\K[^"]+' "$here/../linux/CMakeLists.txt")"
+# app-support db dir (path mirrors path_provider + APPLICATION_ID, read above).
 case "$(uname -s)" in
   Darwin) support="$HOME/Library/Application Support/$app_id" ;;
   *)      support="${XDG_DATA_HOME:-$HOME/.local/share}/$app_id" ;;
