@@ -545,13 +545,7 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
               _SettingsDropdown<double>(
                 label: 'Font size',
                 value: _readingSettings.fontSize,
-                options: {
-                  13.0: 'Extra small',
-                  16.0: 'Small',
-                  20.0: 'Medium',
-                  24.0: 'Large',
-                  28.0: 'Extra large',
-                },
+                options: kFontSizeChoices,
                 onChanged: (value) => _updateReadingSettings(
                   _readingSettings.copyWith(fontSize: value),
                 ),
@@ -704,5 +698,25 @@ class _SettingsDropdown<T> extends StatelessWidget {
     onChanged: (value) {
       if (value != null) onChanged(value);
     },
+  );
+}
+
+/// The font sizes the settings menu offers, with their labels.
+final kFontSizeChoices = <double, String>{
+  13.0: 'Extra small',
+  16.0: 'Small',
+  20.0: 'Medium',
+  24.0: 'Large',
+  28.0: 'Extra large',
+};
+
+/// The menu choice nearest a saved size, or Medium when there is none.
+///
+/// The menu asserts on a value that is not one of its choices, and a saved
+/// size can be anything.
+double snapFontSize(double? saved) {
+  if (saved == null || !saved.isFinite) return 20.0;
+  return kFontSizeChoices.keys.reduce(
+    (best, size) => (size - saved).abs() < (best - saved).abs() ? size : best,
   );
 }

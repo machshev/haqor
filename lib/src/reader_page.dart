@@ -1917,7 +1917,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       _englishBookNames = prefs.readBool(_kEnglishBookNames) ?? false;
       _hebrewNumerals = prefs.readBool(_kHebrewNumerals) ?? true;
       _crossReferenceMinScore = prefs.readDouble(_kCrossReferenceMinScore) ?? 0;
-      _fontSize = (prefs.readDouble(_kFontSize) ?? 20.0).clamp(13.0, 28.0);
+      _fontSize = snapFontSize(prefs.readDouble(_kFontSize));
       final savedFamily = prefs.readString(_kFontFamily) ?? 'Cardo';
       _fontFamily = _fontFamilies.contains(savedFamily) ? savedFamily : 'Cardo';
       _showCantillation = prefs.readBool(_kShowCantillation) ?? true;
