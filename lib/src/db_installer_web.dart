@@ -55,10 +55,21 @@ void _saveFailed(Object error) {
   );
 }
 
+/// How often Rust is asked for the progress changes it has held back. Rust
+/// serialises the whole progress database for each snapshot, so it does so
+/// only when asked, and only if something changed.
+const _snapshotRequestInterval = Duration(seconds: 2);
+
 /// Write the pending snapshot now. The tab can go at any moment after it is
-/// hidden, and on a phone that is the last chance there is.
+/// hidden, and on a phone that is the last chance there is. Rust is asked for
+/// anything it has not sent yet first; what it sends back is written at once
+/// while the page is hidden, and with the usual delay otherwise.
 void _flushOnLeaving() {
-  void flush(web.Event _) => unawaited(_writer?.flush());
+  void flush(web.Event _) {
+    FlushProgress().sendSignalToRust();
+    unawaited(_writer?.flush());
+  }
+
   web.window.addEventListener('pagehide', flush.toJS);
   web.document.addEventListener(
     'visibilitychange',
@@ -112,8 +123,13 @@ Future<String?> initializeDatabases({bool reinstall = false}) async {
       write: (snapshot) => store.write(_progressKey, snapshot),
       onFailure: _saveFailed,
     );
-    _persistence = ProgressSnapshot.rustSignalStream.listen(
-      (pack) => writer.schedule(pack.binary),
+    _persistence = ProgressSnapshot.rustSignalStream.listen((pack) {
+      writer.schedule(pack.binary);
+      if (web.document.visibilityState == 'hidden') unawaited(writer.flush());
+    });
+    Timer.periodic(
+      _snapshotRequestInterval,
+      (_) => FlushProgress().sendSignalToRust(),
     );
     _flushOnLeaving();
   }

@@ -32,6 +32,12 @@ pub struct BootStatus {
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub struct ProgressSnapshot {}
 
+/// Ask for any progress change not yet sent as a [`ProgressSnapshot`] to be
+/// sent now, because the page is being hidden and may not come back.
+#[derive(Debug, Deserialize, DartSignal)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub struct FlushProgress {}
+
 /// Ask the native layer to merge this device's progress with the trusted LAN
 /// sync server. The token is deliberately never persisted by Rust; Dart keeps
 /// it in the platform preference store and sends it only for this request.

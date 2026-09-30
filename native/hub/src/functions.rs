@@ -1,5 +1,3 @@
-#[cfg(target_arch = "wasm32")]
-use crate::signals::ProgressSnapshot;
 use crate::signals::{
     BdbSummary, BuildInfo, CalibrationProbe, ChapterText, CrossReferenceEntry, CrossReferences,
     DictionaryEntry, FinishCalibration, GetBuildInfo, GetCalibrationProbe, GetChapter,
@@ -17,12 +15,16 @@ use crate::signals::{
     VerseRef, VerseText, VerseTextEntry, VerseTexts, WordCard, WordInfo, WordOccurrence,
     WordOccurrences,
 };
+#[cfg(target_arch = "wasm32")]
+use crate::signals::{FlushProgress, ProgressSnapshot};
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+#[cfg(any(target_arch = "wasm32", test))]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -166,20 +168,56 @@ pub async fn get_dictionary_entry(bible: SharedBible) {
     }
 }
 
-/// Browser SQLite lives in the WASM heap.  Save it after every successful
-/// learner write so the Dart host can persist it between PWA launches.
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn persist_browser_progress(bible: &Bible) {
-    use rinf::RustSignalBinary;
+/// Browser SQLite lives in the WASM heap. Serialising all of it is the cost of
+/// one save, so a learner write only marks the progress as changed, and
+/// [`flush_progress`] sends Dart a snapshot of it when Dart asks (a timer there
+/// and the page being hidden), so the host can persist it between PWA launches.
+#[cfg(any(target_arch = "wasm32", test))]
+static PROGRESS_DIRTY: AtomicBool = AtomicBool::new(false);
 
-    match bible.progress_snapshot_bytes() {
-        Ok(snapshot) => ProgressSnapshot {}.send_signal_to_dart(snapshot),
-        Err(error) => debug_print!("could not snapshot browser progress: {error}"),
-    }
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn persist_browser_progress(_: &Bible) {
+    PROGRESS_DIRTY.store(true, Ordering::Release);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn persist_browser_progress(_: &Bible) {}
+
+/// Whether progress changed since the last call, clearing the mark.
+#[cfg(any(target_arch = "wasm32", test))]
+fn take_progress_dirty() -> bool {
+    PROGRESS_DIRTY.swap(false, Ordering::AcqRel)
+}
+
+/// Send Dart a snapshot of the browser progress if it changed since the last.
+#[cfg(target_arch = "wasm32")]
+fn flush_browser_progress(bible: &SharedBible) {
+    use rinf::RustSignalBinary;
+
+    if !take_progress_dirty() {
+        return;
+    }
+    // The snapshot is taken under the lock and sent after it is let go.
+    let snapshot = lock(bible).progress_snapshot_bytes();
+    match snapshot {
+        Ok(snapshot) => ProgressSnapshot {}.send_signal_to_dart(snapshot),
+        Err(error) => {
+            // Stay marked, so the next request tries again.
+            PROGRESS_DIRTY.store(true, Ordering::Release);
+            debug_print!("could not snapshot browser progress: {error}");
+        }
+    }
+}
+
+/// Send Dart any changed browser progress when it asks: on a short timer of its
+/// own while the page is open, and as the page is hidden.
+#[cfg(target_arch = "wasm32")]
+pub async fn flush_progress(bible: SharedBible) {
+    let receiver = FlushProgress::get_dart_signal_receiver();
+    while receiver.recv().await.is_some() {
+        flush_browser_progress(&bible);
+    }
+}
 
 const MAX_SYNC_SNAPSHOT_BYTES: usize = 64 * 1024 * 1024;
 
@@ -1949,5 +1987,20 @@ mod reader_tests {
         let failed = run_blocking(handle.clone(), |_| -> u32 { panic!("bad query") }).await;
         assert!(failed.is_err());
         assert_eq!(run_blocking(handle, |n| *n + 1).await, Ok(2));
+    }
+}
+
+#[cfg(test)]
+mod progress_snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn many_writes_make_one_snapshot() {
+        assert!(!take_progress_dirty(), "nothing written yet");
+        for _ in 0..20 {
+            PROGRESS_DIRTY.store(true, Ordering::Release);
+        }
+        assert!(take_progress_dirty(), "the writes are sent once");
+        assert!(!take_progress_dirty(), "and not again until one more");
     }
 }

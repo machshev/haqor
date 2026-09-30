@@ -14,6 +14,8 @@ use rinf::{DartSignalBinary, RustSignal, dart_shutdown, debug_print, write_inter
 use tokio::spawn;
 use tokio_with_wasm::alias as tokio;
 
+#[cfg(target_arch = "wasm32")]
+use functions::flush_progress;
 use functions::{
     SharedBible, finish_calibration, get_build_info, get_calibration_probe, get_chapter_text,
     get_cross_references, get_dictionary_entry, get_next_study_item, get_onboarding_status,
@@ -257,6 +259,13 @@ async fn main() {
         memorise::get_memory_stats,
         memorise::set_memory_settings,
     );
+    // The browser keeps progress in memory; Dart is sent it when it asks rather
+    // than after every write.
+    #[cfg(target_arch = "wasm32")]
+    {
+        let flusher = bible.clone();
+        supervise("flush_progress", move || flush_progress(flusher.clone()));
+    }
     supervise("sync_progress", move || {
         sync_progress(bible.clone(), data_dir.clone())
     });
