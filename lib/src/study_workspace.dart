@@ -706,6 +706,15 @@ class StudyItem {
   final Object value;
   final int order;
 
+  /// The item for a passage, word, note or link.
+  factory StudyItem.of(Object value) => switch (value) {
+    StudyPassage() => StudyItem._(StudyItemType.passage, value, value.order),
+    StudyWord() => StudyItem._(StudyItemType.word, value, value.order),
+    StudyNote() => StudyItem._(StudyItemType.note, value, value.order),
+    StudyLink() => StudyItem._(StudyItemType.link, value, value.order),
+    _ => throw ArgumentError.value(value, 'value', 'not a movable item'),
+  };
+
   String get key => switch (type) {
     StudyItemType.passage => 'passage-${(value as StudyPassage).locationKey}',
     StudyItemType.word => (value as StudyWord).key,

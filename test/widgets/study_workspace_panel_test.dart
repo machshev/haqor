@@ -217,6 +217,7 @@ void main() {
     String? bookmarkedIn = 'unset';
     StudyWord? updatedWord;
     StudyWord? openedWord;
+    (String, String?, int?)? moved;
     bool? highlightsEnabled;
     var createdWorkspace = false;
 
@@ -257,7 +258,8 @@ void main() {
               onEditNote: (_) {},
               onUpdateNote: (_) {},
               onRemoveNote: (_) {},
-              onMoveItem: (_, _, _) {},
+              onMoveItem: (item, groupId, index) =>
+                  moved = (item.key, groupId, index),
             ),
           ),
         ),
@@ -338,7 +340,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(updatedWord?.groupId, 'creation');
+    // The move goes through the workspace's own move, not a rewrite of the
+    // item as the menu saw it.
+    expect(moved, ('word-root-ברא', 'creation', null));
+    expect(updatedWord?.groupId, isNull);
   });
   testWidgets(
     'dragging reorders groups and moves items through nested groups',

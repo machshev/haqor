@@ -144,39 +144,57 @@ class StudyWorkspacePanel extends StatelessWidget {
     ),
   );
 
+  /// Moves [value] through the workspace's own rules, so it lands last in its
+  /// new place, and only where it may go, whatever changed while choosing.
+  Future<void> _moveTo(
+    BuildContext context,
+    StudyWorkspace workspace,
+    Object value,
+  ) async {
+    final item = StudyItem.of(value);
+    final destination = await _chooseDestination(context, workspace, item);
+    if (destination != _cancelledChoice && destination != item.groupId) {
+      onMoveItem(item, destination, null);
+    }
+  }
+
   Future<String?> _chooseDestination(
     BuildContext context,
     StudyWorkspace workspace,
+    StudyItem item,
   ) async {
     final choice = await showDialog<String>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
         title: const Text('Move study item'),
         children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialogContext, _topLevelChoice),
-            child: const ListTile(
-              leading: Icon(Icons.notes_outlined),
-              title: Text('Top level'),
-              subtitle: Text('Not inside a group'),
+          if (workspace.canMoveItem(item, null))
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, _topLevelChoice),
+              child: const ListTile(
+                leading: Icon(Icons.notes_outlined),
+                title: Text('Top level'),
+                subtitle: Text('Not inside a group'),
+              ),
             ),
-          ),
           for (final group in workspace.groups)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(dialogContext, group.id),
-              child: ListTile(
-                leading: const Icon(Icons.folder_outlined),
-                title: Text(_containerPath(workspace, group.id)),
+            if (workspace.canMoveItem(item, group.id))
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialogContext, group.id),
+                child: ListTile(
+                  leading: const Icon(Icons.folder_outlined),
+                  title: Text(_containerPath(workspace, group.id)),
+                ),
               ),
-            ),
           for (final section in workspace.sections)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(dialogContext, section.id),
-              child: ListTile(
-                leading: Icon(_sectionIcon(section)),
-                title: Text(_containerPath(workspace, section.id)),
+            if (workspace.canMoveItem(item, section.id))
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialogContext, section.id),
+                child: ListTile(
+                  leading: Icon(_sectionIcon(section)),
+                  title: Text(_containerPath(workspace, section.id)),
+                ),
               ),
-            ),
         ],
       ),
     );
@@ -747,10 +765,7 @@ class StudyWorkspacePanel extends StatelessWidget {
           case _ItemAction.note:
             onEditPassage(passage);
           case _ItemAction.move:
-            final destination = await _chooseDestination(context, workspace);
-            if (destination != _cancelledChoice) {
-              onUpdatePassage(passage.copyWith(groupId: () => destination));
-            }
+            await _moveTo(context, workspace, passage);
           case _ItemAction.color:
             final color = await _pickColor(
               context,
@@ -876,10 +891,7 @@ class StudyWorkspacePanel extends StatelessWidget {
             case _WordAction.note:
               onEditWord(word);
             case _WordAction.move:
-              final destination = await _chooseDestination(context, workspace);
-              if (destination != _cancelledChoice) {
-                onUpdateWord(word.copyWith(groupId: () => destination));
-              }
+              await _moveTo(context, workspace, word);
             case _WordAction.color:
               final color = await _pickColor(
                 context,
@@ -1010,10 +1022,7 @@ class StudyWorkspacePanel extends StatelessWidget {
             case _LinkAction.note:
               onEditLink?.call(link);
             case _LinkAction.move:
-              final destination = await _chooseDestination(context, workspace);
-              if (destination != _cancelledChoice) {
-                onUpdateLink?.call(link.copyWith(groupId: () => destination));
-              }
+              await _moveTo(context, workspace, link);
             case _LinkAction.remove:
               onRemoveLink?.call(link);
           }
@@ -1095,10 +1104,7 @@ class StudyWorkspacePanel extends StatelessWidget {
           case _NoteAction.edit:
             onEditNote(note);
           case _NoteAction.move:
-            final destination = await _chooseDestination(context, workspace);
-            if (destination != _cancelledChoice) {
-              onUpdateNote(note.copyWith(groupId: () => destination));
-            }
+            await _moveTo(context, workspace, note);
           case _NoteAction.remove:
             onRemoveNote(note);
         }
