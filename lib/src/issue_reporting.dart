@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bindings/bindings.dart';
+import 'request_failure.dart' show firstWithin;
 import 'tutor/progress_sync.dart';
 
 const _legacyFlaggedWordsKey = 'debug_flagged_words';
@@ -80,9 +81,11 @@ Future<void> showIssueReportDialog(
     'details': contextData,
   };
 
-  final statusFuture = IssueReportStatus.rustSignalStream
-      .firstWhere((pack) => pack.message.reportId == id)
-      .timeout(const Duration(seconds: 8));
+  final statusFuture = firstWithin(
+    IssueReportStatus.rustSignalStream,
+    (pack) => pack.message.reportId == id,
+    const Duration(seconds: 8),
+  );
   SaveIssueReport(
     id: id,
     reportType: draft.reportType,
@@ -134,9 +137,11 @@ Future<void> migrateLegacyFlaggedWords() async {
           .encode(utf8.encode('$flaggedAt|$word'))
           .replaceAll('=', '');
       final id = 'legacy-$stableKey';
-      final statusFuture = IssueReportStatus.rustSignalStream
-          .firstWhere((pack) => pack.message.reportId == id)
-          .timeout(const Duration(seconds: 8));
+      final statusFuture = firstWithin(
+        IssueReportStatus.rustSignalStream,
+        (pack) => pack.message.reportId == id,
+        const Duration(seconds: 8),
+      );
       SaveIssueReport(
         id: id,
         reportType: 'bug',
