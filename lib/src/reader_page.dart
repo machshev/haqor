@@ -56,6 +56,9 @@ class _PassageRef {
   }
 }
 
+/// The furthest from the epoch, in milliseconds, that [DateTime] can represent.
+const _maxDateMillis = 8640000000000000;
+
 class _ReadingPlan {
   _ReadingPlan({required this.bookIndex, Map<int, DateTime?>? completed})
     : _completed = completed ?? {};
@@ -123,7 +126,8 @@ class _ReadingPlan {
         continue;
       }
       final millis = pieces.length == 2 ? int.tryParse(pieces[1]) : null;
-      completed[chapter] = millis == null
+      // DateTime throws outside this range; an unreadable time is just unknown.
+      completed[chapter] = millis == null || millis.abs() > _maxDateMillis
           ? null
           : DateTime.fromMillisecondsSinceEpoch(millis);
     }

@@ -137,6 +137,13 @@ void main() {
     expect(find.text('Next: chapter 4 · read yesterday'), findsOneWidget);
   });
 
+  testWidgets('a plan time outside the date range is read as unknown', (
+    tester,
+  ) async {
+    await _openPlanSheet(tester, plans: ['0|1,2@99999999999999999']);
+    expect(find.text('2/50 chapters'), findsOneWidget);
+  });
+
   testWidgets('one wrongly typed preference does not abort the load', (
     tester,
   ) async {
