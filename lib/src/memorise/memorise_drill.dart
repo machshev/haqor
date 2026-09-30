@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
+import '../request_failure.dart';
 import '../tutor/progress_sync.dart';
 import 'memorise_page.dart' show memoryUtcOffset;
 import 'memorise_shape.dart';
@@ -46,11 +47,16 @@ class MemoryDrillPage extends StatefulWidget {
     required this.passageId,
     required this.title,
     this.run = false,
+    this.sendRequest,
   });
 
   final String passageId;
   final String title;
   final bool run;
+
+  /// Stands in for the signal to Rust so a test can capture the page's
+  /// requests (`sendSignalToRust` needs the native library).
+  final void Function(Object request)? sendRequest;
 
   @override
   State<MemoryDrillPage> createState() => _MemoryDrillPageState();
@@ -59,9 +65,16 @@ class MemoryDrillPage extends StatefulWidget {
 class _MemoryDrillPageState extends State<MemoryDrillPage> {
   StreamSubscription<RustSignalPack<MemoryItem>>? _itemSub;
   StreamSubscription<RustSignalPack<MemoryReviewResult>>? _resultSub;
+  final List<StreamSubscription<RequestFailed>> _failureSubs = [];
+  final RequestTimer _timer = RequestTimer();
   MemoryItem? _item;
   int _seq = 0;
   bool _waiting = true;
+  // Set when Rust fails or never answers the request for the next card; the
+  // page then offers to ask again instead of spinning.
+  String? _error;
+  // The answer last sent, kept so a failure to record it can be retried.
+  SubmitMemoryRecital? _lastRecital;
   bool _runDone = false;
   int _sessionXp = 0;
   int _sessionCards = 0;
@@ -78,26 +91,79 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
     super.initState();
     _itemSub = MemoryItem.rustSignalStream.listen((pack) {
       if (!mounted) return;
+      _timer.stop();
       setState(() {
         _item = pack.message;
         _seq++;
         _waiting = false;
+        _error = null;
       });
     });
     _resultSub = MemoryReviewResult.rustSignalStream.listen(_onResult);
+    _failureSubs
+      ..add(
+        listenForFailure(requestMemoryItem, (failure) {
+          if (mounted && _waiting) _fail(failure.message);
+        }, key: widget.passageId),
+      )
+      ..add(listenForFailure(requestMemoryRecital, _onRecitalFailed));
     _requestNext();
+  }
+
+  void _send(Object request) {
+    final hook = widget.sendRequest;
+    if (hook != null) return hook(request);
+    switch (request) {
+      case GetMemoryRun():
+        request.sendSignalToRust();
+      case GetNextMemoryCard():
+        request.sendSignalToRust();
+      case SubmitMemoryRecital():
+        request.sendSignalToRust();
+    }
+  }
+
+  void _fail(String message) {
+    _timer.stop();
+    setState(() {
+      _waiting = false;
+      _error = message;
+    });
+  }
+
+  /// The answer just given could not be recorded. The next card is already on
+  /// its way, so offer to send the answer again rather than block on it.
+  void _onRecitalFailed(RequestFailed failure) {
+    final recital = _lastRecital;
+    if (!mounted || recital == null || failure.key != recital.passageId) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Your answer was not saved: ${failure.message}'),
+        action: SnackBarAction(
+          label: 'Try again',
+          onPressed: () => _send(recital),
+        ),
+      ),
+    );
   }
 
   @override
   void dispose() {
     _itemSub?.cancel();
     _resultSub?.cancel();
+    for (final sub in _failureSubs) {
+      sub.cancel();
+    }
+    _timer.stop();
     _noteTimer?.cancel();
     super.dispose();
   }
 
   void _requestNext({bool extraNew = false}) {
-    setState(() => _waiting = true);
+    setState(() {
+      _waiting = true;
+      _error = null;
+    });
     if (widget.run) {
       if (_runDone) {
         setState(() {
@@ -111,15 +177,23 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
           _waiting = false;
         });
       } else {
-        GetMemoryRun(passageId: widget.passageId).sendSignalToRust();
+        _timer.start(() {
+          if (mounted) _fail('Haqor did not answer.');
+        });
+        _send(GetMemoryRun(passageId: widget.passageId));
       }
       return;
     }
-    GetNextMemoryCard(
-      passageId: widget.passageId,
-      extraNew: extraNew,
-      utcOffset: memoryUtcOffset(),
-    ).sendSignalToRust();
+    _timer.start(() {
+      if (mounted) _fail('Haqor did not answer.');
+    });
+    _send(
+      GetNextMemoryCard(
+        passageId: widget.passageId,
+        extraNew: extraNew,
+        utcOffset: memoryUtcOffset(),
+      ),
+    );
   }
 
   /// Open the shaping page for the passage whose next section waits on it,
@@ -138,7 +212,7 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
   }
 
   void _submit(MemoryCard card, int grade, List<(int, int, int)> verses) {
-    SubmitMemoryRecital(
+    final recital = SubmitMemoryRecital(
       passageId: card.passageId,
       book: card.book,
       purpose: card.purpose,
@@ -150,7 +224,9 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
       verses: [for (final v in verses) v.$2],
       grades: [for (final v in verses) v.$3],
       utcOffset: memoryUtcOffset(),
-    ).sendSignalToRust();
+    );
+    _lastRecital = recital;
+    _send(recital);
     scheduleProgressSync();
     if (widget.run) _runDone = true;
     _requestNext();
@@ -266,7 +342,13 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
           Positioned.fill(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 150),
-              child: _waiting || item == null
+              child: _error != null
+                  ? RequestErrorView(
+                      key: const ValueKey('memory-error'),
+                      message: 'Could not load the next card: $_error',
+                      onRetry: _requestNext,
+                    )
+                  : _waiting || item == null
                   ? const Center(
                       key: ValueKey('memory-loading'),
                       child: CircularProgressIndicator(),
