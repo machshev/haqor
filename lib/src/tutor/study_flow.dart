@@ -7,6 +7,7 @@ import '../app_settings.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../issue_reporting.dart';
+import '../request_failure.dart';
 import 'alphabet_data.dart';
 import 'concept_reference.dart';
 import 'intro_content.dart';
@@ -150,7 +151,11 @@ const String _suffixTrack = 'suffix';
 /// `explain_final_forms` card carries no grade, so we advance past it with
 /// another [GetNextStudyItem].
 class StudyFlowPage extends StatefulWidget {
-  const StudyFlowPage({super.key});
+  const StudyFlowPage({super.key, this.sendRequest});
+
+  /// Stands in for the signal to Rust so a test can capture the page's
+  /// requests (`sendSignalToRust` needs the native library).
+  final void Function(Object request)? sendRequest;
 
   @override
   State<StudyFlowPage> createState() => _StudyFlowPageState();
@@ -159,6 +164,8 @@ class StudyFlowPage extends StatefulWidget {
 class _StudyFlowPageState extends State<StudyFlowPage> {
   StreamSubscription<RustSignalPack<StudyItem>>? _sub;
   StreamSubscription<RustSignalPack<ProgressSyncStatus>>? _syncSub;
+  final List<StreamSubscription<RequestFailed>> _failureSubs = [];
+  final RequestTimer _timer = RequestTimer();
   StudyItem? _item;
   // Bumped on every delivered card. The engine legitimately re-serves the same
   // card back-to-back (it pulls an in-learning card forward to keep drilling),
@@ -167,6 +174,10 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   // card subtree by this counter guarantees a fresh grader for every card.
   int _seq = 0;
   bool _waitingForNext = false;
+  // Set when Rust fails or never answers the request being waited on; the
+  // page then offers `_retry` instead of spinning.
+  String? _error;
+  VoidCallback? _retry;
   bool _adminMode = false;
   bool _manualSyncPending = false;
 
@@ -176,12 +187,25 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
     _sub = StudyItem.rustSignalStream.listen((pack) {
       debugPrint('card shown: ${pack.message}');
       if (!mounted) return;
+      _timer.stop();
       setState(() {
         _item = pack.message;
         _seq++;
         _waitingForNext = false;
+        _error = null;
       });
     });
+    for (final request in [
+      requestNextStudyItem,
+      requestSubmitReview,
+      requestSubmitMisreads,
+    ]) {
+      _failureSubs.add(
+        listenForFailure(request, (failure) {
+          if (mounted && _waitingForNext) _fail(failure.message);
+        }),
+      );
+    }
     _syncSub = ProgressSyncStatus.rustSignalStream.listen((pack) {
       if (!mounted || !_manualSyncPending) return;
       setState(() => _manualSyncPending = false);
@@ -196,7 +220,43 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
       );
     });
     _loadAdminMode();
-    GetNextStudyItem().sendSignalToRust();
+    _next();
+  }
+
+  void _send(Object request) {
+    final hook = widget.sendRequest;
+    if (hook != null) return hook(request);
+    switch (request) {
+      case GetNextStudyItem():
+        request.sendSignalToRust();
+      case SubmitReview():
+        request.sendSignalToRust();
+      case SubmitMisreads():
+        request.sendSignalToRust();
+    }
+  }
+
+  /// Send [request] and wait for the card that answers it, giving up with an
+  /// error that [retry] (default: the same request) answers.
+  void _await(Object request, {Object? retry}) {
+    _timer.start(() {
+      if (mounted) _fail('Haqor did not answer.', retry: retry);
+    });
+    setState(() {
+      _waitingForNext = true;
+      _error = null;
+      _retry = () => _await(request, retry: retry);
+    });
+    _send(request);
+  }
+
+  void _fail(String message, {Object? retry}) {
+    _timer.stop();
+    setState(() {
+      _waitingForNext = false;
+      _error = message;
+      if (retry != null) _retry = () => _await(retry);
+    });
   }
 
   Future<void> _loadAdminMode() async {
@@ -208,6 +268,10 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   void dispose() {
     _sub?.cancel();
     _syncSub?.cancel();
+    for (final sub in _failureSubs) {
+      sub.cancel();
+    }
+    _timer.stop();
     super.dispose();
   }
 
@@ -236,20 +300,21 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   /// is the multiple-choice outcome (see the `_quiz*` codes). The response is the
   /// next card.
   void _grade(String track, String key, int confidence, int correct) {
-    setState(() => _waitingForNext = true);
-    SubmitReview(
-      track: track,
-      key: key,
-      confidence: confidence,
-      correct: correct,
-    ).sendSignalToRust();
+    // A timeout may mean the answer was recorded after all, so asking for
+    // the next card is the safe retry there; a reported failure resends it.
+    _await(
+      SubmitReview(
+        track: track,
+        key: key,
+        confidence: confidence,
+        correct: correct,
+      ),
+      retry: GetNextStudyItem(),
+    );
     scheduleProgressSync();
   }
 
-  void _next() {
-    setState(() => _waitingForNext = true);
-    GetNextStudyItem().sendSignalToRust();
-  }
+  void _next() => _await(GetNextStudyItem());
 
   /// Demote each misread word (an "Again" grade lapses it back into review)
   /// instead of gating the whole verse on one blanket grade — flagging a
@@ -263,8 +328,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
       _next();
       return;
     }
-    setState(() => _waitingForNext = true);
-    SubmitMisreads(words: words).sendSignalToRust();
+    _await(SubmitMisreads(words: words), retry: GetNextStudyItem());
     scheduleProgressSync();
   }
 
@@ -314,7 +378,12 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
           ),
         ],
       ),
-      body: item == null
+      body: _error != null
+          ? RequestErrorView(
+              message: 'Could not load your next card: $_error',
+              onRetry: _retry ?? _next,
+            )
+          : item == null
           ? const Center(
               child: LoadingMessage(text: 'Preparing your first lesson…'),
             )
