@@ -15,8 +15,8 @@ import 'bindings/bindings.dart' hide StudyItem;
 import 'issue_reporting.dart';
 import 'memorise/memorise_page.dart';
 import 'study_workspace.dart';
+import 'study_workspace_store.dart';
 import 'tutor/onboarding.dart';
-import 'tutor/progress_sync.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
 import 'widgets/cross_references_sheet.dart';
@@ -290,6 +290,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   String? _activeWordPaneId;
   int _nextWordPaneId = 0;
   final WordProximity _proximity = WordProximity();
+  // The study workspaces every reader tab shares.
+  late final StudyWorkspaceStore _studyStore;
   _WordPane? get _activeWordPane {
     for (final pane in _wordPanes) {
       if (pane.id == _activeWordPaneId) return pane;
@@ -318,7 +320,17 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   @override
   void initState() {
     super.initState();
+    _studyStore = StudyWorkspaceStore(
+      sendRequest: widget.sendStudyStateRequest,
+      save: widget.saveStudyState,
+    )..addListener(_onStudyStoreChanged);
+    _studyStore.start();
     _loadWorkspace();
+  }
+
+  // Study pages and tiled panels are built here, outside any one session.
+  void _onStudyStoreChanged() {
+    if (mounted) setState(() {});
   }
 
   int get _readerPageOffset => _mobileLayout == true ? 1 : 0;
@@ -514,6 +526,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   @override
   void dispose() {
+    _studyStore.dispose();
     _mobileBarTransitionTimer?.cancel();
     _pageController.dispose();
     _proximity.dispose();
@@ -565,8 +578,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _setMobileBarHidden(hidden);
     },
     sendChapterRequest: widget.sendChapterRequest,
-    sendStudyStateRequest: widget.sendStudyStateRequest,
-    saveStudyState: widget.saveStudyState,
+    studyStore: _studyStore,
     onPassageChanged: () {
       if (mounted) setState(() {});
     },
@@ -1505,12 +1517,14 @@ class _ReaderSession extends StatefulWidget {
     required this.onWorkspaceTilesChanged,
     required this.onWordInfoRequested,
     required this.onCrossReferencesRequested,
+    required this.studyStore,
     this.sendChapterRequest,
-    this.sendStudyStateRequest,
-    this.saveStudyState,
   });
 
   final String sessionId;
+
+  /// The study workspaces, shared with the other readers.
+  final StudyWorkspaceStore studyStore;
   final VoidCallback onPassageChanged;
   final ValueChanged<bool> onScrollChromeChanged;
   final bool tiled;
@@ -1529,8 +1543,6 @@ class _ReaderSession extends StatefulWidget {
   /// the real rinf signal; widget tests substitute a stub that answers via
   /// `assignRustSignal['ChapterText']`.
   final void Function(GetChapter request)? sendChapterRequest;
-  final void Function(GetStudyState request)? sendStudyStateRequest;
-  final void Function(SaveStudyState request)? saveStudyState;
 
   static Future<void> seedNavigation(
     String sessionId,
@@ -1646,8 +1658,8 @@ class _ReaderSessionState extends State<_ReaderSession>
   KetivDisplay _ketivDisplay = KetivDisplay.superscript;
   ReaderLayoutMode _readerLayoutMode = ReaderLayoutMode.automatic;
   List<_ReadingPlan> _readingPlans = [];
-  List<StudyWorkspace> _studyWorkspaces = [];
-  String? _activeStudyWorkspaceId;
+  List<StudyWorkspace> get _studyWorkspaces => widget.studyStore.workspaces;
+  String? get _activeStudyWorkspaceId => widget.studyStore.activeId;
   double _chromeScrollDelta = 0;
   double? _lastChromeScrollPixels;
   Timer? _positionSaveTimer;
@@ -1673,7 +1685,6 @@ class _ReaderSessionState extends State<_ReaderSession>
   StreamSubscription<RustSignalPack<ChapterText>>? _sub;
   StreamSubscription<RustSignalPack<LexiconEntryOverrideStatus>>?
   _lexiconOverrideSub;
-  StreamSubscription<RustSignalPack<StudyState>>? _studyStateSub;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -1704,41 +1715,13 @@ class _ReaderSessionState extends State<_ReaderSession>
     ) {
       if (mounted && pack.message.success) _refreshLoadedOtChapters();
     });
-    _studyStateSub = StudyState.rustSignalStream.listen((pack) async {
-      if (!mounted) return;
-      final message = pack.message;
-      if (!message.found) {
-        final prefs = await SharedPreferences.getInstance();
-        final legacyJson = prefs.getString(studyWorkspacesKey);
-        if (legacyJson != null && legacyJson.isNotEmpty) {
-          _sendStudyState(
-            SaveStudyState(
-              workspacesJson: legacyJson,
-              activeWorkspaceId: prefs.getString(activeStudyWorkspaceKey) ?? '',
-            ),
-          );
-        }
-        return;
-      }
-      final workspaces = decodeStudyWorkspaces(message.workspacesJson);
-      final activeId =
-          workspaces.any(
-            (workspace) => workspace.id == message.activeWorkspaceId,
-          )
-          ? message.activeWorkspaceId
-          : workspaces.isEmpty
-          ? null
-          : workspaces.first.id;
-      setState(() {
-        _studyWorkspaces = workspaces;
-        _activeStudyWorkspaceId = activeId;
-      });
-      widget.onPassageChanged();
-      final prefs = await SharedPreferences.getInstance();
-      await saveStudyWorkspaces(prefs, workspaces, activeId);
-    });
+    widget.studyStore.addListener(_onStudyStoreChanged);
     _loadPrefs();
     _loadAdminMode();
+  }
+
+  void _onStudyStoreChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadAdminMode() async {
@@ -1913,16 +1896,6 @@ class _ReaderSessionState extends State<_ReaderSession>
         (option) => option.name == prefs.getString(_kReaderLayoutMode),
         orElse: () => ReaderLayoutMode.automatic,
       );
-      _studyWorkspaces = decodeStudyWorkspaces(
-        prefs.getString(studyWorkspacesKey),
-      );
-      final savedWorkspace = prefs.getString(activeStudyWorkspaceKey);
-      _activeStudyWorkspaceId =
-          _studyWorkspaces.any((workspace) => workspace.id == savedWorkspace)
-          ? savedWorkspace
-          : _studyWorkspaces.isEmpty
-          ? null
-          : _studyWorkspaces.first.id;
       final savedPlans = prefs.getStringList(_kReadingPlans);
       if (savedPlans != null) {
         _readingPlans = savedPlans
@@ -1952,13 +1925,6 @@ class _ReaderSessionState extends State<_ReaderSession>
         }
       }
     });
-    final request = GetStudyState();
-    final send = widget.sendStudyStateRequest;
-    if (send != null) {
-      send(request);
-    } else {
-      request.sendSignalToRust();
-    }
     final rawHistory = prefs.getStringList(_sessionKey(_kHistory)) ?? [];
     final savedIndex = prefs.getInt(_sessionKey(_kHistoryIndex)) ?? -1;
     if (rawHistory.isNotEmpty &&
@@ -2193,42 +2159,12 @@ class _ReaderSessionState extends State<_ReaderSession>
     );
   }
 
-  // Tests substitute persistence and sync together, without a native library.
-  void _sendStudyState(SaveStudyState request) {
-    final save = widget.saveStudyState;
-    if (save != null) {
-      save(request);
-    } else {
-      request.sendSignalToRust();
-      scheduleProgressSync();
-    }
-  }
-
-  Future<void> _saveStudyState() async {
-    // Study pages and tiled panels are built by the outer workspace, outside
-    // this session's setState scope. Refresh them after a study edit.
-    widget.onWorkspaceTilesChanged();
-    // Encoded once, for both the local copy and Rust's.
-    final workspaces = _studyWorkspaces;
-    final activeId = _activeStudyWorkspaceId;
-    final encoded = encodeStudyWorkspaces(workspaces);
-    final prefs = await SharedPreferences.getInstance();
-    await saveStudyWorkspaces(prefs, workspaces, activeId, encoded: encoded);
-    _sendStudyState(
-      SaveStudyState(
-        workspacesJson: encoded,
-        activeWorkspaceId: activeId ?? '',
-      ),
-    );
-  }
-
+  // Study edits go through the store every reader shares, which keeps and
+  // sends them. The tiled panels and study pages are built by the outer
+  // workspace, outside this session's setState scope, so refresh them too.
   void _replaceStudyWorkspace(StudyWorkspace updated) {
-    final index = _studyWorkspaces.indexWhere(
-      (workspace) => workspace.id == updated.id,
-    );
-    if (index < 0) return;
-    setState(() => _studyWorkspaces[index] = updated);
-    _saveStudyState();
+    widget.onWorkspaceTilesChanged();
+    widget.studyStore.replace(updated);
   }
 
   Future<String?> _askForText({
@@ -2286,12 +2222,14 @@ class _ReaderSessionState extends State<_ReaderSession>
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       name: name,
     );
-    setState(() {
-      _studyWorkspaces.add(workspace);
-      _activeStudyWorkspaceId = workspace.id;
-    });
-    await _saveStudyState();
+    widget.onWorkspaceTilesChanged();
+    await widget.studyStore.add(workspace);
     return workspace;
+  }
+
+  void _selectStudyWorkspace(String id) {
+    widget.onWorkspaceTilesChanged();
+    widget.studyStore.select(id);
   }
 
   Future<StudyWorkspace?> _ensureStudyWorkspace() async =>
@@ -2334,13 +2272,8 @@ class _ReaderSessionState extends State<_ReaderSession>
       ),
     );
     if (confirmed != true || !mounted) return;
-    setState(() {
-      _studyWorkspaces.removeWhere((candidate) => candidate.id == workspace.id);
-      _activeStudyWorkspaceId = _studyWorkspaces.isEmpty
-          ? null
-          : _studyWorkspaces.first.id;
-    });
-    _saveStudyState();
+    widget.onWorkspaceTilesChanged();
+    widget.studyStore.remove(workspace.id);
   }
 
   Future<void> _createStudyGroup(String? parentId) async {
@@ -2910,8 +2843,7 @@ class _ReaderSessionState extends State<_ReaderSession>
               setSheetState(() {});
             },
             onSelect: (id) {
-              setState(() => _activeStudyWorkspaceId = id);
-              _saveStudyState();
+              _selectStudyWorkspace(id);
               _refreshLoadedChaptersForStudyRoots();
               setSheetState(() {});
             },
@@ -3648,7 +3580,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     _scrollController.dispose();
     _sub?.cancel();
     _lexiconOverrideSub?.cancel();
-    _studyStateSub?.cancel();
+    widget.studyStore.removeListener(_onStudyStoreChanged);
     for (final timeout in _fetchTimeouts.values) {
       timeout.cancel();
     }
@@ -3954,8 +3886,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         useEnglishBookNames: _englishBookNames,
         onCreate: _createStudyWorkspace,
         onSelect: (id) {
-          setState(() => _activeStudyWorkspaceId = id);
-          _saveStudyState();
+          _selectStudyWorkspace(id);
           _refreshLoadedChaptersForStudyRoots();
         },
         onRename: _renameStudyWorkspace,

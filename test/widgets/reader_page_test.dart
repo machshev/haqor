@@ -577,6 +577,17 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final rust = await _pumpReader(tester, chapter: 5);
     await tester.pumpAndSettle();
+    // Rust's answer to the startup request, so that what follows is a later
+    // update and not that answer.
+    assignRustSignal['StudyState']!(
+      StudyState(
+        found: false,
+        workspacesJson: '[]',
+        activeWorkspaceId: '',
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
 
     final studyButton = find.byWidgetPredicate(
       (widget) => widget is IconButton && widget.tooltip == 'Study workspace',
@@ -1333,6 +1344,231 @@ void main() {
     );
     expect(_sidePanelShown(tester, switcher), 'word');
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('study edits in one reader tab are kept by the others', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const workspace = study.StudyWorkspace(id: 'study', name: 'Study');
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      'reader_tabs': ['primary', 'two'],
+      'reader_active_tab': 'primary',
+      'study_workspace_visible': true,
+      study.studyWorkspacesKey: study.encodeStudyWorkspaces([workspace]),
+      study.activeStudyWorkspaceKey: 'study',
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+        ),
+      ),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    // One request for the workspaces, however many tabs are open.
+    expect(rust.studyRequests, hasLength(1));
+
+    Future<void> toggleHighlights() async {
+      await tester.tap(find.byTooltip('Workspace options'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find
+            .byWidgetPredicate((widget) => widget is CheckedPopupMenuItem)
+            .first,
+      );
+      await tester.pumpAndSettle();
+    }
+
+    bool? savedHighlights() => study
+        .decodeStudyWorkspaces(rust.studySaves.last.workspacesJson)
+        .single
+        .highlightsEnabled;
+
+    await toggleHighlights();
+    expect(savedHighlights(), isFalse);
+
+    // The second tab starts from what the first saved, not from its own older
+    // copy, so this turns them back on instead of repeating the first edit.
+    await tester.tap(find.byType(InputChip).last);
+    await tester.pumpAndSettle();
+    await toggleHighlights();
+    expect(rust.studySaves, hasLength(2));
+    expect(savedHighlights(), isTrue);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('the startup answer does not discard an edit made before it', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const workspace = study.StudyWorkspace(id: 'study', name: 'Study');
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      'study_workspace_visible': true,
+      study.studyWorkspacesKey: study.encodeStudyWorkspaces([workspace]),
+      study.activeStudyWorkspaceKey: 'study',
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+        ),
+      ),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Workspace options'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byWidgetPredicate((widget) => widget is CheckedPopupMenuItem).first,
+    );
+    await tester.pumpAndSettle();
+    expect(rust.studySaves, hasLength(1));
+
+    // Rust answers the startup request only now, with what it held before.
+    assignRustSignal['StudyState']!(
+      StudyState(
+        found: true,
+        workspacesJson: study.encodeStudyWorkspaces([
+          const study.StudyWorkspace(id: 'study', name: 'Older'),
+        ]),
+        activeWorkspaceId: 'study',
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Study'), findsWidgets);
+    expect(find.text('Older'), findsNothing);
+    final prefs = await SharedPreferences.getInstance();
+    final kept = study
+        .decodeStudyWorkspaces(prefs.getString(study.studyWorkspacesKey))
+        .single;
+    expect(kept.name, 'Study');
+    expect(kept.highlightsEnabled, isFalse);
+
+    // Later answers are applied.
+    assignRustSignal['StudyState']!(
+      StudyState(
+        found: true,
+        workspacesJson: study.encodeStudyWorkspaces([
+          const study.StudyWorkspace(id: 'study', name: 'Synced'),
+        ]),
+        activeWorkspaceId: 'study',
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Synced'), findsWidgets);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('an unreadable answer leaves the workspaces and their backup', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const workspace = study.StudyWorkspace(id: 'study', name: 'Study');
+    final saved = study.encodeStudyWorkspaces([workspace]);
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      'study_workspace_visible': true,
+      study.studyWorkspacesKey: saved,
+      study.activeStudyWorkspaceKey: 'study',
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+        ),
+      ),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    expect(find.text('Study'), findsWidgets);
+
+    for (final payload in ['{not json', '', '{"id": "study"}']) {
+      assignRustSignal['StudyState']!(
+        StudyState(
+          found: true,
+          workspacesJson: payload,
+          activeWorkspaceId: '',
+        ).bincodeSerialize(),
+        Uint8List(0),
+      );
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('Study'), findsWidgets);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(study.studyWorkspacesKey), saved);
+    expect(rust.studySaves, isEmpty);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('the local copy moves to Rust once, however many tabs are open', (
+    tester,
+  ) async {
+    const workspace = study.StudyWorkspace(id: 'study', name: 'Study');
+    final saved = study.encodeStudyWorkspaces([workspace]);
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      'reader_tabs': ['primary', 'two', 'three'],
+      study.studyWorkspacesKey: saved,
+      study.activeStudyWorkspaceKey: 'study',
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+        ),
+      ),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+
+    final notFound = StudyState(
+      found: false,
+      workspacesJson: '[]',
+      activeWorkspaceId: '',
+    ).bincodeSerialize();
+    assignRustSignal['StudyState']!(notFound, Uint8List(0));
+    await tester.pumpAndSettle();
+    expect(rust.studySaves, hasLength(1));
+    expect(rust.studySaves.single.workspacesJson, saved);
+    assignRustSignal['StudyState']!(notFound, Uint8List(0));
+    await tester.pumpAndSettle();
+    expect(rust.studySaves, hasLength(1));
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets('tiled study reordering updates visible rows immediately', (
