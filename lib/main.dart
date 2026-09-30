@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'src/app_runtime.dart';
 import 'src/app_settings.dart';
+import 'src/boot_failure.dart';
 import 'src/boot_status.dart';
 
 Future<void> main() async {
@@ -40,6 +41,7 @@ class Haqor extends StatelessWidget {
       builder: (context, mode, _) => MaterialApp(
         title: 'הָקוֹר',
         debugShowCheckedModeBanner: false,
+        scaffoldMessengerKey: appMessengerKey,
         themeMode: mode,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(

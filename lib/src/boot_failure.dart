@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 
 import 'bindings/bindings.dart';
 
+/// Lets code outside the widget tree tell the reader something.
+final appMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
 /// Rust could not open the databases. [message] is its reason.
 class BootFailure implements Exception {
   const BootFailure(this.message, {this.progressUnreadable = false});
