@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -1734,6 +1735,69 @@ void main() {
       lessThan(tester.getTopLeft(_verse(1, 4, 20)).dy),
       reason: 'the previous chapter should still read from verse 1 onward',
     );
+  });
+
+  testWidgets('a lexicon correction drops the cached chapters too', (
+    tester,
+  ) async {
+    final rust = await _pumpReader(tester, chapter: 5);
+    final before = <int>{};
+    for (var i = 0; i < 5 && rust.pending.isNotEmpty; i++) {
+      before.addAll(rust.pending.map((r) => r.chapter));
+      rust.deliverAll();
+      await tester.pump();
+    }
+    // The furthest chapter was only prefetched, so it is cached, not shown.
+    final furthest = before.reduce(math.max);
+
+    assignRustSignal['LexiconEntryOverrideStatus']!(
+      LexiconEntryOverrideStatus(
+        surface: 'מלה',
+        success: true,
+        message: '',
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    final after = <int>{};
+    for (var i = 0; i < 40 && !after.contains(furthest); i++) {
+      after.addAll(rust.pending.map((r) => r.chapter));
+      rust.deliverAll();
+      await tester.pump();
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -600));
+      await tester.pump();
+    }
+    expect(after, contains(furthest), reason: 'asked for again, not cached');
+  });
+
+  testWidgets('a chapter in flight during a lexicon correction is not cached', (
+    tester,
+  ) async {
+    final rust = await _pumpReader(tester, chapter: 5);
+    // The neighbours' requests are still out when the correction lands.
+    final inFlight = rust.pending.map((r) => r.chapter).toSet();
+    expect(inFlight, isNotEmpty);
+
+    assignRustSignal['LexiconEntryOverrideStatus']!(
+      LexiconEntryOverrideStatus(
+        surface: 'מלה',
+        success: true,
+        message: '',
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    // Their replies may hold the old gloss. Reading on must ask again for
+    // each of them rather than find it in the cache.
+    final after = <int>{};
+    for (var i = 0; i < 40 && !after.containsAll(inFlight); i++) {
+      rust.deliverAll();
+      await tester.pump();
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -600));
+      await tester.pump();
+      after.addAll(rust.pending.map((r) => r.chapter));
+    }
+    expect(after, containsAll(inFlight));
   });
 
   testWidgets('scrolling forward across many chapters never shifts content', (

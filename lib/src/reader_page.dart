@@ -1629,6 +1629,9 @@ class _ReaderSessionState extends State<_ReaderSession>
   final Set<_ChapterRequest> _pendingFetches = {};
   final Set<_ChapterRequest> _prefetches = {};
   final Map<_ChapterRequest, Timer> _fetchTimeouts = {};
+  // Requests in flight when a lexicon correction landed: their replies may hold
+  // the old gloss, so they are not cached.
+  final Set<_ChapterRequest> _staleFetches = {};
   final LinkedHashMap<_ChapterRequest, List<VerseEntry>> _chapterCache =
       LinkedHashMap();
   bool _initialLoading = true;
@@ -1705,8 +1708,13 @@ class _ReaderSessionState extends State<_ReaderSession>
       if (!_pendingFetches.contains(fetchKey)) return;
       _pendingFetches.remove(fetchKey);
       _fetchTimeouts.remove(fetchKey)?.cancel();
+      final prefetch = _prefetches.remove(fetchKey);
+      if (_staleFetches.remove(fetchKey)) {
+        if (!prefetch) _fetchChapter(msg.book - 1, msg.chapter, force: true);
+        return;
+      }
       _cacheChapter(fetchKey, msg.verses);
-      if (_prefetches.remove(fetchKey)) return;
+      if (prefetch) return;
 
       _acceptChapter(msg.book - 1, msg.chapter, msg.verses);
     });
@@ -3301,6 +3309,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     if (prefetch) _prefetches.add(key);
     _fetchTimeouts[key] = Timer(const Duration(seconds: 10), () {
       _fetchTimeouts.remove(key);
+      _staleFetches.remove(key);
       if (!_pendingFetches.remove(key)) return;
       final wasPrefetch = _prefetches.remove(key);
       if (!mounted || wasPrefetch) return;
@@ -3337,6 +3346,10 @@ class _ReaderSessionState extends State<_ReaderSession>
   }
 
   void _refreshLoadedOtChapters() {
+    // Chapters cached or prefetched outside the window hold the old gloss too,
+    // and so may any reply still on its way.
+    _chapterCache.clear();
+    _staleFetches.addAll(_pendingFetches);
     for (final section in List<_Section>.of(_sections)) {
       if (section.bookIndex >= 39) continue;
       _dropCachedChapter(section.bookIndex, section.chapter);
