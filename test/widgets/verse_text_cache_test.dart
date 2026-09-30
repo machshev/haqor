@@ -1,5 +1,4 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:haqor/src/bindings/bindings.dart';
@@ -150,6 +149,14 @@ void main() {
     }
     await Future<void>.delayed(Duration.zero);
 
+    // One request per mode is out at a time, so the reader's own requests are
+    // not stuck behind a queue of rows; each reply releases the next batch.
+    expect(sent.map((r) => r.refs.length), [10]);
+    _reply(sent.last);
+    await Future<void>.delayed(Duration.zero);
+    _reply(sent.last);
+    await Future<void>.delayed(Duration.zero);
+
     expect(sent.map((r) => r.refs.length), [10, 10, 5]);
     // Request ids are distinct, so replies cannot be mistaken for each other.
     expect(sent.map((r) => r.requestId).toSet(), hasLength(3));
@@ -198,5 +205,226 @@ void main() {
 
     expect(fromB.value?.text, 'verse 2:2:2');
     expect(fromA.value, isNull, reason: 'A must still be waiting on its own');
+  });
+
+  group('robustness', () {
+    // A row is a listener on the entry; these stand in for one.
+    void noop() {}
+
+    test('a lexicon correction refetches the rows on show', () async {
+      final sent = <GetVerseTexts>[];
+      final cache = VerseTextCache(send: sent.add);
+      addTearDown(cache.dispose);
+
+      final shown = cache.textFor(
+        book: 1,
+        chapter: 1,
+        verse: 1,
+        englishOnly: true,
+      )..addListener(noop);
+      final scrolledAway = cache.textFor(
+        book: 1,
+        chapter: 1,
+        verse: 2,
+        englishOnly: true,
+      );
+      await Future<void>.delayed(Duration.zero);
+      _reply(sent.single);
+      await Future<void>.delayed(Duration.zero);
+      expect(shown.value?.text, 'verse 1:1:1');
+
+      cache.invalidate();
+      await Future<void>.delayed(Duration.zero);
+
+      // The row on show is asked for again, and keeps its text meanwhile.
+      expect(sent, hasLength(2));
+      expect(sent.last.refs.map((r) => r.verse), [1]);
+      expect(shown.value?.text, 'verse 1:1:1');
+      // The one nobody is looking at is dropped, and refetched if it is needed.
+      expect(scrolledAway.value, isNull);
+      _reply(sent.last);
+      await Future<void>.delayed(Duration.zero);
+      cache.textFor(book: 1, chapter: 1, verse: 2, englishOnly: true);
+      await Future<void>.delayed(Duration.zero);
+      expect(sent.last.refs.map((r) => r.verse), [2]);
+    });
+
+    test('a reply to a request made before a correction is ignored', () async {
+      final sent = <GetVerseTexts>[];
+      final cache = VerseTextCache(send: sent.add);
+      addTearDown(cache.dispose);
+
+      final row = cache.textFor(
+        book: 1,
+        chapter: 1,
+        verse: 1,
+        englishOnly: true,
+      )..addListener(noop);
+      await Future<void>.delayed(Duration.zero);
+      final before = sent.single;
+
+      cache.invalidate();
+      await Future<void>.delayed(Duration.zero);
+      _reply(before);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(row.value, isNull, reason: 'the old reply may hold the old gloss');
+      _reply(sent.last);
+      await Future<void>.delayed(Duration.zero);
+      expect(row.value?.text, 'verse 1:1:1');
+    });
+
+    test('an unanswered request is asked again, then given up on', () async {
+      final sent = <GetVerseTexts>[];
+      final cache = VerseTextCache(
+        timeout: const Duration(milliseconds: 20),
+        maxAttempts: 2,
+        send: sent.add,
+      );
+      addTearDown(cache.dispose);
+
+      final row = cache.textFor(
+        book: 1,
+        chapter: 1,
+        verse: 1,
+        englishOnly: false,
+      )..addListener(noop);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(sent, hasLength(2), reason: 'the first timeout asks again');
+      expect(row.value, isNull);
+
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(sent, hasLength(2), reason: 'two attempts is all it makes');
+      expect(row.value?.text, isEmpty);
+      expect(
+        row.value,
+        isNotNull,
+        reason: 'settled, so the row stops spinning',
+      );
+    });
+
+    test('a reply after the timeout is still used', () async {
+      final sent = <GetVerseTexts>[];
+      final cache = VerseTextCache(
+        timeout: const Duration(milliseconds: 20),
+        send: sent.add,
+      );
+      addTearDown(cache.dispose);
+
+      final row = cache.textFor(
+        book: 1,
+        chapter: 1,
+        verse: 1,
+        englishOnly: false,
+      )..addListener(noop);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(sent, hasLength(2));
+
+      _reply(sent.first);
+      await Future<void>.delayed(Duration.zero);
+      expect(row.value?.text, 'verse 1:1:1');
+    });
+
+    test('an unreadable verse is tried again once the wait is over', () async {
+      var now = DateTime(2026);
+      final sent = <GetVerseTexts>[];
+      final cache = VerseTextCache(
+        missingRetryAfter: const Duration(seconds: 30),
+        now: () => now,
+        send: sent.add,
+      );
+      addTearDown(cache.dispose);
+
+      final row = cache.textFor(
+        book: 1,
+        chapter: 1,
+        verse: 1,
+        englishOnly: false,
+      )..addListener(noop);
+      await Future<void>.delayed(Duration.zero);
+      _reply(sent.single, omit: {1});
+      await Future<void>.delayed(Duration.zero);
+      expect(row.value?.text, isEmpty);
+
+      // Asked again at once (a rebuild), it does not go straight back out.
+      cache.textFor(book: 1, chapter: 1, verse: 1, englishOnly: false);
+      await Future<void>.delayed(Duration.zero);
+      expect(sent, hasLength(1));
+
+      now = now.add(const Duration(seconds: 31));
+      cache.textFor(book: 1, chapter: 1, verse: 1, englishOnly: false);
+      await Future<void>.delayed(Duration.zero);
+      expect(sent, hasLength(2));
+      // Its row shows nothing in the meantime, not a spinner.
+      expect(row.value?.text, isEmpty);
+      _reply(sent.last);
+      await Future<void>.delayed(Duration.zero);
+      expect(row.value?.text, 'verse 1:1:1');
+    });
+
+    test(
+      'rows scrolled past while a request is out are not asked for',
+      () async {
+        final sent = <GetVerseTexts>[];
+        final cache = VerseTextCache(batchSize: 2, send: sent.add);
+        addTearDown(cache.dispose);
+
+        final rows = [
+          for (var verse = 1; verse <= 6; verse++)
+            cache.textFor(book: 1, chapter: 1, verse: verse, englishOnly: false)
+              ..addListener(noop),
+        ];
+        await Future<void>.delayed(Duration.zero);
+        // One request per mode is out at a time, so the rest wait their turn.
+        expect(sent, hasLength(1));
+        expect(sent.single.refs.map((r) => r.verse), [1, 2]);
+
+        // The reader scrolls on: verses 3 and 4 leave the screen.
+        rows[2].removeListener(noop);
+        rows[3].removeListener(noop);
+        _reply(sent.single);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(sent, hasLength(2));
+        expect(sent.last.refs.map((r) => r.verse), [5, 6]);
+
+        // And coming back to one of them asks for it after all.
+        rows[2].addListener(noop);
+        cache.textFor(book: 1, chapter: 1, verse: 3, englishOnly: false);
+        _reply(sent.last);
+        await Future<void>.delayed(Duration.zero);
+        expect(sent.last.refs.map((r) => r.verse), [3]);
+      },
+    );
+
+    test('a saved lexicon correction invalidates the cache itself', () async {
+      final sent = <GetVerseTexts>[];
+      final cache = VerseTextCache(send: sent.add);
+      addTearDown(cache.dispose);
+
+      cache
+          .textFor(book: 1, chapter: 1, verse: 1, englishOnly: true)
+          .addListener(noop);
+      await Future<void>.delayed(Duration.zero);
+      _reply(sent.single);
+      await Future<void>.delayed(Duration.zero);
+
+      Future<void> saved({required bool success}) async {
+        assignRustSignal['LexiconEntryOverrideStatus']!(
+          LexiconEntryOverrideStatus(
+            surface: 'מלה',
+            success: success,
+            message: '',
+          ).bincodeSerialize(),
+          Uint8List(0),
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      await saved(success: false);
+      expect(sent, hasLength(1), reason: 'a failed save changes nothing');
+      await saved(success: true);
+      expect(sent, hasLength(2), reason: 'the gloss may have changed');
+    });
   });
 }
