@@ -1881,6 +1881,40 @@ void main() {
     },
   );
 
+  testWidgets(
+    'opening at a late verse scrolls to it with a next chapter loaded',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'book': 0,
+        'chapter': 5,
+        'verse': 18,
+      });
+      final rust = _FakeRust();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BibleReaderPage(
+            sendChapterRequest: rust.onRequest,
+            sendStudyStateRequest: rust.onStudyRequest,
+            saveStudyState: rust.onStudySave,
+          ),
+        ),
+      );
+      await tester.pump();
+      // The neighbours arrive along with, and lengthen the scroll view beyond,
+      // the chapter the verse is in.
+      for (var i = 0; i < 6; i++) {
+        rust.deliverAll();
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+      await tester.pumpAndSettle();
+      final viewport = tester.getRect(find.byType(CustomScrollView));
+      expect(_verse(1, 5, 18), findsOneWidget);
+      expect(_verse(1, 5, 1), findsNothing, reason: 'scrolled past the start');
+      final top = tester.getTopLeft(_verse(1, 5, 18)).dy;
+      expect(top, inInclusiveRange(viewport.top, viewport.bottom));
+    },
+  );
+
   testWidgets('scrolling forward across many chapters never shifts content', (
     tester,
   ) async {

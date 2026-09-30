@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderSliverPadding;
 import 'package:flutter/services.dart';
 import 'package:rinf/rinf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -3398,6 +3399,25 @@ class _ReaderSessionState extends State<_ReaderSession>
     _attemptScrollToVerse(section, verseIdx, retriesLeft: 3);
   }
 
+  /// Where the verses of [section] start, and how far they extend, in scroll
+  /// offsets. Null while none of its rows is built, or when it lies above the
+  /// center, whose verses grow the other way.
+  ({double start, double extent})? _verseSpan(_Section section) {
+    if (_sections.indexOf(section) < _centerIndex) return null;
+    for (final key in section.verseKeys.values) {
+      final sliver = key.currentContext
+          ?.findAncestorRenderObjectOfType<RenderSliverPadding>();
+      final geometry = sliver?.geometry;
+      if (sliver == null || geometry == null) continue;
+      return (
+        start:
+            _scrollController.position.pixels - sliver.constraints.scrollOffset,
+        extent: geometry.scrollExtent,
+      );
+    }
+    return null;
+  }
+
   void _attemptScrollToVerse(
     _Section section,
     int verseIdx, {
@@ -3419,14 +3439,18 @@ class _ReaderSessionState extends State<_ReaderSession>
         _targetVerseKey = null;
         return;
       }
-      // Verse not yet built; jump proportionally based on current maxScrollExtent
-      // (Flutter extrapolates this from laid-out items, so it improves each retry).
-      if (_scrollController.hasClients) {
-        final maxExtent = _scrollController.position.maxScrollExtent;
-        if (maxExtent > 0) {
-          final ratio = verseIdx / section.verses.length;
-          _scrollController.jumpTo((ratio * maxExtent).clamp(0.0, maxExtent));
-        }
+      // Verse not yet built; jump proportionally within the chapter's own
+      // verses (Flutter extrapolates their extent from laid-out items, so it
+      // improves each retry). The whole scroll extent would also count any
+      // chapter appended after it.
+      final span = _scrollController.hasClients ? _verseSpan(section) : null;
+      if (span != null) {
+        final position = _scrollController.position;
+        final offset =
+            span.start + verseIdx / section.verses.length * span.extent;
+        _scrollController.jumpTo(
+          offset.clamp(position.minScrollExtent, position.maxScrollExtent),
+        );
       }
       _attemptScrollToVerse(section, verseIdx, retriesLeft: retriesLeft - 1);
     });
