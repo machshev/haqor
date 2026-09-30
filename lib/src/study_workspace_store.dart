@@ -5,6 +5,7 @@ import 'package:rinf/rinf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bindings/bindings.dart' hide StudyItem;
+import 'prefs_read.dart';
 import 'request_failure.dart';
 import 'study_workspace.dart';
 import 'tutor/progress_sync.dart';
@@ -53,8 +54,8 @@ class StudyWorkspaceStore extends ChangeNotifier {
     if (_disposed) return;
     _workspaces
       ..clear()
-      ..addAll(decodeStudyWorkspaces(prefs.getString(studyWorkspacesKey)));
-    _activeId = _validActiveId(prefs.getString(activeStudyWorkspaceKey));
+      ..addAll(decodeStudyWorkspaces(prefs.readString(studyWorkspacesKey)));
+    _activeId = _validActiveId(prefs.readString(activeStudyWorkspaceKey));
     _loaded = true;
     _awaitingFirstAnswer = true;
     notifyListeners();
@@ -87,7 +88,7 @@ class StudyWorkspaceStore extends ChangeNotifier {
     if (!message.found) {
       // Rust has none yet: hand it the copy this device kept before study
       // moved into the core, once however many tabs are open.
-      final legacyJson = prefs.getString(studyWorkspacesKey);
+      final legacyJson = prefs.readString(studyWorkspacesKey);
       if (!_migrationSent &&
           legacyJson != null &&
           tryDecodeStudyWorkspaces(legacyJson) != null) {
@@ -95,7 +96,7 @@ class StudyWorkspaceStore extends ChangeNotifier {
         _send(
           SaveStudyState(
             workspacesJson: legacyJson,
-            activeWorkspaceId: prefs.getString(activeStudyWorkspaceKey) ?? '',
+            activeWorkspaceId: prefs.readString(activeStudyWorkspaceKey) ?? '',
           ),
         );
       }

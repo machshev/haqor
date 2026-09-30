@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bindings/bindings.dart';
+import 'prefs_read.dart';
 import 'request_failure.dart' show firstWithin;
 import 'tutor/progress_sync.dart';
 
@@ -123,7 +124,7 @@ Future<void> showIssueReportDialog(
 /// rows remain so a later launch can retry without losing the note.
 Future<void> migrateLegacyFlaggedWords() async {
   final prefs = await SharedPreferences.getInstance();
-  final rawEntries = prefs.getStringList(_legacyFlaggedWordsKey) ?? const [];
+  final rawEntries = prefs.readStringList(_legacyFlaggedWordsKey) ?? const [];
   if (rawEntries.isEmpty) return;
 
   final remaining = <String>[];

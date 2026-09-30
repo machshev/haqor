@@ -6,6 +6,7 @@ import 'package:rinf/rinf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../bindings/bindings.dart';
+import '../prefs_read.dart';
 
 const _serverUrlKey = 'progress_sync_server_url';
 const _tokenKey = 'progress_sync_token';
@@ -50,8 +51,8 @@ void scheduleProgressSync() {
 Future<bool> syncProgressNow({VoidCallback? onRequest}) async {
   if (!progressSyncSupported) return false;
   final prefs = await SharedPreferences.getInstance();
-  final serverUrl = prefs.getString(_serverUrlKey)?.trim() ?? '';
-  final token = prefs.getString(_tokenKey)?.trim() ?? '';
+  final serverUrl = prefs.readString(_serverUrlKey)?.trim() ?? '';
+  final token = prefs.readString(_tokenKey)?.trim() ?? '';
   if (serverUrl.isEmpty || token.isEmpty) return false;
   onRequest?.call();
   _sendSync(serverUrl, token);
@@ -99,8 +100,8 @@ class _ProgressSyncSheetState extends State<_ProgressSyncSheet> {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
-      _server.text = prefs.getString(_serverUrlKey) ?? '';
-      _token.text = prefs.getString(_tokenKey) ?? '';
+      _server.text = prefs.readString(_serverUrlKey) ?? '';
+      _token.text = prefs.readString(_tokenKey) ?? '';
     });
   }
 

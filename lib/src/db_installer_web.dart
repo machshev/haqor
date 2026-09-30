@@ -12,6 +12,7 @@ import 'boot_failure.dart';
 import 'boot_status.dart';
 import 'db_asset_web.dart';
 import 'progress_load.dart';
+import 'prefs_read.dart';
 import 'progress_store_web.dart';
 import 'snapshot_writer.dart';
 
@@ -116,7 +117,7 @@ Future<String?> initializeDatabases({bool reinstall = false}) async {
     );
     _flushOnLeaving();
   }
-  final legacy = persisted == null ? prefs.getString(_progressKey) : null;
+  final legacy = persisted == null ? prefs.readString(_progressKey) : null;
   var unreadable = false;
   if (legacy != null) {
     try {

@@ -57,11 +57,13 @@ class _FakeRust {
 Future<void> _openPlanSheet(
   WidgetTester tester, {
   required List<String> plans,
+  Map<String, Object> extra = const {},
 }) async {
   SharedPreferences.setMockInitialValues({
     'book': 0,
     'chapter': 1,
     'reading_plans': plans,
+    ...extra,
   });
   final rust = _FakeRust();
   await tester.pumpWidget(
@@ -133,6 +135,21 @@ void main() {
     await _openPlanSheet(tester, plans: ['0|1,2,3@$yesterday']);
     expect(find.text('3/50 chapters'), findsOneWidget);
     expect(find.text('Next: chapter 4 · read yesterday'), findsOneWidget);
+  });
+
+  testWidgets('one wrongly typed preference does not abort the load', (
+    tester,
+  ) async {
+    await _openPlanSheet(
+      tester,
+      plans: ['0|1,2,3'],
+      extra: {
+        'cross_reference_min_score': 0,
+        'font_size': 18,
+        'show_cantillation': 'yes',
+      },
+    );
+    expect(find.text('3/50 chapters'), findsOneWidget);
   });
 
   testWidgets('deleting a plan asks for confirmation first', (tester) async {

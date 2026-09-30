@@ -14,6 +14,7 @@ import 'bible_data.dart';
 import 'christadelphian_readings.dart';
 import 'bindings/bindings.dart' hide StudyItem;
 import 'issue_reporting.dart';
+import 'prefs_read.dart';
 import 'memorise/memorise_page.dart';
 import 'study_workspace.dart';
 import 'study_workspace_store.dart';
@@ -414,10 +415,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   Future<void> _loadWorkspace() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedIds = prefs.getStringList(_kTabs) ?? const [];
+    final savedIds = prefs.readStringList(_kTabs) ?? const [];
     final ids = savedIds.where((id) => id.isNotEmpty).toSet().toList();
     if (!ids.contains('primary')) ids.insert(0, 'primary');
-    final active = prefs.getString(_kActiveTab);
+    final active = prefs.readString(_kActiveTab);
     if (!mounted) return;
     setState(() {
       _tabs
@@ -427,9 +428,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         _readerKeys.putIfAbsent(tab.id, () => GlobalKey<_ReaderSessionState>());
       }
       _activeTabId = ids.contains(active) ? active! : ids.first;
-      _tiled = prefs.getBool(_kTiled) ?? false;
-      _tiledPanelWidth = prefs.getDouble(_kTiledPanelWidth) ?? 360;
-      _sidePanelWidth = (prefs.getDouble(_kSidePanelWidth) ?? 360).clamp(
+      _tiled = prefs.readBool(_kTiled) ?? false;
+      _tiledPanelWidth = prefs.readDouble(_kTiledPanelWidth) ?? 360;
+      _sidePanelWidth = (prefs.readDouble(_kSidePanelWidth) ?? 360).clamp(
         280,
         600,
       );
@@ -1903,56 +1904,56 @@ class _ReaderSessionState extends State<_ReaderSession>
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
-      _bookIndex = (prefs.getInt(_sessionKey(_kBook)) ?? 0).clamp(
+      _bookIndex = (prefs.readInt(_sessionKey(_kBook)) ?? 0).clamp(
         0,
         kBooks.length - 1,
       );
-      _chapter = (prefs.getInt(_sessionKey(_kChapter)) ?? 1).clamp(
+      _chapter = (prefs.readInt(_sessionKey(_kChapter)) ?? 1).clamp(
         1,
         kBooks[_bookIndex].chapters,
       );
-      _visibleVerse = (prefs.getInt(_sessionKey(_kVerse)) ?? 1).clamp(1, 999);
-      _ntSyriac = prefs.getBool(_kNtSyriac) ?? false;
-      _englishBookNames = prefs.getBool(_kEnglishBookNames) ?? false;
-      _hebrewNumerals = prefs.getBool(_kHebrewNumerals) ?? true;
-      _crossReferenceMinScore = prefs.getDouble(_kCrossReferenceMinScore) ?? 0;
-      _fontSize = (prefs.getDouble(_kFontSize) ?? 20.0).clamp(13.0, 28.0);
-      final savedFamily = prefs.getString(_kFontFamily) ?? 'Cardo';
+      _visibleVerse = (prefs.readInt(_sessionKey(_kVerse)) ?? 1).clamp(1, 999);
+      _ntSyriac = prefs.readBool(_kNtSyriac) ?? false;
+      _englishBookNames = prefs.readBool(_kEnglishBookNames) ?? false;
+      _hebrewNumerals = prefs.readBool(_kHebrewNumerals) ?? true;
+      _crossReferenceMinScore = prefs.readDouble(_kCrossReferenceMinScore) ?? 0;
+      _fontSize = (prefs.readDouble(_kFontSize) ?? 20.0).clamp(13.0, 28.0);
+      final savedFamily = prefs.readString(_kFontFamily) ?? 'Cardo';
       _fontFamily = _fontFamilies.contains(savedFamily) ? savedFamily : 'Cardo';
-      _showCantillation = prefs.getBool(_kShowCantillation) ?? true;
-      _glossInterlinear = prefs.getBool(_kGlossInterlinear) ?? false;
-      _morphologyInterlinear = prefs.getBool(_kMorphologyInterlinear) ?? false;
+      _showCantillation = prefs.readBool(_kShowCantillation) ?? true;
+      _glossInterlinear = prefs.readBool(_kGlossInterlinear) ?? false;
+      _morphologyInterlinear = prefs.readBool(_kMorphologyInterlinear) ?? false;
       _readerView =
-          ReaderView.values.asNameMap()[prefs.getString(_kReaderView)] ??
+          ReaderView.values.asNameMap()[prefs.readString(_kReaderView)] ??
           ReaderView.interlinear;
       _rapidReveal =
-          RapidReveal.values.asNameMap()[prefs.getString(_kRapidReveal)] ??
+          RapidReveal.values.asNameMap()[prefs.readString(_kRapidReveal)] ??
           RapidReveal.verse;
-      _highlightProperNames = prefs.getBool(_kHighlightProperNames) ?? false;
-      _studyWorkspaceVisible = prefs.getBool(_kStudyWorkspaceVisible) ?? false;
+      _highlightProperNames = prefs.readBool(_kHighlightProperNames) ?? false;
+      _studyWorkspaceVisible = prefs.readBool(_kStudyWorkspaceVisible) ?? false;
       _ketivDisplay = KetivDisplay.values.firstWhere(
-        (option) => option.name == prefs.getString(_kKetivDisplay),
+        (option) => option.name == prefs.readString(_kKetivDisplay),
         orElse: () => KetivDisplay.superscript,
       );
       _readerLayoutMode = ReaderLayoutMode.values.firstWhere(
-        (option) => option.name == prefs.getString(_kReaderLayoutMode),
+        (option) => option.name == prefs.readString(_kReaderLayoutMode),
         orElse: () => ReaderLayoutMode.automatic,
       );
-      final savedPlans = prefs.getStringList(_kReadingPlans);
+      final savedPlans = prefs.readStringList(_kReadingPlans);
       if (savedPlans != null) {
         _readingPlans = savedPlans
             .map(_ReadingPlan.fromStorageString)
             .whereType<_ReadingPlan>()
             .toList();
       } else {
-        final planBook = prefs.getInt(_kReadingPlanBook);
+        final planBook = prefs.readInt(_kReadingPlanBook);
         if (planBook != null && planBook >= 0 && planBook < kBooks.length) {
           _readingPlans = [
             _ReadingPlan(
               bookIndex: planBook,
               completed: {
                 for (final chapter
-                    in (prefs.getStringList(_kReadingPlanCompleted) ?? [])
+                    in (prefs.readStringList(_kReadingPlanCompleted) ?? [])
                         .map(int.tryParse)
                         .whereType<int>()
                         .where(
@@ -1967,8 +1968,8 @@ class _ReaderSessionState extends State<_ReaderSession>
         }
       }
     });
-    final rawHistory = prefs.getStringList(_sessionKey(_kHistory)) ?? [];
-    final savedIndex = prefs.getInt(_sessionKey(_kHistoryIndex)) ?? -1;
+    final rawHistory = prefs.readStringList(_sessionKey(_kHistory)) ?? [];
+    final savedIndex = prefs.readInt(_sessionKey(_kHistoryIndex)) ?? -1;
     if (rawHistory.isNotEmpty &&
         savedIndex >= 0 &&
         savedIndex < rawHistory.length) {

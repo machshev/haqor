@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
+import '../prefs_read.dart';
 import '../request_failure.dart';
 import '../tutor/progress_sync.dart';
 import '../widgets/book_selector.dart';
@@ -34,7 +35,7 @@ String passageTitle(MemoryPassageEntry p, {required bool useEnglish}) =>
 
 Future<bool> _useEnglishBookNames() async {
   final prefs = await SharedPreferences.getInstance();
-  return prefs.getBool('english_book_names') ?? false;
+  return prefs.readBool('english_book_names') ?? false;
 }
 
 /// Add a whole chapter as a passage (from the reader), open the memorisation

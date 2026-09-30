@@ -5,19 +5,20 @@ import 'package:rinf/rinf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bindings/bindings.dart';
+import 'prefs_read.dart';
 import 'tutor/progress_sync.dart';
 
 const _adminModeKey = 'tutor_admin_mode';
 const _occurrenceVerseEnglishOnlyKey = 'occurrence_verse_english_only';
 
 Future<bool> adminModeEnabled() async =>
-    (await SharedPreferences.getInstance()).getBool(_adminModeKey) ?? false;
+    (await SharedPreferences.getInstance()).readBool(_adminModeKey) ?? false;
 
 Future<void> setAdminModeEnabled(bool enabled) async =>
     (await SharedPreferences.getInstance()).setBool(_adminModeKey, enabled);
 
 Future<bool> occurrenceVerseEnglishOnlyEnabled() async =>
-    (await SharedPreferences.getInstance()).getBool(
+    (await SharedPreferences.getInstance()).readBool(
       _occurrenceVerseEnglishOnlyKey,
     ) ??
     false;
@@ -38,7 +39,7 @@ const _themeModeKey = 'theme_mode';
 final themeMode = ValueNotifier(ThemeMode.system);
 
 Future<void> loadThemeMode() async {
-  final stored = (await SharedPreferences.getInstance()).getString(
+  final stored = (await SharedPreferences.getInstance()).readString(
     _themeModeKey,
   );
   themeMode.value = ThemeMode.values.asNameMap()[stored] ?? ThemeMode.system;
