@@ -1637,6 +1637,9 @@ class _ReaderSessionState extends State<_ReaderSession>
   // Requests in flight when a lexicon correction landed: their replies may hold
   // the old gloss, so they are not cached.
   final Set<_ChapterRequest> _staleFetches = {};
+  // Requests that timed out, by whether they were prefetches, in case the
+  // reply still comes.
+  final Map<_ChapterRequest, bool> _lateFetches = {};
   final LinkedHashMap<_ChapterRequest, List<VerseEntry>> _chapterCache =
       LinkedHashMap();
   bool _initialLoading = true;
@@ -1710,10 +1713,12 @@ class _ReaderSessionState extends State<_ReaderSession>
         msg.includeNames,
         msg.includeRoots,
       );
-      if (!_pendingFetches.contains(fetchKey)) return;
-      _pendingFetches.remove(fetchKey);
+      // A reply after the timeout is still the chapter, so it is kept and, if
+      // the chapter is still wanted, shown in place of the error.
+      final late = _lateFetches.remove(fetchKey);
+      if (!_pendingFetches.remove(fetchKey) && late == null) return;
       _fetchTimeouts.remove(fetchKey)?.cancel();
-      final prefetch = _prefetches.remove(fetchKey);
+      final prefetch = _prefetches.remove(fetchKey) || late == true;
       if (_staleFetches.remove(fetchKey)) {
         if (!prefetch) _fetchChapter(msg.book - 1, msg.chapter, force: true);
         return;
@@ -1726,6 +1731,9 @@ class _ReaderSessionState extends State<_ReaderSession>
       if (fetchKey != _chapterRequest(bookIdx, msg.chapter)) {
         _fetchChapter(bookIdx, msg.chapter, force: true);
         return;
+      }
+      if (late == false && mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
       }
       _acceptChapter(bookIdx, msg.chapter, msg.verses, fetchKey);
     });
@@ -1783,6 +1791,8 @@ class _ReaderSessionState extends State<_ReaderSession>
     );
 
     if (_sections.isEmpty) {
+      // A reply for a chapter the reader has since left is not the one wanted.
+      if (bookIdx != _bookIndex || chapter != _chapter) return;
       int? targetVerse;
       if (_pendingVerse != null &&
           bookIdx == _bookIndex &&
@@ -3325,12 +3335,13 @@ class _ReaderSessionState extends State<_ReaderSession>
       return;
     }
     _pendingFetches.add(key);
+    _lateFetches.remove(key);
     if (prefetch) _prefetches.add(key);
     _fetchTimeouts[key] = Timer(const Duration(seconds: 10), () {
       _fetchTimeouts.remove(key);
-      _staleFetches.remove(key);
       if (!_pendingFetches.remove(key)) return;
       final wasPrefetch = _prefetches.remove(key);
+      _lateFetches[key] = wasPrefetch;
       if (!mounted || wasPrefetch) return;
       setState(() {
         _initialLoading = false;
@@ -3368,7 +3379,9 @@ class _ReaderSessionState extends State<_ReaderSession>
     // Chapters cached or prefetched outside the window hold the old gloss too,
     // and so may any reply still on its way.
     _chapterCache.clear();
-    _staleFetches.addAll(_pendingFetches);
+    _staleFetches
+      ..addAll(_pendingFetches)
+      ..addAll(_lateFetches.keys);
     for (final section in List<_Section>.of(_sections)) {
       if (section.bookIndex >= 39) continue;
       _fetchChapter(section.bookIndex, section.chapter, force: true);

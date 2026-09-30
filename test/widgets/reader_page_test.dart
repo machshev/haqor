@@ -1854,6 +1854,33 @@ void main() {
     expect(rust.pending, isEmpty);
   });
 
+  testWidgets(
+    'a chapter reply after the timeout is shown in place of the error',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({'book': 0, 'chapter': 1});
+      final rust = _FakeRust();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BibleReaderPage(
+            sendChapterRequest: rust.onRequest,
+            sendStudyStateRequest: rust.onStudyRequest,
+            saveStudyState: rust.onStudySave,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 11));
+      expect(find.text('Could not load this chapter.'), findsOneWidget);
+      expect(_verse(1, 1, 1), findsNothing);
+
+      rust.deliverAll();
+      await tester.pump();
+      await tester.pump();
+      expect(_verse(1, 1, 1), findsOneWidget);
+      expect(find.text('Could not load this chapter.'), findsNothing);
+    },
+  );
+
   testWidgets('scrolling forward across many chapters never shifts content', (
     tester,
   ) async {
