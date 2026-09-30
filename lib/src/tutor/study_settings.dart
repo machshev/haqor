@@ -4,22 +4,29 @@ import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
+import '../request_failure.dart';
 
-/// Open the study-pacing settings as a modal bottom sheet.
-Future<void> showStudySettings(BuildContext context) =>
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => const _SettingsSheet(),
-    );
+/// Open the study-pacing settings as a modal bottom sheet. [sendRequest]
+/// stands in for the signal to Rust so a test can capture the sheet's
+/// requests (`sendSignalToRust` needs the native library).
+Future<void> showStudySettings(
+  BuildContext context, {
+  void Function(Object request)? sendRequest,
+}) => showModalBottomSheet<void>(
+  context: context,
+  showDragHandle: true,
+  isScrollControlled: true,
+  builder: (_) => _SettingsSheet(sendRequest: sendRequest),
+);
 
 /// Configure how fast the tutor progresses: how many new letters and words are
 /// introduced at once, and whether grammar rules expand one at a time. Fetches
 /// the current [TutorSettings] on open and writes changes back with
 /// [SetTutorSettings]; the engine picks them up on the next card.
 class _SettingsSheet extends StatefulWidget {
-  const _SettingsSheet();
+  const _SettingsSheet({this.sendRequest});
+
+  final void Function(Object request)? sendRequest;
 
   @override
   State<_SettingsSheet> createState() => _SettingsSheetState();
@@ -27,6 +34,10 @@ class _SettingsSheet extends StatefulWidget {
 
 class _SettingsSheetState extends State<_SettingsSheet> {
   StreamSubscription<RustSignalPack<TutorSettings>>? _sub;
+  final List<StreamSubscription<RequestFailed>> _failureSubs = [];
+  final RequestTimer _timer = RequestTimer();
+  // Set when the settings could not be loaded; shown in place of the spinner.
+  String? _error;
 
   int _lettersPerBatch = 3;
   int _wordsPerBatch = 8;
@@ -52,12 +63,58 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     // own write doesn't fight a drag in progress.
     _sub = TutorSettings.rustSignalStream.listen((pack) {
       if (!mounted || _loaded) return;
+      _timer.stop();
       setState(() {
         _adopt(pack.message);
         _loaded = true;
+        _error = null;
       });
     });
-    GetTutorSettings().sendSignalToRust();
+    _failureSubs
+      ..add(
+        listenForFailure(requestTutorSettings, (failure) {
+          if (mounted && !_loaded) _fail(failure.message);
+        }),
+      )
+      ..add(
+        listenForFailure(requestSetTutorSettings, (failure) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Your study pace was not saved: ${failure.message}',
+              ),
+            ),
+          );
+        }),
+      );
+    if (!_loaded) _load();
+  }
+
+  void _request(Object request) {
+    final hook = widget.sendRequest;
+    if (hook != null) return hook(request);
+    switch (request) {
+      case GetTutorSettings():
+        request.sendSignalToRust();
+      case SetTutorSettings():
+        request.sendSignalToRust();
+      case ResetTutor():
+        request.sendSignalToRust();
+    }
+  }
+
+  void _load() {
+    if (_error != null) setState(() => _error = null);
+    _timer.start(() {
+      if (mounted && !_loaded) _fail('Haqor did not answer.');
+    });
+    _request(GetTutorSettings());
+  }
+
+  void _fail(String message) {
+    _timer.stop();
+    setState(() => _error = message);
   }
 
   void _adopt(TutorSettings s) {
@@ -73,6 +130,10 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   @override
   void dispose() {
     _sub?.cancel();
+    for (final sub in _failureSubs) {
+      sub.cancel();
+    }
+    _timer.stop();
     super.dispose();
   }
 
@@ -99,20 +160,22 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     );
     if (ok == true && mounted) {
       Navigator.of(context).pop();
-      ResetTutor().sendSignalToRust();
+      _request(ResetTutor());
     }
   }
 
   void _send() {
-    SetTutorSettings(
-      lettersPerBatch: _lettersPerBatch,
-      wordsPerBatch: _wordsPerBatch,
-      grammarGating: _grammarGating,
-      vocabPriority: _vocabPriority,
-      grammarPriority: _grammarPriority,
-      versePriority: _versePriority,
-      lettersRatio: _lettersRatio,
-    ).sendSignalToRust();
+    _request(
+      SetTutorSettings(
+        lettersPerBatch: _lettersPerBatch,
+        wordsPerBatch: _wordsPerBatch,
+        grammarGating: _grammarGating,
+        vocabPriority: _vocabPriority,
+        grammarPriority: _grammarPriority,
+        versePriority: _versePriority,
+        lettersRatio: _lettersRatio,
+      ),
+    );
   }
 
   int get _wordsPerGrammarRule => 30 - (_grammarPriority * 27 ~/ 100);
@@ -123,7 +186,12 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-        child: !_loaded
+        child: _error != null
+            ? RequestErrorView(
+                message: 'Could not load your study pace: $_error',
+                onRetry: _load,
+              )
+            : !_loaded
             ? const Padding(
                 padding: EdgeInsets.all(32),
                 child: Center(child: CircularProgressIndicator()),
