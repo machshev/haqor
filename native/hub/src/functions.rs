@@ -9,13 +9,13 @@ use crate::signals::{
     GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, IssueReportStatus,
     KetivEntry, LexemeSummary, LexiconEntryOverrideStatus, Occurrence, OccurrenceParse,
     OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus, QuotationEntry, Quotations,
-    ResetTutor, RootChoice, SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState,
-    SaveTutorGloss, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem,
-    StudyState, SubmitMisreads, SubmitReview, SuffixCard, SyncProgress, ThematicOverview,
-    ThematicReferenceEntry, ThematicReferences, ThematicTarget, ThematicVerseEntry,
-    TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard, VerseEntry,
-    VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry, VocabList, WordCard, WordInfo,
-    WordOccurrence, WordOccurrences,
+    RequestFailed, ResetTutor, RootChoice, SaveIssueReport, SaveLexiconEntryOverride,
+    SaveStudyState, SaveTutorGloss, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings,
+    StudyItem, StudyState, SubmitMisreads, SubmitReview, SuffixCard, SyncProgress,
+    ThematicOverview, ThematicReferenceEntry, ThematicReferences, ThematicTarget,
+    ThematicVerseEntry, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats,
+    VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry, VocabList,
+    WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 
 use std::fs;
@@ -32,6 +32,7 @@ use haqor_core::bible::{
 };
 use haqor_core::tutor::{self, Grade, Track};
 use rinf::{DartSignal, RustSignal, debug_print};
+use std::fmt::Display;
 
 /// One database connection is shared by all query handlers. The corpus is
 /// read-only but the attached progress database is written by the tutor,
@@ -43,6 +44,19 @@ pub type SharedBible = Arc<Mutex<Bible>>;
 
 pub(crate) fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
     bible.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Answer a request that failed with [`RequestFailed`], so the page waiting on
+/// its reply can show the error and offer a retry. `key` is empty unless the
+/// page can have several instances of `request` in flight.
+pub(crate) fn send_failure(request: &str, key: impl Into<String>, error: impl Display) {
+    debug_print!("{request} error: {error}");
+    RequestFailed {
+        request: request.to_string(),
+        key: key.into(),
+        message: error.to_string(),
+    }
+    .send_signal_to_dart();
 }
 
 /// Every lexicon's entries for a root family, as the Lexicon tab's lexemes:
@@ -289,7 +303,7 @@ fn send_study_state(bible: &Bible) {
             active_workspace_id: String::new(),
         }
         .send_signal_to_dart(),
-        Err(error) => debug_print!("get_study_state error: {error:?}"),
+        Err(error) => send_failure("study_state", "", error),
     }
 }
 
@@ -543,7 +557,14 @@ pub async fn get_verse_text(bible: SharedBible) {
                 source_words,
             }
             .send_signal_to_dart(),
-            Err(e) => debug_print!("get_verse_text error: {:?}", e),
+            Err(e) => send_failure(
+                "verse_text",
+                format!(
+                    "{}:{}:{}",
+                    verse_ref.book, verse_ref.chapter, verse_ref.verse
+                ),
+                e,
+            ),
         }
     }
 }
@@ -1285,7 +1306,7 @@ pub async fn get_next_study_item(bible: SharedBible) {
                 persist_browser_progress(&bible);
                 to_signal_study_item(&bible, item).send_signal_to_dart()
             }
-            Err(e) => debug_print!("get_next_study_item error: {:?}", e),
+            Err(e) => send_failure("next_study_item", "", e),
         }
     }
 }
@@ -1313,7 +1334,7 @@ pub async fn submit_review(bible: SharedBible) {
                 persist_browser_progress(&bible);
                 to_signal_study_item(&bible, item).send_signal_to_dart()
             }
-            Err(e) => debug_print!("submit_review error: {:?}", e),
+            Err(e) => send_failure("submit_review", "", e),
         }
     }
 }
@@ -1328,14 +1349,24 @@ pub async fn submit_misreads(bible: SharedBible) {
         let bible = lock(&bible);
         let grade = Grade::from_confidence(0, None);
         let mut next = None;
+        let mut failure = None;
         for word in &req.words {
             match bible.submit_review(Track::Word, word, grade, now_epoch()) {
                 Ok(item) => next = Some(item),
-                Err(e) => debug_print!("submit_misreads error: {:?}", e),
+                Err(e) => {
+                    failure = Some(e);
+                    break;
+                }
             }
         }
-        // With nothing flagged (or every review failing) the learner still
-        // expects to move on.
+        // A review that failed must not look like a saved one: persist what
+        // did land, then tell Dart so it can offer a retry.
+        if let Some(e) = failure {
+            persist_browser_progress(&bible);
+            send_failure("submit_misreads", "", e);
+            continue;
+        }
+        // With nothing flagged the learner still expects to move on.
         let next = match next {
             Some(item) => Ok(item),
             None => bible.next_study_item(now_epoch()),
@@ -1345,7 +1376,7 @@ pub async fn submit_misreads(bible: SharedBible) {
                 persist_browser_progress(&bible);
                 to_signal_study_item(&bible, item).send_signal_to_dart()
             }
-            Err(e) => debug_print!("submit_misreads error: {:?}", e),
+            Err(e) => send_failure("submit_misreads", "", e),
         }
     }
 }
@@ -1368,7 +1399,7 @@ pub async fn reset_tutor(bible: SharedBible) {
                 }
                 .send_signal_to_dart();
             }
-            Err(e) => debug_print!("reset_tutor error: {:?}", e),
+            Err(e) => send_failure("reset_tutor", "", e),
         }
     }
 }
@@ -1392,7 +1423,7 @@ pub async fn get_seen_concepts(bible: SharedBible) {
                     .collect(),
             }
             .send_signal_to_dart(),
-            Err(e) => debug_print!("get_seen_concepts error: {:?}", e),
+            Err(e) => send_failure("seen_concepts", "", e),
         }
     }
 }
@@ -1424,7 +1455,7 @@ pub async fn get_tutor_stats(bible: SharedBible) {
                 total_verses: s.total_verses,
             }
             .send_signal_to_dart(),
-            Err(e) => debug_print!("get_tutor_stats error: {:?}", e),
+            Err(e) => send_failure("tutor_stats", "", e),
         }
     }
 }
@@ -1435,7 +1466,7 @@ pub async fn get_tutor_settings(bible: SharedBible) {
         let bible = lock(&bible);
         match bible.tutor_settings() {
             Ok(s) => to_signal_settings(s).send_signal_to_dart(),
-            Err(e) => debug_print!("get_tutor_settings error: {:?}", e),
+            Err(e) => send_failure("tutor_settings", "", e),
         }
     }
 }
@@ -1462,7 +1493,7 @@ pub async fn set_tutor_settings(bible: SharedBible) {
                 persist_browser_progress(&bible);
                 to_signal_settings(stored).send_signal_to_dart()
             }
-            Err(e) => debug_print!("set_tutor_settings error: {:?}", e),
+            Err(e) => send_failure("set_tutor_settings", "", e),
         }
     }
 }
@@ -1547,7 +1578,7 @@ pub async fn get_calibration_probe(bible: SharedBible) {
                 min_occurrences: 0,
             }
             .send_signal_to_dart(),
-            Err(e) => debug_print!("get_calibration_probe error: {:?}", e),
+            Err(e) => send_failure("calibration_probe", "", e),
         }
     }
 }

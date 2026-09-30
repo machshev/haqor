@@ -5,13 +5,13 @@ use haqor_core::memorise::{self as core, MemoryPurpose, MemorySettings, MemoryVe
 use haqor_core::tutor::Grade;
 use rinf::{DartSignal, RustSignal, debug_print};
 
-use crate::functions::{SharedBible, lock, now_epoch, persist_browser_progress};
+use crate::functions::{SharedBible, lock, now_epoch, persist_browser_progress, send_failure};
 use crate::signals::{
     DeleteMemoryPassage, GetMemoryLayout, GetMemoryPassages, GetMemoryRun, GetMemoryStats,
     GetNextMemoryCard, MemoryAchievement, MemoryCard, MemoryDay, MemoryItem, MemoryLayout,
     MemoryLayoutVerse, MemoryPassageEntry, MemoryPassages, MemoryReviewResult, MemorySegment,
-    MemoryStats, MemoryVerseState, MemoryWord, SaveMemoryPassage,
-    SetMemoryLayout, SetMemorySettings, SubmitMemoryRecital,
+    MemoryStats, MemoryVerseState, MemoryWord, SaveMemoryPassage, SetMemoryLayout,
+    SetMemorySettings, SubmitMemoryRecital,
 };
 
 /// Days of history and forecast the dashboard graphs.
@@ -54,7 +54,7 @@ fn send_passages(bible: &Bible, saved_id: String) {
             saved_id,
         }
         .send_signal_to_dart(),
-        Err(e) => debug_print!("memory passages error: {e:?}"),
+        Err(e) => send_failure("memory_passages", "", e),
     }
 }
 
@@ -62,7 +62,7 @@ fn send_layout(bible: &Bible, passage_id: &str) {
     let book = match bible.memory_passage(passage_id) {
         Ok(p) => p.map_or(0, |p| p.book),
         Err(e) => {
-            debug_print!("memory layout error: {e:?}");
+            send_failure("memory_layout", passage_id, e);
             return;
         }
     };
@@ -89,7 +89,7 @@ fn send_layout(bible: &Bible, passage_id: &str) {
                 .collect(),
         }
         .send_signal_to_dart(),
-        Err(e) => debug_print!("memory layout error: {e:?}"),
+        Err(e) => send_failure("memory_layout", passage_id, e),
     }
 }
 
@@ -209,7 +209,7 @@ fn send_stats(bible: &Bible, utc_offset: i64) {
                 .collect(),
         }
         .send_signal_to_dart(),
-        Err(e) => debug_print!("memory stats error: {e:?}"),
+        Err(e) => send_failure("memory_stats", "", e),
     }
 }
 
@@ -238,7 +238,7 @@ pub async fn save_memory_passage(bible: SharedBible) {
                 persist_browser_progress(&bible);
                 send_passages(&bible, saved.map(|p| p.id).unwrap_or_default());
             }
-            Err(e) => debug_print!("save_memory_passage error: {e:?}"),
+            Err(e) => send_failure("memory_passages", "", e),
         }
     }
 }
@@ -252,7 +252,7 @@ pub async fn delete_memory_passage(bible: SharedBible) {
                 persist_browser_progress(&bible);
                 send_passages(&bible, String::new());
             }
-            Err(e) => debug_print!("delete_memory_passage error: {e:?}"),
+            Err(e) => send_failure("memory_passages", "", e),
         }
     }
 }
@@ -287,7 +287,7 @@ pub async fn set_memory_layout(bible: SharedBible) {
                 persist_browser_progress(&bible);
                 send_layout(&bible, &r.passage_id);
             }
-            Err(e) => debug_print!("set_memory_layout error: {e:?}"),
+            Err(e) => send_failure("memory_layout", r.passage_id, e),
         }
     }
 }
@@ -299,7 +299,7 @@ pub async fn get_next_memory_card(bible: SharedBible) {
         let bible = lock(&bible);
         match bible.next_memory_item(&r.passage_id, r.extra_new, now_epoch(), r.utc_offset) {
             Ok(item) => to_signal_item(item).send_signal_to_dart(),
-            Err(e) => debug_print!("get_next_memory_card error: {e:?}"),
+            Err(e) => send_failure("memory_item", r.passage_id, e),
         }
     }
 }
@@ -318,7 +318,7 @@ pub async fn get_memory_run(bible: SharedBible) {
                 core::MemoryItem::Card,
             ))
             .send_signal_to_dart(),
-            Err(e) => debug_print!("get_memory_run error: {e:?}"),
+            Err(e) => send_failure("memory_item", pack.message.passage_id, e),
         }
     }
 }
@@ -382,7 +382,7 @@ pub async fn submit_memory_recital(bible: SharedBible) {
                 }
                 .send_signal_to_dart();
             }
-            Err(e) => debug_print!("submit_memory_recital error: {e:?}"),
+            Err(e) => send_failure("memory_recital", r.passage_id, e),
         }
     }
 }
@@ -408,7 +408,7 @@ pub async fn set_memory_settings(bible: SharedBible) {
                 persist_browser_progress(&bible);
                 send_stats(&bible, r.utc_offset);
             }
-            Err(e) => debug_print!("set_memory_settings error: {e:?}"),
+            Err(e) => send_failure("memory_stats", "", e),
         }
     }
 }

@@ -99,6 +99,19 @@ pub struct ProgressSyncStatus {
     pub message: String,
 }
 
+/// Sent in place of a request's usual reply when Rust could not answer it, so
+/// the page that is waiting can show the error and offer a retry instead of
+/// spinning forever. `request` names what was asked (the `request*` constants
+/// in `request_failure.dart`); `key` says which instance failed where a page
+/// can have several in flight (a verse as `book:chapter:verse`, a passage by
+/// its id) and is empty otherwise.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct RequestFailed {
+    pub request: String,
+    pub key: String,
+    pub message: String,
+}
+
 /// Request the reader Study document stored in the syncable progress DB.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetStudyState {}
