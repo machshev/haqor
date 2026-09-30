@@ -118,4 +118,42 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('the fresh reply replaces the settings the sheet opened with', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    TutorSettings settings(int letters) => TutorSettings(
+      lettersPerBatch: letters,
+      wordsPerBatch: 8,
+      grammarGating: true,
+      vocabPriority: 75,
+      grammarPriority: 25,
+      versePriority: 25,
+      lettersRatio: 30,
+    );
+    // What an earlier visit left behind, now out of date.
+    assignRustSignal['TutorSettings']!(
+      settings(3).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    final sent = await open(tester);
+    expect(sent.single, isA<GetTutorSettings>());
+
+    assignRustSignal['TutorSettings']!(
+      settings(5).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byType(SwitchListTile));
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pump();
+    expect(sent.whereType<SetTutorSettings>().single.lettersPerBatch, 5);
+
+    // The deferred progress sync runs after a short quiet period.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpWidget(const SizedBox());
+  });
 }

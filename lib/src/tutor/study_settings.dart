@@ -48,22 +48,27 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   int _versePriority = 25;
   int _lettersRatio = 30;
   bool _loaded = false;
+  // Set once the reply to this sheet's own request has been applied or a
+  // field has been edited: the controls are the source of truth from then on.
+  bool _settled = false;
 
   @override
   void initState() {
     super.initState();
     // Seed from the last value if one was already received, so the controls
-    // show instantly on reopen.
+    // show instantly on reopen; it may be stale, so the fresh reply replaces it.
     final seed = TutorSettings.latestRustSignal?.message;
     if (seed != null) {
       _adopt(seed);
       _loaded = true;
     }
-    // Adopt the authoritative (possibly clamped) values on first arrival only;
-    // after that the local controls are the source of truth so an echo of our
-    // own write doesn't fight a drag in progress.
+    // Adopt the authoritative (possibly clamped) values on first arrival only,
+    // unless a field was edited meanwhile; after that the local controls are
+    // the source of truth so an echo of our own write doesn't fight a drag in
+    // progress.
     _sub = TutorSettings.rustSignalStream.listen((pack) {
-      if (!mounted || _loaded) return;
+      if (!mounted || _settled) return;
+      _settled = true;
       _timer.stop();
       setState(() {
         _adopt(pack.message);
@@ -89,7 +94,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           );
         }),
       );
-    if (!_loaded) _load();
+    _load();
   }
 
   void _request(Object request) {
@@ -169,6 +174,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   }
 
   void _send() {
+    _settled = true;
     _request(
       SetTutorSettings(
         lettersPerBatch: _lettersPerBatch,
@@ -180,6 +186,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
         lettersRatio: _lettersRatio,
       ),
     );
+    // Tell the sync server, so other devices get the new pace.
+    scheduleProgressSync();
   }
 
   int get _wordsPerGrammarRule => 30 - (_grammarPriority * 27 ~/ 100);
