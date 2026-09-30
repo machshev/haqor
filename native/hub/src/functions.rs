@@ -411,7 +411,8 @@ pub async fn save_issue_report(bible: SharedBible) {
     while let Some(signal_pack) = receiver.recv().await {
         let report = signal_pack.message;
         let now = now_epoch();
-        match lock(&bible).save_issue_report(
+        let bible = lock(&bible);
+        match bible.save_issue_report(
             &report.id,
             &report.report_type,
             &report.note,
@@ -420,7 +421,7 @@ pub async fn save_issue_report(bible: SharedBible) {
             now,
         ) {
             Ok(()) => {
-                persist_browser_progress(&lock(&bible));
+                persist_browser_progress(&bible);
                 debug_print!("issue report saved: {}", report.id);
                 IssueReportStatus {
                     report_id: report.id,
