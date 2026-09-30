@@ -5,6 +5,7 @@ mod functions;
 mod memorise;
 mod signals;
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -26,6 +27,36 @@ use functions::{
 use signals::SetDataDir;
 
 write_interface!();
+
+/// Run each handler under [`supervise`], all sharing one database.
+macro_rules! serve {
+    ($bible:expr, $($handler:path),+ $(,)?) => {
+        $({
+            let bible = $bible.clone();
+            supervise(stringify!($handler), move || $handler(bible.clone()));
+        })+
+    };
+}
+
+/// Keep a handler answering for the life of the app. Each handler is a loop
+/// over one signal's receiver, so a panic in core while serving one request
+/// would end that loop and leave the signal unanswered from then on. The
+/// panicked request is lost (its page times out and offers a retry), but the
+/// loop is started again for the next one.
+fn supervise<F, Fut>(name: &'static str, handler: F)
+where
+    F: Fn() -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    spawn(async move {
+        loop {
+            match spawn(handler()).await {
+                Err(e) if e.is_panic() => debug_print!("{name} panicked; restarting it"),
+                _ => break,
+            }
+        }
+    });
+}
 
 /// Wait for Dart to send the directory the database assets were copied to,
 /// then open them file-backed. Query signals sent in the meantime are buffered
@@ -108,49 +139,83 @@ async fn main() {
     let Some((bible, data_dir)) = open_bible().await else {
         return;
     };
-    spawn(get_verse_text(bible.clone()));
-    spawn(get_verse_texts(bible.clone()));
-    spawn(get_chapter_text(bible.clone()));
-    spawn(get_cross_references(bible.clone()));
-    spawn(get_quotations(bible.clone()));
-    spawn(get_thematic_references(bible.clone()));
-    spawn(get_thematic_overview(bible.clone()));
-    spawn(get_vocab(bible.clone()));
-    spawn(get_word_info(bible.clone()));
-    spawn(get_dictionary_entry(bible.clone()));
-    spawn(get_word_occurrences(bible.clone()));
-    spawn(get_next_study_item(bible.clone()));
-    spawn(submit_review(bible.clone()));
-    spawn(submit_misreads(bible.clone()));
-    spawn(reset_tutor(bible.clone()));
-    spawn(get_tutor_stats(bible.clone()));
-    spawn(get_seen_concepts(bible.clone()));
-    spawn(get_tutor_settings(bible.clone()));
-    spawn(get_study_state(bible.clone()));
-    spawn(save_study_state(bible.clone()));
-    spawn(set_tutor_settings(bible.clone()));
-    spawn(get_onboarding_status(bible.clone()));
-    spawn(get_build_info(bible.clone()));
-    spawn(set_alphabet_known(bible.clone()));
-    spawn(get_calibration_probe(bible.clone()));
-    spawn(finish_calibration(bible.clone()));
-    spawn(save_issue_report(bible.clone()));
-    spawn(save_lexicon_entry_override(bible.clone()));
-    spawn(save_tutor_gloss(bible.clone()));
-    spawn(get_tutor_gloss_override_stats(bible.clone()));
-    spawn(optimize_tutor_gloss_overrides(bible.clone()));
-    spawn(memorise::get_memory_passages(bible.clone()));
-    spawn(memorise::save_memory_passage(bible.clone()));
-    spawn(memorise::delete_memory_passage(bible.clone()));
-    spawn(memorise::get_next_memory_card(bible.clone()));
-    spawn(memorise::get_memory_layout(bible.clone()));
-    spawn(memorise::set_memory_layout(bible.clone()));
-    spawn(memorise::get_memory_run(bible.clone()));
-    spawn(memorise::submit_memory_recital(bible.clone()));
-    spawn(memorise::get_memory_stats(bible.clone()));
-    spawn(memorise::set_memory_settings(bible.clone()));
-    spawn(sync_progress(bible, data_dir));
+    serve!(
+        bible,
+        get_verse_text,
+        get_verse_texts,
+        get_chapter_text,
+        get_cross_references,
+        get_quotations,
+        get_thematic_references,
+        get_thematic_overview,
+        get_vocab,
+        get_word_info,
+        get_dictionary_entry,
+        get_word_occurrences,
+        get_next_study_item,
+        submit_review,
+        submit_misreads,
+        reset_tutor,
+        get_tutor_stats,
+        get_seen_concepts,
+        get_tutor_settings,
+        get_study_state,
+        save_study_state,
+        set_tutor_settings,
+        get_onboarding_status,
+        get_build_info,
+        set_alphabet_known,
+        get_calibration_probe,
+        finish_calibration,
+        save_issue_report,
+        save_lexicon_entry_override,
+        save_tutor_gloss,
+        get_tutor_gloss_override_stats,
+        optimize_tutor_gloss_overrides,
+        memorise::get_memory_passages,
+        memorise::save_memory_passage,
+        memorise::delete_memory_passage,
+        memorise::get_next_memory_card,
+        memorise::get_memory_layout,
+        memorise::set_memory_layout,
+        memorise::get_memory_run,
+        memorise::submit_memory_recital,
+        memorise::get_memory_stats,
+        memorise::set_memory_settings,
+    );
+    supervise("sync_progress", move || {
+        sync_progress(bible.clone(), data_dir.clone())
+    });
 
     // Keep the main function running until Dart shutdown.
     dart_shutdown().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    #[::tokio::test]
+    async fn a_panicking_handler_is_started_again() {
+        let starts = Arc::new(AtomicUsize::new(0));
+        let counted = starts.clone();
+        supervise("test", move || {
+            let run = counted.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if run < 2 {
+                    panic!("handler panic {run}");
+                }
+            }
+        });
+        // The third run returns normally, which ends supervision.
+        for _ in 0..100 {
+            if starts.load(Ordering::SeqCst) == 3 {
+                break;
+            }
+            ::tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(starts.load(Ordering::SeqCst), 3);
+    }
 }

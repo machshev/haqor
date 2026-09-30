@@ -33,9 +33,12 @@ use haqor_core::bible::{
 use haqor_core::tutor::{self, Grade, Track};
 use rinf::{DartSignal, RustSignal, debug_print};
 
-/// One database connection is shared by all query handlers. The databases are
-/// read-only, so a poisoned lock (a panic mid-query) leaves nothing
-/// inconsistent and the connection can keep being used.
+/// One database connection is shared by all query handlers. The corpus is
+/// read-only but the attached progress database is written by the tutor,
+/// memorise and sync handlers, so a panic mid-write could in principle leave a
+/// half-applied change. A transaction rolls back as the panic unwinds, so
+/// the connection is still sound and keeps being used after a handler panic
+/// (which [`crate::supervise`] recovers from).
 pub type SharedBible = Arc<Mutex<Bible>>;
 
 pub(crate) fn lock(bible: &SharedBible) -> MutexGuard<'_, Bible> {
