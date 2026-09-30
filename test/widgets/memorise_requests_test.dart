@@ -202,4 +202,87 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 3));
   });
+
+  MemoryReviewResult result({List<String> completed = const []}) =>
+      MemoryReviewResult(
+        purpose: 'read',
+        targetChapter: 23,
+        targetVerse: 1,
+        xp: 5,
+        firstGraduation: false,
+        sectionCompleted: false,
+        completedPassages: completed,
+        relearn: 0,
+        intervalDays: 0,
+        totalXp: 5,
+        levelBefore: 1,
+        levelAfter: 1,
+        todayXp: 5,
+        dailyGoalXp: 50,
+        goalReachedNow: false,
+        streakDays: 1,
+      );
+
+  const cardItem = MemoryItem(
+    kind: 'card',
+    card: _card,
+    nextDueEpoch: 0,
+    canLearnMore: true,
+    shapePassageId: '',
+  );
+
+  testWidgets('a run whose answer was not saved is not "Nothing learnt yet"', (
+    tester,
+  ) async {
+    final sent = <Object>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MemoryDrillPage(
+          passageId: 'p',
+          title: 'Psalm 23',
+          run: true,
+          sendRequest: sent.add,
+        ),
+      ),
+    );
+    _deliver('MemoryItem', cardItem.bincodeSerialize());
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.text('I have read it aloud'));
+    await tester.pump();
+
+    _fail(requestMemoryRecital, 'p', 'database is locked');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Nothing learnt yet'), findsNothing);
+    expect(find.text('Recited!'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('finishing a passage while drilling all names no title', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MemoryDrillPage(
+          passageId: '',
+          title: 'All passages',
+          sendRequest: (_) {},
+        ),
+      ),
+    );
+    _deliver('MemoryItem', cardItem.bincodeSerialize());
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.text('I have read it aloud'));
+    await tester.pump();
+    _deliver('MemoryReviewResult', result(completed: ['p']).bincodeSerialize());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.textContaining('Every verse of a passage'), findsOneWidget);
+    expect(find.textContaining('All passages is'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 3));
+  });
 }

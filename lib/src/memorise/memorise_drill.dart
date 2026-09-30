@@ -289,12 +289,14 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
       });
     }
     if (r.completedPassages.isNotEmpty) {
+      // Drilling all passages has no single title to name.
+      final what = widget.passageId.isEmpty ? 'a passage' : widget.title;
       await _celebrate(
         icon: Icons.verified,
         title: 'Passage complete!',
         body:
-            'Every verse of ${widget.title} is now learnt by heart. Keep '
-            'reciting it and it will stay with you.',
+            'Every verse of $what is now learnt by heart. Keep reciting it and it '
+            'will stay with you.',
       );
     } else if (r.sectionCompleted) {
       await _celebrate(
@@ -397,6 +399,7 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
                       key: const ValueKey('memory-done'),
                       item: item,
                       run: widget.run,
+                      recited: _runDone,
                       sessionXp: _sessionXp,
                       sessionCards: _sessionCards,
                       sessionLearnt: _sessionLearnt,
@@ -1029,6 +1032,7 @@ class _DoneView extends StatelessWidget {
     super.key,
     required this.item,
     required this.run,
+    required this.recited,
     required this.sessionXp,
     required this.sessionCards,
     required this.sessionLearnt,
@@ -1039,6 +1043,8 @@ class _DoneView extends StatelessWidget {
 
   final MemoryItem item;
   final bool run;
+  // A run was recited this visit, whether or not its result has come back.
+  final bool recited;
   final int sessionXp;
   final int sessionCards;
   final int sessionLearnt;
@@ -1085,7 +1091,9 @@ class _DoneView extends StatelessWidget {
               empty
                   ? 'No passages yet'
                   : run
-                  ? (sessionCards > 0 ? 'Recited!' : 'Nothing learnt yet')
+                  ? (sessionCards > 0 || recited
+                        ? 'Recited!'
+                        : 'Nothing learnt yet')
                   : shape && !item.canLearnMore
                   ? 'Shape the next section'
                   : 'All caught up',
