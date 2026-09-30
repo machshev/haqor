@@ -64,6 +64,11 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
   List<MemoryLayoutVerse>? _verses;
   // Set when the layout could not be loaded; shown in place of the spinner.
   String? _error;
+  // Edits sent whose reply has not come back. Each edit is built from the
+  // latest state, which the page updates itself (a fast second tap must not
+  // start from the verse as it was before the first), so a reply is applied
+  // only once the last edit's has come.
+  int _pending = 0;
   int _book = 0;
   bool _glosses = true;
 
@@ -73,6 +78,7 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
     _sub = MemoryLayout.rustSignalStream.listen((pack) {
       if (!mounted || pack.message.passageId != widget.passageId) return;
       _timer.stop();
+      if (_pending > 0 && --_pending > 0) return;
       setState(() {
         _book = pack.message.book;
         _verses = pack.message.verses;
@@ -124,6 +130,9 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
       _fail(failure.message);
       return;
     }
+    // The screen has moved on from what was stored; once the last edit is
+    // answered, show what is stored.
+    if (_pending > 0 && --_pending == 0) _load();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Could not save that change: ${failure.message}')),
     );
@@ -137,17 +146,30 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
     bool? sectionStart,
     bool settle = false,
   }) {
-    _request(
-      SetMemoryLayout(
-        passageId: widget.passageId,
-        book: _book,
-        chapter: v.chapter,
-        verse: v.verse,
-        lineStarts: lineStarts ?? v.lineStarts,
-        shaped: v.shaped || settle || lineStarts != null,
-        sectionStart: sectionStart ?? v.sectionStart,
-      ),
+    final edit = SetMemoryLayout(
+      passageId: widget.passageId,
+      book: _book,
+      chapter: v.chapter,
+      verse: v.verse,
+      lineStarts: lineStarts ?? v.lineStarts,
+      shaped: v.shaped || settle || lineStarts != null,
+      sectionStart: sectionStart ?? v.sectionStart,
     );
+    setState(() {
+      _pending++;
+      _verses = [
+        for (final w in _verses!)
+          if (w.chapter == v.chapter && w.verse == v.verse)
+            w.copyWith(
+              lineStarts: edit.lineStarts,
+              shaped: edit.shaped,
+              sectionStart: edit.sectionStart,
+            )
+          else
+            w,
+      ];
+    });
+    _request(edit);
     scheduleProgressSync();
   }
 

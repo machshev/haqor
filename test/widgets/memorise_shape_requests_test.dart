@@ -59,4 +59,59 @@ void main() {
     expect(find.byType(RequestErrorView), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
+
+  MemoryLayoutVerse verse(
+    int n, {
+    List<int> lineStarts = const [],
+    bool sectionStart = false,
+    bool shaped = false,
+    bool ready = false,
+  }) => MemoryLayoutVerse(
+    chapter: 1,
+    verse: n,
+    words: [for (var i = 0; i < 4; i++) 'w$n$i'],
+    glosses: const [],
+    lineStarts: lineStarts,
+    sectionStart: sectionStart,
+    shaped: shaped,
+    ready: ready,
+  );
+
+  void layout(List<MemoryLayoutVerse> verses) =>
+      assignRustSignal['MemoryLayout']!(
+        MemoryLayout(
+          passageId: 'p',
+          book: 1,
+          verses: verses,
+        ).bincodeSerialize(),
+        Uint8List(0),
+      );
+
+  testWidgets('fast taps each build on the edit before them', (tester) async {
+    final sent = await pump(tester);
+    layout([verse(1, sectionStart: true)]);
+    await tester.pump();
+
+    // The first edit's reply has not come back when the second is made.
+    await tester.tap(find.text('w10'));
+    await tester.pump();
+    await tester.tap(find.text('w12'));
+    await tester.pump();
+    final edits = sent.whereType<SetMemoryLayout>().toList();
+    expect(edits, hasLength(2));
+    expect(edits[0].lineStarts, [1]);
+    expect(edits[1].lineStarts, [1, 3]);
+
+    // The first reply is stale by now and must not undo the second edit.
+    layout([
+      verse(1, sectionStart: true, shaped: true, lineStarts: [1]),
+    ]);
+    await tester.pump();
+    await tester.tap(find.text('w11'));
+    await tester.pump();
+    expect(sent.whereType<SetMemoryLayout>().last.lineStarts, [1, 2, 3]);
+    // Let the progress sync each edit schedules run out.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpWidget(const SizedBox());
+  });
 }
