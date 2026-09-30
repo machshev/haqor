@@ -34,26 +34,69 @@ Future<String?> initializeDatabases({bool reinstall = false}) async {
 Future<String> _install(bool reinstall) async {
   final support = await getApplicationSupportDirectory();
   final dbDir = Directory('${support.path}${Platform.pathSeparator}db');
-  final marker = File('${dbDir.path}${Platform.pathSeparator}.version');
+  await installDatabases(
+    dbDir,
+    reinstall: reinstall,
+    bundled: await bundledDbVersion(),
+    loadAsset: (name) async {
+      final data = await rootBundle.load('assets/db/$name');
+      return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    },
+  );
+  return dbDir.path;
+}
 
-  final bundled = await bundledDbVersion();
+/// What `.version` records: the bundled version, then a `name=size` line per
+/// database as written, so a missing or truncated file is noticed without
+/// reading the asset. A marker from before sizes were recorded has only the
+/// version line.
+String _marker(String bundled, Map<String, int> sizes) =>
+    [bundled, for (final e in sizes.entries) '${e.key}=${e.value}'].join('\n');
+
+/// Whether the files in [dbDir] are the ones [marker] describes.
+bool _installedIntact(Directory dbDir, String? marker, String bundled) {
+  if (marker == null) return false;
+  final lines = marker.split('\n');
+  if (lines.first != bundled) return false;
+  final sizes = <String, int?>{
+    for (final line in lines.skip(1))
+      if (line.contains('='))
+        line.split('=').first: int.tryParse(line.split('=').last),
+  };
+  for (final name in _dbFiles) {
+    final file = File('${dbDir.path}${Platform.pathSeparator}$name');
+    if (!file.existsSync()) return false;
+    final length = file.lengthSync();
+    if (length == 0 || (sizes.containsKey(name) && length != sizes[name])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// Install the databases into [dbDir] unless they are already current and
+/// intact.
+Future<void> installDatabases(
+  Directory dbDir, {
+  required bool reinstall,
+  required String bundled,
+  required Future<Uint8List> Function(String name) loadAsset,
+}) async {
+  final marker = File('${dbDir.path}${Platform.pathSeparator}.version');
   final installed = await marker.exists() ? await marker.readAsString() : null;
-  if (reinstall || installed != bundled) {
+  if (reinstall || !_installedIntact(dbDir, installed, bundled)) {
     await dbDir.create(recursive: true);
     if (await marker.exists()) await marker.delete();
+    final sizes = <String, int>{};
     for (final name in _dbFiles) {
-      final data = await rootBundle.load('assets/db/$name');
-      final bytes = data.buffer.asUint8List(
-        data.offsetInBytes,
-        data.lengthInBytes,
-      );
+      final bytes = await loadAsset(name);
       await File(
         '${dbDir.path}${Platform.pathSeparator}$name',
       ).writeAsBytes(bytes, flush: true);
+      sizes[name] = bytes.length;
     }
-    await marker.writeAsString(bundled, flush: true);
+    await marker.writeAsString(_marker(bundled, sizes), flush: true);
   }
-  return dbDir.path;
 }
 
 /// Move an unreadable `progress.db` (and any SQLite sidecar files, which belong
