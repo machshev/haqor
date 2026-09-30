@@ -177,4 +177,29 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 3));
   });
+
+  testWidgets('a double tap on the card sends one recital', (tester) async {
+    final sent = await pump(tester);
+    _deliver(
+      'MemoryItem',
+      const MemoryItem(
+        kind: 'card',
+        card: _card,
+        nextDueEpoch: 0,
+        canLearnMore: true,
+        shapePassageId: '',
+      ).bincodeSerialize(),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    final button = find.text('I have read it aloud');
+    await tester.tap(button);
+    // The card is still on screen, fading out, but no longer takes taps.
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(button, warnIfMissed: false);
+    await tester.pump();
+    expect(sent.whereType<SubmitMemoryRecital>(), hasLength(1));
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 3));
+  });
 }

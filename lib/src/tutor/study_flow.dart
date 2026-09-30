@@ -8,6 +8,7 @@ import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../issue_reporting.dart';
 import '../request_failure.dart';
+import '../widgets/card_switcher.dart';
 import 'alphabet_data.dart';
 import 'concept_reference.dart';
 import 'intro_content.dart';
@@ -304,6 +305,8 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   /// is the multiple-choice outcome (see the `_quiz*` codes). The response is the
   /// next card.
   void _grade(String track, String key, int confidence, int correct) {
+    // One answer per card: a second tap while the card fades out is ignored.
+    if (_waitingForNext) return;
     // A timeout may mean the answer was recorded after all, so asking for
     // the next card is the safe retry there; a reported failure resends it.
     _await(
@@ -318,7 +321,10 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
     scheduleProgressSync();
   }
 
-  void _next() => _await(GetNextStudyItem());
+  void _next() {
+    if (_waitingForNext) return;
+    _await(GetNextStudyItem());
+  }
 
   /// Demote each misread word (an "Again" grade lapses it back into review)
   /// instead of gating the whole verse on one blanket grade — flagging a
@@ -328,6 +334,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   /// The words go in one request answered by one card: a review per word
   /// would bring a card per word, flashing past before the last one settles.
   void _submitMisread(List<String> words) {
+    if (_waitingForNext) return;
     if (words.isEmpty) {
       _next();
       return;
@@ -400,6 +407,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
                 Expanded(
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 150),
+                    transitionBuilder: fadeIgnoringOutgoing,
                     child: _waitingForNext
                         ? const Center(
                             key: ValueKey('next-card-loading'),

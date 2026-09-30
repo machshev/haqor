@@ -6,6 +6,7 @@ import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
 import '../request_failure.dart';
+import '../widgets/card_switcher.dart';
 import '../tutor/progress_sync.dart';
 import 'memorise_page.dart' show memoryUtcOffset;
 import 'memorise_shape.dart';
@@ -231,6 +232,8 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
   }
 
   void _submit(MemoryCard card, int grade, List<(int, int, int)> verses) {
+    // One recital per card: a second tap while the card fades out is ignored.
+    if (_awaitingRecital) return;
     final recital = SubmitMemoryRecital(
       passageId: card.passageId,
       book: card.book,
@@ -369,6 +372,7 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
           Positioned.fill(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 150),
+              transitionBuilder: fadeIgnoringOutgoing,
               child: _error != null
                   ? RequestErrorView(
                       key: const ValueKey('memory-error'),
