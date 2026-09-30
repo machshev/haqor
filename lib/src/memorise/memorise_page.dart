@@ -96,6 +96,10 @@ class _MemorisePageState extends State<MemorisePage> {
         _shapeNext = false;
         final passage = pack.message.passages.where((p) => p.id == saved);
         if (passage.isNotEmpty) _shape(passage.first, exit: ShapeExit.start);
+      } else if (_shapeNext && pack.message.savedNothing) {
+        // Not stuck waiting for a passage that was never added.
+        _shapeNext = false;
+        _say('That range held no verses, so nothing was added.');
       }
       // Any change to the passages moves the counts too.
       _send(GetMemoryStats(utcOffset: memoryUtcOffset()));

@@ -1120,6 +1120,8 @@ pub struct MemoryPassages {
     pub passages: Vec<MemoryPassageEntry>,
     /// The passage a [`SaveMemoryPassage`] just added, else empty.
     pub saved_id: String,
+    /// A [`SaveMemoryPassage`] found no verses in its range, so added nothing.
+    pub saved_nothing: bool,
 }
 
 /// Ask for how a passage is shaped into lines and sections; the reply is

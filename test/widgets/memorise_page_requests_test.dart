@@ -60,7 +60,11 @@ void main() {
   ) async {
     await pump(tester);
     assignRustSignal['MemoryPassages']!(
-      const MemoryPassages(passages: [], savedId: '').bincodeSerialize(),
+      const MemoryPassages(
+        passages: [],
+        savedId: '',
+        savedNothing: false,
+      ).bincodeSerialize(),
       Uint8List(0),
     );
     await tester.pump();
@@ -72,6 +76,33 @@ void main() {
       find.textContaining('Could not update your passages'),
       findsOneWidget,
     );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a range with no verses says so instead of waiting to shape it', (
+    tester,
+  ) async {
+    final sent = <Object>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MemorisePage(addChapter: (1, 1), sendRequest: sent.add),
+      ),
+    );
+    await tester.pump();
+    expect(sent.whereType<SaveMemoryPassage>(), hasLength(1));
+
+    assignRustSignal['MemoryPassages']!(
+      const MemoryPassages(
+        passages: [],
+        savedId: '',
+        savedNothing: true,
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    expect(find.textContaining('held no verses'), findsOneWidget);
+    // Let the progress sync scheduled by adding a chapter run out.
+    await tester.pump(const Duration(seconds: 3));
     await tester.pumpWidget(const SizedBox());
   });
 }

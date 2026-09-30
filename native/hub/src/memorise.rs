@@ -18,7 +18,7 @@ use crate::signals::{
 const HISTORY_DAYS: i64 = 30;
 const FORECAST_DAYS: i64 = 14;
 
-fn send_passages(bible: &Bible, saved_id: String) {
+fn send_passages(bible: &Bible, saved_id: String, saved_nothing: bool) {
     match bible.memory_passages(now_epoch()) {
         Ok(passages) => MemoryPassages {
             passages: passages
@@ -52,6 +52,7 @@ fn send_passages(bible: &Bible, saved_id: String) {
                 })
                 .collect(),
             saved_id,
+            saved_nothing,
         }
         .send_signal_to_dart(),
         Err(e) => send_failure("memory_passages", "", e),
@@ -216,7 +217,7 @@ fn send_stats(bible: &Bible, utc_offset: i64) {
 pub async fn get_memory_passages(bible: SharedBible) {
     let receiver = GetMemoryPassages::get_dart_signal_receiver();
     while receiver.recv().await.is_some() {
-        send_passages(&lock(&bible), String::new());
+        send_passages(&lock(&bible), String::new(), false);
     }
 }
 
@@ -236,7 +237,12 @@ pub async fn save_memory_passage(bible: SharedBible) {
         ) {
             Ok(saved) => {
                 persist_browser_progress(&bible);
-                send_passages(&bible, saved.map(|p| p.id).unwrap_or_default());
+                let saved_nothing = saved.is_none();
+                send_passages(
+                    &bible,
+                    saved.map(|p| p.id).unwrap_or_default(),
+                    saved_nothing,
+                );
             }
             Err(e) => send_failure("memory_passages", "", e),
         }
@@ -250,7 +256,7 @@ pub async fn delete_memory_passage(bible: SharedBible) {
         match bible.delete_memory_passage(&pack.message.id, now_epoch()) {
             Ok(_) => {
                 persist_browser_progress(&bible);
-                send_passages(&bible, String::new());
+                send_passages(&bible, String::new(), false);
             }
             Err(e) => send_failure("memory_passages", "", e),
         }
