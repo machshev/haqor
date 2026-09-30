@@ -77,7 +77,7 @@ bool _installedIntact(Directory dbDir, String? marker, String bundled) {
 Future<File> _rename(File from, String to) => from.rename(to);
 
 /// Install the databases into [dbDir] unless they are already current and
-/// intact.
+/// intact, then remove leftovers of older layouts.
 ///
 /// Each database is written to a temporary file and renamed over the old one,
 /// so a crash never leaves a half-written `haqor.db`, and another running
@@ -120,6 +120,29 @@ Future<void> installDatabases(
     }
     if (replaced) {
       await marker.writeAsString(_marker(bundled, sizes), flush: true);
+    }
+  }
+  await _removeObsolete(dbDir);
+}
+
+/// Delete the files of older layouts (`bible.db`, `sedra.db`, ...) from
+/// [dbDir]. Kept: the current databases and anything SQLite keeps beside them,
+/// the version marker, the learner's `progress.db` with its sidecars and
+/// set-aside backups, and the sync temp files the hub writes. A file that
+/// cannot be deleted is left for the next launch.
+Future<void> _removeObsolete(Directory dbDir) async {
+  bool keep(String name) =>
+      name == '.version' ||
+      name.startsWith('progress.db') ||
+      name.startsWith('.progress-sync-') ||
+      _dbFiles.any(name.startsWith);
+  await for (final entry in dbDir.list(followLinks: false)) {
+    if (entry is! File) continue;
+    if (keep(entry.uri.pathSegments.last)) continue;
+    try {
+      await entry.delete();
+    } on FileSystemException {
+      // In use by another instance; try again next launch.
     }
   }
 }

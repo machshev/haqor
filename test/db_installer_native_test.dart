@@ -75,6 +75,48 @@ void main() {
     expect(at('haqor.db').readAsStringSync(), 'corpus v2');
   });
 
+  test(
+    'obsolete files go; progress, backups and sync temp files stay',
+    () async {
+      for (final name in [
+        'bible.db',
+        'sedra.db',
+        'hebrew.db',
+        'lexicon.db',
+        'stray.txt',
+      ]) {
+        at(name).writeAsStringSync('old');
+      }
+      final kept = [
+        'progress.db',
+        'progress.db-wal',
+        'progress.db-shm',
+        'progress.db-journal',
+        'progress.db.unreadable-20260930T080500000Z',
+        'progress.db.unreadable-20260930T080500000Z-wal',
+        '.progress-sync-upload.db',
+        '.progress-sync-download.db',
+      ];
+      for (final name in kept) {
+        at(name).writeAsStringSync('keep');
+      }
+      await install();
+
+      for (final name in [
+        'bible.db',
+        'sedra.db',
+        'hebrew.db',
+        'lexicon.db',
+        'stray.txt',
+      ]) {
+        expect(at(name).existsSync(), isFalse, reason: name);
+      }
+      for (final name in [...kept, 'haqor.db', '.version']) {
+        expect(at(name).existsSync(), isTrue, reason: name);
+      }
+    },
+  );
+
   Future<File> blocked(File from, String to) =>
       throw const FileSystemException('in use');
 
