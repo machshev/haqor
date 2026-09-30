@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
+import '../request_failure.dart';
 import '../tutor/progress_sync.dart';
 import '../widgets/book_selector.dart';
 import '../widgets/chapter_selector.dart';
@@ -52,10 +53,14 @@ Future<void> memoriseChapter(
 /// being learnt with a heatmap of every verse; activity graphs; and
 /// achievements.
 class MemorisePage extends StatefulWidget {
-  const MemorisePage({super.key, this.addChapter});
+  const MemorisePage({super.key, this.addChapter, this.sendRequest});
 
   /// A (book, chapter) to add as a passage on opening, then shape.
   final (int, int)? addChapter;
+
+  /// Stands in for the signal to Rust so a test can capture the page's
+  /// requests (`sendSignalToRust` needs the native library).
+  final void Function(Object request)? sendRequest;
 
   @override
   State<MemorisePage> createState() => _MemorisePageState();
@@ -65,8 +70,12 @@ class _MemorisePageState extends State<MemorisePage> {
   StreamSubscription<RustSignalPack<MemoryPassages>>? _passagesSub;
   StreamSubscription<RustSignalPack<MemoryStats>>? _statsSub;
   StreamSubscription<RustSignalPack<ProgressSyncStatus>>? _syncSub;
+  final List<StreamSubscription<RequestFailed>> _failureSubs = [];
+  final RequestTimer _timer = RequestTimer();
   List<MemoryPassageEntry>? _passages;
   MemoryStats? _stats;
+  // Set when the passages could not be loaded; shown in place of the spinner.
+  String? _error;
   bool _english = false;
 
   /// A passage is being added: open its shaping page when it arrives.
@@ -77,7 +86,11 @@ class _MemorisePageState extends State<MemorisePage> {
     super.initState();
     _passagesSub = MemoryPassages.rustSignalStream.listen((pack) {
       if (!mounted) return;
-      setState(() => _passages = pack.message.passages);
+      _timer.stop();
+      setState(() {
+        _passages = pack.message.passages;
+        _error = null;
+      });
       final saved = pack.message.savedId;
       if (_shapeNext && saved.isNotEmpty) {
         _shapeNext = false;
@@ -85,11 +98,21 @@ class _MemorisePageState extends State<MemorisePage> {
         if (passage.isNotEmpty) _shape(passage.first, exit: ShapeExit.start);
       }
       // Any change to the passages moves the counts too.
-      GetMemoryStats(utcOffset: memoryUtcOffset()).sendSignalToRust();
+      _send(GetMemoryStats(utcOffset: memoryUtcOffset()));
     });
     _statsSub = MemoryStats.rustSignalStream.listen((pack) {
       if (mounted) setState(() => _stats = pack.message);
     });
+    _failureSubs
+      ..add(listenForFailure(requestMemoryPassages, _onPassagesFailed))
+      ..add(
+        listenForFailure(requestMemoryStats, (failure) {
+          if (!mounted) return;
+          _say(
+            'Your progress figures could not be updated: ${failure.message}',
+          );
+        }),
+      );
     // Another device's progress may have just arrived.
     _syncSub = ProgressSyncStatus.rustSignalStream.listen((pack) {
       if (pack.message.success) _refresh();
@@ -101,21 +124,68 @@ class _MemorisePageState extends State<MemorisePage> {
     final add = widget.addChapter;
     if (add != null) {
       _shapeNext = true;
-      SaveMemoryPassage(
-        book: add.$1,
-        startChapter: add.$2,
-        startVerse: 1,
-        endChapter: add.$2,
-        endVerse: 255,
-        title: '',
-      ).sendSignalToRust();
+      _send(
+        SaveMemoryPassage(
+          book: add.$1,
+          startChapter: add.$2,
+          startVerse: 1,
+          endChapter: add.$2,
+          endVerse: 255,
+          title: '',
+        ),
+      );
       scheduleProgressSync();
     }
   }
 
+  void _send(Object request) {
+    final hook = widget.sendRequest;
+    if (hook != null) return hook(request);
+    switch (request) {
+      case GetMemoryPassages():
+        request.sendSignalToRust();
+      case GetMemoryStats():
+        request.sendSignalToRust();
+      case SaveMemoryPassage():
+        request.sendSignalToRust();
+      case DeleteMemoryPassage():
+        request.sendSignalToRust();
+    }
+  }
+
   void _refresh() {
-    GetMemoryPassages().sendSignalToRust();
-    GetMemoryStats(utcOffset: memoryUtcOffset()).sendSignalToRust();
+    if (_passages == null) {
+      _timer.start(() {
+        if (mounted && _passages == null) {
+          setState(() => _error = 'Haqor did not answer.');
+        }
+      });
+    }
+    _send(GetMemoryPassages());
+    _send(GetMemoryStats(utcOffset: memoryUtcOffset()));
+  }
+
+  void _retryLoad() {
+    setState(() => _error = null);
+    _refresh();
+  }
+
+  void _say(String message) => ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text(message)));
+
+  /// Rust could not list the passages (shown in place of the spinner) or could
+  /// not add, rename or remove one (the list on screen is then unchanged, so
+  /// say so, and stop waiting to shape a passage that was never added).
+  void _onPassagesFailed(RequestFailed failure) {
+    if (!mounted) return;
+    if (_passages == null) {
+      _timer.stop();
+      setState(() => _error = failure.message);
+      return;
+    }
+    _shapeNext = false;
+    _say('Could not update your passages: ${failure.message}');
   }
 
   @override
@@ -123,6 +193,10 @@ class _MemorisePageState extends State<MemorisePage> {
     _passagesSub?.cancel();
     _statsSub?.cancel();
     _syncSub?.cancel();
+    for (final sub in _failureSubs) {
+      sub.cancel();
+    }
+    _timer.stop();
     super.dispose();
   }
 
@@ -215,14 +289,16 @@ class _MemorisePageState extends State<MemorisePage> {
     );
     controller.dispose();
     if (title == null || title.trim().isEmpty) return;
-    SaveMemoryPassage(
-      book: passage.book,
-      startChapter: passage.startChapter,
-      startVerse: passage.startVerse,
-      endChapter: passage.endChapter,
-      endVerse: passage.endVerse,
-      title: title.trim(),
-    ).sendSignalToRust();
+    _send(
+      SaveMemoryPassage(
+        book: passage.book,
+        startChapter: passage.startChapter,
+        startVerse: passage.startVerse,
+        endChapter: passage.endChapter,
+        endVerse: passage.endVerse,
+        title: title.trim(),
+      ),
+    );
     scheduleProgressSync();
   }
 
@@ -248,7 +324,7 @@ class _MemorisePageState extends State<MemorisePage> {
       ),
     );
     if (confirmed != true) return;
-    DeleteMemoryPassage(id: passage.id).sendSignalToRust();
+    _send(DeleteMemoryPassage(id: passage.id));
     scheduleProgressSync();
   }
 
@@ -296,7 +372,12 @@ class _MemorisePageState extends State<MemorisePage> {
         icon: const Icon(Icons.add),
         label: const Text('Add passage'),
       ),
-      body: passages == null
+      body: _error != null
+          ? RequestErrorView(
+              message: 'Could not load your passages: $_error',
+              onRetry: _retryLoad,
+            )
+          : passages == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
