@@ -28,7 +28,12 @@ class StudyPassage {
     this.highlightEnabled = true,
     this.colorValue = defaultStudyPassageColorValue,
     this.order = 0,
+    this.extra = const {},
   });
+
+  /// Keys this version does not know, kept so that saving does not erase
+  /// fields a newer version wrote.
+  final Map<String, Object?> extra;
 
   final int bookIndex;
   final int chapter;
@@ -95,6 +100,7 @@ class StudyPassage {
 
   /// Change only the reference; retain the outline item and its annotations.
   StudyPassage withReference(StudyPassage ref) => StudyPassage(
+    extra: extra,
     bookIndex: ref.bookIndex,
     chapter: ref.chapter,
     verse: ref.verse,
@@ -131,6 +137,7 @@ class StudyPassage {
     int? colorValue,
     int? order,
   }) => StudyPassage(
+    extra: extra,
     bookIndex: bookIndex,
     chapter: chapter,
     verse: verse,
@@ -147,6 +154,7 @@ class StudyPassage {
   );
 
   Map<String, Object?> toJson() => {
+    ...extra,
     'book': bookIndex,
     'chapter': chapter,
     'verse': verse,
@@ -181,6 +189,21 @@ class StudyPassage {
       return null;
     }
     final passage = StudyPassage(
+      extra: _extraKeys(value, const {
+        'book',
+        'chapter',
+        'verse',
+        'wholeChapter',
+        'endChapter',
+        'endVerse',
+        'startWord',
+        'endWord',
+        'group',
+        'note',
+        'highlight',
+        'color',
+        'order',
+      }),
       wholeChapter: value['wholeChapter'] == true,
       endChapter: value['endChapter'] as int?,
       endVerse: value['endVerse'] as int?,
@@ -223,7 +246,12 @@ class StudyWord {
     this.highlightEnabled = true,
     this.colorValue = defaultStudyWordColorValue,
     this.order = 0,
+    this.extra = const {},
   });
+
+  /// Keys this version does not know, kept so that saving does not erase
+  /// fields a newer version wrote.
+  final Map<String, Object?> extra;
 
   /// The resolved consonantal root, or empty for an unresolved legacy word or
   /// a form saved without lexicon data.
@@ -257,6 +285,7 @@ class StudyWord {
     int? colorValue,
     int? order,
   }) => StudyWord(
+    extra: extra,
     root: root,
     surface: surface ?? this.surface,
     kind: kind ?? this.kind,
@@ -268,6 +297,7 @@ class StudyWord {
   );
 
   Map<String, Object?> toJson() => {
+    ...extra,
     'root': root,
     'surface': surface,
     if (kind != StudyWordKind.root) 'kind': kind.name,
@@ -290,6 +320,16 @@ class StudyWord {
     // The oldest shape stored one verse occurrence instead of a root. Preserve
     // it as a visible bookmark, but do not falsely highlight homographs.
     return StudyWord(
+      extra: _extraKeys(value, const {
+        'root',
+        'surface',
+        'kind',
+        'group',
+        'note',
+        'highlight',
+        'color',
+        'order',
+      }),
       root: root is String ? root : '',
       surface: surface,
       kind: value['kind'] == 'form' ? StudyWordKind.form : StudyWordKind.root,
@@ -311,7 +351,12 @@ class StudyNote {
     required this.text,
     this.groupId,
     this.order = 0,
+    this.extra = const {},
   });
+
+  /// Keys this version does not know, kept so that saving does not erase
+  /// fields a newer version wrote.
+  final Map<String, Object?> extra;
 
   final String id;
   final String text;
@@ -320,6 +365,7 @@ class StudyNote {
 
   StudyNote copyWith({String? text, String? Function()? groupId, int? order}) =>
       StudyNote(
+        extra: extra,
         id: id,
         text: text ?? this.text,
         groupId: groupId == null ? this.groupId : groupId(),
@@ -327,6 +373,7 @@ class StudyNote {
       );
 
   Map<String, Object?> toJson() => {
+    ...extra,
     'id': id,
     'text': text,
     if (groupId != null) 'group': groupId,
@@ -341,6 +388,7 @@ class StudyNote {
       return null;
     }
     return StudyNote(
+      extra: _extraKeys(value, const {'id', 'text', 'group', 'order'}),
       id: id,
       text: text,
       groupId: value['group'] is String ? value['group'] as String : null,
@@ -374,7 +422,12 @@ class StudyLink {
     this.groupId,
     this.note = '',
     this.order = 0,
+    this.extra = const {},
   });
+
+  /// Keys this version does not know, kept so that saving does not erase
+  /// fields a newer version wrote.
+  final Map<String, Object?> extra;
 
   final StudyLinkVerse earlier;
   final StudyLinkVerse later;
@@ -392,6 +445,7 @@ class StudyLink {
 
   StudyLink copyWith({String? Function()? groupId, String? note, int? order}) =>
       StudyLink(
+        extra: extra,
         earlier: earlier,
         later: later,
         earlierPositions: earlierPositions,
@@ -403,6 +457,7 @@ class StudyLink {
       );
 
   Map<String, Object?> toJson() => {
+    ...extra,
     'ot': [earlier.bookIndex, earlier.chapter, earlier.verse],
     'nt': [later.bookIndex, later.chapter, later.verse],
     if (earlierPositions.isNotEmpty) 'otWords': earlierPositions,
@@ -431,6 +486,16 @@ class StudyLink {
     final later = _verse(value['nt']);
     if (earlier == null || later == null) return null;
     return StudyLink(
+      extra: _extraKeys(value, const {
+        'ot',
+        'nt',
+        'otWords',
+        'ntWords',
+        'score',
+        'group',
+        'note',
+        'order',
+      }),
       earlier: earlier,
       later: later,
       earlierPositions: _positions(value['otWords']),
@@ -474,7 +539,12 @@ class StudySection {
     this.parentId,
     this.showInReader = true,
     this.order = 0,
+    this.extra = const {},
   });
+
+  /// Keys this version does not know, kept so that saving does not erase
+  /// fields a newer version wrote.
+  final Map<String, Object?> extra;
 
   final String id;
   final String title;
@@ -521,6 +591,7 @@ class StudySection {
 
   /// Change only the anchor or range; retain the outline place and notes.
   StudySection withAnchor(StudySection anchor) => StudySection(
+    extra: extra,
     id: id,
     title: title,
     chapter: anchor.chapter,
@@ -542,6 +613,7 @@ class StudySection {
     bool? showInReader,
     int? order,
   }) => StudySection(
+    extra: extra,
     id: id,
     title: title ?? this.title,
     chapter: chapter,
@@ -557,6 +629,7 @@ class StudySection {
   );
 
   Map<String, Object?> toJson() => {
+    ...extra,
     'id': id,
     'title': title,
     'chapter': chapter,
@@ -584,6 +657,20 @@ class StudySection {
       if (value[key] != null && value[key] is! int) return null;
     }
     final section = StudySection(
+      extra: _extraKeys(value, const {
+        'id',
+        'title',
+        'chapter',
+        'verse',
+        'book',
+        'wholeChapter',
+        'endChapter',
+        'endVerse',
+        'note',
+        'parent',
+        'inReader',
+        'order',
+      }),
       id: id,
       title: title,
       chapter: chapter,
@@ -649,7 +736,12 @@ class StudyGroup {
     required this.name,
     this.parentId,
     this.order = 0,
+    this.extra = const {},
   });
+
+  /// Keys this version does not know, kept so that saving does not erase
+  /// fields a newer version wrote.
+  final Map<String, Object?> extra;
 
   final String id;
   final String name;
@@ -661,6 +753,7 @@ class StudyGroup {
     String? Function()? parentId,
     int? order,
   }) => StudyGroup(
+    extra: extra,
     id: id,
     name: name ?? this.name,
     parentId: parentId == null ? this.parentId : parentId(),
@@ -668,6 +761,7 @@ class StudyGroup {
   );
 
   Map<String, Object?> toJson() => {
+    ...extra,
     'id': id,
     'name': name,
     if (parentId != null) 'parent': parentId,
@@ -682,6 +776,7 @@ class StudyGroup {
       return null;
     }
     return StudyGroup(
+      extra: _extraKeys(value, const {'id', 'name', 'parent', 'order', 'note'}),
       id: id,
       name: name,
       parentId: value['parent'] is String ? value['parent'] as String : null,
@@ -703,6 +798,7 @@ class StudyWorkspace {
     this.notes = const [],
     this.links = const [],
     this.sections = const [],
+    this.extra = const {},
   });
 
   final String id;
@@ -717,6 +813,10 @@ class StudyWorkspace {
   final List<StudyNote> notes;
   final List<StudyLink> links;
   final List<StudySection> sections;
+
+  /// Keys this version does not know, kept so that saving does not erase
+  /// fields a newer version wrote.
+  final Map<String, Object?> extra;
 
   StudyWorkspace copyWith({
     String? name,
@@ -739,6 +839,7 @@ class StudyWorkspace {
     notes: notes ?? this.notes,
     links: links ?? this.links,
     sections: sections ?? this.sections,
+    extra: extra,
   );
 
   /// The bookmarked link between an OT and an NT verse, if there is one.
@@ -1418,6 +1519,7 @@ class StudyWorkspace {
   }
 
   Map<String, Object?> toJson() => {
+    ...extra,
     'id': id,
     'name': name,
     if (!highlightsEnabled) 'highlights': false,
@@ -1744,9 +1846,34 @@ class StudyWorkspace {
       notes: notes,
       links: links,
       sections: sections,
+      extra: _extraKeys(value, const {
+        'id',
+        'name',
+        'highlights',
+        'headings',
+        'ordered',
+        'groups',
+        'passages',
+        'words',
+        'notes',
+        'links',
+        'sections',
+        // Older shapes, migrated on load.
+        'themes',
+        'central',
+        'wordColor',
+        'passageColor',
+      }),
     );
   }
 }
+
+/// The entries of [value] whose keys are not among [known].
+Map<String, Object?> _extraKeys(Map value, Set<String> known) => {
+  for (final entry in value.entries)
+    if (entry.key is String && !known.contains(entry.key))
+      entry.key as String: entry.value,
+};
 
 int _storedColor(Object? raw, int fallback) =>
     raw is int && raw >= 0 && raw <= 0xffffffff ? raw : fallback;

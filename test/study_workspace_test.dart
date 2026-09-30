@@ -756,6 +756,41 @@ void sectionTests() {
     expect(workspace.notes.single.groupId, isNull);
   });
 
+  test('keys this version does not know survive a round trip', () {
+    final decoded = decodeStudyWorkspaces('''[{
+      "id": "s", "name": "Study", "ordered": true, "future": {"a": [1, 2]},
+      "groups": [{"id": "g", "name": "Group", "order": 0, "icon": "star"}],
+      "passages": [{"book": 0, "chapter": 1, "verse": 1, "order": 0,
+        "tags": ["x"]}],
+      "words": [{"root": "ברא", "surface": "בָּרָא", "order": 1, "rank": 3}],
+      "notes": [{"id": "n", "text": "Note", "order": 2, "pinned": true}],
+      "links": [{"ot": [0, 1, 1], "nt": [39, 1, 1], "order": 3, "why": "q"}],
+      "sections": [{"id": "sum", "title": "Sum", "book": 0, "chapter": 1,
+        "verse": 1, "wholeChapter": true, "order": 4, "color": "red"}]
+    }]''');
+    // An edit made in this version keeps them too.
+    final edited = decoded.single.copyWith(name: 'Renamed');
+    final json = decodeStudyWorkspaces(
+      encodeStudyWorkspaces([edited]),
+    ).single.toJson();
+    expect(json['name'], 'Renamed');
+    expect(json['future'], {
+      'a': [1, 2],
+    });
+    Map<String, Object?> first(String key) =>
+        (json[key] as List).first as Map<String, Object?>;
+    expect(first('groups')['icon'], 'star');
+    expect(first('passages')['tags'], ['x']);
+    expect(first('words')['rank'], 3);
+    expect(first('notes')['pinned'], true);
+    expect(first('links')['why'], 'q');
+    expect(first('sections')['color'], 'red');
+    // A copy made by moving or editing an item keeps them as well.
+    final moved = edited.moveItem(edited.itemsIn(null).first, null);
+    expect(moved.toJson()['future'], isNotNull);
+    expect(decoded.single.words.single.copyWith(note: 'n').toJson()['rank'], 3);
+  });
+
   test('two-group and longer parent cycles are broken on load', () {
     final workspace = decodeStudyWorkspaces('''[{
       "id": "s", "name": "Study", "ordered": true,
@@ -803,4 +838,5 @@ void sectionTests() {
     );
     expect(shaped!.single.id, 's');
     expect(decodeStudyWorkspaces('{not json'), isEmpty);
-  });}
+  });
+}
