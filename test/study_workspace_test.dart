@@ -755,4 +755,38 @@ void sectionTests() {
     expect(workspace.sectionById('sum')!.parentId, 'g');
     expect(workspace.notes.single.groupId, isNull);
   });
+
+  test('two-group and longer parent cycles are broken on load', () {
+    final workspace = decodeStudyWorkspaces('''[{
+      "id": "s", "name": "Study", "ordered": true,
+      "groups": [
+        {"id": "a", "name": "A", "parent": "b", "order": 0},
+        {"id": "b", "name": "B", "parent": "a", "order": 0},
+        {"id": "x", "name": "X", "parent": "z", "order": 1},
+        {"id": "y", "name": "Y", "parent": "x", "order": 0},
+        {"id": "z", "name": "Z", "parent": "y", "order": 0},
+        {"id": "ok", "name": "Fine", "parent": "a", "order": 0}
+      ],
+      "notes": [{"id": "n", "text": "In a cycle", "group": "a", "order": 0}]
+    }]''').single;
+    for (final group in workspace.groups) {
+      final seen = <String>{};
+      String? id = group.id;
+      while (id != null) {
+        expect(seen.add(id), isTrue, reason: 'cycle through ${group.id}');
+        id = workspace.containerParent(id);
+      }
+    }
+    // Every group can be reached by walking down from the top level.
+    final reached = <String>{};
+    void walk(String? parent) {
+      for (final group in workspace.groups.where((g) => g.parentId == parent)) {
+        reached.add(group.id);
+        walk(group.id);
+      }
+    }
+
+    walk(null);
+    expect(reached, {'a', 'b', 'x', 'y', 'z', 'ok'});
+  });
 }

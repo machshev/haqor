@@ -1588,6 +1588,35 @@ class StudyWorkspace {
             ? section
             : section.copyWith(parentId: () => null),
     ];
+    // A cycle among the containers would hang them from nothing, out of reach
+    // of the top level. Cut each where a walk up from it first re-enters it.
+    final parentOf = <String, String?>{
+      for (final group in groups) group.id: group.parentId,
+      for (final section in sections) section.id: section.parentId,
+    };
+    for (final start in parentOf.keys.toList()) {
+      final seen = <String>{};
+      String? id = start;
+      while (id != null && parentOf.containsKey(id)) {
+        if (!seen.add(id)) {
+          parentOf[id] = null;
+          break;
+        }
+        id = parentOf[id];
+      }
+    }
+    groups = [
+      for (final group in groups)
+        group.parentId == parentOf[group.id]
+            ? group
+            : group.copyWith(parentId: () => parentOf[group.id]),
+    ];
+    sections = [
+      for (final section in sections)
+        section.parentId == parentOf[section.id]
+            ? section
+            : section.copyWith(parentId: () => parentOf[section.id]),
+    ];
     passages = [
       for (final passage in passages)
         passage.groupId == null || groupIds.contains(passage.groupId)
