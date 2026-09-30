@@ -45,8 +45,6 @@ class _FakeRust {
         number: null,
         prefix: null,
         suffix: null,
-        prepositions: null,
-        article: false,
         vavCon: false,
         lexemes: const [],
         person: null,

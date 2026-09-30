@@ -801,7 +801,6 @@ void main() {
       word: current().word,
       root: '',
       gloss: 'appoint',
-      article: false,
       vavCon: false,
       lexemes: const [],
       roots: const [],

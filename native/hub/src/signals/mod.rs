@@ -646,8 +646,6 @@ pub struct WordInfo {
     pub number: Option<String>,
     pub prefix: Option<String>,
     pub suffix: Option<String>,
-    pub prepositions: Option<String>,
-    pub article: bool,
     pub vav_con: bool,
     /// The root family by lexeme, each gathering every lexicon's entries.
     pub lexemes: Vec<LexemeSummary>,

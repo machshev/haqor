@@ -98,8 +98,6 @@ Future<void> _pumpSheet(
       number: null,
       prefix: null,
       suffix: null,
-      prepositions: null,
-      article: false,
       vavCon: false,
       lexemes:
           lexemes ??

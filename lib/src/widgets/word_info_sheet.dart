@@ -618,8 +618,6 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         if (info.form != null) 'form': info.form,
         if (info.prefix != null) 'prefix': info.prefix,
         if (info.suffix != null) 'suffix': info.suffix,
-        if (info.prepositions != null) 'prepositions': info.prepositions,
-        'article': info.article,
         'vavCon': info.vavCon,
       },
       'lexemes': [
@@ -1033,9 +1031,6 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                     _chip(context, 'Prefix', info.prefix!),
                   if (info.suffix != null)
                     _chip(context, 'Suffix', info.suffix!),
-                  if (info.prepositions != null)
-                    _chip(context, 'Prep', info.prepositions!),
-                  if (info.article) _chip(context, 'Article', 'ה'),
                   if (info.vavCon) _chip(context, 'Vav', 'consecutive'),
                 ],
               ),
