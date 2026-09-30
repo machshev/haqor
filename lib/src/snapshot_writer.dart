@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-/// Saves the newest of the progress snapshots Rust sends after every write.
+/// Saves the newest of the progress snapshots Rust sends.
 ///
 /// A snapshot is the whole progress database, so writing each one would
 /// serialise it again after every card. Snapshots are instead held, newest

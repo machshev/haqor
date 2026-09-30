@@ -62,8 +62,7 @@ const _snapshotRequestInterval = Duration(seconds: 2);
 
 /// Write the pending snapshot now. The tab can go at any moment after it is
 /// hidden, and on a phone that is the last chance there is. Rust is asked for
-/// anything it has not sent yet first; what it sends back is written at once
-/// while the page is hidden, and with the usual delay otherwise.
+/// anything it has not sent yet first.
 void _flushOnLeaving() {
   void flush(web.Event _) {
     FlushProgress().sendSignalToRust();
@@ -122,11 +121,12 @@ Future<String?> initializeDatabases({bool reinstall = false}) async {
     final writer = _writer = SnapshotWriter(
       write: (snapshot) => store.write(_progressKey, snapshot),
       onFailure: _saveFailed,
+      // Rust already sends at most one snapshot every two seconds.
+      delay: Duration.zero,
     );
-    _persistence = ProgressSnapshot.rustSignalStream.listen((pack) {
-      writer.schedule(pack.binary);
-      if (web.document.visibilityState == 'hidden') unawaited(writer.flush());
-    });
+    _persistence = ProgressSnapshot.rustSignalStream.listen(
+      (pack) => writer.schedule(pack.binary),
+    );
     Timer.periodic(
       _snapshotRequestInterval,
       (_) => FlushProgress().sendSignalToRust(),

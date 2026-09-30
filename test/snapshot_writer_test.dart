@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -25,6 +26,32 @@ void main() {
     await tester.pump(const Duration(seconds: 10));
     expect(written, [5], reason: 'nothing more to write');
   });
+
+  testWidgets(
+    'a snapshot arriving mid-write is written after it, newest only',
+    (tester) async {
+      final written = <int>[];
+      final gate = Completer<void>();
+      final writer = SnapshotWriter(
+        write: (b) async {
+          if (written.isEmpty) await gate.future;
+          written.add(b.single);
+        },
+        onFailure: (_) {},
+        delay: Duration.zero,
+      );
+      writer.schedule(_bytes(1));
+      await tester.pump(const Duration(milliseconds: 1));
+      writer.schedule(_bytes(2));
+      writer.schedule(_bytes(3));
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(written, isEmpty, reason: 'one write at a time');
+      gate.complete();
+      await tester.pump(const Duration(milliseconds: 1));
+      await writer.flush();
+      expect(written, [1, 3]);
+    },
+  );
 
   testWidgets('flush writes at once and leaves no timer behind', (
     tester,
