@@ -10,6 +10,18 @@ pub struct SetDataDir {
     pub path: String,
 }
 
+/// How opening the databases went, sent once per attempt after [`SetDataDir`].
+/// A failed attempt leaves Rust waiting for another `SetDataDir`, so Dart
+/// retries by sending it again. `progress_reset` is set on the web when the
+/// saved progress could not be restored and the app opened with fresh progress;
+/// `message` is then the reason, and otherwise the reason for a failure.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct BootStatus {
+    pub failed: bool,
+    pub progress_reset: bool,
+    pub message: String,
+}
+
 /// A fresh SQLite progress snapshot for browser persistence.  On native
 /// platforms progress remains in its app-support directory; the web host
 /// stores this binary in its platform preferences after each learner change.

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:rinf/rinf.dart';
 
 import 'bindings/bindings.dart';
+import 'boot_failure.dart';
 import 'db_installer_native.dart';
 import 'issue_reporting.dart';
 import 'reader_page.dart';
@@ -11,8 +12,24 @@ import 'tutor/progress_sync.dart';
 
 Future<Widget> initializeAppRuntime() async {
   await initializeRust(assignRustSignal);
-  await initializeDatabases();
-  unawaited(migrateLegacyFlaggedWords());
-  unawaited(syncProgressNow());
-  return const BibleReaderPage();
+  String? notice;
+  String? failure;
+  try {
+    notice = await initializeDatabases();
+  } on BootFailure catch (error) {
+    failure = error.message;
+  }
+  return BootGate(
+    start: initializeDatabases,
+    reinstall: canReinstallDatabases
+        ? () => initializeDatabases(reinstall: true)
+        : null,
+    onReady: () {
+      unawaited(migrateLegacyFlaggedWords());
+      unawaited(syncProgressNow());
+    },
+    initialFailure: failure,
+    initialNotice: notice,
+    child: const BibleReaderPage(),
+  );
 }
