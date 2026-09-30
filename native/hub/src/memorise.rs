@@ -31,7 +31,6 @@ fn send_passages(bible: &Bible, saved_id: String, saved_nothing: bool) {
                     end_chapter: s.passage.end_chapter,
                     end_verse: s.passage.end_verse,
                     title: s.passage.title,
-                    created_epoch: s.passage.created_epoch,
                     verses: s
                         .verses
                         .into_iter()
@@ -44,10 +43,8 @@ fn send_passages(bible: &Bible, saved_id: String, saved_nothing: bool) {
                         })
                         .collect(),
                     learnt: s.learnt,
-                    mature: s.mature,
                     due: s.due,
                     mastery_pct: s.mastery_pct,
-                    last_studied_epoch: s.last_studied_epoch,
                     needs_shaping: s.needs_shaping,
                 })
                 .collect(),
@@ -109,7 +106,6 @@ fn to_signal_card(card: core::MemoryCard) -> MemoryCard {
                 chapter: s.chapter,
                 verse: s.verse,
                 line: s.line.min(255) as u8,
-                line_count: s.line_count.min(255) as u8,
                 words: s
                     .words
                     .into_iter()
@@ -176,11 +172,9 @@ fn send_stats(bible: &Bible, utc_offset: i64) {
             new_per_day: s.new_per_day,
             streak_days: s.streak_days,
             best_streak_days: s.best_streak_days,
-            goal_days: s.goal_days,
             verses_learnt: s.verses_learnt,
             verses_mature: s.verses_mature,
             verses_learning: s.verses_learning,
-            verses_total: s.verses_total,
             due_now: s.due_now,
             passages_completed: s.passages_completed,
             passages_total: s.passages_total,

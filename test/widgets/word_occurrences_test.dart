@@ -131,7 +131,6 @@ Occurrence _occurrence({
     number: number,
     state: state,
   ),
-  parseLabel: '$stem ${tense.toLowerCase()}',
 );
 
 /// Pump the sheet's Occurrences tab with [occurrences], opened from [at].

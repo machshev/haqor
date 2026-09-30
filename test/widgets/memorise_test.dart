@@ -11,7 +11,6 @@ MemorySegment _segment(int verse, List<String> words, {int line = 0}) =>
       chapter: 23,
       verse: verse,
       line: line,
-      lineCount: 1,
       words: [
         for (var i = 0; i < words.length; i++)
           MemoryWord(
@@ -109,13 +108,10 @@ void main() {
             endChapter: ec,
             endVerse: ev,
             title: '',
-            createdEpoch: 0,
             verses: const [],
             learnt: 0,
-            mature: 0,
             due: 0,
             masteryPct: 0,
-            lastStudiedEpoch: 0,
             needsShaping: false,
           );
       expect(

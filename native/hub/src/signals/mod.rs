@@ -295,8 +295,6 @@ pub struct GetCrossReferences {
 /// One linked verse of a [`CrossReferences`] reply.
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct CrossReferenceEntry {
-    /// Position in the global quotation ranking, 1 being the strongest.
-    pub rank: u32,
     pub score: f32,
     /// The linked verse, in either testament.
     pub book: u8,
@@ -345,7 +343,6 @@ pub struct GetQuotations {
 /// between two verses of the book is listed from both).
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct QuotationEntry {
-    pub rank: u32,
     pub score: f32,
     pub chapter: u8,
     pub verse: u8,
@@ -479,32 +476,6 @@ pub struct GetWordOccurrences {
     pub root: Option<String>,
 }
 
-/// Request a page of the frequency-ordered learner vocabulary (tutor mode):
-/// distinct OT surface forms in descending occurrence order.
-#[derive(Debug, Deserialize, DartSignal)]
-pub struct GetVocab {
-    pub limit: u32,
-    pub offset: u32,
-}
-
-#[derive(Debug, Serialize, SignalPiece)]
-pub struct VocabEntry {
-    pub surface: String,
-    pub occurrences: u32,
-    /// Pre-filter class ("function" or "proper") for surfaces that never
-    /// reached the parse engine; `None` for ordinary content words.
-    pub lexical_class: Option<String>,
-    pub root: String,
-    pub gloss: String,
-    pub morph: String,
-}
-
-#[derive(Debug, Serialize, RustSignal)]
-pub struct VocabList {
-    pub offset: u32,
-    pub entries: Vec<VocabEntry>,
-}
-
 /// One lexicon entry of the word's root family. Despite the name — kept so the
 /// signal stays stable — it may come from any lexicon; see [`Self::source`].
 #[derive(Debug, Serialize, SignalPiece)]
@@ -595,9 +566,6 @@ pub struct Occurrence {
     /// The parse component by component, so the tab can filter one dimension at
     /// a time instead of on the cross-product of whole labels.
     pub parse: OccurrenceParse,
-    /// The whole parse as one label, as the reader shows it inline ("Qal perfect
-    /// 3ms"). For display; the filter cuts on `parse`.
-    pub parse_label: String,
 }
 
 /// One token's parse, split into the dimensions the filter groups by, in the one
@@ -1102,13 +1070,10 @@ pub struct MemoryPassageEntry {
     pub end_verse: u8,
     /// Empty when the learner gave no name; the app shows the reference.
     pub title: String,
-    pub created_epoch: i64,
     pub verses: Vec<MemoryVerseState>,
     pub learnt: i64,
-    pub mature: i64,
     pub due: i64,
     pub mastery_pct: i64,
-    pub last_studied_epoch: i64,
     /// The next verse to start waits for its section to be shaped.
     pub needs_shaping: bool,
 }
@@ -1199,7 +1164,6 @@ pub struct MemorySegment {
     pub chapter: u8,
     pub verse: u8,
     pub line: u8,
-    pub line_count: u8,
     pub words: Vec<MemoryWord>,
 }
 
@@ -1326,11 +1290,9 @@ pub struct MemoryStats {
     pub new_per_day: i64,
     pub streak_days: i64,
     pub best_streak_days: i64,
-    pub goal_days: i64,
     pub verses_learnt: i64,
     pub verses_mature: i64,
     pub verses_learning: i64,
-    pub verses_total: i64,
     pub due_now: i64,
     pub passages_completed: i64,
     pub passages_total: i64,

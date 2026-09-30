@@ -136,7 +136,6 @@ Occurrence _occurrence({
     number: 'Singular',
     state: state,
   ),
-  parseLabel: 'noun $state',
 );
 
 Future<_FakeRust> _pumpSheet(

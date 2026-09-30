@@ -105,7 +105,6 @@ CrossReferenceEntry _entry({
   List<int> positions = const [0, 2],
   List<int> sourcePositions = const [1, 3],
 }) => CrossReferenceEntry(
-  rank: 1,
   score: score,
   book: book,
   chapter: chapter,
@@ -350,7 +349,6 @@ QuotationEntry _quote({
   required int otherVerse,
   double score = 20,
 }) => QuotationEntry(
-  rank: 1,
   score: score,
   chapter: 1,
   verse: verse,

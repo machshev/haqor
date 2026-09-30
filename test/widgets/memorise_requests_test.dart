@@ -31,7 +31,6 @@ const _card = MemoryCard(
       chapter: 23,
       verse: 1,
       line: 0,
-      lineCount: 1,
       words: [MemoryWord(text: 'יְהוָה', gloss: 'the LORD', translit: 'YHWH')],
     ),
   ],

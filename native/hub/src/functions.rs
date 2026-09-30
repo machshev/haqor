@@ -6,16 +6,16 @@ use crate::signals::{
     GetCrossReferences, GetDictionaryEntry, GetNextStudyItem, GetOnboardingStatus, GetQuotations,
     GetSeenConcepts, GetStudyState, GetThematicOverview, GetThematicReferences,
     GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts,
-    GetVocab, GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, IssueReportStatus,
-    KetivEntry, LexemeSummary, LexiconEntryOverrideStatus, Occurrence, OccurrenceParse,
-    OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus, QuotationEntry, Quotations,
-    RequestFailed, ResetTutor, RootChoice, SaveIssueReport, SaveLexiconEntryOverride,
-    SaveStudyState, SaveTutorGloss, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings,
-    StudyItem, StudyState, SubmitMisreads, SubmitReview, SuffixCard, SyncProgress,
-    ThematicOverview, ThematicReferenceEntry, ThematicReferences, ThematicTarget,
-    ThematicVerseEntry, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats,
-    VerseCard, VerseEntry, VerseRef, VerseText, VerseTextEntry, VerseTexts, VocabEntry, VocabList,
-    WordCard, WordInfo, WordOccurrence, WordOccurrences,
+    GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, IssueReportStatus, KetivEntry,
+    LexemeSummary, LexiconEntryOverrideStatus, Occurrence, OccurrenceParse, OnboardingStatus,
+    OptimizeTutorGlossOverrides, ProgressSyncStatus, QuotationEntry, Quotations, RequestFailed,
+    ResetTutor, RootChoice, SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState,
+    SaveTutorGloss, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem,
+    StudyState, SubmitMisreads, SubmitReview, SuffixCard, SyncProgress, ThematicOverview,
+    ThematicReferenceEntry, ThematicReferences, ThematicTarget, ThematicVerseEntry,
+    TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard, VerseEntry,
+    VerseRef, VerseText, VerseTextEntry, VerseTexts, WordCard, WordInfo, WordOccurrence,
+    WordOccurrences,
 };
 
 use std::fs;
@@ -742,35 +742,8 @@ fn to_signal_tokens(occurrences: Vec<haqor_core::bible::Occurrence>) -> Vec<Occu
                 number: o.parse.number,
                 state: o.parse.state,
             },
-            parse_label: o.parse_label,
         })
         .collect()
-}
-
-pub async fn get_vocab(bible: SharedBible) {
-    let receiver = GetVocab::get_dart_signal_receiver();
-    while let Some(signal_pack) = receiver.recv().await {
-        let req = signal_pack.message;
-        debug_print!("{:?}", req);
-        match lock(&bible).vocab(req.limit, req.offset) {
-            Ok(entries) => VocabList {
-                offset: req.offset,
-                entries: entries
-                    .into_iter()
-                    .map(|e| VocabEntry {
-                        surface: e.surface,
-                        occurrences: e.occurrences,
-                        lexical_class: e.lexical_class,
-                        root: e.root,
-                        gloss: e.gloss,
-                        morph: e.morph,
-                    })
-                    .collect(),
-            }
-            .send_signal_to_dart(),
-            Err(e) => debug_print!("get_vocab error: {:?}", e),
-        }
-    }
 }
 
 pub async fn get_word_info(bible: SharedBible) {
@@ -1609,7 +1582,6 @@ pub async fn get_cross_references(bible: SharedBible) {
         let entries = quotations
             .into_iter()
             .map(|q| CrossReferenceEntry {
-                rank: q.rank,
                 score: q.score,
                 book: q.other.book,
                 chapter: q.other.chapter,
@@ -1660,7 +1632,6 @@ pub async fn get_quotations(bible: SharedBible) {
         let entries = quotations
             .into_iter()
             .map(|q| QuotationEntry {
-                rank: q.rank,
                 score: q.score,
                 chapter: q.verse.chapter,
                 verse: q.verse.verse,
