@@ -5,6 +5,7 @@ import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
 import '../request_failure.dart';
+import 'progress_sync.dart';
 
 /// Open the study-pacing settings as a modal bottom sheet. [sendRequest]
 /// stands in for the signal to Rust so a test can capture the sheet's
@@ -161,6 +162,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     if (ok == true && mounted) {
       Navigator.of(context).pop();
       _request(ResetTutor());
+      // Tell the sync server, so it adopts the reset instead of handing the old
+      // progress back to this and other devices.
+      scheduleProgressSync();
     }
   }
 

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/request_failure.dart';
@@ -84,6 +85,37 @@ void main() {
     _fail(requestSetTutorSettings, 'database is locked');
     await tester.pump();
     expect(find.textContaining('not saved'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('resetting progress asks Rust to reset and then to sync', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final sent = await open(tester);
+    assignRustSignal['TutorSettings']!(
+      const TutorSettings(
+        lettersPerBatch: 3,
+        wordsPerBatch: 8,
+        grammarGating: true,
+        vocabPriority: 75,
+        grammarPriority: 25,
+        versePriority: 25,
+        lettersRatio: 30,
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Reset progress'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reset progress'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Reset'));
+    await tester.pump();
+    expect(sent.whereType<ResetTutor>(), hasLength(1));
+    // The sync it schedules runs after a short quiet period.
+    await tester.pump(const Duration(seconds: 3));
     await tester.pumpWidget(const SizedBox());
   });
 }

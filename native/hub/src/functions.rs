@@ -1385,7 +1385,7 @@ pub async fn reset_tutor(bible: SharedBible) {
     let receiver = ResetTutor::get_dart_signal_receiver();
     while let Some(_pack) = receiver.recv().await {
         let bible = lock(&bible);
-        match bible.reset_tutor() {
+        match bible.reset_tutor(now_epoch()) {
             // Reset always empties glyph_srs/word_srs, so onboarding is always
             // needed again — push a fresh status so the app routes back through
             // it (TutorEntryPage is already subscribed) instead of resuming the
