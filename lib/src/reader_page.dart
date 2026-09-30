@@ -676,6 +676,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 target: _crossReferenceTarget,
                 targetRequest: _crossReferenceRequest,
                 useEnglishBookNames: reader._englishBookNames,
+                ntSyriac: reader._ntSyriac,
                 isLinkBookmarked: reader._isStudyLinkBookmarked,
                 onToggleLinkBookmark: reader._toggleStudyLinkBookmark,
                 minScore: reader._crossReferenceMinScore,

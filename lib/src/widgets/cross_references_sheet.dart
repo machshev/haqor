@@ -88,6 +88,7 @@ class CrossReferencesPanel extends StatefulWidget {
     this.target,
     this.targetRequest = 0,
     required this.useEnglishBookNames,
+    this.ntSyriac = false,
     this.onClose,
     this.isLinkBookmarked,
     this.onToggleLinkBookmark,
@@ -140,6 +141,9 @@ class CrossReferencesPanel extends StatefulWidget {
   final void Function(GetThematicReferences)? sendThematicReferencesRequest;
   final void Function(GetThematicOverview)? sendThematicOverviewRequest;
   final void Function(GetVerseTexts)? sendVerseTextsRequest;
+
+  /// The reader shows the NT in Syriac script, so NT verse rows do too.
+  final bool ntSyriac;
 
   @override
   State<CrossReferencesPanel> createState() => _CrossReferencesPanelState();
@@ -360,6 +364,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
         focus: view.focus,
         minScore: _minScore,
         useEnglishBookNames: widget.useEnglishBookNames,
+        ntSyriac: widget.ntSyriac,
         englishOnly: _englishOnly,
         onToggleEnglishOnly: _toggleEnglishOnly,
         chosenSection: _section,
@@ -803,6 +808,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
               highlightWords: const [],
               positions: entry.otherPositions,
               englishOnly: _englishOnly,
+              syriac: widget.ntSyriac && entry.otherBook >= 40,
               useEnglishBookNames: widget.useEnglishBookNames,
               onTap: () => _openVerse(entry),
             ),
@@ -921,6 +927,7 @@ class _VerseLinks extends StatefulWidget {
     required this.minScore,
     required this.useEnglishBookNames,
     required this.englishOnly,
+    required this.ntSyriac,
     required this.onToggleEnglishOnly,
     required this.onBack,
     this.chosenSection,
@@ -944,6 +951,7 @@ class _VerseLinks extends StatefulWidget {
   final double minScore;
   final bool useEnglishBookNames;
   final bool englishOnly;
+  final bool ntSyriac;
   final VoidCallback onToggleEnglishOnly;
   final VoidCallback onBack;
 
@@ -1146,6 +1154,7 @@ class _VerseLinksState extends State<_VerseLinks> {
                           .sourcePositions,
                 isCurrent: true,
                 englishOnly: widget.englishOnly,
+                syriac: widget.ntSyriac && widget.book >= 40,
                 useEnglishBookNames: widget.useEnglishBookNames,
               ),
             ),
@@ -1240,6 +1249,7 @@ class _VerseLinksState extends State<_VerseLinks> {
             verse: target.verse,
             highlightWords: const [],
             englishOnly: widget.englishOnly,
+            syriac: widget.ntSyriac && target.book >= 40,
             useEnglishBookNames: widget.useEnglishBookNames,
             onTap: navigate == null
                 ? null
@@ -1369,6 +1379,7 @@ class _VerseLinksState extends State<_VerseLinks> {
           highlightWords: const [],
           positions: entry.positions,
           englishOnly: widget.englishOnly,
+          syriac: widget.ntSyriac && entry.book >= 40,
           useEnglishBookNames: widget.useEnglishBookNames,
           onTap: navigate == null
               ? null

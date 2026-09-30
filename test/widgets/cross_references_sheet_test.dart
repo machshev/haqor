@@ -119,6 +119,7 @@ Future<_FakeRust> _pump(
   double minScore = 0,
   ValueChanged<double>? onMinScoreChanged,
   void Function(int, int, int)? onNavigate,
+  bool ntSyriac = false,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final rust = _FakeRust();
@@ -132,6 +133,7 @@ Future<_FakeRust> _pump(
             chapter: 1,
             target: verse == null ? null : (book: 40, chapter: 1, verse: verse),
             useEnglishBookNames: true,
+            ntSyriac: ntSyriac,
             minScore: minScore,
             onMinScoreChanged: onMinScoreChanged,
             onNavigateToPassage: onNavigate,
@@ -692,6 +694,23 @@ void strengthTests() {
 }
 
 void dockedTests() {
+  testWidgets('with the reader set to Syriac, NT rows ask for Syriac text', (
+    tester,
+  ) async {
+    final rust = await _pump(tester, verse: null, ntSyriac: true);
+    rust.deliverQuotations(2, [
+      _quote(verse: 23, otherBook: 12, otherChapter: 7, otherVerse: 14),
+      _quote(verse: 24, otherBook: 41, otherChapter: 1, otherVerse: 2),
+    ]);
+    await tester.pump();
+
+    final asked = <(int, bool)>{
+      for (final request in rust.verseRequests)
+        for (final ref in request.refs) (ref.book, request.syriac),
+    };
+    expect(asked, containsAll(<(int, bool)>[(12, false), (41, true)]));
+  });
+
   testWidgets('the verse text switch asks for English and remembers it', (
     tester,
   ) async {
