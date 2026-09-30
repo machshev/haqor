@@ -235,6 +235,8 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
         request.sendSignalToRust();
       case GetVerseText():
         request.sendSignalToRust();
+      case GetTutorStats():
+        request.sendSignalToRust();
     }
   }
 
@@ -338,7 +340,7 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (_) => const _StatsSheet(),
+    builder: (_) => _StatsSheet(send: _send),
   );
 
   @override
@@ -606,7 +608,10 @@ class _ReadingProgressBar extends StatelessWidget {
 /// On-demand spaced-repetition stats. Fetches [TutorStats] once when opened and
 /// updates live if a fresh one arrives (e.g. after a review while it's open).
 class _StatsSheet extends StatefulWidget {
-  const _StatsSheet();
+  const _StatsSheet({required this.send});
+
+  /// Sends a request to Rust (the page's seam, so a test can capture it).
+  final void Function(Object request) send;
 
   @override
   State<_StatsSheet> createState() => _StatsSheetState();
@@ -614,6 +619,10 @@ class _StatsSheet extends StatefulWidget {
 
 class _StatsSheetState extends State<_StatsSheet> {
   StreamSubscription<RustSignalPack<TutorStats>>? _sub;
+  StreamSubscription<RequestFailed>? _failureSub;
+  final RequestTimer _timer = RequestTimer();
+  // Set when the stats could not be loaded; shown in place of the spinner.
+  String? _error;
   // Seed with the last value received so the numbers show instantly on reopen.
   TutorStats? _stats = TutorStats.latestRustSignal?.message;
 
@@ -622,14 +631,36 @@ class _StatsSheetState extends State<_StatsSheet> {
     super.initState();
     _sub = TutorStats.rustSignalStream.listen((pack) {
       if (!mounted) return;
-      setState(() => _stats = pack.message);
+      _timer.stop();
+      setState(() {
+        _stats = pack.message;
+        _error = null;
+      });
     });
-    GetTutorStats().sendSignalToRust();
+    _failureSub = listenForFailure(requestTutorStats, (failure) {
+      if (mounted && _stats == null) _fail(failure.message);
+    });
+    _load();
+  }
+
+  void _load() {
+    if (_error != null) setState(() => _error = null);
+    _timer.start(() {
+      if (mounted && _stats == null) _fail('Haqor did not answer.');
+    });
+    widget.send(GetTutorStats());
+  }
+
+  void _fail(String message) {
+    _timer.stop();
+    setState(() => _error = message);
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _failureSub?.cancel();
+    _timer.stop();
     super.dispose();
   }
 
@@ -640,7 +671,12 @@ class _StatsSheetState extends State<_StatsSheet> {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-        child: s == null
+        child: _error != null
+            ? RequestErrorView(
+                message: 'Could not load your progress: $_error',
+                onRetry: _load,
+              )
+            : s == null
             ? const Padding(
                 padding: EdgeInsets.all(32),
                 child: Center(child: CircularProgressIndicator()),

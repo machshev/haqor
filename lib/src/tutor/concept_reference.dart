@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
+import '../request_failure.dart';
 import 'alphabet_data.dart';
 import 'intro_content.dart';
 
@@ -16,7 +17,11 @@ const List<String> _hebrewFallback = ['Noto Serif Hebrew'];
 /// grows as the tutor unlocks new cards; nothing is shown ahead of the
 /// curriculum.
 class ConceptReferencePage extends StatefulWidget {
-  const ConceptReferencePage({super.key});
+  const ConceptReferencePage({super.key, this.sendRequest});
+
+  /// Stands in for the signal to Rust so a test can capture the request
+  /// (`sendSignalToRust` needs the native library).
+  final void Function(GetSeenConcepts request)? sendRequest;
 
   @override
   State<ConceptReferencePage> createState() => _ConceptReferencePageState();
@@ -24,21 +29,53 @@ class ConceptReferencePage extends StatefulWidget {
 
 class _ConceptReferencePageState extends State<ConceptReferencePage> {
   StreamSubscription<RustSignalPack<SeenConcepts>>? _sub;
+  StreamSubscription<RequestFailed>? _failureSub;
+  final RequestTimer _timer = RequestTimer();
   List<SeenConcept>? _cards;
+  // Set when the cards could not be loaded; shown in place of the spinner.
+  String? _error;
 
   @override
   void initState() {
     super.initState();
     _sub = SeenConcepts.rustSignalStream.listen((pack) {
       if (!mounted) return;
-      setState(() => _cards = pack.message.cards);
+      _timer.stop();
+      setState(() {
+        _cards = pack.message.cards;
+        _error = null;
+      });
     });
-    GetSeenConcepts().sendSignalToRust();
+    _failureSub = listenForFailure(requestSeenConcepts, (failure) {
+      if (mounted && _cards == null) _fail(failure.message);
+    });
+    _load();
+  }
+
+  void _load() {
+    if (_error != null) setState(() => _error = null);
+    _timer.start(() {
+      if (mounted && _cards == null) _fail('Haqor did not answer.');
+    });
+    final request = GetSeenConcepts();
+    final send = widget.sendRequest;
+    if (send != null) {
+      send(request);
+    } else {
+      request.sendSignalToRust();
+    }
+  }
+
+  void _fail(String message) {
+    _timer.stop();
+    setState(() => _error = message);
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _failureSub?.cancel();
+    _timer.stop();
     super.dispose();
   }
 
@@ -51,7 +88,12 @@ class _ConceptReferencePageState extends State<ConceptReferencePage> {
         backgroundColor: theme.colorScheme.surface,
         title: const Text('Reference'),
       ),
-      body: cards == null
+      body: _error != null
+          ? RequestErrorView(
+              message: 'Could not load the reference: $_error',
+              onRetry: _load,
+            )
+          : cards == null
           ? const Center(child: CircularProgressIndicator())
           : cards.isEmpty
           ? Center(
