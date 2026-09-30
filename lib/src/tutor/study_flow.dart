@@ -181,6 +181,9 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
   VoidCallback? _retry;
   bool _adminMode = false;
   bool _manualSyncPending = false;
+  // Syncs already with Rust when the manual one was sent; their statuses
+  // arrive first and are not its result.
+  int _syncStatusesToSkip = 0;
 
   @override
   void initState() {
@@ -209,6 +212,10 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
     }
     _syncSub = ProgressSyncStatus.rustSignalStream.listen((pack) {
       if (!mounted || !_manualSyncPending) return;
+      if (_syncStatusesToSkip > 0) {
+        _syncStatusesToSkip--;
+        return;
+      }
       setState(() => _manualSyncPending = false);
       final status = pack.message;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -284,7 +291,9 @@ class _StudyFlowPageState extends State<StudyFlowPage> {
     if (_manualSyncPending) return;
     final started = await syncProgressNow(
       onRequest: () {
-        if (mounted) setState(() => _manualSyncPending = true);
+        if (!mounted) return;
+        _syncStatusesToSkip = syncsInFlight;
+        setState(() => _manualSyncPending = true);
       },
     );
     if (!mounted) return;

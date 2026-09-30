@@ -11,6 +11,23 @@ const _tokenKey = 'progress_sync_token';
 
 Timer? _scheduledSync;
 
+// Syncs handed to Rust whose status has not come back. Rust runs them one at a
+// time and answers each once, in order, so a status belongs to a request only
+// after the ones sent before it have been answered.
+int _syncsInFlight = 0;
+StreamSubscription<RustSignalPack<ProgressSyncStatus>>? _inFlightSub;
+
+/// How many syncs Rust has yet to answer.
+int get syncsInFlight => _syncsInFlight;
+
+void _sendSync(String serverUrl, String token) {
+  _inFlightSub ??= ProgressSyncStatus.rustSignalStream.listen((_) {
+    if (_syncsInFlight > 0) _syncsInFlight--;
+  });
+  _syncsInFlight++;
+  SyncProgress(serverUrl: serverUrl, token: token).sendSignalToRust();
+}
+
 /// Synchronise after a short quiet period, so quickly flagging several words
 /// in a verse creates one LAN request rather than one per tap.
 void scheduleProgressSync() {
@@ -30,7 +47,7 @@ Future<bool> syncProgressNow({VoidCallback? onRequest}) async {
   final token = prefs.getString(_tokenKey)?.trim() ?? '';
   if (serverUrl.isEmpty || token.isEmpty) return false;
   onRequest?.call();
-  SyncProgress(serverUrl: serverUrl, token: token).sendSignalToRust();
+  _sendSync(serverUrl, token);
   return true;
 }
 
@@ -118,7 +135,7 @@ class _ProgressSyncSheetState extends State<_ProgressSyncSheet> {
             _syncSucceeded = null;
           });
         }
-        SyncProgress(serverUrl: serverUrl, token: token).sendSignalToRust();
+        _sendSync(serverUrl, token);
       } else if (mounted) {
         setState(() {
           _status = 'Automatic study and progress sync is on.';
