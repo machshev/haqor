@@ -1306,7 +1306,10 @@ pub async fn submit_review(bible: SharedBible) {
         let grade = Grade::from_confidence(req.confidence, correct);
         let bible = lock(&bible);
         match bible.submit_review(track, &req.key, grade, now_epoch()) {
-            Ok(item) => to_signal_study_item(&bible, item).send_signal_to_dart(),
+            Ok(item) => {
+                persist_browser_progress(&bible);
+                to_signal_study_item(&bible, item).send_signal_to_dart()
+            }
             Err(e) => debug_print!("submit_review error: {:?}", e),
         }
     }
