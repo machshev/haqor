@@ -154,6 +154,29 @@ fn parse_sync_endpoint(input: &str) -> Result<SyncEndpoint, String> {
     })
 }
 
+/// Read the response headers up to the blank line, returning `Content-Length`.
+fn read_content_length(reader: &mut impl BufRead) -> Result<Option<usize>, String> {
+    let mut content_length = None;
+    loop {
+        let mut line = String::new();
+        let read = reader
+            .read_line(&mut line)
+            .map_err(|e| format!("Could not read sync response: {e}"))?;
+        if read == 0 {
+            return Err("Sync server closed the connection mid-response.".to_string());
+        }
+        if line == "\r\n" || line == "\n" {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':')
+            && name.eq_ignore_ascii_case("content-length")
+        {
+            content_length = value.trim().parse::<usize>().ok();
+        }
+    }
+    Ok(content_length)
+}
+
 fn post_snapshot(endpoint: &SyncEndpoint, token: &str, body: &[u8]) -> Result<Vec<u8>, String> {
     if body.len() > MAX_SYNC_SNAPSHOT_BYTES {
         return Err("Local progress snapshot is unexpectedly large.".to_string());
@@ -189,21 +212,7 @@ fn post_snapshot(endpoint: &SyncEndpoint, token: &str, body: &[u8]) -> Result<Ve
     if !status.starts_with("HTTP/1.1 200") && !status.starts_with("HTTP/1.0 200") {
         return Err(format!("Sync server returned {}", status.trim()));
     }
-    let mut content_length = None;
-    loop {
-        let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .map_err(|e| format!("Could not read sync response: {e}"))?;
-        if line == "\r\n" {
-            break;
-        }
-        if let Some((name, value)) = line.split_once(':')
-            && name.eq_ignore_ascii_case("content-length")
-        {
-            content_length = value.trim().parse::<usize>().ok();
-        }
-    }
+    let content_length = read_content_length(&mut reader)?;
     let length =
         content_length.ok_or_else(|| "Sync server omitted its response length.".to_string())?;
     if length > MAX_SYNC_SNAPSHOT_BYTES {
@@ -1737,5 +1746,24 @@ pub async fn get_thematic_overview(bible: SharedBible) {
                 .collect(),
         }
         .send_signal_to_dart();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headers_end_at_blank_line_or_bare_newline() {
+        let mut crlf = "Content-Length: 7\r\nX: y\r\n\r\nbody".as_bytes();
+        assert_eq!(read_content_length(&mut crlf), Ok(Some(7)));
+        let mut lf = "content-length: 3\n\nbody".as_bytes();
+        assert_eq!(read_content_length(&mut lf), Ok(Some(3)));
+    }
+
+    #[test]
+    fn headers_error_at_end_of_stream() {
+        let mut truncated = "Content-Length: 7\r\n".as_bytes();
+        assert!(read_content_length(&mut truncated).is_err());
     }
 }
