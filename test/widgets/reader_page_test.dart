@@ -1800,6 +1800,37 @@ void main() {
     expect(after, containsAll(inFlight));
   });
 
+  testWidgets('workspaces from Rust with a highlighted root ask for roots', (
+    tester,
+  ) async {
+    final rust = await _pumpReader(tester, chapter: 1);
+    for (var i = 0; i < 5 && rust.pending.isNotEmpty; i++) {
+      rust.deliverAll();
+      await tester.pump();
+    }
+    expect(rust.pending, isEmpty);
+
+    assignRustSignal['StudyState']!(
+      StudyState(
+        found: true,
+        workspacesJson: study.encodeStudyWorkspaces([
+          const study.StudyWorkspace(
+            id: 'study',
+            name: 'Synced',
+            words: [study.StudyWord(root: 'אמר', surface: 'אמר')],
+          ),
+        ]),
+        activeWorkspaceId: 'study',
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      rust.pending.where((r) => r.chapter == 1 && r.includeRoots),
+      isNotEmpty,
+    );
+  });
+
   testWidgets('scrolling forward across many chapters never shifts content', (
     tester,
   ) async {

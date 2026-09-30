@@ -136,10 +136,15 @@ class _Section {
   final GlobalKey key;
   final Map<int, GlobalKey> verseKeys;
 
+  /// What the verses were fetched as, to tell when a setting has made them
+  /// out of date.
+  _ChapterRequest request;
+
   _Section({
     required this.bookIndex,
     required this.chapter,
     required this.verses,
+    required this.request,
   }) : key = GlobalKey(),
        verseKeys = {for (final verse in verses) verse.verse: GlobalKey()};
 }
@@ -1715,8 +1720,14 @@ class _ReaderSessionState extends State<_ReaderSession>
       }
       _cacheChapter(fetchKey, msg.verses);
       if (prefetch) return;
-
-      _acceptChapter(msg.book - 1, msg.chapter, msg.verses);
+      final bookIdx = msg.book - 1;
+      // Asked for before a setting changed: the verses would lack what the
+      // setting now shows, so ask again as the page now wants them.
+      if (fetchKey != _chapterRequest(bookIdx, msg.chapter)) {
+        _fetchChapter(bookIdx, msg.chapter, force: true);
+        return;
+      }
+      _acceptChapter(bookIdx, msg.chapter, msg.verses, fetchKey);
     });
     _lexiconOverrideSub = LexiconEntryOverrideStatus.rustSignalStream.listen((
       pack,
@@ -1729,7 +1740,10 @@ class _ReaderSessionState extends State<_ReaderSession>
   }
 
   void _onStudyStoreChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    // Workspaces from Rust can turn root highlighting on or off.
+    _refreshLoadedChaptersForStudyRoots();
   }
 
   Future<void> _loadAdminMode() async {
@@ -1737,7 +1751,12 @@ class _ReaderSessionState extends State<_ReaderSession>
     if (mounted) setState(() => _adminMode = enabled);
   }
 
-  void _acceptChapter(int bookIdx, int chapter, List<VerseEntry> verses) {
+  void _acceptChapter(
+    int bookIdx,
+    int chapter,
+    List<VerseEntry> verses,
+    _ChapterRequest request,
+  ) {
     // A successful in-app lexicon edit re-requests the loaded OT chapters so
     // their interlinear glosses update behind the word-info sheet. Preserve
     // the existing section/key to avoid disturbing the scroll position.
@@ -1748,6 +1767,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       setState(() {
         final loaded = _sections[loadedIndex];
         loaded.verses = verses;
+        loaded.request = request;
         for (final verse in verses) {
           loaded.verseKeys.putIfAbsent(verse.verse, GlobalKey.new);
         }
@@ -1759,6 +1779,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       bookIndex: bookIdx,
       chapter: chapter,
       verses: verses,
+      request: request,
     );
 
     if (_sections.isEmpty) {
@@ -3302,7 +3323,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
     final cached = _cachedChapter(key);
     if (cached != null) {
-      if (!prefetch) _acceptChapter(bookIndex, chapter, cached);
+      if (!prefetch) _acceptChapter(bookIndex, chapter, cached, key);
       return;
     }
     _pendingFetches.add(key);
