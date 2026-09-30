@@ -66,6 +66,7 @@ void main() {
     bool sectionStart = false,
     bool shaped = false,
     bool ready = false,
+    bool needsShaping = false,
   }) => MemoryLayoutVerse(
     chapter: 1,
     verse: n,
@@ -75,6 +76,7 @@ void main() {
     sectionStart: sectionStart,
     shaped: shaped,
     ready: ready,
+    needsShaping: needsShaping,
   );
 
   void layout(List<MemoryLayoutVerse> verses) =>
@@ -112,6 +114,39 @@ void main() {
     expect(sent.whereType<SetMemoryLayout>().last.lineStarts, [1, 2, 3]);
     // Let the progress sync each edit schedules run out.
     await tester.pump(const Duration(seconds: 3));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('carrying on waits for the section practice needs', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MemoryShapePage(
+          passageId: 'p',
+          title: 'Psalm 23',
+          exit: ShapeExit.resume,
+          sendRequest: (_) {},
+        ),
+      ),
+    );
+    // A later section is ready, but the next verse to learn is in one that
+    // is not.
+    layout([
+      verse(1, sectionStart: true, needsShaping: true),
+      verse(2, sectionStart: true, shaped: true, ready: true),
+    ]);
+    await tester.pump();
+    final button = find.byType(FloatingActionButton);
+    expect(tester.widget<FloatingActionButton>(button).onPressed, isNull);
+    expect(find.text('Shape a section to start'), findsOneWidget);
+
+    layout([
+      verse(1, sectionStart: true, shaped: true, ready: true),
+      verse(2, sectionStart: true),
+    ]);
+    await tester.pump();
+    expect(tester.widget<FloatingActionButton>(button).onPressed, isNotNull);
     await tester.pumpWidget(const SizedBox());
   });
 }

@@ -1158,6 +1158,8 @@ pub struct MemoryLayoutVerse {
     pub shaped: bool,
     /// Every verse of this verse's section is shaped, so it can be learnt.
     pub ready: bool,
+    /// The next verse to learn waits on its section being shaped.
+    pub needs_shaping: bool,
 }
 
 #[derive(Debug, Serialize, RustSignal)]

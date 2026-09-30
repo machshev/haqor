@@ -201,7 +201,9 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
       if (sections.isEmpty || v.sectionStart) sections.add([]);
       sections.last.add(v);
     }
-    final anyReady = verses?.any((v) => v.ready) ?? false;
+    // Practice carries on from the first verse not learnt, so it is that
+    // verse's section that must be shaped, not any section.
+    final canLearn = !(verses?.any((v) => v.needsShaping) ?? true);
     return Scaffold(
       appBar: AppBar(
         backgroundColor: theme.colorScheme.surface,
@@ -270,16 +272,16 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
             ),
       floatingActionButton: widget.exit != ShapeExit.none && verses != null
           ? FloatingActionButton.extended(
-              onPressed: anyReady ? _leave : null,
-              backgroundColor: anyReady
+              onPressed: canLearn ? _leave : null,
+              backgroundColor: canLearn
                   ? null
                   : theme.colorScheme.surfaceContainerHighest,
-              foregroundColor: anyReady
+              foregroundColor: canLearn
                   ? null
                   : theme.colorScheme.onSurfaceVariant,
               icon: const Icon(Icons.play_arrow),
               label: Text(
-                !anyReady
+                !canLearn
                     ? 'Shape a section to start'
                     : widget.exit == ShapeExit.start
                     ? 'Start learning'

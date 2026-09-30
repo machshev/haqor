@@ -86,6 +86,7 @@ fn send_layout(bible: &Bible, passage_id: &str) {
                     section_start: v.section_start,
                     shaped: v.shaped,
                     ready: v.ready,
+                    needs_shaping: v.needs_shaping,
                 })
                 .collect(),
         }
