@@ -58,6 +58,10 @@ Future<_Submitted> _pump(WidgetTester tester, MemoryCard card) async {
   return submitted;
 }
 
+// A hidden word's underline covers its invisible text, so tap the whole tile.
+Finder _tile(String word) =>
+    find.ancestor(of: find.text(word), matching: find.byType(InkWell)).first;
+
 bool _visible(WidgetTester tester, String word) {
   final opacity = find.ancestor(
     of: find.text(word),
@@ -166,7 +170,7 @@ void main() {
     await tester.pump();
     expect(_visible(tester, 'יְהוָה'), isTrue);
     expect(_visible(tester, 'רֹעִי'), isFalse);
-    await tester.tap(find.text('רֹעִי'));
+    await tester.tap(_tile('רֹעִי'));
     await tester.pump();
     expect(_visible(tester, 'רֹעִי'), isTrue);
     await tester.tap(find.text('Next word'));

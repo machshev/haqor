@@ -663,6 +663,12 @@ void linkTileTests() {
   });
 }
 
+// A short label sits left of its menu row's centre, so tap the row itself.
+Finder _menuItem(String label) => find.ancestor(
+  of: find.text(label),
+  matching: find.byWidgetPredicate((w) => w is PopupMenuItem),
+);
+
 void sectionTileTests() {
   testWidgets('a summary shows its headings, opens them and toggles them in '
       'the reader', (tester) async {
@@ -768,7 +774,7 @@ void sectionTileTests() {
 
     await tester.tap(find.byTooltip('Summary options'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Show headings in reader'));
+    await tester.tap(_menuItem('Show headings in reader'));
     await tester.pumpAndSettle();
     expect(updated?.id, 'sum');
     expect(updated?.showInReader, isFalse);
@@ -797,7 +803,7 @@ void sectionTileTests() {
 
     await tester.tap(find.byTooltip('Workspace options'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Show study headings'));
+    await tester.tap(_menuItem('Show study headings'));
     await tester.pumpAndSettle();
     expect(headingsEnabled, isFalse);
     expect(tester.takeException(), isNull);

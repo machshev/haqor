@@ -113,6 +113,7 @@ void main() {
     final sent = await pumpWithCard(tester, _newWord());
     await tester.tap(find.text('Got it'));
     await tester.pump(const Duration(milliseconds: 50));
+    // The fading card no longer takes taps; this second tap must be ignored.
     await tester.tap(find.text('Got it'), warnIfMissed: false);
     await tester.pump();
     expect(sent.whereType<SubmitReview>(), hasLength(1));
@@ -133,6 +134,7 @@ void main() {
     expect(sent.whereType<GetNextStudyItem>(), hasLength(1));
     await tester.tap(find.text('Continue'));
     await tester.pump(const Duration(milliseconds: 50));
+    // The fading card no longer takes taps; this second tap must be ignored.
     await tester.tap(find.text('Continue'), warnIfMissed: false);
     await tester.pump();
     expect(sent.whereType<GetNextStudyItem>(), hasLength(2));
@@ -167,6 +169,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('Continue'));
     await tester.pump(const Duration(milliseconds: 50));
+    // The fading card no longer takes taps; this second tap must be ignored.
     await tester.tap(find.text('Continue'), warnIfMissed: false);
     await tester.pump();
     expect(sent.whereType<SubmitMisreads>(), hasLength(1));
