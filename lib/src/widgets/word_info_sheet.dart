@@ -3733,9 +3733,11 @@ class _LexiconEntryOverrideEditorState
       _saving = true;
       _error = null;
     });
-    final statusFuture = LexiconEntryOverrideStatus.rustSignalStream
-        .firstWhere((pack) => pack.message.surface == widget.surface)
-        .timeout(const Duration(seconds: 8));
+    final statusFuture = firstWithin(
+      LexiconEntryOverrideStatus.rustSignalStream,
+      (pack) => pack.message.surface == widget.surface,
+      const Duration(seconds: 8),
+    );
     SaveLexiconEntryOverride(
       surface: widget.surface,
       root: _root.text.trim(),

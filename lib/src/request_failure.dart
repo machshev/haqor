@@ -39,6 +39,31 @@ StreamSubscription<RequestFailed> listenForFailure(
     .where((m) => m.request == request && (key == null || m.key == key))
     .listen(onFailed);
 
+/// The first event of [stream] that satisfies [test], or a [TimeoutException]
+/// after [timeout]. The subscription is cancelled either way: a bare
+/// `firstWhere(...).timeout(...)` stops waiting at the timeout but leaves the
+/// listener on the broadcast stream until some later event happens to match.
+///
+/// The listener is attached before this returns, so a request sent afterwards
+/// cannot be answered unseen.
+Future<T> firstWithin<T>(
+  Stream<T> stream,
+  bool Function(T event) test,
+  Duration timeout,
+) {
+  final done = Completer<T>();
+  final timer = Timer(timeout, () {
+    if (!done.isCompleted) done.completeError(TimeoutException(null, timeout));
+  });
+  final sub = stream.listen((event) {
+    if (!done.isCompleted && test(event)) done.complete(event);
+  });
+  return done.future.whenComplete(() {
+    timer.cancel();
+    return sub.cancel();
+  });
+}
+
 /// A timer for one outstanding request: [start] it when the request goes out,
 /// [stop] it when the reply (or a failure) arrives.
 class RequestTimer {
