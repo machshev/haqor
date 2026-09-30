@@ -139,6 +139,62 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('a double tap on the misreads Continue sends one request', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final sent = await pumpWithCard(tester, _readVerse());
+    assignRustSignal['VerseText']!(
+      const VerseText(
+        book: 1,
+        chapter: 1,
+        verse: 1,
+        englishOnly: false,
+        text: 'בראשית',
+        translit: '',
+        glossWords: [],
+        sourceWords: [],
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    await tester.tap(find.text('No'));
+    await tester.pump();
+    await tester.tap(find.byType(FilterChip));
+    await tester.pump();
+    await tester.tap(find.text('Continue'));
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.text('Continue'), warnIfMissed: false);
+    await tester.pump();
+    expect(sent.whereType<SubmitMisreads>(), hasLength(1));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a card fading out takes no taps once the next card is in', (
+    tester,
+  ) async {
+    final sent = await pumpWithCard(tester, _newWord());
+    await tester.tap(find.text('Got it'));
+    await tester.pump();
+    // The next card arrives at once, so the page's own guard is open again.
+    assignRustSignal['StudyItem']!(
+      _item('done').bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    // The old card is still in the tree, part-way through its fade.
+    expect(find.text('Got it'), findsOneWidget);
+    expect(find.text('Got it').hitTestable(), findsNothing);
+    await tester.tap(find.text('Got it'), warnIfMissed: false);
+    await tester.pump();
+    expect(sent.whereType<SubmitReview>(), hasLength(1));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpWidget(const SizedBox());
+  });
 }
 
 StudyItem _readVerse() => const StudyItem(
