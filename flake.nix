@@ -1,5 +1,5 @@
 {
-  description = "Haqor development environment";
+  description = "Haqor packages and development environment";
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     flake-utils.url = "github:numtide/flake-utils";
@@ -49,6 +49,17 @@
       # Might be able to modify the plugin to not require rustup?
       overrides = builtins.fromTOML (builtins.readFile (self + "/rust-toolchain.toml"));
     in {
+      packages = pkgs.lib.optionalAttrs (system == "x86_64-linux") rec {
+        haqor = pkgs.callPackage ./pkgs/haqor {};
+        default = haqor;
+      };
+      apps = pkgs.lib.optionalAttrs (system == "x86_64-linux") rec {
+        haqor = {
+          type = "app";
+          program = "${self.packages.${system}.haqor}/bin/haqor";
+        };
+        default = haqor;
+      };
       devShells = {
         default = pkgs.mkShell rec {
           nativeBuildInputs = [pkgs.pkg-config];

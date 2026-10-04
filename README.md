@@ -33,6 +33,17 @@ Prebuilt binaries for every release are on the
 | Linux | `…-linux-x64.tar.gz` | Unpack and run `./haqor`. Requires GTK 3. |
 | iOS | `…-ios-unsigned.ipa` | Unsigned: sideload with [AltStore](https://altstore.io/) or Sideloadly using a free Apple ID (re-signs every 7 days). |
 
+On x86_64 Linux with Nix, run `nix run github:machshev/haqor#haqor`, or
+build the package from a checkout with `nix build .#haqor`. The package uses the
+pinned GitHub release bundle, including its databases, and supplies GTK and
+other runtime libraries. `nix run .#haqor` launches it from a checkout.
+
+To update the package to the latest published stable release, run
+`bash tool/update-nix-package.sh` from a checkout with `curl`, `jq`, `nix`, and
+standard Unix tools available. An optional tag, for example `v0.9.4`, selects a
+specific release. The script verifies the downloaded bundle against the release's
+`SHA256SUMS` before updating `pkgs/haqor/release.json`; review and commit that file.
+
 See [doc/RELEASING.md](doc/RELEASING.md) for how releases are built and signed.
 
 # Why the name Haqor?
