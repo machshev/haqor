@@ -49,6 +49,7 @@ manifest="$root/pubspec.yaml"
 # The About view shows a compile-time constant rather than reading the bundle,
 # so the manifest is not the only place the version is written down.
 app_info="$root/lib/src/app_info.dart"
+web_index="$root/web/index.html"
 
 if [ "$do_tag" -eq 1 ] && { ! git -C "$root" diff --quiet || ! git -C "$root" diff --cached --quiet; }; then
     echo "refusing to tag with uncommitted changes; commit them first" >&2
@@ -116,10 +117,16 @@ grep -q "const appVersion = '$new';" "$app_info" || {
     echo "failed to update appVersion in $app_info" >&2
     exit 1
 }
+# The HTML loading screen appears before Dart can report the app version.
+sed -i -E "s|(<div id=\"haqor-boot-version\">)Haqor [^<]+|\1Haqor $new|" "$web_index"
+grep -q "<div id=\"haqor-boot-version\">Haqor $new</div>" "$web_index" || {
+    echo "failed to update loading-screen version in $web_index" >&2
+    exit 1
+}
 echo "bumped $current -> $new"
 
 if [ "$do_tag" -eq 1 ]; then
-    git -C "$root" add -- pubspec.yaml lib/src/app_info.dart
+    git -C "$root" add -- pubspec.yaml lib/src/app_info.dart web/index.html
     git -C "$root" commit -m "chore: release v$next"
     create_tag
     echo "committed and tagged v$next (not pushed)"

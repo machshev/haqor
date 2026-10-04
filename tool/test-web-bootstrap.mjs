@@ -4,6 +4,12 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {test} from 'node:test';
 const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
+test('loading screen shows the version declared in pubspec.yaml', () => {
+  const manifest = readFileSync(new URL('../pubspec.yaml', import.meta.url), 'utf8');
+  const version = manifest.match(/^version: (\S+)$/m)[1];
+  assert.ok(html.includes(`<div id="haqor-boot-version">Haqor ${version}</div>`));
+});
+
 const loader = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
 
 async function start({isolated = false, controller = null, installing = null,
