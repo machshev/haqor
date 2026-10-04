@@ -27,6 +27,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use haqor_core::bible::{
@@ -1246,10 +1247,19 @@ fn empty_word_occurrences(request_id: u32) -> WordOccurrences {
 /// Wall-clock now in epoch seconds (the SM-2 scheduler's time base). Tutor
 /// state is day-grained, so second precision is ample.
 pub(crate) fn now_epoch() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+    // wasm32-unknown-unknown has no OS clock: SystemTime::now panics.
+    // Date.now uses the browser wall clock and reports milliseconds.
+    #[cfg(target_arch = "wasm32")]
+    {
+        (js_sys::Date::now() / 1000.0) as i64
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0)
+    }
 }
 
 fn to_signal_glyph(g: tutor::GlyphCard) -> GlyphCard {

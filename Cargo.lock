@@ -320,6 +320,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "haqor-core",
+ "js-sys",
  "messages",
  "rinf",
  "serde",

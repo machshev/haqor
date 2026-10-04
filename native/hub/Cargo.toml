@@ -32,3 +32,6 @@ wasm-bindgen = "0.2.100"
 # Never enable the `embedded` feature here: the app ships the databases as
 # Flutter assets and opens them file-backed via `Bible::open`.
 haqor-core = { version = "=0.9.3", default-features = false }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
