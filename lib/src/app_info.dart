@@ -9,7 +9,7 @@
 /// be maintained by hand.
 library;
 
-const appVersion = '0.9.3+25';
+const appVersion = '0.9.4+26';
 
 /// One credited data source. [licence] is the terms under which Haqor
 /// redistributes it; [note] adds anything a reader should know beyond that.

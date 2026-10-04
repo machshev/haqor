@@ -9,6 +9,8 @@ import {extname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const root = fileURLToPath(new URL('../build/web/', import.meta.url));
+const manifest = await readFile(new URL('../pubspec.yaml', import.meta.url), 'utf8');
+const version = manifest.match(/^version: (\S+)$/m)[1];
 const types = {'.html': 'text/html', '.js': 'text/javascript',
   '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json'};
 const server = createServer(async (request, response) => {
@@ -72,6 +74,11 @@ try {
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
   await send('Page.enable');
   await send('Runtime.enable');
+  await send('Page.addScriptToEvaluateOnNewDocument', {source: `
+    document.addEventListener('DOMContentLoaded', () => {
+      window.haqorLoadingVersion = document.getElementById('haqor-boot-version')?.innerText;
+    });
+  `});
   await send('Page.navigate', {url: `http://127.0.0.1:${server.address().port}/haqor/?test-service-worker`});
   for (let i = 0; i < 60; i++) {
     if (await evaluate('window.haqorBoot?.isDone() === true')) break;
@@ -79,6 +86,7 @@ try {
   }
   assert.equal(await evaluate('window.haqorBoot?.isDone() === true'), true, 'App did not paint');
   assert.equal(await evaluate('crossOriginIsolated'), true);
+  assert.equal(await evaluate('haqorLoadingVersion'), `Haqor ${version}`);
   assert.equal(await evaluate('new URL(location.href).searchParams.has("_haqor_coi_retry")'), false);
   await evaluate(`(() => {
     window.haqorReplies = [];
