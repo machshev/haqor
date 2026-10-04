@@ -146,8 +146,8 @@
 
             # Regenerate Dart signal bindings from Rust structs (lib/src/bindings/ is gitignored).
             # Stale bindings fail the build far from the cause, so surface it here.
-            if ! rinf gen; then
-              echo "warning: 'rinf gen' failed — lib/src/bindings/ may be stale" >&2
+            if ! bash tool/generate-bindings.sh; then
+              echo "warning: 'bash tool/generate-bindings.sh' failed — lib/src/bindings/ may be stale" >&2
             fi
           '';
 

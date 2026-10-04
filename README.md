@@ -224,8 +224,12 @@ If you've modified the signal structs, run the following command
 to generate the corresponding Dart classes:
 
 ```shell
-rinf gen
+bash tool/generate-bindings.sh
 ```
+
+This also patches Rinf's generated signed 64-bit codec to preserve the Rust
+wire format on JavaScript, where `ByteData.getInt64` and `setInt64` are
+unsupported. Use this wrapper whenever regenerating bindings.
 
 Now you can run and build this app just like any other Flutter projects.
 
@@ -249,6 +253,7 @@ Verify the release bundle with Chrome and Node 24 before deploying:
 ```shell
 node --test tool/test-web-bootstrap.mjs
 nix develop -c node tool/test-web-runtime.mjs
+nix develop -c node tool/test-web-runtime.mjs --dart2js
 ```
 
 The browser check uses a disposable profile and verifies startup, verse and

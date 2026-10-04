@@ -60,4 +60,4 @@ runs:
     - name: Fetch Dart dependencies and generate bindings
       shell: bash
       working-directory: haqor
-      run: nix develop --command bash -c 'flutter pub get && rinf gen'
+      run: nix develop --command bash -c 'flutter pub get && bash tool/generate-bindings.sh'

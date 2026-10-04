@@ -256,8 +256,10 @@ jobs:
         run: |
           nix develop --command bash -c '
             set -euo pipefail
+            flutter test --platform chrome test/signal_codec_test.dart
             ./tool/build-web.sh --wasm --base-href /haqor/
             node tool/test-web-runtime.mjs
+            node tool/test-web-runtime.mjs --dart2js
           '
       - name: Package web bundle
         working-directory: haqor

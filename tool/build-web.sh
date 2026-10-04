@@ -47,6 +47,7 @@ cargo "+$nightly" build --release --target wasm32-unknown-unknown \
 wasm-bindgen target/wasm32-unknown-unknown/release/hub.wasm \
   --out-dir web/pkg --no-typescript --target web --out-name hub
 
+dart run "$here/patch_bindings.dart"
 flutter build web --release "$@"
 "$here/patch-web-service-worker.sh"
 

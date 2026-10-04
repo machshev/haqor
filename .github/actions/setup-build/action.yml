@@ -50,4 +50,4 @@ runs:
       working-directory: haqor
       run: |
         flutter pub get
-        rinf gen
+        bash tool/generate-bindings.sh

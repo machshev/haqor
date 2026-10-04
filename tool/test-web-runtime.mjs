@@ -24,6 +24,7 @@ const server = createServer(async (request, response) => {
   } catch {response.writeHead(404).end();}
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+const dart2js = process.argv.includes('--dart2js');
 const profile = await mkdtemp(join(tmpdir(), 'haqor-web-test-'));
 const chrome = spawn(process.env.CHROME_EXECUTABLE ?? 'google-chrome', [
   '--headless=new', '--disable-gpu', '--no-sandbox', '--remote-debugging-port=0',
@@ -47,8 +48,10 @@ try {
   let next = 0;
   const pending = new Map();
   const exceptions = [];
+  const consoleMessages = [];
   ws.addEventListener('message', event => {
     const message = JSON.parse(event.data);
+    if (message.method === 'Runtime.consoleAPICalled') consoleMessages.push(message.params.args.map(arg => arg.value ?? arg.description ?? '').join(' '));
     if (message.method === 'Runtime.exceptionThrown') exceptions.push(message.params.exceptionDetails);
     if (!message.id) return;
     const promise = pending.get(message.id);
@@ -73,13 +76,14 @@ try {
   };
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
   await send('Page.enable');
+  await send('Emulation.setDeviceMetricsOverride', {width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false});
   await send('Runtime.enable');
   await send('Page.addScriptToEvaluateOnNewDocument', {source: `
     document.addEventListener('DOMContentLoaded', () => {
       window.haqorLoadingVersion = document.getElementById('haqor-boot-version')?.innerText;
     });
   `});
-  await send('Page.navigate', {url: `http://127.0.0.1:${server.address().port}/haqor/?test-service-worker`});
+  await send('Page.navigate', {url: `http://127.0.0.1:${server.address().port}/haqor/?test-service-worker${dart2js ? '&test-dart2js' : ''}`});
   for (let i = 0; i < 60; i++) {
     if (await evaluate('window.haqorBoot?.isDone() === true')) break;
     await pause(1000);
@@ -100,6 +104,8 @@ try {
     ['get_verse_text', [1, 1, 1, 0], 'VerseText'],
     ['get_cross_references', [1, 1, 1, 0, 0, 0, 0], 'CrossReferences'],
     ['get_memory_passages', [], 'MemoryPassages'],
+    ['get_memory_stats', [0, 0, 0, 0, 0, 0, 0, 0], 'MemoryStats'],
+    ['get_next_study_item', [], 'StudyItem'],
     ['get_tutor_stats', [], 'TutorStats'],
     ['get_verse_text', [1, 1, 2, 0], 'VerseText'],
   ]) {
@@ -114,7 +120,41 @@ try {
     assert.ok(replies.some(reply => reply.endpoint === expected), `${request}: ${JSON.stringify(replies)}`);
     console.log(`${request}: ${expected}`);
   }
+  if (dart2js) {
+    assert.equal(await evaluate("performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/main.dart.js'))"), true, 'JavaScript fallback was not loaded');
+  }
+  await evaluate("document.querySelector('flt-semantics-placeholder')?.click()");
+  const click = async label => {
+    for (let i = 0; i < 100; i++) {
+      if (await evaluate(`(() => {
+        const button = [...document.querySelectorAll('[role="button"]')].find(element =>
+          element.getAttribute('aria-label') === ${JSON.stringify(label)} || element.textContent === ${JSON.stringify(label)});
+        if (!button) return false;
+        button.click(); return true;
+      })()`)) return;
+      await pause(100);
+    }
+    throw new Error(`Button not found: ${label}`);
+  };
+  const waitForText = async text => {
+    for (let i = 0; i < 300; i++) {
+      if (await evaluate(`document.querySelector('flt-semantics-host')?.textContent.includes(${JSON.stringify(text)}) === true`)) return;
+      await pause(100);
+    }
+    throw new Error(`Screen text not found: ${text}: ${await evaluate("document.querySelector(\'flt-semantics-host\')?.textContent")}`);
+  };
+  await click('Memorise');
+  await waitForText('Choose a passage');
+  await click('Back');
+  await click('Tutor');
+  await waitForText('Before you start');
+  await click("No, I'm starting from scratch");
+  await waitForText('Learn to read');
+  await waitForText('Continue');
+  await waitForText('Before we start');
+  console.log('Memorise and Tutor screens rendered.');
   assert.deepEqual(exceptions, [], 'Uncaught WASM/browser exceptions');
+  assert.ok(!consoleMessages.some(message => /Unsupported operation|Another exception was thrown|EXCEPTION CAUGHT/.test(message)), consoleMessages.join('\n'));
   console.log('Release web startup, references, passages and tutor passed.');
 } finally {
   clearTimeout(deadline);
