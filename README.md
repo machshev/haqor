@@ -233,6 +233,17 @@ nix develop -c bash tool/build-web.sh
 
 For development, run `flutter run -d chrome` from the development shell.
 
+Verify the release bundle with Chrome and Node 24 before deploying:
+
+```shell
+node --test tool/test-web-bootstrap.mjs
+nix develop -c node tool/test-web-runtime.mjs
+```
+
+The browser check uses a disposable profile and verifies startup, verse and
+cross-reference replies, memorisation passages, and tutor statistics at the
+same `/haqor/` base path used by GitHub Pages.
+
 Deploy the contents of `build/web/` over HTTPS.
 
 ```shell

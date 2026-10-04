@@ -245,12 +245,19 @@ jobs:
       - uses: ./haqor/.github/actions/setup-nix-build
         with:
           rust-targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Test web bootstrap failure handling
+        working-directory: haqor
+        run: node --test tool/test-web-bootstrap.mjs
       - name: Build offline WASM PWA
         working-directory: haqor
         run: |
           nix develop --command bash -c '
             set -euo pipefail
             ./tool/build-web.sh --wasm --base-href /haqor/
+            node tool/test-web-runtime.mjs
           '
       - name: Package web bundle
         working-directory: haqor

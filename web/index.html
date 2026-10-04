@@ -214,21 +214,25 @@
 
       function removeRetryParameter() {
         const url = new URL(window.location.href);
-        if (!url.searchParams.delete(retryParameter)) return;
+        if (!url.searchParams.has(retryParameter)) return;
+        url.searchParams.delete(retryParameter);
         window.history.replaceState(null, '', url);
       }
 
       function reloadForIsolation() {
         const url = new URL(window.location.href);
         if (url.searchParams.has(retryParameter)) {
-          // Do not trap the user in a reload loop if a browser blocks service
-          // workers. The non-isolated fallback remains usable, but threaded
-          // WASM may be unavailable.
+          // Threaded Rust WASM cannot run without isolation. Explain the
+          // failure rather than starting an engine that cannot initialise.
           console.error(
             'The Haqor service worker did not establish cross-origin isolation.',
           );
           removeRetryParameter();
-          loadFlutter();
+          boot.fail(
+            'Haqor could not start securely.',
+            'This browser did not enable the isolation required by the engine. '
+              + 'Allow site storage and service workers, then reload the page.',
+          );
           return;
         }
         url.searchParams.set(retryParameter, '1');
@@ -279,9 +283,15 @@
           window.location.hostname === '[::1]';
         const testServiceWorker =
           new URLSearchParams(window.location.search).has('test-service-worker');
-        if (!('serviceWorker' in navigator) ||
-            (isLocalDevelopment && !testServiceWorker)) {
+        if (isLocalDevelopment && !testServiceWorker) {
           loadFlutter();
+          return;
+        }
+        if (!('serviceWorker' in navigator)) {
+          boot.fail(
+            'Haqor could not start securely.',
+            'This browser must allow service workers to run the engine.',
+          );
           return;
         }
 
@@ -326,9 +336,21 @@
         }
 
         let reloading = false;
+        // register() resolves before installation finishes. A failed install
+        // never fires controllerchange, so it must not leave the setup screen
+        // waiting forever. Also bound the wait for a stalled download.
+        const failSetup = (detail) => {
+          clearTimeout(setupTimeout);
+          boot.fail('Haqor could not finish setup.', detail);
+        };
+        const setupTimeout = setTimeout(() => failSetup(
+          'Setup is taking too long. Check your connection and allow site '
+            + 'storage, then reload the page to try again.',
+        ), 90000);
         const reloadOnce = () => {
           if (reloading) return;
           reloading = true;
+          clearTimeout(setupTimeout);
           reloadForIsolation();
         };
         navigator.serviceWorker.addEventListener(
@@ -341,6 +363,20 @@
           const registration = await navigator.serviceWorker.register(
             'flutter_service_worker.js',
           );
+          const installing = registration.installing;
+          if (installing) {
+            const checkInstallation = () => {
+              if (installing.state === 'redundant' && !reloading) {
+                failSetup(
+                  'The offline app could not be downloaded or stored. Check '
+                    + 'your connection and allow site storage, then reload '
+                    + 'the page to try again.',
+                );
+              }
+            };
+            installing.addEventListener('statechange', checkInstallation);
+            checkInstallation();
+          }
           registration.waiting?.postMessage('skipWaiting');
 
           if (unifiedWorkerIsControlling) {
@@ -348,7 +384,11 @@
           }
         } catch (error) {
           console.error('Unable to install the Haqor service worker.', error);
-          loadFlutter();
+          failSetup(
+            'The browser could not install the offline app. Check your '
+              + 'connection and allow site storage, then reload the page. '
+              + `(${error})`,
+          );
         }
       }
 

@@ -30,6 +30,13 @@ jobs:
         with:
           rust-targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Test web bootstrap failure handling
+        working-directory: haqor
+        run: node --test tool/test-web-bootstrap.mjs
+
       - name: Verify formatting
         working-directory: haqor
         # lib/src/bindings is rinf-generated; only check hand-written code.
