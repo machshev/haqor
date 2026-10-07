@@ -3891,7 +3891,7 @@ class _ReaderSessionState extends State<_ReaderSession>
           const PopupMenuItem(
             value: _VerseMenuAction.syntax,
             child: ListTile(
-              leading: Icon(Icons.account_tree_outlined),
+              leading: Icon(Icons.lan_outlined),
               title: Text('Syntax'),
             ),
           ),
