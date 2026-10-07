@@ -25,6 +25,10 @@ const _maqaf = '\u05BE';
 const _superscriptScale = 0.58;
 const _superscriptRise = 0.36;
 
+/// The column between the Hebrew and English side by side: room for a verse
+/// number, its note mark and its cross-reference marker.
+const _parallelGutterWidth = 72.0;
+
 String compactInterlinearMorphology(String morphology) {
   const abbreviations = {
     'noun': 'N',
@@ -171,6 +175,11 @@ class VerseRow extends StatefulWidget {
     this.studyPassageHighlightColor,
     this.ketivDisplay = KetivDisplay.superscript,
     this.syntaxMarks,
+    this.readerText = ReaderText.source,
+    this.translation,
+    this.translationPending = false,
+    this.onTranslationWordTap,
+    this.onTranslationWordMenu,
   });
 
   final VerseEntry entry;
@@ -231,6 +240,26 @@ class VerseRow extends StatefulWidget {
   /// each clause. Null leaves the text unmarked.
   final VerseSyntaxMarks? syntaxMarks;
 
+  /// Whether the row shows the source text, its English, or both side by
+  /// side. Without English for the verse ([translation] null and not
+  /// [translationPending]) it shows the source text whatever this says.
+  final ReaderText readerText;
+
+  /// The verse's English, each span naming the Hebrew words it renders.
+  final List<TranslationSpanEntry>? translation;
+
+  /// Whether the verse's English is still on its way: the row keeps a place
+  /// for it rather than falling back to the source text.
+  final bool translationPending;
+
+  /// A tap on an English word, with the Hebrew word it mainly renders.
+  final void Function(TranslationWordEntry word)? onTranslationWordTap;
+
+  /// An English word's menu (long press or secondary click), with the Hebrew
+  /// word it mainly renders and where on screen the press was.
+  final void Function(TranslationWordEntry word, Offset globalPosition)?
+  onTranslationWordMenu;
+
   @override
   State<VerseRow> createState() => _VerseRowState();
 }
@@ -272,10 +301,15 @@ class _VerseRowState extends State<VerseRow> {
   List<String> _words = [];
   List<TapGestureRecognizer> _recognizers = [];
 
+  /// One per span of [VerseRow.translation], null for a span rendering no
+  /// Hebrew word.
+  List<TapGestureRecognizer?> _translationRecognizers = [];
+
   @override
   void initState() {
     super.initState();
     _rebuild();
+    _rebuildTranslation();
   }
 
   @override
@@ -286,6 +320,46 @@ class _VerseRowState extends State<VerseRow> {
       _disposeRecognizers();
       _rebuild();
     }
+    if (!identical(old.translation, widget.translation) ||
+        (old.onTranslationWordMenu == null) !=
+            (widget.onTranslationWordMenu == null)) {
+      _disposeTranslationRecognizers();
+      _rebuildTranslation();
+    }
+  }
+
+  void _rebuildTranslation() {
+    final hasMenu = widget.onTranslationWordMenu != null;
+    _translationRecognizers = [
+      for (final span in widget.translation ?? const <TranslationSpanEntry>[])
+        if (span.words.isEmpty)
+          null
+        else
+          _WordGestureRecognizer(
+              onLongPressStart: hasMenu
+                  ? (details) => widget.onTranslationWordMenu?.call(
+                      span.words.first,
+                      details.globalPosition,
+                    )
+                  : null,
+            )
+            ..onTap = () {
+              widget.onTranslationWordTap?.call(span.words.first);
+            }
+            ..onSecondaryTapUp = hasMenu
+                ? (details) => widget.onTranslationWordMenu?.call(
+                    span.words.first,
+                    details.globalPosition,
+                  )
+                : null,
+    ];
+  }
+
+  void _disposeTranslationRecognizers() {
+    for (final r in _translationRecognizers) {
+      r?.dispose();
+    }
+    _translationRecognizers = [];
   }
 
   String _rootAt(int? position) =>
@@ -347,6 +421,7 @@ class _VerseRowState extends State<VerseRow> {
   @override
   void dispose() {
     _disposeRecognizers();
+    _disposeTranslationRecognizers();
     super.dispose();
   }
 
@@ -550,39 +625,54 @@ class _VerseRowState extends State<VerseRow> {
     // indent every line by however wide that verse's marks happen to be.
     //
     // The text is always right to left, whatever the app's own direction, so
-    // the gaps are fixed sides rather than directional ones.
-    final verseMarks = Padding(
-      padding: const EdgeInsets.only(left: 6),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        textDirection: TextDirection.rtl,
-        children: [
-          _VerseNumber(
-            key: ValueKey('verse-number-${widget.entry.verse}'),
-            label: widget.hebrewNumerals
-                ? _toHebrewNumeral(widget.entry.verse)
-                : '${widget.entry.verse}',
-            onMenu: widget.onVerseMenu,
-          ),
-          if (widget.studyNote)
-            Padding(
-              padding: const EdgeInsets.only(right: 2),
-              child: Icon(
-                Icons.sticky_note_2_outlined,
-                size: 12,
-                color: theme.colorScheme.secondary,
+    // the gaps are fixed sides rather than directional ones. English opens
+    // its line the other way, and side by side the marks stand between the
+    // two texts.
+    Widget verseMarksFor(EdgeInsets padding, TextDirection direction) =>
+        Padding(
+          padding: padding,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            textDirection: direction,
+            children: [
+              _VerseNumber(
+                key: ValueKey('verse-number-${widget.entry.verse}'),
+                label: widget.hebrewNumerals
+                    ? _toHebrewNumeral(widget.entry.verse)
+                    : '${widget.entry.verse}',
+                onMenu: widget.onVerseMenu,
               ),
-            ),
-          if (_crossReferenceCount > 0 && widget.onCrossReferences != null)
-            _CrossReferenceMarker(
-              count: _crossReferenceCount,
-              onTap: widget.onCrossReferences!,
-            ),
-        ],
-      ),
+              if (widget.studyNote)
+                Padding(
+                  padding: const EdgeInsets.only(right: 2),
+                  child: Icon(
+                    Icons.sticky_note_2_outlined,
+                    size: 12,
+                    color: theme.colorScheme.secondary,
+                  ),
+                ),
+              if (_crossReferenceCount > 0 && widget.onCrossReferences != null)
+                _CrossReferenceMarker(
+                  count: _crossReferenceCount,
+                  onTap: widget.onCrossReferences!,
+                ),
+            ],
+          ),
+        );
+    final verseMarks = verseMarksFor(
+      const EdgeInsets.only(left: 6),
+      TextDirection.rtl,
     );
 
-    final Widget content;
+    final translation = widget.translation;
+    final showsEnglish =
+        widget.readerText != ReaderText.source &&
+        (translation != null || widget.translationPending);
+    // The source text opens with the verse's marks unless the English, or
+    // the column between the two, has them.
+    final sourceMarks = !showsEnglish;
+
+    final Widget source;
     final interlinearPositions = widget.interlinearPositions;
     bool showsInterlinear(int position) =>
         interlinearPositions == null || interlinearPositions.contains(position);
@@ -594,8 +684,8 @@ class _VerseRowState extends State<VerseRow> {
       final interlinearDisplayWords = widget.showCantillation
           ? interlinearWords
           : interlinearWords.map(stripCantillation).toList();
-      content = Align(
-        alignment: Alignment.centerRight,
+      source = Align(
+        alignment: Alignment.topRight,
         child: Wrap(
           // In an RTL wrap, `start` is the visual right edge.  Using
           // `end` puts a partially filled final run on the left.
@@ -605,16 +695,17 @@ class _VerseRowState extends State<VerseRow> {
           spacing: 6,
           textDirection: TextDirection.rtl,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: SizedBox(
-                height: widget.fontSize * 1.6,
-                // Only as wide as the marks: a wrap offers each child its
-                // full width, which a plain `Center` would take, leaving the
-                // marks alone on a line of their own.
-                child: Center(widthFactor: 1, child: verseMarks),
+            if (sourceMarks)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: SizedBox(
+                  height: widget.fontSize * 1.6,
+                  // Only as wide as the marks: a wrap offers each child its
+                  // full width, which a plain `Center` would take, leaving the
+                  // marks alone on a line of their own.
+                  child: Center(widthFactor: 1, child: verseMarks),
+                ),
               ),
-            ),
             for (final (i, glossPosition) in verseGlossPositions(
               interlinearWords,
             ).indexed) ...[
@@ -708,7 +799,8 @@ class _VerseRowState extends State<VerseRow> {
       );
     } else {
       final spans = <InlineSpan>[
-        WidgetSpan(alignment: PlaceholderAlignment.middle, child: verseMarks),
+        if (sourceMarks)
+          WidgetSpan(alignment: PlaceholderAlignment.middle, child: verseMarks),
       ];
       final displayNamePositions = verseGlossPositions(_words);
       final anchors = widget.ketivDisplay == KetivDisplay.hidden
@@ -749,9 +841,84 @@ class _VerseRowState extends State<VerseRow> {
           }
         }
       }
-      content = SelectableText.rich(
+      source = SelectableText.rich(
         TextSpan(children: spans),
         textDirection: TextDirection.rtl,
+      );
+    }
+
+    // The English, in the app's own type, a little smaller than the
+    // Hebrew. Supplied words are in italics, as literal translations print
+    // them; a word rendering Hebrew opens that word's details.
+    Widget english({required bool withMarks}) {
+      final style = theme.textTheme.bodyLarge?.copyWith(
+        fontSize: widget.fontSize * 0.8,
+        height: 1.6,
+        color: wordStyle.color,
+      );
+      return SelectableText.rich(
+        TextSpan(
+          style: style,
+          children: [
+            if (withMarks)
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: verseMarksFor(
+                  const EdgeInsets.only(right: 6),
+                  TextDirection.ltr,
+                ),
+              ),
+            for (final (i, span)
+                in (translation ?? const <TranslationSpanEntry>[]).indexed)
+              TextSpan(
+                text: span.text,
+                style: span.supplied
+                    ? const TextStyle(fontStyle: FontStyle.italic)
+                    : null,
+                recognizer: i < _translationRecognizers.length
+                    ? _translationRecognizers[i]
+                    : null,
+              ),
+          ],
+        ),
+        textDirection: TextDirection.ltr,
+      );
+    }
+
+    final Widget content;
+    if (!showsEnglish) {
+      content = source;
+    } else if (widget.readerText == ReaderText.english) {
+      content = Align(
+        alignment: Alignment.topLeft,
+        child: english(withMarks: true),
+      );
+    } else {
+      // Side by side: the Hebrew reads leftwards from the middle and the
+      // English rightwards from it, so both start at the verse number they
+      // share.
+      content = Row(
+        textDirection: TextDirection.ltr,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: source),
+          // One width for every verse, whatever marks it carries, so the
+          // two texts' inner edges run straight down the page.
+          SizedBox(
+            width: _parallelGutterWidth,
+            height: widget.fontSize * 1.6,
+            child: Center(
+              child: verseMarksFor(EdgeInsets.zero, TextDirection.rtl),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              // Level with the Hebrew's first line, which is taller.
+              padding: EdgeInsets.only(top: widget.fontSize * 0.16),
+              child: english(withMarks: false),
+            ),
+          ),
+        ],
       );
     }
     return GestureDetector(

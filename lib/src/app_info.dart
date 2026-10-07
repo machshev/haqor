@@ -107,6 +107,19 @@ const dataSourceCredits = <DataSourceCredit>[
     url: 'https://github.com/Clear-Bible/macula-hebrew/',
   ),
   DataSourceCredit(
+    title: 'English translation',
+    description:
+        'Adapted from the unfoldingWord Literal Text (ULT), (C) unfoldingWord, '
+        'with its word-by-word alignment to the unfoldingWord Hebrew Bible. '
+        'Haqor files each English verse under the Hebrew verse it renders, '
+        'places the aligned words on its own Hebrew text, and leaves out the '
+        "ULT's footnotes and paragraphing. The original work by unfoldingWord "
+        'is available from unfoldingword.org/ult. This adaptation is shared '
+        'under the same licence.',
+    licence: 'CC BY-SA 4.0',
+    url: 'https://www.unfoldingword.org/ult',
+  ),
+  DataSourceCredit(
     title: 'STEP Bible TAHOT',
     description: 'Context-sensitive interlinear translations.',
     licence: 'CC BY 4.0',

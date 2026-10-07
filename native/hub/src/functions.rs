@@ -1,19 +1,21 @@
 use crate::signals::{
-    BdbSummary, BuildInfo, CalibrationProbe, ChapterText, CrossReferenceEntry, CrossReferences,
-    DictionaryEntry, FinishCalibration, GetBuildInfo, GetCalibrationProbe, GetChapter,
-    GetCrossReferences, GetDictionaryEntry, GetNextStudyItem, GetOnboardingStatus, GetQuotations,
-    GetSeenConcepts, GetStudyState, GetSyntaxTrees, GetThematicOverview, GetThematicReferences,
-    GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts,
-    GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, IssueReportStatus, KetivEntry,
-    LexemeSummary, LexiconEntryOverrideStatus, Occurrence, OccurrenceParse, OnboardingStatus,
-    OptimizeTutorGlossOverrides, ProgressSyncStatus, QuotationEntry, Quotations, RequestFailed,
-    ResetTutor, RootChoice, SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState,
-    SaveTutorGloss, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem,
-    StudyState, SubmitMisreads, SubmitReview, SuffixCard, SyncProgress, SyntaxNodeEntry,
-    SyntaxTrees, ThematicOverview, ThematicReferenceEntry, ThematicReferences, ThematicTarget,
-    ThematicVerseEntry, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats,
-    VerseCard, VerseEntry, VerseRef, VerseSyntaxEntry, VerseText, VerseTextEntry, VerseTexts,
-    WordCard, WordInfo, WordOccurrence, WordOccurrences,
+    BdbSummary, BuildInfo, CalibrationProbe, ChapterText, ChapterTranslation, CrossReferenceEntry,
+    CrossReferences, DictionaryEntry, FinishCalibration, GetBuildInfo, GetCalibrationProbe,
+    GetChapter, GetChapterTranslation, GetCrossReferences, GetDictionaryEntry, GetNextStudyItem,
+    GetOnboardingStatus, GetQuotations, GetSeenConcepts, GetStudyState, GetSyntaxTrees,
+    GetThematicOverview, GetThematicReferences, GetTutorGlossOverrideStats, GetTutorSettings,
+    GetTutorStats, GetVerseText, GetVerseTexts, GetWordInfo, GetWordOccurrences, GlyphCard,
+    GrammarCard, IssueReportStatus, KetivEntry, LexemeSummary, LexiconEntryOverrideStatus,
+    Occurrence, OccurrenceParse, OnboardingStatus, OptimizeTutorGlossOverrides, ProgressSyncStatus,
+    QuotationEntry, Quotations, RequestFailed, ResetTutor, RootChoice, SaveIssueReport,
+    SaveLexiconEntryOverride, SaveStudyState, SaveTutorGloss, SeenConcept, SeenConcepts,
+    SetAlphabetKnown, SetTutorSettings, StudyItem, StudyState, SubmitMisreads, SubmitReview,
+    SuffixCard, SyncProgress, SyntaxNodeEntry, SyntaxTrees, ThematicOverview,
+    ThematicReferenceEntry, ThematicReferences, ThematicTarget, ThematicVerseEntry,
+    TranslationSpanEntry, TranslationWordEntry, TutorGlossOverrideStats, TutorProgress,
+    TutorSettings, TutorStats, VerseCard, VerseEntry, VerseRef, VerseSyntaxEntry, VerseText,
+    VerseTextEntry, VerseTexts, VerseTranslationEntry, WordCard, WordInfo, WordOccurrence,
+    WordOccurrences,
 };
 #[cfg(target_arch = "wasm32")]
 use crate::signals::{FlushProgress, ProgressSnapshot};
@@ -1989,15 +1991,83 @@ pub async fn get_syntax_trees(bible: SharedBible) {
     }
 }
 
+/// A verse's core translation spans as the signals carry them.
+fn translation_spans(
+    spans: Vec<haqor_core::translation::TranslationSpan>,
+) -> Vec<TranslationSpanEntry> {
+    spans
+        .into_iter()
+        .map(|span| TranslationSpanEntry {
+            text: span.text,
+            supplied: span.supplied,
+            words: span
+                .words
+                .into_iter()
+                .map(|w| TranslationWordEntry {
+                    chapter: w.chapter,
+                    verse: w.verse,
+                    position: w.position,
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+pub async fn get_chapter_translation(bible: SharedBible) {
+    let receiver = GetChapterTranslation::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let verses = lock(&bible)
+            .chapter_translation(req.book, req.chapter)
+            .unwrap_or_else(|e| {
+                debug_print!("get_chapter_translation error: {:?}", e);
+                Vec::new()
+            });
+        ChapterTranslation {
+            request_id: req.request_id,
+            book: req.book,
+            chapter: req.chapter,
+            verses: verses
+                .into_iter()
+                .map(|(verse, spans)| VerseTranslationEntry {
+                    verse,
+                    spans: translation_spans(spans),
+                })
+                .collect(),
+        }
+        .send_signal_to_dart();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A span keeps its text, its supplied mark and the words it renders,
+    /// the main one first.
+    #[test]
+    fn translation_spans_carry_their_words() {
+        let spans = haqor_core::translation::parse("[the heavens|4,3] {[was|5]}", 1, 1)
+            .unwrap_or_else(|| panic!("unparsed"));
+        let entries = translation_spans(spans);
+        assert_eq!(entries[0].text, "the heavens");
+        let words: Vec<(u8, u8, u16)> = entries[0]
+            .words
+            .iter()
+            .map(|w| (w.chapter, w.verse, w.position))
+            .collect();
+        assert_eq!(words, [(1, 1, 4), (1, 1, 3)]);
+        assert!(entries[1].words.is_empty());
+        assert!(entries[2].supplied);
+    }
 
     /// A tree travels in pre-order, each node naming its parent, with a part
     /// of a word carrying its own text and gloss.
     #[test]
     fn syntax_trees_flatten_in_pre_order() {
-        let tree = haqor_core::syntax::parse("[ 0{וַ|and} [cl 0:v{יֹּאמֶר|said} [np:s 1]]]").unwrap();
+        let tree = haqor_core::syntax::parse("[ 0{וַ|and} [cl 0:v{יֹּאמֶר|said} [np:s 1]]]")
+            .unwrap_or_else(|| panic!("unparsed"));
         let nodes = syntax_nodes(tree);
         let shape: Vec<(i32, &str, &str, i32)> = nodes
             .iter()

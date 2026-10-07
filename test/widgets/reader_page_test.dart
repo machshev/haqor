@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:haqor/src/app_settings.dart' show ReaderText;
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/reader_page.dart';
 import 'package:haqor/src/study_workspace.dart' as study;
@@ -32,6 +33,7 @@ class _FakeRust {
   final List<GetQuotations> quotationRequests = [];
   final List<GetThematicReferences> thematicRequests = [];
   final List<GetSyntaxTrees> syntaxRequests = [];
+  final List<GetChapterTranslation> translationRequests = [];
 
   void onWordInfo(GetWordInfo request) => wordRequests.add(request);
   void onOccurrences(GetWordOccurrences request) =>
@@ -140,6 +142,8 @@ Future<void> _deliverExpectingNoShift(
 void main() {
   crossReferenceDockTests();
   syntaxTests();
+  translationTests();
+  compactViewMenuTests();
   readerViewTests();
 
   for (final enabled in [true, false]) {
@@ -2341,6 +2345,7 @@ Future<_FakeRust> _pumpWorkspace(
         sendQuotationsRequest: rust.quotationRequests.add,
         sendThematicReferencesRequest: rust.thematicRequests.add,
         sendSyntaxTreesRequest: rust.syntaxRequests.add,
+        sendTranslationRequest: rust.translationRequests.add,
       ),
     ),
   );
@@ -2674,6 +2679,121 @@ void syntaxTests() {
     expect(
       (request.book, request.chapter, request.firstVerse, request.lastVerse),
       (1, 1, 2, 2),
+    );
+    expect(tester.takeException(), isNull);
+  });
+}
+
+void translationTests() {
+  testWidgets('the text toggle cycles Hebrew, English and side by side', (
+    tester,
+  ) async {
+    final rust = await _pumpWorkspace(tester, const Size(1366, 744));
+    expect(rust.translationRequests, isEmpty);
+    expect(
+      tester.widget<VerseRow>(_verse(1, 1, 1)).readerText,
+      ReaderText.source,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('reader-text-toggle')));
+    await tester.pump();
+    final row = tester.widget<VerseRow>(_verse(1, 1, 1));
+    expect(row.readerText, ReaderText.english);
+    expect(row.translationPending, isTrue);
+    final request = rust.translationRequests.single;
+    expect((request.book, request.chapter), (1, 1));
+
+    TranslationWordEntry at(int verse, int position) =>
+        TranslationWordEntry(chapter: 1, verse: verse, position: position);
+    assignRustSignal['ChapterTranslation']!(
+      ChapterTranslation(
+        requestId: request.requestId,
+        book: 1,
+        chapter: 1,
+        verses: [
+          VerseTranslationEntry(
+            verse: 1,
+            spans: [
+              TranslationSpanEntry(
+                text: 'Book',
+                supplied: false,
+                words: [at(1, 0)],
+              ),
+              const TranslationSpanEntry(text: ' ', supplied: false, words: []),
+              // Renders a word of the next verse.
+              TranslationSpanEntry(
+                text: 'chapter',
+                supplied: false,
+                words: [at(2, 1)],
+              ),
+            ],
+          ),
+        ],
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    final english = tester.widget<VerseRow>(_verse(1, 1, 1));
+    expect(english.translationPending, isFalse);
+    expect(english.translation!.map((s) => s.text).join(), 'Book chapter');
+    // A verse the translation lacks keeps its source text.
+    expect(tester.widget<VerseRow>(_verse(1, 1, 2)).translation, isNull);
+    // The chapter is asked for once, not once per row.
+    expect(rust.translationRequests, hasLength(1));
+
+    // An English word opens the Hebrew word it renders, in its own verse.
+    english.onTranslationWordTap!(at(2, 1));
+    await tester.pump();
+    final word = rust.wordRequests.last;
+    expect(word.word, 'פרק1');
+    expect((word.chapter, word.verse, word.position), (1, 2, 1));
+
+    await tester.tap(find.byKey(const ValueKey('reader-text-toggle')));
+    await tester.pump();
+    expect(
+      tester.widget<VerseRow>(_verse(1, 1, 1)).readerText,
+      ReaderText.parallel,
+    );
+    await tester.tap(find.byKey(const ValueKey('reader-text-toggle')));
+    await tester.pump();
+    expect(
+      tester.widget<VerseRow>(_verse(1, 1, 1)).readerText,
+      ReaderText.source,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the text mode is remembered', (tester) async {
+    final rust = await _pumpWorkspace(
+      tester,
+      const Size(1366, 744),
+      prefs: {'reader_text': 'parallel'},
+    );
+    expect(
+      tester.widget<VerseRow>(_verse(1, 1, 1)).readerText,
+      ReaderText.parallel,
+    );
+    expect(rust.translationRequests.single.chapter, 1);
+  });
+}
+
+void compactViewMenuTests() {
+  testWidgets('a narrow reader gathers the text and view toggles in a menu', (
+    tester,
+  ) async {
+    await _pumpWorkspace(tester, const Size(400, 800));
+    expect(find.byKey(const ValueKey('reader-text-toggle')), findsNothing);
+    expect(find.byKey(const ValueKey('reader-view-toggle')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('reader-view-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.widgetWithText(CheckedPopupMenuItem<Object>, 'Side by side'),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<VerseRow>(_verse(1, 1, 1)).readerText,
+      ReaderText.parallel,
     );
     expect(tester.takeException(), isNull);
   });

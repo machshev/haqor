@@ -200,6 +200,135 @@ void main() {
     );
   });
 
+  group('translation', () {
+    const entry = VerseEntry(
+      verse: 1,
+      text: 'בְּרֵאשִׁית בָּרָא אֱלֹהִים',
+      glosses: ['in beginning', 'created', 'God'],
+      morphologies: [],
+      names: [],
+      roots: [],
+      ketivs: [],
+      crossReferenceScores: [],
+    );
+    TranslationWordEntry at(int position) =>
+        TranslationWordEntry(chapter: 1, verse: 1, position: position);
+    final english = [
+      TranslationSpanEntry(
+        text: 'In the beginning',
+        supplied: false,
+        words: [at(0)],
+      ),
+      const TranslationSpanEntry(text: ' ', supplied: false, words: []),
+      TranslationSpanEntry(text: 'God', supplied: false, words: [at(2)]),
+      const TranslationSpanEntry(text: ' ', supplied: false, words: []),
+      TranslationSpanEntry(text: 'created', supplied: false, words: [at(1)]),
+      const TranslationSpanEntry(text: ' ', supplied: false, words: []),
+      TranslationSpanEntry(text: 'all', supplied: true, words: [at(1)]),
+      const TranslationSpanEntry(text: '.', supplied: false, words: []),
+    ];
+
+    Widget row(
+      ReaderText readerText, {
+      List<TranslationSpanEntry>? translation,
+      bool pending = false,
+      void Function(TranslationWordEntry)? onTap,
+    }) => MaterialApp(
+      home: Scaffold(
+        body: VerseRow(
+          entry: entry,
+          isSelected: false,
+          hebrewNumerals: false,
+          onTap: () {},
+          onWordTap: (_, _, _, _) {},
+          readerText: readerText,
+          translation: translation,
+          translationPending: pending,
+          onTranslationWordTap: onTap,
+        ),
+      ),
+    );
+
+    List<TextSpan> spansOf(TextDirection direction) => [
+      for (final text
+          in find
+              .byType(SelectableText)
+              .evaluate()
+              .map((e) => e.widget as SelectableText)
+              .where((t) => t.textDirection == direction))
+        ...text.textSpan!.children!.whereType<TextSpan>(),
+    ];
+
+    testWidgets('English alone replaces the Hebrew', (tester) async {
+      await tester.pumpWidget(row(ReaderText.english, translation: english));
+      expect(spansOf(TextDirection.rtl), isEmpty);
+      final spans = spansOf(TextDirection.ltr);
+      expect(
+        spans.map((s) => s.text).join(),
+        'In the beginning God created all.',
+      );
+      // Supplied words are in italics.
+      final supplied = spans.firstWhere((s) => s.text == 'all');
+      expect(supplied.style?.fontStyle, FontStyle.italic);
+      expect(find.byKey(const ValueKey('verse-number-1')), findsOneWidget);
+    });
+
+    testWidgets('side by side shows both, the verse number between', (
+      tester,
+    ) async {
+      await tester.pumpWidget(row(ReaderText.parallel, translation: english));
+      expect(
+        spansOf(TextDirection.rtl).map((s) => s.text),
+        contains('אֱלֹהִים'),
+      );
+      expect(spansOf(TextDirection.ltr).map((s) => s.text), contains('God'));
+      final hebrew = tester.getCenter(
+        find.textContaining('אֱלֹהִים', findRichText: true).first,
+      );
+      final number = tester.getCenter(
+        find.byKey(const ValueKey('verse-number-1')),
+      );
+      final englishText = tester.getCenter(
+        find.textContaining('God', findRichText: true).first,
+      );
+      expect(hebrew.dx, lessThan(number.dx));
+      expect(number.dx, lessThan(englishText.dx));
+    });
+
+    testWidgets('a verse without English shows its source text', (
+      tester,
+    ) async {
+      await tester.pumpWidget(row(ReaderText.english));
+      expect(
+        spansOf(TextDirection.rtl).map((s) => s.text),
+        contains('אֱלֹהִים'),
+      );
+      // While the English is on its way, the row waits for it instead.
+      await tester.pumpWidget(row(ReaderText.english, pending: true));
+      expect(spansOf(TextDirection.rtl), isEmpty);
+    });
+
+    testWidgets('tapping an English word names the Hebrew it renders', (
+      tester,
+    ) async {
+      final tapped = <int>[];
+      await tester.pumpWidget(
+        row(
+          ReaderText.english,
+          translation: english,
+          onTap: (w) => tapped.add(w.position),
+        ),
+      );
+      for (final span in spansOf(TextDirection.ltr)) {
+        if (span.text == 'God' || span.text == 'created') {
+          (span.recognizer! as TapGestureRecognizer).onTap!();
+        }
+        if (span.text == '.') expect(span.recognizer, isNull);
+      }
+      expect(tapped, [2, 1]);
+    });
+  });
+
   testWidgets('syntax roles underline words and clauses are ruled off', (
     tester,
   ) async {

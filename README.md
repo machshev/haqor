@@ -320,6 +320,16 @@ Westminster Hebrew Syntax of the J. Alan Groves Center, CC BY 4.0), with
 English glosses for parts of words from Cherith Analytics (CC BY 4.0). The
 reader's Syntax view and syntax-role colouring are drawn from them.
 
+**English translation** — adapted from the unfoldingWord Literal Text (ULT),
+(C) unfoldingWord, licensed CC BY-SA 4.0, with its word alignment to the
+unfoldingWord Hebrew Bible (CC BY-SA 4.0). Haqor files each English verse
+under the Hebrew verse it renders, places the aligned words on its own Hebrew
+text, and leaves out the ULT's footnotes and paragraphing. The original work
+by unfoldingWord is available from
+[unfoldingword.org/ult](https://www.unfoldingword.org/ult). The adapted text
+in `haqor.db` is shared under the same licence, CC BY-SA 4.0. The reader's
+English and side-by-side views show it.
+
 **Syriac New Testament** — the text of the British and Foreign Bible Society's
 edition, with lexical and morphological data from SEDRA:
 

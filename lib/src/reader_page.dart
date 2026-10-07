@@ -245,6 +245,7 @@ class BibleReaderPage extends StatefulWidget {
     this.sendThematicReferencesRequest,
     this.sendThematicOverviewRequest,
     this.sendSyntaxTreesRequest,
+    this.sendTranslationRequest,
   });
 
   final void Function(GetChapter request)? sendChapterRequest;
@@ -259,6 +260,7 @@ class BibleReaderPage extends StatefulWidget {
   sendThematicReferencesRequest;
   final void Function(GetThematicOverview request)? sendThematicOverviewRequest;
   final void Function(GetSyntaxTrees request)? sendSyntaxTreesRequest;
+  final void Function(GetChapterTranslation request)? sendTranslationRequest;
 
   @override
   State<BibleReaderPage> createState() => _BibleReaderPageState();
@@ -596,6 +598,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     sendChapterRequest: widget.sendChapterRequest,
     studyStore: _studyStore,
     sendSyntaxTreesRequest: widget.sendSyntaxTreesRequest,
+    sendTranslationRequest: widget.sendTranslationRequest,
     sendVerseTextsRequest: widget.sendVerseTextsRequest,
     onPassageChanged: () {
       if (mounted) setState(() {});
@@ -1540,6 +1543,7 @@ class _ReaderSession extends StatefulWidget {
     required this.studyStore,
     this.sendChapterRequest,
     this.sendSyntaxTreesRequest,
+    this.sendTranslationRequest,
     this.sendVerseTextsRequest,
   });
 
@@ -1569,6 +1573,10 @@ class _ReaderSession extends StatefulWidget {
   /// Test seam: how a [GetSyntaxTrees] request for the reader's role
   /// colouring reaches the Rust side.
   final void Function(GetSyntaxTrees request)? sendSyntaxTreesRequest;
+
+  /// Test seam: how a [GetChapterTranslation] request for the reader's
+  /// English reaches the Rust side.
+  final void Function(GetChapterTranslation request)? sendTranslationRequest;
 
   /// Test seam: how the Syntax sheet asks for its verse's words.
   final void Function(GetVerseTexts request)? sendVerseTextsRequest;
@@ -1613,6 +1621,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   static const _kHighlightProperNames = 'highlight_proper_names';
   static const _kSyntaxRoles = 'syntax_roles';
   static const _kSyntaxView = 'syntax_view';
+  static const _kReaderText = 'reader_text';
   static const _kKetivDisplay = 'ketiv_display';
   static const _kReadingPlanBook = 'reading_plan_book';
   static const _kReadingPlanCompleted = 'reading_plan_completed';
@@ -1693,6 +1702,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   bool _highlightProperNames = false;
   bool _syntaxRoles = false;
   SyntaxView _syntaxView = SyntaxView.outline;
+  ReaderText _readerText = ReaderText.source;
   bool _studyWorkspaceVisible = false;
   KetivDisplay _ketivDisplay = KetivDisplay.superscript;
   ReaderLayoutMode _readerLayoutMode = ReaderLayoutMode.automatic;
@@ -1734,6 +1744,18 @@ class _ReaderSessionState extends State<_ReaderSession>
   /// The chapters whose trees are on their way, by request id.
   final Map<int, (int, int)> _syntaxRequests = {};
   static int _nextSyntaxRequestId = 1;
+
+  StreamSubscription<RustSignalPack<ChapterTranslation>>? _translationSub;
+
+  /// Each OT chapter's English by verse, keyed by (0-based book, chapter),
+  /// once asked for: the reader asks the first time a row of the chapter
+  /// shows with the English on.
+  final Map<(int, int), Map<int, List<TranslationSpanEntry>>> _translations =
+      {};
+
+  /// The chapters whose English is on its way, by request id.
+  final Map<int, (int, int)> _translationRequests = {};
+  static int _nextTranslationRequestId = 1;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -1786,6 +1808,15 @@ class _ReaderSessionState extends State<_ReaderSession>
         };
       });
     });
+    _translationSub = ChapterTranslation.rustSignalStream.listen((pack) {
+      final chapter = _translationRequests.remove(pack.message.requestId);
+      if (chapter == null || !mounted) return;
+      setState(() {
+        _translations[chapter] = {
+          for (final verse in pack.message.verses) verse.verse: verse.spans,
+        };
+      });
+    });
     _lexiconOverrideSub = LexiconEntryOverrideStatus.rustSignalStream.listen((
       pack,
     ) {
@@ -1819,6 +1850,132 @@ class _ReaderSessionState extends State<_ReaderSession>
       return null;
     }
     return marks[verse] ?? VerseSyntaxMarks.empty;
+  }
+
+  /// A verse's English while the reader shows it, and whether it is still on
+  /// its way, which the first row to ask for its chapter sends for. Null and
+  /// not pending for a verse without English, the New Testament's included.
+  ({List<TranslationSpanEntry>? spans, bool pending}) _translationFor(
+    int bookIndex,
+    int chapter,
+    int verse,
+  ) {
+    if (_readerText == ReaderText.source || bookIndex >= 39) {
+      return (spans: null, pending: false);
+    }
+    final verses = _translations[(bookIndex, chapter)];
+    if (verses == null) {
+      _requestTranslation(bookIndex, chapter);
+      return (spans: null, pending: true);
+    }
+    return (spans: verses[verse], pending: false);
+  }
+
+  void _requestTranslation(int bookIndex, int chapter) {
+    if (_translationRequests.containsValue((bookIndex, chapter))) return;
+    final id = _nextTranslationRequestId++;
+    _translationRequests[id] = (bookIndex, chapter);
+    final request = GetChapterTranslation(
+      requestId: id,
+      book: bookIndex + 1,
+      chapter: chapter,
+    );
+    final send = widget.sendTranslationRequest;
+    if (send != null) {
+      send(request);
+    } else {
+      request.sendSignalToRust();
+    }
+  }
+
+  /// The Hebrew word an English word renders, as a word tap would name it:
+  /// its text, gloss and root, read from its verse's row. Null when that
+  /// verse is not loaded, which a word of the verse beside it rarely is not.
+  ({String word, String? gloss, String root})? _translatedWord(
+    int bookIndex,
+    TranslationWordEntry target,
+  ) {
+    final section = _sections
+        .where((s) => s.bookIndex == bookIndex && s.chapter == target.chapter)
+        .firstOrNull;
+    final entry = section?.verses
+        .where((v) => v.verse == target.verse)
+        .firstOrNull;
+    if (entry == null) return null;
+    final words = entry.text.split(' ').where((w) => w.isNotEmpty).toList();
+    final positions = verseGlossPositions(words);
+    final index = positions.indexOf(target.position);
+    if (index < 0) return null;
+    final position = target.position;
+    return (
+      word: words[index],
+      gloss: position < entry.glosses.length ? entry.glosses[position] : null,
+      root: position < entry.roots.length ? entry.roots[position] : '',
+    );
+  }
+
+  void _cycleReaderText() => _setReaderText(_readerText.next);
+
+  void _setReaderText(ReaderText text) {
+    setState(() => _readerText = text);
+    _savePrefs();
+  }
+
+  /// The reader's text and Hebrew view toggles. A narrow reader (a tile of
+  /// the workspace, say) has no room in its bar for both, and gathers them
+  /// into one menu instead.
+  List<Widget> _viewActions({required bool compact}) {
+    if (compact) {
+      return [
+        PopupMenuButton<Object>(
+          key: const ValueKey('reader-view-menu'),
+          icon: const Icon(Icons.tune),
+          tooltip: 'View',
+          onSelected: (choice) => switch (choice) {
+            ReaderText text => _setReaderText(text),
+            ReaderView view => _setReaderView(view),
+            _ => null,
+          },
+          itemBuilder: (context) => [
+            for (final text in ReaderText.values)
+              CheckedPopupMenuItem(
+                value: text,
+                checked: text == _readerText,
+                child: Text(text.label),
+              ),
+            const PopupMenuDivider(),
+            for (final view in ReaderView.values)
+              CheckedPopupMenuItem(
+                value: view,
+                checked: view == _readerView,
+                child: Text(view.label),
+              ),
+          ],
+        ),
+      ];
+    }
+    return [
+      IconButton(
+        key: const ValueKey('reader-text-toggle'),
+        icon: Icon(switch (_readerText) {
+          ReaderText.source => Icons.format_textdirection_r_to_l,
+          ReaderText.english => Icons.format_textdirection_l_to_r,
+          ReaderText.parallel => Icons.vertical_split_outlined,
+        }),
+        onPressed: _cycleReaderText,
+        tooltip: '${_readerText.label} · switch to ${_readerText.next.label}',
+      ),
+      IconButton(
+        key: const ValueKey('reader-view-toggle'),
+        icon: Icon(switch (_readerView) {
+          ReaderView.interlinear => Icons.subtitles_outlined,
+          ReaderView.plain => Icons.notes,
+          ReaderView.rapid => Icons.touch_app_outlined,
+        }),
+        onPressed: _cycleReaderView,
+        tooltip: '${_readerView.label} · switch to ${_readerView.next.label}',
+      ),
+    ];
   }
 
   void _requestSyntax(int bookIndex, int chapter) {
@@ -2011,6 +2168,9 @@ class _ReaderSessionState extends State<_ReaderSession>
       _syntaxView =
           SyntaxView.values.asNameMap()[prefs.readString(_kSyntaxView)] ??
           SyntaxView.outline;
+      _readerText =
+          ReaderText.values.asNameMap()[prefs.readString(_kReaderText)] ??
+          ReaderText.source;
       _studyWorkspaceVisible = prefs.readBool(_kStudyWorkspaceVisible) ?? false;
       _ketivDisplay = KetivDisplay.values.firstWhere(
         (option) => option.name == prefs.readString(_kKetivDisplay),
@@ -2117,6 +2277,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       prefs.setBool(_kHighlightProperNames, _highlightProperNames),
       prefs.setBool(_kSyntaxRoles, _syntaxRoles),
       prefs.setString(_kSyntaxView, _syntaxView.name),
+      prefs.setString(_kReaderText, _readerText.name),
       prefs.setBool(_kStudyWorkspaceVisible, _studyWorkspaceVisible),
       prefs.setString(_kKetivDisplay, _ketivDisplay.name),
       prefs.setString(_kReaderLayoutMode, _readerLayoutMode.name),
@@ -2151,6 +2312,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       _highlightProperNames = settings.highlightProperNames;
       _syntaxRoles = settings.syntaxRoles;
       _syntaxView = settings.syntaxView;
+      _readerText = settings.readerText;
       if (settings.rapidReveal != _rapidReveal) _revealed.clear();
       _rapidReveal = settings.rapidReveal;
       _ketivDisplay = settings.ketivDisplay;
@@ -2181,10 +2343,12 @@ class _ReaderSessionState extends State<_ReaderSession>
     readerLayoutMode: _readerLayoutMode,
     syntaxRoles: _syntaxRoles,
     syntaxView: _syntaxView,
+    readerText: _readerText,
   );
 
-  void _cycleReaderView() {
-    final next = _readerView.next;
+  void _cycleReaderView() => _setReaderView(_readerView.next);
+
+  void _setReaderView(ReaderView next) {
     setState(() {
       _readerView = next;
       _revealed.clear();
@@ -3739,6 +3903,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     _sub?.cancel();
     _lexiconOverrideSub?.cancel();
     _syntaxSub?.cancel();
+    _translationSub?.cancel();
     widget.studyStore.removeListener(_onStudyStoreChanged);
     for (final timeout in _fetchTimeouts.values) {
       timeout.cancel();
@@ -4218,7 +4383,12 @@ class _ReaderSessionState extends State<_ReaderSession>
     return Overlay.wrap(child: _session(context));
   }
 
-  Widget _session(BuildContext context) {
+  Widget _session(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) =>
+        _sessionScaffold(context, compact: constraints.maxWidth < 480),
+  );
+
+  Widget _sessionScaffold(BuildContext context, {required bool compact}) {
     final book = kBooks[_bookIndex];
     final theme = Theme.of(context);
     return Scaffold(
@@ -4283,17 +4453,7 @@ class _ReaderSessionState extends State<_ReaderSession>
                 widget.onCrossReferencesRequested(_bookIndex, _chapter, null),
             tooltip: 'Cross references in this chapter',
           ),
-          IconButton(
-            key: const ValueKey('reader-view-toggle'),
-            icon: Icon(switch (_readerView) {
-              ReaderView.interlinear => Icons.subtitles_outlined,
-              ReaderView.plain => Icons.notes,
-              ReaderView.rapid => Icons.touch_app_outlined,
-            }),
-            onPressed: _cycleReaderView,
-            tooltip:
-                '${_readerView.label} · switch to ${_readerView.next.label}',
-          ),
+          ..._viewActions(compact: compact),
           IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: _canGoBack ? _goBack : null,
@@ -4429,6 +4589,7 @@ class _ReaderSessionState extends State<_ReaderSession>
                     word.root.isNotEmpty)
                   word.root: Color(word.colorValue),
             };
+            final translation = _translationFor(b, c, entry.verse);
             final row = VerseRow(
               key: section.verseKeys[entry.verse],
               entry: entry,
@@ -4512,6 +4673,36 @@ class _ReaderSessionState extends State<_ReaderSession>
                   : Color(studyPassage.colorValue),
               ketivDisplay: _ketivDisplay,
               syntaxMarks: _syntaxMarksFor(b, c, entry.verse),
+              readerText: _readerText,
+              translation: translation.spans,
+              translationPending: translation.pending,
+              onTranslationWordTap: (target) {
+                final word = _translatedWord(b, target);
+                if (word == null) return;
+                _showWordInfo(
+                  word.word,
+                  b,
+                  target.chapter,
+                  target.verse,
+                  readerGloss: word.gloss,
+                  position: target.position,
+                  root: word.root,
+                );
+              },
+              onTranslationWordMenu: (target, globalPosition) {
+                final word = _translatedWord(b, target);
+                if (word == null) return;
+                _showWordMenu(
+                  word.word,
+                  b,
+                  target.chapter,
+                  target.verse,
+                  globalPosition: globalPosition,
+                  readerGloss: word.gloss,
+                  position: target.position,
+                  root: word.root,
+                );
+              },
             );
             final headings = headingsBefore[verseIndex];
             if (headings == null) return row;

@@ -120,6 +120,30 @@ enum ReaderView {
   ReaderView get next => values[(index + 1) % values.length];
 }
 
+/// Which text the reader shows: the source text, the English translation,
+/// or both side by side.
+enum ReaderText {
+  /// The Hebrew (or Syriac) alone.
+  source('Hebrew', 'The Hebrew text alone.'),
+
+  /// The English translation alone, where there is one.
+  english('English', 'The English translation alone.'),
+
+  /// Each verse's Hebrew and English side by side, their verse numbers
+  /// shared between them.
+  parallel(
+    'Side by side',
+    'The Hebrew with the English beside it, verse by verse.',
+  );
+
+  const ReaderText(this.label, this.description);
+
+  final String label;
+  final String description;
+
+  ReaderText get next => values[(index + 1) % values.length];
+}
+
 /// How much of the interlinear a tap reveals in [ReaderView.rapid].
 enum RapidReveal {
   verse('Verse', 'A tap shows the interlinear for the whole verse.'),
@@ -160,6 +184,7 @@ class AppReadingSettings {
     required this.readerLayoutMode,
     this.syntaxRoles = false,
     this.syntaxView = SyntaxView.outline,
+    this.readerText = ReaderText.source,
   });
 
   final bool ntSyriac;
@@ -182,6 +207,9 @@ class AppReadingSettings {
   /// How a verse's Syntax view first shows its tree.
   final SyntaxView syntaxView;
 
+  /// Whether the reader shows the Hebrew, the English, or both.
+  final ReaderText readerText;
+
   AppReadingSettings copyWith({
     bool? ntSyriac,
     bool? englishBookNames,
@@ -197,6 +225,7 @@ class AppReadingSettings {
     ReaderLayoutMode? readerLayoutMode,
     bool? syntaxRoles,
     SyntaxView? syntaxView,
+    ReaderText? readerText,
   }) => AppReadingSettings(
     ntSyriac: ntSyriac ?? this.ntSyriac,
     englishBookNames: englishBookNames ?? this.englishBookNames,
@@ -212,6 +241,7 @@ class AppReadingSettings {
     readerLayoutMode: readerLayoutMode ?? this.readerLayoutMode,
     syntaxRoles: syntaxRoles ?? this.syntaxRoles,
     syntaxView: syntaxView ?? this.syntaxView,
+    readerText: readerText ?? this.readerText,
   );
 }
 
@@ -408,6 +438,30 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
               const SizedBox(height: 4),
               Text(
                 _readingSettings.readerLayoutMode.description,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Text', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 8),
+              SegmentedButton<ReaderText>(
+                key: const ValueKey('reader-text-setting'),
+                showSelectedIcon: false,
+                segments: [
+                  for (final option in ReaderText.values)
+                    ButtonSegment(value: option, label: Text(option.label)),
+                ],
+                selected: {_readingSettings.readerText},
+                onSelectionChanged: (selection) => _updateReadingSettings(
+                  _readingSettings.copyWith(readerText: selection.single),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${_readingSettings.readerText.description} The English, for '
+                'the Old Testament, is adapted from the unfoldingWord Literal '
+                'Text; tap an English word for the Hebrew it translates.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),

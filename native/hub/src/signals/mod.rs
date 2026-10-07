@@ -498,6 +498,59 @@ pub struct SyntaxTrees {
     pub verses: Vec<VerseSyntaxEntry>,
 }
 
+/// Ask for the English translation (adapted from the unfoldingWord Literal
+/// Text) of a whole OT chapter, for the reader's English and side-by-side
+/// views.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetChapterTranslation {
+    /// Echoed back so a caller can ignore replies to a superseded request.
+    pub request_id: u32,
+    pub book: u8,
+    pub chapter: u8,
+}
+
+/// A Hebrew word a [`TranslationSpanEntry`] renders. Usually in the span's
+/// own verse, but where the English and Hebrew divide verses differently it
+/// may be in a neighbouring one.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct TranslationWordEntry {
+    pub chapter: u8,
+    pub verse: u8,
+    /// The word's position in its verse, as the reader numbers words.
+    pub position: u16,
+}
+
+/// A run of a verse's English: words rendering the same Hebrew, or text
+/// (punctuation, spaces) rendering none.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct TranslationSpanEntry {
+    pub text: String,
+    /// English supplied for sense rather than rendering any word, which
+    /// literal translations print in italics.
+    pub supplied: bool,
+    /// The Hebrew words the text renders, the main one first; empty for text
+    /// rendering none.
+    pub words: Vec<TranslationWordEntry>,
+}
+
+/// One verse's English, on the Hebrew verse numbering.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct VerseTranslationEntry {
+    pub verse: u8,
+    pub spans: Vec<TranslationSpanEntry>,
+}
+
+/// Reply to [`GetChapterTranslation`]: the chapter's verses that have
+/// English, in order. Empty for the NT and for a database without the
+/// translation.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct ChapterTranslation {
+    pub request_id: u32,
+    pub book: u8,
+    pub chapter: u8,
+    pub verses: Vec<VerseTranslationEntry>,
+}
+
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetWordInfo {
     /// Echoed in the [`WordInfo`] reply. Replies carry nothing else that says
