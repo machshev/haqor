@@ -131,6 +131,19 @@ enum RapidReveal {
   final String description;
 }
 
+/// How a verse's Syntax view shows its tree.
+enum SyntaxView {
+  /// Clauses and phrases as nested, labelled blocks.
+  outline('Outline'),
+
+  /// A drawn tree diagram, panned and zoomed.
+  tree('Tree');
+
+  const SyntaxView(this.label);
+
+  final String label;
+}
+
 class AppReadingSettings {
   const AppReadingSettings({
     required this.ntSyriac,
@@ -145,6 +158,8 @@ class AppReadingSettings {
     required this.fontSize,
     required this.fontFamily,
     required this.readerLayoutMode,
+    this.syntaxRoles = false,
+    this.syntaxView = SyntaxView.outline,
   });
 
   final bool ntSyriac;
@@ -160,6 +175,13 @@ class AppReadingSettings {
   final String fontFamily;
   final ReaderLayoutMode readerLayoutMode;
 
+  /// Whether the reader underlines each word in the colour of its syntax
+  /// role (subject, verb, object, …) and marks where clauses begin.
+  final bool syntaxRoles;
+
+  /// How a verse's Syntax view first shows its tree.
+  final SyntaxView syntaxView;
+
   AppReadingSettings copyWith({
     bool? ntSyriac,
     bool? englishBookNames,
@@ -173,6 +195,8 @@ class AppReadingSettings {
     double? fontSize,
     String? fontFamily,
     ReaderLayoutMode? readerLayoutMode,
+    bool? syntaxRoles,
+    SyntaxView? syntaxView,
   }) => AppReadingSettings(
     ntSyriac: ntSyriac ?? this.ntSyriac,
     englishBookNames: englishBookNames ?? this.englishBookNames,
@@ -186,6 +210,8 @@ class AppReadingSettings {
     fontSize: fontSize ?? this.fontSize,
     fontFamily: fontFamily ?? this.fontFamily,
     readerLayoutMode: readerLayoutMode ?? this.readerLayoutMode,
+    syntaxRoles: syntaxRoles ?? this.syntaxRoles,
+    syntaxView: syntaxView ?? this.syntaxView,
   );
 }
 
@@ -498,6 +524,43 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
                 value: _readingSettings.highlightProperNames,
                 onChanged: (value) => _updateReadingSettings(
                   _readingSettings.copyWith(highlightProperNames: value),
+                ),
+              ),
+              SwitchListTile(
+                key: const ValueKey('syntax-roles-setting'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Colour syntax roles'),
+                subtitle: const Text(
+                  'Underline each Hebrew word in the colour of its role '
+                  '(subject, verb, object, predicate, adverbial) and mark '
+                  'where clauses begin.',
+                ),
+                value: _readingSettings.syntaxRoles,
+                onChanged: (value) => _updateReadingSettings(
+                  _readingSettings.copyWith(syntaxRoles: value),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text('Syntax view', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 4),
+              Text(
+                'How a verse\'s syntax first shows, opened from its verse '
+                'menu. Either view can switch to the other.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<SyntaxView>(
+                key: const ValueKey('syntax-view-setting'),
+                showSelectedIcon: false,
+                segments: [
+                  for (final option in SyntaxView.values)
+                    ButtonSegment(value: option, label: Text(option.label)),
+                ],
+                selected: {_readingSettings.syntaxView},
+                onSelectionChanged: (selection) => _updateReadingSettings(
+                  _readingSettings.copyWith(syntaxView: selection.single),
                 ),
               ),
               const SizedBox(height: 16),

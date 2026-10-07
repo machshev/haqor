@@ -96,6 +96,17 @@ const dataSourceCredits = <DataSourceCredit>[
     url: 'http://www.justverses.com/jv/app/downloadTSK.vm',
   ),
   DataSourceCredit(
+    title: 'MACULA Hebrew',
+    description:
+        'Syntax trees for every verse of the Hebrew Bible: its clauses, '
+        'phrases and their roles (from the Westminster Hebrew Syntax of the '
+        'J. Alan Groves Center), with English glosses for parts of words '
+        'from Cherith Analytics. MACULA Hebrew Linguistic Datasets, '
+        '(C) 2022-2024 Biblica, Inc.',
+    licence: 'CC BY 4.0',
+    url: 'https://github.com/Clear-Bible/macula-hebrew/',
+  ),
+  DataSourceCredit(
     title: 'STEP Bible TAHOT',
     description: 'Context-sensitive interlinear translations.',
     licence: 'CC BY 4.0',

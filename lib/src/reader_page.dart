@@ -18,6 +18,7 @@ import 'prefs_read.dart';
 import 'memorise/memorise_page.dart';
 import 'study_workspace.dart';
 import 'study_workspace_store.dart';
+import 'syntax_tree.dart';
 import 'tutor/onboarding.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
@@ -26,6 +27,7 @@ import 'widgets/markdown_note.dart';
 import 'widgets/study_workspace_panel.dart';
 import 'widgets/study_passage_editor.dart';
 import 'widgets/study_section_editor.dart';
+import 'widgets/syntax_sheet.dart';
 import 'widgets/verse_row.dart';
 import 'widgets/word_info_sheet.dart';
 import 'word_proximity.dart';
@@ -196,6 +198,7 @@ enum _ResolvedReaderLayout { focus, split, threePanel }
 enum _VerseMenuAction {
   crossReferences,
   chapterCrossReferences,
+  syntax,
   memoriseChapter,
 }
 
@@ -241,6 +244,7 @@ class BibleReaderPage extends StatefulWidget {
     this.sendQuotationsRequest,
     this.sendThematicReferencesRequest,
     this.sendThematicOverviewRequest,
+    this.sendSyntaxTreesRequest,
   });
 
   final void Function(GetChapter request)? sendChapterRequest;
@@ -254,6 +258,7 @@ class BibleReaderPage extends StatefulWidget {
   final void Function(GetThematicReferences request)?
   sendThematicReferencesRequest;
   final void Function(GetThematicOverview request)? sendThematicOverviewRequest;
+  final void Function(GetSyntaxTrees request)? sendSyntaxTreesRequest;
 
   @override
   State<BibleReaderPage> createState() => _BibleReaderPageState();
@@ -590,6 +595,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     },
     sendChapterRequest: widget.sendChapterRequest,
     studyStore: _studyStore,
+    sendSyntaxTreesRequest: widget.sendSyntaxTreesRequest,
+    sendVerseTextsRequest: widget.sendVerseTextsRequest,
     onPassageChanged: () {
       if (mounted) setState(() {});
     },
@@ -1532,6 +1539,8 @@ class _ReaderSession extends StatefulWidget {
     required this.onCrossReferencesRequested,
     required this.studyStore,
     this.sendChapterRequest,
+    this.sendSyntaxTreesRequest,
+    this.sendVerseTextsRequest,
   });
 
   final String sessionId;
@@ -1556,6 +1565,13 @@ class _ReaderSession extends StatefulWidget {
   /// the real rinf signal; widget tests substitute a stub that answers via
   /// `assignRustSignal['ChapterText']`.
   final void Function(GetChapter request)? sendChapterRequest;
+
+  /// Test seam: how a [GetSyntaxTrees] request for the reader's role
+  /// colouring reaches the Rust side.
+  final void Function(GetSyntaxTrees request)? sendSyntaxTreesRequest;
+
+  /// Test seam: how the Syntax sheet asks for its verse's words.
+  final void Function(GetVerseTexts request)? sendVerseTextsRequest;
 
   static Future<void> seedNavigation(
     String sessionId,
@@ -1595,6 +1611,8 @@ class _ReaderSessionState extends State<_ReaderSession>
   static const _kReaderView = 'reader_view';
   static const _kRapidReveal = 'rapid_reveal';
   static const _kHighlightProperNames = 'highlight_proper_names';
+  static const _kSyntaxRoles = 'syntax_roles';
+  static const _kSyntaxView = 'syntax_view';
   static const _kKetivDisplay = 'ketiv_display';
   static const _kReadingPlanBook = 'reading_plan_book';
   static const _kReadingPlanCompleted = 'reading_plan_completed';
@@ -1673,6 +1691,8 @@ class _ReaderSessionState extends State<_ReaderSession>
   // lexical positions shown, or null for the whole verse.
   final Map<(int, int, int), Set<int>?> _revealed = {};
   bool _highlightProperNames = false;
+  bool _syntaxRoles = false;
+  SyntaxView _syntaxView = SyntaxView.outline;
   bool _studyWorkspaceVisible = false;
   KetivDisplay _ketivDisplay = KetivDisplay.superscript;
   ReaderLayoutMode _readerLayoutMode = ReaderLayoutMode.automatic;
@@ -1704,6 +1724,16 @@ class _ReaderSessionState extends State<_ReaderSession>
   StreamSubscription<RustSignalPack<ChapterText>>? _sub;
   StreamSubscription<RustSignalPack<LexiconEntryOverrideStatus>>?
   _lexiconOverrideSub;
+  StreamSubscription<RustSignalPack<SyntaxTrees>>? _syntaxSub;
+
+  /// Each OT chapter's syntax marks by verse, keyed by (0-based book,
+  /// chapter), once asked for: the reader asks the first time a row of the
+  /// chapter shows with [_syntaxRoles] on.
+  final Map<(int, int), Map<int, VerseSyntaxMarks>> _syntaxMarks = {};
+
+  /// The chapters whose trees are on their way, by request id.
+  final Map<int, (int, int)> _syntaxRequests = {};
+  static int _nextSyntaxRequestId = 1;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -1745,6 +1775,17 @@ class _ReaderSessionState extends State<_ReaderSession>
       }
       _acceptChapter(bookIdx, msg.chapter, msg.verses, fetchKey);
     });
+    _syntaxSub = SyntaxTrees.rustSignalStream.listen((pack) {
+      final chapter = _syntaxRequests.remove(pack.message.requestId);
+      if (chapter == null || !mounted) return;
+      setState(() {
+        _syntaxMarks[chapter] = {
+          for (final verse in pack.message.verses)
+            if (SyntaxTreeNode.fromEntry(verse) case final tree?)
+              verse.verse: VerseSyntaxMarks.of(tree),
+        };
+      });
+    });
     _lexiconOverrideSub = LexiconEntryOverrideStatus.rustSignalStream.listen((
       pack,
     ) {
@@ -1765,6 +1806,38 @@ class _ReaderSessionState extends State<_ReaderSession>
   Future<void> _loadAdminMode() async {
     final enabled = await adminModeEnabled();
     if (mounted) setState(() => _adminMode = enabled);
+  }
+
+  /// A verse's syntax marks while the reader colours roles; null otherwise,
+  /// and while its chapter's trees are on their way, which the first row to
+  /// ask for them sends for.
+  VerseSyntaxMarks? _syntaxMarksFor(int bookIndex, int chapter, int verse) {
+    if (!_syntaxRoles || bookIndex >= 39) return null;
+    final marks = _syntaxMarks[(bookIndex, chapter)];
+    if (marks == null) {
+      _requestSyntax(bookIndex, chapter);
+      return null;
+    }
+    return marks[verse] ?? VerseSyntaxMarks.empty;
+  }
+
+  void _requestSyntax(int bookIndex, int chapter) {
+    if (_syntaxRequests.containsValue((bookIndex, chapter))) return;
+    final id = _nextSyntaxRequestId++;
+    _syntaxRequests[id] = (bookIndex, chapter);
+    final request = GetSyntaxTrees(
+      requestId: id,
+      book: bookIndex + 1,
+      chapter: chapter,
+      firstVerse: 0,
+      lastVerse: 0,
+    );
+    final send = widget.sendSyntaxTreesRequest;
+    if (send != null) {
+      send(request);
+    } else {
+      request.sendSignalToRust();
+    }
   }
 
   void _acceptChapter(
@@ -1934,6 +2007,10 @@ class _ReaderSessionState extends State<_ReaderSession>
           RapidReveal.values.asNameMap()[prefs.readString(_kRapidReveal)] ??
           RapidReveal.verse;
       _highlightProperNames = prefs.readBool(_kHighlightProperNames) ?? false;
+      _syntaxRoles = prefs.readBool(_kSyntaxRoles) ?? false;
+      _syntaxView =
+          SyntaxView.values.asNameMap()[prefs.readString(_kSyntaxView)] ??
+          SyntaxView.outline;
       _studyWorkspaceVisible = prefs.readBool(_kStudyWorkspaceVisible) ?? false;
       _ketivDisplay = KetivDisplay.values.firstWhere(
         (option) => option.name == prefs.readString(_kKetivDisplay),
@@ -2038,6 +2115,8 @@ class _ReaderSessionState extends State<_ReaderSession>
       prefs.setString(_kReaderView, _readerView.name),
       prefs.setString(_kRapidReveal, _rapidReveal.name),
       prefs.setBool(_kHighlightProperNames, _highlightProperNames),
+      prefs.setBool(_kSyntaxRoles, _syntaxRoles),
+      prefs.setString(_kSyntaxView, _syntaxView.name),
       prefs.setBool(_kStudyWorkspaceVisible, _studyWorkspaceVisible),
       prefs.setString(_kKetivDisplay, _ketivDisplay.name),
       prefs.setString(_kReaderLayoutMode, _readerLayoutMode.name),
@@ -2070,6 +2149,8 @@ class _ReaderSessionState extends State<_ReaderSession>
       _glossInterlinear = settings.glossInterlinear;
       _morphologyInterlinear = settings.morphologyInterlinear;
       _highlightProperNames = settings.highlightProperNames;
+      _syntaxRoles = settings.syntaxRoles;
+      _syntaxView = settings.syntaxView;
       if (settings.rapidReveal != _rapidReveal) _revealed.clear();
       _rapidReveal = settings.rapidReveal;
       _ketivDisplay = settings.ketivDisplay;
@@ -2098,6 +2179,8 @@ class _ReaderSessionState extends State<_ReaderSession>
     fontSize: _fontSize,
     fontFamily: _fontFamily,
     readerLayoutMode: _readerLayoutMode,
+    syntaxRoles: _syntaxRoles,
+    syntaxView: _syntaxView,
   );
 
   void _cycleReaderView() {
@@ -3655,6 +3738,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     _scrollController.dispose();
     _sub?.cancel();
     _lexiconOverrideSub?.cancel();
+    _syntaxSub?.cancel();
     widget.studyStore.removeListener(_onStudyStoreChanged);
     for (final timeout in _fetchTimeouts.values) {
       timeout.cancel();
@@ -3725,6 +3809,38 @@ class _ReaderSessionState extends State<_ReaderSession>
     widget.onWordInfoRequested(selected, newPane: newPane);
   }
 
+  /// A verse's syntax tree, in a sheet over the reader. Tapping a word in it
+  /// closes the sheet and shows the word's details.
+  Future<void> _showSyntax(int bookIndex, int chapter, int verse) =>
+      showSyntaxSheet(
+        context,
+        book: bookIndex + 1,
+        chapter: chapter,
+        verse: verse,
+        title:
+            '${bookDisplayName(bookIndex, useEnglish: _englishBookNames)} '
+            '$chapter:$verse',
+        initialView: _syntaxView,
+        fontFamily: _fontFamily,
+        onViewChanged: (view) {
+          setState(() => _syntaxView = view);
+          _savePrefs();
+        },
+        onWordTap: (word, position, gloss) {
+          Navigator.of(context).pop();
+          _showWordInfo(
+            word,
+            bookIndex,
+            chapter,
+            verse,
+            readerGloss: gloss.isEmpty ? null : gloss,
+            position: position,
+          );
+        },
+        sendRequest: widget.sendSyntaxTreesRequest,
+        sendVerseTextsRequest: widget.sendVerseTextsRequest,
+      );
+
   /// A word's long-press (or secondary-click) menu: open it in the active word
   /// pane or a new one, or bookmark it in the active study.
   /// A verse's menu, from a long press or a secondary click on its number:
@@ -3770,6 +3886,15 @@ class _ReaderSessionState extends State<_ReaderSession>
             title: Text('Chapter cross references'),
           ),
         ),
+        // The trees cover the Hebrew Bible only.
+        if (bookIndex < 39)
+          const PopupMenuItem(
+            value: _VerseMenuAction.syntax,
+            child: ListTile(
+              leading: Icon(Icons.account_tree_outlined),
+              title: Text('Syntax'),
+            ),
+          ),
         const PopupMenuItem(
           value: _VerseMenuAction.memoriseChapter,
           child: ListTile(
@@ -3785,6 +3910,8 @@ class _ReaderSessionState extends State<_ReaderSession>
         widget.onCrossReferencesRequested(bookIndex, chapter, verse);
       case _VerseMenuAction.chapterCrossReferences:
         widget.onCrossReferencesRequested(bookIndex, chapter, null);
+      case _VerseMenuAction.syntax:
+        await _showSyntax(bookIndex, chapter, verse);
       case _VerseMenuAction.memoriseChapter:
         await memoriseChapter(context, bookIndex, chapter);
       case null:
@@ -4384,6 +4511,7 @@ class _ReaderSessionState extends State<_ReaderSession>
                   ? null
                   : Color(studyPassage.colorValue),
               ketivDisplay: _ketivDisplay,
+              syntaxMarks: _syntaxMarksFor(b, c, entry.verse),
             );
             final headings = headingsBefore[verseIndex];
             if (headings == null) return row;

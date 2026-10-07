@@ -313,6 +313,13 @@ data file published by [Just Verses](http://www.justverses.com/jv/app/downloadTS
 which describes its downloads as public domain biblical information. Its King
 James verse numbers are re-numbered onto the Hebrew text.
 
+**Syntax trees** — MACULA Hebrew Linguistic Datasets, available at
+https://github.com/Clear-Bible/macula-hebrew/, (C) 2022-2024 Biblica, Inc,
+licensed CC BY 4.0: each verse's clauses, phrases and their roles (from the
+Westminster Hebrew Syntax of the J. Alan Groves Center, CC BY 4.0), with
+English glosses for parts of words from Cherith Analytics (CC BY 4.0). The
+reader's Syntax view and syntax-role colouring are drawn from them.
+
 **Syriac New Testament** — the text of the British and Foreign Bible Society's
 edition, with lexical and morphological data from SEDRA:
 

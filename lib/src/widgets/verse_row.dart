@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../app_settings.dart';
 import '../study_workspace.dart';
+import '../syntax_tree.dart';
 import '../bindings/bindings.dart';
 import '../tutor/transliterate.dart';
 
@@ -169,6 +170,7 @@ class VerseRow extends StatefulWidget {
     this.studyPhraseHighlightColors = const {},
     this.studyPassageHighlightColor,
     this.ketivDisplay = KetivDisplay.superscript,
+    this.syntaxMarks,
   });
 
   final VerseEntry entry;
@@ -223,6 +225,11 @@ class VerseRow extends StatefulWidget {
   final Map<int, Color> studyPhraseHighlightColors;
   final Color? studyPassageHighlightColor;
   final KetivDisplay ketivDisplay;
+
+  /// The verse's syntax roles and clause starts, when the reader colours
+  /// them: each word underlined in its role's colour, and a faint rule before
+  /// each clause. Null leaves the text unmarked.
+  final VerseSyntaxMarks? syntaxMarks;
 
   @override
   State<VerseRow> createState() => _VerseRowState();
@@ -476,7 +483,7 @@ class _VerseRowState extends State<VerseRow> {
       fontStyle: FontStyle.italic,
       height: 1.0,
     );
-    TextStyle styleForWord(String word, int lexicalPosition) {
+    TextStyle lexicalStyleForWord(String word, int lexicalPosition) {
       final root = lexicalPosition < widget.entry.roots.length
           ? widget.entry.roots[lexicalPosition]
           : '';
@@ -518,6 +525,25 @@ class _VerseRowState extends State<VerseRow> {
                 : properNameStyle
           : baseStyle;
     }
+
+    // A word's syntax role shows as an underline, which leaves the colours of
+    // study highlights (a background) and proper names (the letters) as they
+    // are.
+    final syntaxMarks = widget.syntaxMarks;
+    TextStyle styleForWord(String word, int lexicalPosition) {
+      final style = lexicalStyleForWord(word, lexicalPosition);
+      final role = syntaxMarks?.roles[lexicalPosition];
+      if (role == null) return style;
+      return style.copyWith(
+        decoration: TextDecoration.underline,
+        decorationColor: syntaxRoleColor(role, theme.brightness),
+        decorationThickness: 2.5,
+      );
+    }
+
+    bool startsClause(int? lexicalPosition) =>
+        lexicalPosition != null &&
+        (syntaxMarks?.clauseStarts.contains(lexicalPosition) ?? false);
 
     // The verse number and its marks open the verse's first line, as in a
     // printed Bible, rather than standing in a margin column: a column would
@@ -591,7 +617,17 @@ class _VerseRowState extends State<VerseRow> {
             ),
             for (final (i, glossPosition) in verseGlossPositions(
               interlinearWords,
-            ).indexed)
+            ).indexed) ...[
+              if (startsClause(glossPosition))
+                Padding(
+                  key: ValueKey('clause-rule-$glossPosition'),
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: SizedBox(
+                    width: 1.5,
+                    height: widget.fontSize * 1.6,
+                    child: ColoredBox(color: theme.colorScheme.outline),
+                  ),
+                ),
               GestureDetector(
                 onTap: glossPosition == null
                     ? null
@@ -666,6 +702,7 @@ class _VerseRowState extends State<VerseRow> {
                   ),
                 ),
               ),
+            ],
           ],
         ),
       );
@@ -678,7 +715,18 @@ class _VerseRowState extends State<VerseRow> {
           ? const <int, List<({KetivEntry ketiv, bool before})>>{}
           : ketivAnchors(_words, widget.entry.ketivs);
       for (var i = 0; i < _words.length; i++) {
-        if (i > 0 && !_words[i - 1].endsWith(_maqaf)) {
+        if (i > 0 && startsClause(displayNamePositions[i])) {
+          // A clause begins: the gap carries a faint rule.
+          spans.add(
+            TextSpan(
+              text: ' \u2502 ',
+              style: wordStyle.copyWith(
+                color: theme.colorScheme.outline,
+                fontWeight: FontWeight.w300,
+              ),
+            ),
+          );
+        } else if (i > 0 && !_words[i - 1].endsWith(_maqaf)) {
           spans.add(const TextSpan(text: '  '));
         }
         for (final anchor in anchors[i] ?? const []) {

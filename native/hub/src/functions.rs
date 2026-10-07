@@ -2,18 +2,18 @@ use crate::signals::{
     BdbSummary, BuildInfo, CalibrationProbe, ChapterText, CrossReferenceEntry, CrossReferences,
     DictionaryEntry, FinishCalibration, GetBuildInfo, GetCalibrationProbe, GetChapter,
     GetCrossReferences, GetDictionaryEntry, GetNextStudyItem, GetOnboardingStatus, GetQuotations,
-    GetSeenConcepts, GetStudyState, GetThematicOverview, GetThematicReferences,
+    GetSeenConcepts, GetStudyState, GetSyntaxTrees, GetThematicOverview, GetThematicReferences,
     GetTutorGlossOverrideStats, GetTutorSettings, GetTutorStats, GetVerseText, GetVerseTexts,
     GetWordInfo, GetWordOccurrences, GlyphCard, GrammarCard, IssueReportStatus, KetivEntry,
     LexemeSummary, LexiconEntryOverrideStatus, Occurrence, OccurrenceParse, OnboardingStatus,
     OptimizeTutorGlossOverrides, ProgressSyncStatus, QuotationEntry, Quotations, RequestFailed,
     ResetTutor, RootChoice, SaveIssueReport, SaveLexiconEntryOverride, SaveStudyState,
     SaveTutorGloss, SeenConcept, SeenConcepts, SetAlphabetKnown, SetTutorSettings, StudyItem,
-    StudyState, SubmitMisreads, SubmitReview, SuffixCard, SyncProgress, ThematicOverview,
-    ThematicReferenceEntry, ThematicReferences, ThematicTarget, ThematicVerseEntry,
-    TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats, VerseCard, VerseEntry,
-    VerseRef, VerseText, VerseTextEntry, VerseTexts, WordCard, WordInfo, WordOccurrence,
-    WordOccurrences,
+    StudyState, SubmitMisreads, SubmitReview, SuffixCard, SyncProgress, SyntaxNodeEntry,
+    SyntaxTrees, ThematicOverview, ThematicReferenceEntry, ThematicReferences, ThematicTarget,
+    ThematicVerseEntry, TutorGlossOverrideStats, TutorProgress, TutorSettings, TutorStats,
+    VerseCard, VerseEntry, VerseRef, VerseSyntaxEntry, VerseText, VerseTextEntry, VerseTexts,
+    WordCard, WordInfo, WordOccurrence, WordOccurrences,
 };
 #[cfg(target_arch = "wasm32")]
 use crate::signals::{FlushProgress, ProgressSnapshot};
@@ -1930,9 +1930,94 @@ pub async fn get_thematic_overview(bible: SharedBible) {
     }
 }
 
+/// A core syntax tree as the signals carry it: its nodes in pre-order, each
+/// naming its parent by index.
+fn syntax_nodes(tree: haqor_core::syntax::SyntaxNode) -> Vec<SyntaxNodeEntry> {
+    fn walk(node: haqor_core::syntax::SyntaxNode, parent: i32, out: &mut Vec<SyntaxNodeEntry>) {
+        let index = out.len() as i32;
+        let (position, part) = match node.word {
+            Some(word) => (i32::from(word.position), word.part),
+            None => (-1, None),
+        };
+        let (part_text, part_gloss) = part.map_or_else(Default::default, |p| (p.text, p.gloss));
+        out.push(SyntaxNodeEntry {
+            parent,
+            kind: node.class,
+            role: node.role,
+            position,
+            part_text,
+            part_gloss,
+        });
+        for child in node.children {
+            walk(child, index, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(tree, -1, &mut out);
+    out
+}
+
+pub async fn get_syntax_trees(bible: SharedBible) {
+    let receiver = GetSyntaxTrees::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let trees = lock(&bible)
+            .chapter_syntax_trees(req.book, req.chapter)
+            .unwrap_or_else(|e| {
+                debug_print!("get_syntax_trees error: {:?}", e);
+                Vec::new()
+            });
+        let wanted = |verse: u8| {
+            (req.first_verse == 0 || verse >= req.first_verse)
+                && (req.last_verse == 0 || verse <= req.last_verse)
+        };
+        SyntaxTrees {
+            request_id: req.request_id,
+            book: req.book,
+            chapter: req.chapter,
+            verses: trees
+                .into_iter()
+                .filter(|(verse, _)| wanted(*verse))
+                .map(|(verse, tree)| VerseSyntaxEntry {
+                    verse,
+                    nodes: syntax_nodes(tree),
+                })
+                .collect(),
+        }
+        .send_signal_to_dart();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tree travels in pre-order, each node naming its parent, with a part
+    /// of a word carrying its own text and gloss.
+    #[test]
+    fn syntax_trees_flatten_in_pre_order() {
+        let tree = haqor_core::syntax::parse("[ 0{וַ|and} [cl 0:v{יֹּאמֶר|said} [np:s 1]]]").unwrap();
+        let nodes = syntax_nodes(tree);
+        let shape: Vec<(i32, &str, &str, i32)> = nodes
+            .iter()
+            .map(|n| (n.parent, n.kind.as_str(), n.role.as_str(), n.position))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                (-1, "", "", -1),
+                (0, "", "", 0),
+                (0, "cl", "", -1),
+                (2, "", "v", 0),
+                (2, "np", "s", -1),
+                (4, "", "", 1),
+            ]
+        );
+        assert_eq!(nodes[1].part_text, "וַ");
+        assert_eq!(nodes[3].part_gloss, "said");
+        assert_eq!(nodes[5].part_text, "");
+    }
 
     #[test]
     fn headers_end_at_blank_line_or_bare_newline() {

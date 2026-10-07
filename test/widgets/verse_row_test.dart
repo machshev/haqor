@@ -8,6 +8,7 @@ import 'package:haqor/src/app_settings.dart';
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/widgets/verse_row.dart';
 import 'package:haqor/src/study_workspace.dart';
+import 'package:haqor/src/syntax_tree.dart';
 
 void main() {
   test('standalone paseq does not consume an interlinear gloss', () {
@@ -197,6 +198,64 @@ void main() {
       lessThan(40),
       reason: 'the marks sit at the right edge, not centred',
     );
+  });
+
+  testWidgets('syntax roles underline words and clauses are ruled off', (
+    tester,
+  ) async {
+    Widget row({required bool interlinear}) => MaterialApp(
+      home: Scaffold(
+        body: VerseRow(
+          entry: const VerseEntry(
+            verse: 3,
+            text: 'וַיֹּאמֶר אֱלֹהִים יְהִי אוֹר',
+            glosses: ['and said', 'God', 'let be', 'light'],
+            morphologies: [],
+            names: [],
+            roots: [],
+            ketivs: [],
+            crossReferenceScores: [],
+          ),
+          isSelected: false,
+          hebrewNumerals: false,
+          glossInterlinear: interlinear,
+          onTap: () {},
+          onWordTap: (_, _, _, _) {},
+          syntaxMarks: const VerseSyntaxMarks(
+            roles: {0: 'v', 1: 's', 2: 'v', 3: 's'},
+            clauseStarts: {2},
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(row(interlinear: false));
+    final spans = tester
+        .widget<SelectableText>(find.byType(SelectableText))
+        .textSpan!
+        .children!
+        .whereType<TextSpan>()
+        .toList();
+    TextStyle styleOf(String word) =>
+        spans.firstWhere((s) => s.text == word).style!;
+    expect(styleOf('אֱלֹהִים').decoration, TextDecoration.underline);
+    expect(
+      styleOf('אֱלֹהִים').decorationColor,
+      syntaxRoleColor('s', Brightness.light),
+    );
+    expect(
+      styleOf('יְהִי').decorationColor,
+      syntaxRoleColor('v', Brightness.light),
+    );
+    // The second clause, יְהִי אוֹר, is ruled off from the first.
+    final words = spans.map((s) => s.text).toList();
+    expect(words.indexOf(' \u2502 '), words.indexOf('יְהִי') - 1);
+    expect(words.where((w) => w == ' \u2502 '), hasLength(1));
+
+    await tester.pumpWidget(row(interlinear: true));
+    expect(find.byKey(const ValueKey('clause-rule-2')), findsOneWidget);
+    final god = tester.widget<Text>(find.text('אֱלֹהִים'));
+    expect(god.style!.decoration, TextDecoration.underline);
   });
 
   testWidgets('standalone punctuation cannot shift Yahweh highlighting', (

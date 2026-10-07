@@ -445,6 +445,59 @@ pub struct ThematicOverview {
     pub verses: Vec<ThematicVerseEntry>,
 }
 
+/// Ask for the syntax trees (MACULA Hebrew's) of the OT verses
+/// `first_verse..=last_verse` of a chapter: one verse for its Syntax view, or
+/// the whole chapter, with both zero, for the reader's role colouring.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetSyntaxTrees {
+    /// Echoed back so a caller can ignore replies to a superseded request.
+    pub request_id: u32,
+    pub book: u8,
+    pub chapter: u8,
+    pub first_verse: u8,
+    pub last_verse: u8,
+}
+
+/// One node of a [`VerseSyntaxEntry`]'s tree: a clause or phrase, or a leaf
+/// standing for a word of the verse or part of one.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SyntaxNodeEntry {
+    /// Index of the node's parent in the verse's list; -1 for the root.
+    pub parent: i32,
+    /// The kind of group: `cl` (clause), `np`, `pp`, `vp`, `adjp`, `advp`,
+    /// `nump`, `relp`, `cjp`, `ijp`. Empty for a leaf, and for an unlabelled
+    /// group gathering a conjunction with what it joins.
+    pub kind: String,
+    /// The node's function in its clause: `s`, `v`, `o`, `o2`, `p`, `adv`,
+    /// `pp`; empty when it has none of its own.
+    pub role: String,
+    /// A leaf's word position in the verse, as the reader numbers words; -1
+    /// for a group.
+    pub position: i32,
+    /// For a leaf that is only part of its word (a prefix or suffix parsed
+    /// apart from it), that part's text and English gloss; empty otherwise.
+    pub part_text: String,
+    pub part_gloss: String,
+}
+
+/// One verse's syntax tree, its nodes in pre-order: a parent always comes
+/// before its children, and siblings in their order.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct VerseSyntaxEntry {
+    pub verse: u8,
+    pub nodes: Vec<SyntaxNodeEntry>,
+}
+
+/// Reply to [`GetSyntaxTrees`]: the verses asked for that have a tree, in
+/// order. Empty for the NT and for a database without trees.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct SyntaxTrees {
+    pub request_id: u32,
+    pub book: u8,
+    pub chapter: u8,
+    pub verses: Vec<VerseSyntaxEntry>,
+}
+
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetWordInfo {
     /// Echoed in the [`WordInfo`] reply. Replies carry nothing else that says

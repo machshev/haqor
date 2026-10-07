@@ -11,9 +11,12 @@ import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/reader_page.dart';
 import 'package:haqor/src/study_workspace.dart' as study;
 import 'package:haqor/src/widgets/cross_references_sheet.dart';
+import 'package:haqor/src/widgets/syntax_sheet.dart';
 import 'package:haqor/src/widgets/verse_row.dart';
 import 'package:haqor/src/widgets/study_workspace_panel.dart';
 import 'package:haqor/src/widgets/word_info_sheet.dart';
+
+import '../syntax_tree_test.dart' show node;
 
 /// Answers [GetChapter] requests the way the Rust side would, but only when
 /// the test asks for it, so tests can observe the exact frame where a chapter
@@ -28,6 +31,7 @@ class _FakeRust {
   final List<GetCrossReferences> crossReferenceRequests = [];
   final List<GetQuotations> quotationRequests = [];
   final List<GetThematicReferences> thematicRequests = [];
+  final List<GetSyntaxTrees> syntaxRequests = [];
 
   void onWordInfo(GetWordInfo request) => wordRequests.add(request);
   void onOccurrences(GetWordOccurrences request) =>
@@ -135,6 +139,7 @@ Future<void> _deliverExpectingNoShift(
 
 void main() {
   crossReferenceDockTests();
+  syntaxTests();
   readerViewTests();
 
   for (final enabled in [true, false]) {
@@ -2335,6 +2340,7 @@ Future<_FakeRust> _pumpWorkspace(
         sendCrossReferencesRequest: rust.crossReferenceRequests.add,
         sendQuotationsRequest: rust.quotationRequests.add,
         sendThematicReferencesRequest: rust.thematicRequests.add,
+        sendSyntaxTreesRequest: rust.syntaxRequests.add,
       ),
     ),
   );
@@ -2599,4 +2605,76 @@ Future<void> _turnPage(WidgetTester tester) async {
   for (var i = 0; i < 6; i++) {
     await tester.pump(const Duration(milliseconds: 100));
   }
+}
+
+void syntaxTests() {
+  testWidgets('colouring syntax roles asks for the chapter\'s trees', (
+    tester,
+  ) async {
+    final rust = await _pumpWorkspace(
+      tester,
+      const Size(1366, 744),
+      prefs: {'syntax_roles': true},
+    );
+    final request = rust.syntaxRequests.single;
+    expect((request.book, request.chapter), (1, 1));
+    expect((request.firstVerse, request.lastVerse), (0, 0));
+
+    // Verse 1's second word is the subject, and a clause starts at its
+    // fourth.
+    assignRustSignal['SyntaxTrees']!(
+      SyntaxTrees(
+        requestId: request.requestId,
+        book: 1,
+        chapter: 1,
+        verses: [
+          VerseSyntaxEntry(
+            verse: 1,
+            nodes: [
+              node(-1),
+              node(0, kind: 'cl'),
+              node(1, role: 'v', position: 0),
+              node(1, role: 's', position: 1),
+              node(0, kind: 'cl'),
+              node(4, role: 'v', position: 3),
+            ],
+          ),
+        ],
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    // The reply reaches the stream a microtask later.
+    await tester.pump();
+    final row = tester.widget<VerseRow>(_verse(1, 1, 1));
+    expect(row.syntaxMarks!.roles, {0: 'v', 1: 's', 3: 'v'});
+    expect(row.syntaxMarks!.clauseStarts, {3});
+    expect(tester.widget<VerseRow>(_verse(1, 1, 2)).syntaxMarks!.roles, {});
+    // The chapter is asked for once, not once per row.
+    expect(rust.syntaxRequests, hasLength(1));
+  });
+
+  testWidgets('without the setting the reader asks for no trees', (
+    tester,
+  ) async {
+    final rust = await _pumpWorkspace(tester, const Size(1366, 744));
+    expect(rust.syntaxRequests, isEmpty);
+    expect(tester.widget<VerseRow>(_verse(1, 1, 1)).syntaxMarks, isNull);
+  });
+
+  testWidgets('a verse number\'s menu opens its syntax', (tester) async {
+    final rust = await _pumpWorkspace(tester, const Size(1366, 744));
+    await tester.longPress(find.byKey(const ValueKey('verse-number-2')).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Syntax'));
+    // The sheet opens on its loading spinner, which never settles.
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(SyntaxPanel), findsOneWidget);
+    final request = rust.syntaxRequests.single;
+    expect(
+      (request.book, request.chapter, request.firstVerse, request.lastVerse),
+      (1, 1, 2, 2),
+    );
+    expect(tester.takeException(), isNull);
+  });
 }
