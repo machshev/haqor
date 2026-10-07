@@ -11,6 +11,13 @@ library;
 
 const appVersion = '0.9.5+27';
 
+/// Haqor's own licence, as the SPDX identifier the Rust crates declare, and
+/// where its source is. The About view shows both: the AGPL asks that a
+/// program users interact with, the web build included, tell them their
+/// rights and where to get the source.
+const appLicence = 'AGPL-3.0-or-later';
+const appSourceUrl = 'https://github.com/machshev/haqor';
+
 /// One credited data source. [licence] is the terms under which Haqor
 /// redistributes it; [note] adds anything a reader should know beyond that.
 class DataSourceCredit {

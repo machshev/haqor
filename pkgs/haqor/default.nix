@@ -65,7 +65,7 @@ in
       description = "Bible study app with original language tools";
       homepage = "https://github.com/machshev/haqor";
       changelog = "https://github.com/machshev/haqor/releases/tag/v${release.version}";
-      license = lib.licenses.gpl3Only;
+      license = lib.licenses.agpl3Plus;
       platforms = ["x86_64-linux"];
       mainProgram = "haqor";
       sourceProvenance = [lib.sourceTypes.binaryNativeCode];

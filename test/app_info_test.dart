@@ -17,6 +17,14 @@ void main() {
     expect(appVersion, declared);
   });
 
+  test('appLicence matches the LICENSE file', () {
+    // The About view names the licence; the file is what actually grants it.
+    final licence = File('LICENSE').readAsStringSync();
+    expect(appLicence, startsWith('AGPL-3.0'));
+    expect(licence, contains('GNU AFFERO GENERAL PUBLIC LICENSE'));
+    expect(licence, contains('Version 3'));
+  });
+
   test('every credited source states a licence', () {
     // Attribution is a licence condition for several of these sources; an
     // entry with an empty licence line is a credit that says nothing.

@@ -88,6 +88,18 @@ class _AboutSheetState extends State<_AboutSheet> {
           label: 'Database build',
           value: _dataVersion ?? _bundledVersion ?? '…',
         ),
+        const SizedBox(height: 16),
+        Text(
+          'Haqor is free software: you may use, share and change it under the '
+          'GNU Affero General Public License ($appLicence), with no warranty.',
+          style: theme.textTheme.bodySmall,
+        ),
+        SelectableText(
+          appSourceUrl,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(height: 24),
         Text('Data sources', style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),

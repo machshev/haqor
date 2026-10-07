@@ -328,3 +328,12 @@ SEDRA III's terms also ask that work using it cite:
 The reader renders SEDRA's Syriac in Unicode, in Syriac script and
 transliterated into Hebrew letters. That script conversion is the only change:
 the entries, morphology and text content are unmodified.
+
+## Licence
+
+Haqor is free software, licensed under the GNU Affero General Public License,
+version 3 or (at your option) any later version; see [LICENSE](LICENSE). Anyone
+may use, share and change it, and anyone who distributes it, or runs a modified
+version for others to use over a network, must offer them its source under the
+same terms. The bundled data keeps its own licences, listed under
+[Attribution](#attribution).
