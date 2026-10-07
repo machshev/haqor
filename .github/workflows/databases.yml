@@ -141,9 +141,13 @@ jobs:
         # lexicon_overrides.json is committed in haqor-core and baked in by
         # gen-lexicon). STEP Bible's TAHOT files are deliberately not
         # committed; the pinned fetch script verifies their checksums before
-        # gen-hebrew consumes them.
+        # gen-hebrew consumes them. MACULA Hebrew (syntax trees) and the
+        # unfoldingWord texts (the English translation) are fetched at pinned
+        # commits the same way, for gen-runtime.
         run: |
           ./scripts/fetch-stepbible-data.sh
+          ./scripts/fetch-macula-hebrew.sh
+          ./scripts/fetch-unfoldingword.sh
           nix develop --command bash -c '
             set -euo pipefail
             cargo run --release -p haqor-cli -- db gen-bible
@@ -165,15 +169,18 @@ jobs:
           codec="$(query "SELECT value FROM meta WHERE key = 'blob_codec';")"
           test "$codec" = "${{ inputs.blob-codec }}"
 
-          # Compressed blobs are unreadable without the dictionary they were
-          # trained against, which travels inside the database.
+          # Compressed blobs are unreadable without the dictionaries they were
+          # trained against, which travel inside the database: the build's
+          # (1) and the English translation's (2).
           if [[ "$codec" == "zstd" ]]; then
-            test "$(query "SELECT count(*) FROM blob_dict;")" -eq 1
+            test "$(query "SELECT count(*) FROM blob_dict;")" -eq 2
           fi
 
           test "$(query "SELECT count(*) FROM verse;")" -eq 31171
           test "$(query "SELECT count(*) FROM word;")" -gt 300000
           test "$(query "SELECT count(*) FROM word_info;")" -gt 50000
+          test "$(query "SELECT count(*) FROM syntax_tree;")" -eq 23213
+          test "$(query "SELECT count(*) FROM translation_verse;")" -gt 23150
 
           # Two ratchets, neither a target. A token resolving to nothing has no
           # analysis, no curated gloss and no lexicon bridge, and the reader
