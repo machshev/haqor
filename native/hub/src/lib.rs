@@ -17,14 +17,15 @@ use tokio_with_wasm::alias as tokio;
 #[cfg(target_arch = "wasm32")]
 use functions::flush_progress;
 use functions::{
-    SharedBible, finish_calibration, get_build_info, get_calibration_probe, get_chapter_text,
-    get_chapter_translation, get_cross_references, get_dictionary_entry, get_next_study_item,
-    get_onboarding_status, get_quotations, get_seen_concepts, get_study_state, get_syntax_trees,
-    get_thematic_overview, get_thematic_references, get_tutor_gloss_override_stats,
-    get_tutor_settings, get_tutor_stats, get_verse_text, get_verse_texts, get_word_info,
-    get_word_occurrences, optimize_tutor_gloss_overrides, reset_tutor, save_issue_report,
-    save_lexicon_entry_override, save_study_state, save_tutor_gloss, set_alphabet_known,
-    set_corpus_reader, set_tutor_settings, submit_misreads, submit_review, sync_progress,
+    SharedBible, finish_calibration, get_build_info, get_calibration_probe, get_chapter_places,
+    get_chapter_text, get_chapter_translation, get_cross_references, get_dictionary_entry,
+    get_name_entity, get_next_study_item, get_onboarding_status, get_quotations, get_seen_concepts,
+    get_study_state, get_syntax_trees, get_thematic_overview, get_thematic_references,
+    get_tutor_gloss_override_stats, get_tutor_settings, get_tutor_stats, get_verse_text,
+    get_verse_texts, get_word_info, get_word_occurrences, optimize_tutor_gloss_overrides,
+    reset_tutor, save_issue_report, save_lexicon_entry_override, save_study_state,
+    save_tutor_gloss, set_alphabet_known, set_corpus_reader, set_tutor_settings, submit_misreads,
+    submit_review, sync_progress,
 };
 use signals::{BootStatus, SetDataDir};
 
@@ -226,6 +227,8 @@ async fn main() {
         get_thematic_references,
         get_thematic_overview,
         get_syntax_trees,
+        get_name_entity,
+        get_chapter_places,
         get_chapter_translation,
         get_word_info,
         get_dictionary_entry,

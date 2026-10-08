@@ -126,6 +126,38 @@ const dataSourceCredits = <DataSourceCredit>[
     url: 'https://github.com/STEPBible/STEPBible-Data',
   ),
   DataSourceCredit(
+    title: 'STEP Bible TIPNR',
+    description:
+        'The people and places named in the Bible, told apart, with their '
+        'families, the forms of their names and what the text says of them. '
+        'Data created by STEPBible.org based on work at Tyndale House '
+        "Cambridge. Haqor removes the Strong's numbers from its text.",
+    licence: 'CC BY 4.0',
+    url: 'https://github.com/STEPBible/STEPBible-Data',
+  ),
+  DataSourceCredit(
+    title: 'STEP Bible TBESH',
+    description:
+        'The senses of Hebrew words, with glosses by Tyndale House scholars. '
+        'Its definitions (the Online Bible\'s abridged BDB) are not used.',
+    licence: 'CC BY 4.0',
+    url: 'https://github.com/STEPBible/STEPBible-Data',
+  ),
+  DataSourceCredit(
+    title: 'OpenBible.info Bible Geocoding',
+    description:
+        'Where each place named in the Bible may have been, with how '
+        'confident scholarship is in each identification.',
+    licence: 'CC BY 4.0',
+    url: 'https://github.com/openbibleinfo/Bible-Geocoding-Data',
+  ),
+  DataSourceCredit(
+    title: 'Natural Earth',
+    description: 'The coastlines, lakes and rivers of the place maps.',
+    licence: 'Public domain',
+    url: 'https://www.naturalearthdata.com/',
+  ),
+  DataSourceCredit(
     title: 'SEDRA',
     description:
         'Syriac lexical and morphological data, with the New Testament text '

@@ -689,6 +689,10 @@ pub struct Occurrence {
     /// The parse component by component, so the tab can filter one dimension at
     /// a time instead of on the cross-product of whole labels.
     pub parse: OccurrenceParse,
+    /// The sense the token has there (STEP Bible's TBESH: "to lie down: be
+    /// dead"), so the tab can filter by sense. Empty where none is known: the
+    /// New Testament, names.
+    pub sense: String,
 }
 
 /// One token's parse, split into the dimensions the filter groups by, in the one
@@ -748,6 +752,137 @@ pub struct WordInfo {
     /// for an ordinary word; a compound name has one per element, and the sheet
     /// offers the choice only when there is more than one. OT lookups only.
     pub roots: Vec<RootChoice>,
+    /// The sense the word has where it stands, among its word's senses. OT
+    /// lookups at a place in the text only.
+    pub sense: Option<WordSenseEntry>,
+    /// The person, place or other named thing the word names there, in brief;
+    /// [`GetNameEntity`] has the rest. OT lookups at a place in the text only.
+    pub name: Option<NameSummaryEntry>,
+}
+
+/// The sense a word has where it stands (STEP Bible's TBESH, which splits a
+/// word by sense: שָׁכַב "to lie down" as "sleep" or "be dead").
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct WordSenseEntry {
+    /// The word's gloss, whatever its sense ("to lie down").
+    pub gloss: String,
+    /// This occurrence's sense ("be dead"); empty for a word with one sense.
+    pub meaning: String,
+    /// The full gloss, as [`Occurrence::sense`] gives it, to filter by.
+    pub full_gloss: String,
+    /// Every sense of the word, this one among them, most used first.
+    pub senses: Vec<SenseChoice>,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SenseChoice {
+    pub meaning: String,
+    /// Words of the text with this sense.
+    pub occurrences: u32,
+    pub is_current: bool,
+}
+
+/// A person, place or other named thing (STEP Bible's TIPNR), in brief.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct NameSummaryEntry {
+    pub id: u32,
+    pub name: String,
+    /// `person`, `place` or `other`.
+    pub kind: String,
+    /// A few words saying who or what it is; empty for most places.
+    pub description: String,
+    /// A person's tribe or nation, a place's region; may be empty.
+    pub origin: String,
+    /// Words of the Hebrew text naming it.
+    pub occurrences: u32,
+}
+
+/// Ask for everything known of a person, place or other named thing, by its
+/// [`NameSummaryEntry::id`].
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetNameEntity {
+    /// Echoed back, as in [`GetWordInfo::request_id`].
+    pub request_id: u32,
+    pub id: u32,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct NameFormEntry {
+    pub hebrew: String,
+    /// The English names translations give the form, most usual first.
+    pub english: Vec<String>,
+    /// `Named`, `Spelled`, `Aramaic`, `Group` (a gentilic), …
+    pub significance: String,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct NameLinkEntry {
+    /// `father`, `mother`, `sibling`, `partner`, `child`, `founder` or
+    /// `inhabitant`.
+    pub relation: String,
+    /// `a` (an ancestor rather than a parent), `d` (a people descended from
+    /// them), `f` (a founder), `?` (uncertain), or empty.
+    pub flag: String,
+    pub other: NameSummaryEntry,
+}
+
+/// Where a place may have been (OpenBible.info's geocoding).
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct PlaceLocationEntry {
+    pub latitude: f64,
+    pub longitude: f64,
+    /// Confidence in the identification, 0 to 1000 (500 and above is
+    /// confident); -1 for a position given without one.
+    pub confidence: i32,
+    /// `settlement`, `river`, `region`, `mountain`, …
+    pub kind: String,
+    /// The modern location it is identified with.
+    pub label: String,
+}
+
+/// Reply to [`GetNameEntity`].
+#[derive(Debug, Serialize, RustSignal)]
+pub struct NameEntityInfo {
+    pub request_id: u32,
+    pub found: bool,
+    pub summary: NameSummaryEntry,
+    /// Male, Female, Group, Place, Supernatural, Title, …
+    pub category: String,
+    /// What the text says of it, a sentence a line.
+    pub text: String,
+    pub forms: Vec<NameFormEntry>,
+    pub links: Vec<NameLinkEntry>,
+    /// The likeliest first; empty for all but places.
+    pub locations: Vec<PlaceLocationEntry>,
+    /// The verses naming it, in canonical order.
+    pub verses: Vec<WordOccurrence>,
+}
+
+/// Ask for the places a chapter names, for a map of the chapter.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetChapterPlaces {
+    pub request_id: u32,
+    pub book: u8,
+    pub chapter: u8,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ChapterPlaceEntry {
+    pub place: NameSummaryEntry,
+    /// Its likeliest location.
+    pub location: PlaceLocationEntry,
+    /// The verses of the chapter naming it.
+    pub verses: Vec<u8>,
+}
+
+/// Reply to [`GetChapterPlaces`]: the places with a position, in the order
+/// the chapter first names them. Empty for the New Testament.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct ChapterPlaces {
+    pub request_id: u32,
+    pub book: u8,
+    pub chapter: u8,
+    pub places: Vec<ChapterPlaceEntry>,
 }
 
 /// Occurrence lists for a looked-up word, fetched lazily via

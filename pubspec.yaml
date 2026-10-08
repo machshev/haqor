@@ -82,6 +82,7 @@ flutter:
   # Populate with tool/sync-dbs.sh — the files are not committed.
   assets:
     - assets/db/
+    - assets/map/
 
   fonts:
     - family: Cardo

@@ -139,15 +139,16 @@ jobs:
         # gen-runtime reads all four. --force wipes any stale hebrew.db so the
         # shipped data is a clean full build of the current parser (the curated
         # lexicon_overrides.json is committed in haqor-core and baked in by
-        # gen-lexicon). STEP Bible's TAHOT files are deliberately not
-        # committed; the pinned fetch script verifies their checksums before
-        # gen-hebrew consumes them. MACULA Hebrew (syntax trees) and the
-        # unfoldingWord texts (the English translation) are fetched at pinned
-        # commits the same way, for gen-runtime.
+        # gen-lexicon). haqor-core vendors the external datasets (STEP Bible,
+        # MACULA Hebrew, unfoldingWord, OpenBible.info), prepared, in
+        # src_texts. A haqor-core from before it did (0.9.5 and earlier) has
+        # them fetched at pinned commits instead.
         run: |
-          ./scripts/fetch-stepbible-data.sh
-          ./scripts/fetch-macula-hebrew.sh
-          ./scripts/fetch-unfoldingword.sh
+          if [ ! -f src_texts/STEPBible-Data/tahot.tsv ]; then
+            ./scripts/fetch-stepbible-data.sh
+            ./scripts/fetch-macula-hebrew.sh
+            ./scripts/fetch-unfoldingword.sh
+          fi
           nix develop --command bash -c '
             set -euo pipefail
             cargo run --release -p haqor-cli -- db gen-bible

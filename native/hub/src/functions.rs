@@ -17,6 +17,11 @@ use crate::signals::{
     VerseTextEntry, VerseTexts, VerseTranslationEntry, WordCard, WordInfo, WordOccurrence,
     WordOccurrences,
 };
+use crate::signals::{
+    ChapterPlaceEntry, ChapterPlaces, GetChapterPlaces, GetNameEntity, NameEntityInfo,
+    NameFormEntry, NameLinkEntry, NameSummaryEntry, PlaceLocationEntry, SenseChoice,
+    WordSenseEntry,
+};
 #[cfg(target_arch = "wasm32")]
 use crate::signals::{FlushProgress, ProgressSnapshot};
 
@@ -813,10 +818,24 @@ fn to_signal_occurrences(
         .collect()
 }
 
-fn to_signal_tokens(occurrences: Vec<haqor_core::bible::Occurrence>) -> Vec<Occurrence> {
+fn to_signal_tokens(
+    bible: &Bible,
+    occurrences: Vec<haqor_core::bible::Occurrence>,
+) -> Vec<Occurrence> {
     occurrences
         .into_iter()
         .map(|o| Occurrence {
+            // TBESH covers the Hebrew Bible, books 1-39.
+            sense: if o.book < 40 {
+                let stored = bible
+                    .word_sense_gloss(o.book, o.chapter, o.verse, o.position)
+                    .unwrap_or_default();
+                // Stored as TBESH writes it, `to lie down: be dead`.
+                let (gloss, meaning) = stored.split_once(": ").unwrap_or((&stored, ""));
+                sense_label(gloss, meaning)
+            } else {
+                String::new()
+            },
             book: o.book,
             chapter: o.chapter,
             verse: o.verse,
@@ -835,6 +854,57 @@ fn to_signal_tokens(occurrences: Vec<haqor_core::bible::Occurrence>) -> Vec<Occu
             },
         })
         .collect()
+}
+
+fn name_summary_entry(s: haqor_core::names::NameSummary) -> NameSummaryEntry {
+    NameSummaryEntry {
+        id: s.id,
+        name: s.name,
+        kind: s.kind.as_str().to_string(),
+        description: s.description,
+        origin: s.origin,
+        occurrences: s.occurrences,
+    }
+}
+
+fn place_location_entry(l: haqor_core::names::PlaceLocation) -> PlaceLocationEntry {
+    PlaceLocationEntry {
+        latitude: l.latitude,
+        longitude: l.longitude,
+        confidence: l.confidence.map_or(-1, i32::from),
+        kind: l.kind,
+        label: l.label,
+    }
+}
+
+/// A sense as the occurrence filter names it: the word's gloss, then the
+/// sense's after a colon where it has one. [`Occurrence::sense`] and
+/// [`WordSenseEntry::full_gloss`] are both written by this, so they match.
+fn sense_label(gloss: &str, meaning: &str) -> String {
+    let (gloss, meaning) = (gloss.trim(), meaning.trim());
+    if meaning.is_empty() {
+        gloss.to_string()
+    } else {
+        format!("{gloss}: {meaning}")
+    }
+}
+
+fn word_sense_entry(s: haqor_core::names::WordSense) -> WordSenseEntry {
+    let full_gloss = sense_label(&s.gloss, &s.sense.meaning);
+    WordSenseEntry {
+        meaning: s.sense.meaning.clone(),
+        full_gloss,
+        senses: s
+            .senses
+            .into_iter()
+            .map(|choice| SenseChoice {
+                is_current: choice.id == s.sense.id,
+                meaning: choice.meaning,
+                occurrences: choice.occurrences,
+            })
+            .collect(),
+        gloss: s.gloss,
+    }
 }
 
 /// The OT word a request is about: resolved at its place in the text when the
@@ -926,6 +996,8 @@ pub async fn get_word_info(bible: SharedBible) {
                         tense: None,
                         form: None,
                         roots: Vec::new(),
+                        sense: None,
+                        name: None,
                     }
                     .send_signal_to_dart();
                 }
@@ -949,6 +1021,8 @@ pub async fn get_word_info(bible: SharedBible) {
                         tense: None,
                         form: None,
                         roots: Vec::new(),
+                        sense: None,
+                        name: None,
                     }
                     .send_signal_to_dart();
                 }
@@ -1001,6 +1075,8 @@ pub async fn get_word_info(bible: SharedBible) {
                         // NT words reach their root through SEDRA, which files
                         // each lexeme under exactly one.
                         roots: Vec::new(),
+                        sense: None,
+                        name: None,
                     }
                     .send_signal_to_dart();
                 }
@@ -1024,6 +1100,8 @@ pub async fn get_word_info(bible: SharedBible) {
                         tense: None,
                         form: None,
                         roots: Vec::new(),
+                        sense: None,
+                        name: None,
                     }
                     .send_signal_to_dart();
                 }
@@ -1076,6 +1154,23 @@ pub async fn get_word_info(bible: SharedBible) {
                     // definitions, while rendering proclitics and noun/verb
                     // morphology here (לָמַיִם → "to the water").
                     let gloss = inflected_gloss(&info);
+                    // Where the word stands, its sense and the person or place it
+                    // names.
+                    let (sense, name) = match (req.book, req.chapter, req.verse, req.position) {
+                        (Some(book), Some(chapter), Some(verse), Some(position)) => (
+                            bible
+                                .word_sense(book, chapter, verse, position)
+                                .ok()
+                                .flatten()
+                                .map(word_sense_entry),
+                            bible
+                                .word_name(book, chapter, verse, position)
+                                .ok()
+                                .flatten()
+                                .map(|n| name_summary_entry(n.summary)),
+                        ),
+                        _ => (None, None),
+                    };
                     WordInfo {
                         request_id: req.request_id,
                         found: true,
@@ -1094,6 +1189,8 @@ pub async fn get_word_info(bible: SharedBible) {
                         tense: info.tense,
                         form: info.form,
                         roots,
+                        sense,
+                        name,
                     }
                     .send_signal_to_dart();
                 }
@@ -1117,6 +1214,8 @@ pub async fn get_word_info(bible: SharedBible) {
                         tense: None,
                         form: None,
                         roots: Vec::new(),
+                        sense: None,
+                        name: None,
                     }
                     .send_signal_to_dart();
                 }
@@ -1139,10 +1238,13 @@ async fn root_tokens(bible: &SharedBible, root: ScanRoot) -> Vec<Occurrence> {
             ScanRoot::Hebrew(root) => RootRef::Hebrew(root),
             ScanRoot::Sedra(key_root) => RootRef::Sedra(*key_root),
         };
-        to_signal_tokens(bible.root_occurrences(root).unwrap_or_else(|e| {
-            debug_print!("root_occurrences({root:?}) error: {e:?}");
-            Vec::new()
-        }))
+        to_signal_tokens(
+            bible,
+            bible.root_occurrences(root).unwrap_or_else(|e| {
+                debug_print!("root_occurrences({root:?}) error: {e:?}");
+                Vec::new()
+            }),
+        )
     })
     .await;
     tokens.unwrap_or_else(|e| {
@@ -1925,6 +2027,114 @@ pub async fn get_thematic_overview(bible: SharedBible) {
                     chapter: v.verse.chapter,
                     verse: v.verse.verse,
                     entries: v.references.into_iter().map(thematic_entry).collect(),
+                })
+                .collect(),
+        }
+        .send_signal_to_dart();
+    }
+}
+
+pub async fn get_name_entity(bible: SharedBible) {
+    let receiver = GetNameEntity::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let bible = lock(&bible);
+        let entity = bible.name_entity(req.id).unwrap_or_else(|e| {
+            debug_print!("get_name_entity error: {:?}", e);
+            None
+        });
+        let Some(entity) = entity else {
+            NameEntityInfo {
+                request_id: req.request_id,
+                found: false,
+                summary: NameSummaryEntry {
+                    id: req.id,
+                    name: String::new(),
+                    kind: String::new(),
+                    description: String::new(),
+                    origin: String::new(),
+                    occurrences: 0,
+                },
+                category: String::new(),
+                text: String::new(),
+                forms: Vec::new(),
+                links: Vec::new(),
+                locations: Vec::new(),
+                verses: Vec::new(),
+            }
+            .send_signal_to_dart();
+            continue;
+        };
+        let mut verses: Vec<WordOccurrence> = Vec::new();
+        for at in bible.name_occurrences(req.id).unwrap_or_default() {
+            let same = verses
+                .last()
+                .is_some_and(|v| (v.book, v.chapter, v.verse) == (at.book, at.chapter, at.verse));
+            if !same {
+                verses.push(WordOccurrence {
+                    book: at.book,
+                    chapter: at.chapter,
+                    verse: at.verse,
+                });
+            }
+        }
+        NameEntityInfo {
+            request_id: req.request_id,
+            found: true,
+            summary: name_summary_entry(entity.summary),
+            category: entity.category,
+            text: entity.text,
+            forms: entity
+                .forms
+                .into_iter()
+                .map(|f| NameFormEntry {
+                    hebrew: f.hebrew,
+                    english: f.english,
+                    significance: f.significance,
+                })
+                .collect(),
+            links: entity
+                .links
+                .into_iter()
+                .map(|l| NameLinkEntry {
+                    relation: l.relation,
+                    flag: l.flag,
+                    other: name_summary_entry(l.other),
+                })
+                .collect(),
+            locations: entity
+                .locations
+                .into_iter()
+                .map(place_location_entry)
+                .collect(),
+            verses,
+        }
+        .send_signal_to_dart();
+    }
+}
+
+pub async fn get_chapter_places(bible: SharedBible) {
+    let receiver = GetChapterPlaces::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let places = lock(&bible)
+            .chapter_places(req.book, req.chapter)
+            .unwrap_or_else(|e| {
+                debug_print!("get_chapter_places error: {:?}", e);
+                Vec::new()
+            });
+        ChapterPlaces {
+            request_id: req.request_id,
+            book: req.book,
+            chapter: req.chapter,
+            places: places
+                .into_iter()
+                .map(|p| ChapterPlaceEntry {
+                    place: name_summary_entry(p.place),
+                    location: place_location_entry(p.location),
+                    verses: p.verses,
                 })
                 .collect(),
         }

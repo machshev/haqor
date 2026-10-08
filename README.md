@@ -307,6 +307,20 @@ Targumim, the Talmud Babli and Yerushalmi, and the Midrashic Literature*
 [TAHOT dataset](https://github.com/STEPBible/STEPBible-Data), licensed CC BY
 4.0.
 
+**People, places and word senses** — STEP Bible's TIPNR (Translators
+Individualised Proper Names with all References) and the glosses and sense
+divisions of its TBESH (Translators Brief lexicon of Extended Strongs for
+Hebrew), from [STEPBible-Data](https://github.com/STEPBible/STEPBible-Data):
+data created by www.STEPBible.org based on work at Tyndale House Cambridge,
+licensed CC BY 4.0. Haqor removes the Strong's numbers from TIPNR's text and
+does not use TBESH's definitions (the Online Bible's abridged BDB). The word
+sheet's person and place pages and sense chips are drawn from them.
+
+**Places on the map** — OpenBible.info's
+[Bible Geocoding Data](https://github.com/openbibleinfo/Bible-Geocoding-Data),
+licensed CC BY 4.0, over coastlines, lakes and rivers from
+[Natural Earth](https://www.naturalearthdata.com/) (public domain).
+
 **Thematic cross references** — *The Treasury of Scripture Knowledge*
 (Samuel Bagster & Sons, 1830s; commonly credited to R. A. Torrey), from the
 data file published by [Just Verses](http://www.justverses.com/jv/app/downloadTSK.vm),

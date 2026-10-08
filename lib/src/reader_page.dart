@@ -24,6 +24,7 @@ import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
 import 'widgets/cross_references_sheet.dart';
 import 'widgets/markdown_note.dart';
+import 'widgets/name_details.dart';
 import 'widgets/study_workspace_panel.dart';
 import 'widgets/study_passage_editor.dart';
 import 'widgets/study_section_editor.dart';
@@ -184,6 +185,7 @@ class _SelectedWord {
 /// The reader top bar's own actions, in the order the bar shows them.
 enum _ReaderBarAction {
   crossReferences,
+  places,
   text,
   interlinear,
   rapidReading,
@@ -1962,6 +1964,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     _ReaderBarAction.back,
     _ReaderBarAction.forward,
     _ReaderBarAction.crossReferences,
+    _ReaderBarAction.places,
   ];
 
   void _runBarAction(_ReaderBarAction action) => switch (action) {
@@ -1970,6 +1973,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       _chapter,
       null,
     ),
+    _ReaderBarAction.places => _showChapterPlaces(),
     _ReaderBarAction.text => _cycleReaderText(),
     _ReaderBarAction.interlinear => _toggleInterlinear(),
     _ReaderBarAction.rapidReading => _toggleRapidReading(),
@@ -1983,6 +1987,12 @@ class _ReaderSessionState extends State<_ReaderSession>
       icon: const Icon(Icons.link),
       onPressed: () => _runBarAction(action),
       tooltip: 'Cross references in this chapter',
+    ),
+    _ReaderBarAction.places => IconButton(
+      key: const ValueKey('reader-places'),
+      icon: const Icon(Icons.map_outlined),
+      onPressed: _isOldTestament ? () => _runBarAction(action) : null,
+      tooltip: 'Places in this chapter',
     ),
     _ReaderBarAction.text => IconButton(
       key: const ValueKey('reader-text-toggle'),
@@ -2032,6 +2042,9 @@ class _ReaderSessionState extends State<_ReaderSession>
     return switch (action) {
       _ReaderBarAction.crossReferences => [
         item(Icons.link, 'Cross references'),
+      ],
+      _ReaderBarAction.places => [
+        item(Icons.map_outlined, 'Places', enabled: _isOldTestament),
       ],
       _ReaderBarAction.text => [
         for (final text in ReaderText.values)
@@ -3190,6 +3203,30 @@ class _ReaderSessionState extends State<_ReaderSession>
     } else {
       widget.onCrossReferencesRequested(_bookIndex, _chapter, null);
     }
+  }
+
+  /// Whether the chapter at the top of the reader is in the Hebrew Bible,
+  /// whose words alone are linked to the places they name.
+  bool get _isOldTestament => _bookIndex < 39;
+
+  /// The places the chapter at the top of the reader names, on a map.
+  Future<void> _showChapterPlaces() async {
+    if (!_isOldTestament) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.sizeOf(sheetContext).height * 0.82,
+        child: ChapterPlacesSheet(
+          bookIndex: _bookIndex,
+          chapter: _chapter,
+          useEnglishBookNames: _englishBookNames,
+          onNavigateToPassage: (book, chapter, verse) =>
+              _navigateTo(book, chapter, verse: verse),
+        ),
+      ),
+    );
   }
 
   Future<void> _showStudyWorkspaceSheet() async {

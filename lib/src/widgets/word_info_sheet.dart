@@ -16,6 +16,7 @@ import '../study_workspace.dart';
 import '../tutor/progress_sync.dart';
 import '../word_proximity.dart';
 import 'lexicon_source.dart';
+import 'name_details.dart';
 import 'verse_row.dart' show verseGlossPositions;
 import 'verse_text_cache.dart';
 
@@ -486,7 +487,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       final byParse = <String, Occurrence>{};
       for (final o in own) {
         final signature = [
-          for (final dimension in _ParseDimension.values) dimension.of(o),
+          for (final dimension in _morphology) dimension.of(o),
         ].join('|');
         counts[signature] = (counts[signature] ?? 0) + 1;
         byParse.putIfAbsent(signature, () => o);
@@ -499,7 +500,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     }
     if (token == null) return null;
     final parse = {
-      for (final dimension in _ParseDimension.values)
+      for (final dimension in _morphology)
         if (dimension.of(token).isNotEmpty) dimension: dimension.of(token),
     };
     return parse.isEmpty ? null : parse;
@@ -1045,6 +1046,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   if (info.vavCon) _chip(context, 'Vav', 'consecutive'),
                 ],
               ),
+              ?_senseRow(context, info),
             ],
           ),
         ),
@@ -1353,8 +1355,88 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     return ListView(
       controller: scrollController,
       padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
-      children: [...rows],
+      children: [
+        // Who or what the word names here: the lexicon can only say what
+        // the name means.
+        if (info.name case final name?) ...[
+          NameCard(name: name, onOpen: () => _openName(name)),
+          const SizedBox(height: 16),
+        ],
+        ...rows,
+      ],
     );
+  }
+
+  void _openName(NameSummaryEntry name) => NameDetailsPage.open(
+    context,
+    id: name.id,
+    title: name.name,
+    useEnglishBookNames: widget.useEnglishBookNames,
+    onNavigateToPassage: widget.onNavigateToPassage,
+  );
+
+  /// The senses of the word, the one it has here marked, each narrowing the
+  /// Occurrences tab to the tokens with it. Nothing for a word with one sense:
+  /// the gloss above says all there is.
+  Widget? _senseRow(BuildContext context, WordInfo info) {
+    final sense = info.sense;
+    if (sense == null || sense.senses.length < 2) return null;
+    final theme = Theme.of(context);
+    String label(SenseChoice choice) => choice.meaning.isEmpty
+        ? sense.gloss
+        : '${sense.gloss}: ${choice.meaning}';
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            sense.meaning.isEmpty
+                ? 'Senses of “${sense.gloss}”'
+                : 'Here “${sense.gloss}” means “${sense.meaning}”',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final choice in sense.senses)
+                FilterChip(
+                  label: Text(
+                    '${choice.meaning.isEmpty ? sense.gloss : choice.meaning} · ${choice.occurrences}',
+                  ),
+                  tooltip: 'Show the occurrences with this sense',
+                  // The sense the list is narrowed to, or else this word's.
+                  selected: switch (_parse[_ParseDimension.sense]) {
+                    final senses? when senses.isNotEmpty => senses.contains(
+                      label(choice),
+                    ),
+                    _ => choice.isCurrent,
+                  },
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (_) => _showSense(label(choice)),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Narrow the Occurrences tab to the tokens with [sense], and go there.
+  void _showSense(String sense) {
+    setState(() {
+      _forms.clear();
+      _parse
+        ..clear()
+        ..[_ParseDimension.sense] = {sense};
+    });
+    _occurrenceFilterChanged();
+    _fetchOccurrences();
+    _tabController.animateTo(1);
   }
 
   /// A filter header and a canon distribution over a merged-by-verse list,
@@ -2161,7 +2243,8 @@ enum _ParseDimension {
   person('Person'),
   gender('Gender'),
   number('Number'),
-  state('State');
+  state('State'),
+  sense('Sense');
 
   const _ParseDimension(this.label);
 
@@ -2180,8 +2263,17 @@ enum _ParseDimension {
     _ParseDimension.gender => o.parse.gender,
     _ParseDimension.number => o.parse.number,
     _ParseDimension.state => o.parse.state,
+    _ParseDimension.sense => o.sense,
   };
 }
+
+/// The dimensions of a token's parse proper, which the tapped word's "this
+/// parse" scope matches on: all but its sense, which has a filter of its own
+/// in the header.
+final _morphology = [
+  for (final dimension in _ParseDimension.values)
+    if (dimension != _ParseDimension.sense) dimension,
+];
 
 /// One remembered result, recomputed only when its keys change.
 ///

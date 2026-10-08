@@ -127,6 +127,7 @@ Occurrence _occurrence({
   position: position,
   surface: surface,
   lexeme: lexeme,
+  sense: '',
   parse: OccurrenceParse(
     partOfSpeech: partOfSpeech,
     stem: stem,
