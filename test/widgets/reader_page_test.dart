@@ -96,11 +96,13 @@ Future<_FakeRust> _pumpReader(
   int book = 0,
   required int chapter,
   bool englishBookNames = false,
+  Map<String, Object> prefs = const {},
 }) async {
   SharedPreferences.setMockInitialValues({
     'book': book,
     'chapter': chapter,
     'english_book_names': englishBookNames,
+    ...prefs,
   });
   final rust = _FakeRust();
   await tester.pumpWidget(
@@ -2492,15 +2494,10 @@ void crossReferenceDockTests() {
       addTearDown(mouse.removePointer);
       for (final width in [1400.0, 420.0, 1400.0]) {
         await mouse.moveTo(
-          tester.getCenter(
-            find
-                .byTooltip('Cross references in this chapter')
-                .hitTestable()
-                .first,
-          ),
+          tester.getCenter(find.byTooltip('Rapid reading').hitTestable().first),
         );
         await tester.pump(const Duration(seconds: 1));
-        expect(find.text('Cross references in this chapter'), findsOneWidget);
+        expect(find.text('Rapid reading'), findsOneWidget);
         tester.view.physicalSize = Size(width, 800);
         await _turnPage(tester);
         expect(tester.takeException(), isNull, reason: 'at $width');
@@ -2513,21 +2510,22 @@ void readerViewTests() {
   VerseRow verseRow(WidgetTester tester) =>
       tester.widget<VerseRow>(_verse(1, 1, 1));
 
-  Future<void> cycleView(WidgetTester tester) async {
-    await tester.tap(find.byKey(const ValueKey('reader-view-toggle')));
+  Future<void> tapToggle(WidgetTester tester, String key) async {
+    await tester.tap(find.byKey(ValueKey(key)));
     await tester.pump();
   }
 
-  testWidgets('the top bar cycles interlinear, Hebrew only and rapid reading', (
+  testWidgets('the top bar toggles the interlinear and rapid reading apart', (
     tester,
   ) async {
     final rust = await _pumpReader(tester, chapter: 1);
     expect(verseRow(tester).interlinearPositions, isNull);
 
-    // No layers were enabled, so the interlinear turned the glosses on.
-    await cycleView(tester);
+    await tapToggle(tester, 'reader-interlinear-toggle');
     expect(verseRow(tester).interlinearPositions, isEmpty);
-    await cycleView(tester);
+
+    // No layers were enabled, so rapid reading turned the glosses on.
+    await tapToggle(tester, 'reader-rapid-toggle');
     expect(rust.pending.any((r) => r.chapter == 1 && r.includeGlosses), isTrue);
     rust.deliverAll();
     await tester.pump();
@@ -2550,15 +2548,39 @@ void readerViewTests() {
     verseRow(tester).onWordTap('מלה', null, 3, '');
     await tester.pump();
 
-    // Leaving rapid reading forgets what it revealed.
-    await cycleView(tester);
+    // Leaving rapid reading forgets what it revealed and returns to the
+    // interlinear as it was: hidden.
+    await tapToggle(tester, 'reader-rapid-toggle');
+    expect(verseRow(tester).interlinearPositions, isEmpty);
+
+    // Showing the interlinear from rapid reading leaves it.
+    await tapToggle(tester, 'reader-rapid-toggle');
+    await tapToggle(tester, 'reader-interlinear-toggle');
     expect(verseRow(tester).interlinearPositions, isNull);
     verseRow(tester).onWordTap('מלה', null, 3, '');
     await tester.pump();
     expect(rust.wordRequests, hasLength(1));
 
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getString('reader_view'), 'interlinear');
+    expect(prefs.getBool('rapid_reading'), isFalse);
+    expect(prefs.getBool('show_interlinear'), isTrue);
+  });
+
+  testWidgets('an old three-way view choice is carried over', (tester) async {
+    final rust = await _pumpReader(
+      tester,
+      chapter: 1,
+      prefs: {'reader_view': 'plain', 'gloss_interlinear': true},
+    );
+    rust.deliverAll();
+    await tester.pump();
+    expect(verseRow(tester).interlinearPositions, isEmpty);
+    await tapToggle(tester, 'reader-rapid-toggle');
+    await tapToggle(tester, 'reader-rapid-toggle');
+    expect(verseRow(tester).interlinearPositions, isEmpty);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('show_interlinear'), isFalse);
+    expect(prefs.containsKey('reader_view'), isFalse);
   });
 
   testWidgets('rapid reading can reveal single words', (tester) async {
@@ -2778,15 +2800,22 @@ void translationTests() {
 }
 
 void compactViewMenuTests() {
-  testWidgets('a narrow reader gathers the text and view toggles in a menu', (
+  testWidgets('a narrow reader keeps rapid reading and gathers the rest', (
     tester,
   ) async {
-    await _pumpWorkspace(tester, const Size(400, 800));
+    await _pumpWorkspace(tester, const Size(320, 800));
+    expect(find.byKey(const ValueKey('reader-rapid-toggle')), findsOneWidget);
     expect(find.byKey(const ValueKey('reader-text-toggle')), findsNothing);
-    expect(find.byKey(const ValueKey('reader-view-toggle')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('reader-interlinear-toggle')),
+      findsNothing,
+    );
+    expect(find.byTooltip('Back'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('reader-view-menu')));
     await tester.pumpAndSettle();
+    expect(find.text('Cross references'), findsOneWidget);
+    expect(find.text('Forward'), findsOneWidget);
     await tester.tap(
       find.widgetWithText(CheckedPopupMenuItem<Object>, 'Side by side'),
     );
@@ -2795,6 +2824,30 @@ void compactViewMenuTests() {
       tester.widget<VerseRow>(_verse(1, 1, 1)).readerText,
       ReaderText.parallel,
     );
+
+    await tester.tap(find.byKey(const ValueKey('reader-view-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.widgetWithText(CheckedPopupMenuItem<Object>, 'Interlinear'),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<VerseRow>(_verse(1, 1, 1)).interlinearPositions,
+      isEmpty,
+    );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a wide reader shows every action in its bar', (tester) async {
+    await _pumpWorkspace(tester, const Size(1366, 744));
+    for (final key in [
+      'reader-rapid-toggle',
+      'reader-interlinear-toggle',
+      'reader-text-toggle',
+      'reader-cross-references',
+    ]) {
+      expect(find.byKey(ValueKey(key)), findsOneWidget, reason: key);
+    }
+    expect(find.byKey(const ValueKey('reader-view-menu')), findsNothing);
   });
 }

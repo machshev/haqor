@@ -8,6 +8,7 @@ import 'boot_failure.dart';
 import 'db_installer_native.dart';
 import 'issue_reporting.dart';
 import 'reader_page.dart';
+import 'reading_presets.dart';
 import 'tutor/progress_sync.dart';
 
 Future<Widget> initializeAppRuntime() async {
@@ -31,6 +32,6 @@ Future<Widget> initializeAppRuntime() async {
     },
     initialFailure: failure,
     initialNotice: notice,
-    child: const BibleReaderPage(),
+    child: const WelcomeGate(child: BibleReaderPage()),
   );
 }

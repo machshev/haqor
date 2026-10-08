@@ -9,6 +9,7 @@ import 'boot_status.dart';
 import 'db_installer_web.dart';
 import 'issue_reporting.dart';
 import 'reader_page.dart';
+import 'reading_presets.dart';
 
 Future<Widget> initializeAppRuntime() async {
   // Each phase names the wait the reader is looking at. `web/index.html`
@@ -34,6 +35,6 @@ Future<Widget> initializeAppRuntime() async {
     },
     initialFailure: failure,
     initialNotice: notice,
-    child: const BibleReaderPage(),
+    child: const WelcomeGate(child: BibleReaderPage()),
   );
 }

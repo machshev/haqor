@@ -181,6 +181,16 @@ class _SelectedWord {
   final String? bdbId;
 }
 
+/// The reader top bar's own actions, in the order the bar shows them.
+enum _ReaderBarAction {
+  crossReferences,
+  text,
+  interlinear,
+  rapidReading,
+  back,
+  forward,
+}
+
 enum _ReaderMenuAction {
   studyWorkspace,
   crossReferences,
@@ -1607,29 +1617,11 @@ class _ReaderSessionState extends State<_ReaderSession>
   static const _kVerse = 'verse';
   static const _kHistory = 'nav_history';
   static const _kHistoryIndex = 'nav_history_index';
-  static const _kNtSyriac = 'nt_syriac';
-  static const _kEnglishBookNames = 'english_book_names';
-  static const _kHebrewNumerals = 'hebrew_numerals';
   static const _kCrossReferenceMinScore = 'cross_reference_min_score';
-  static const _kFontSize = 'font_size';
-  static const _kFontFamily = 'font_family';
-  static const _kShowCantillation = 'show_cantillation';
-  static const _kGlossInterlinear = 'gloss_interlinear';
-  static const _kMorphologyInterlinear = 'morphology_interlinear';
-  static const _kReaderView = 'reader_view';
-  static const _kRapidReveal = 'rapid_reveal';
-  static const _kHighlightProperNames = 'highlight_proper_names';
-  static const _kSyntaxRoles = 'syntax_roles';
-  static const _kSyntaxView = 'syntax_view';
-  static const _kReaderText = 'reader_text';
-  static const _kKetivDisplay = 'ketiv_display';
   static const _kReadingPlanBook = 'reading_plan_book';
   static const _kReadingPlanCompleted = 'reading_plan_completed';
   static const _kReadingPlans = 'reading_plans';
-  static const _kReaderLayoutMode = 'reader_layout_mode';
   static const _kStudyWorkspaceVisible = 'study_workspace_visible';
-
-  static const _fontFamilies = ['Cardo', 'David Libre', 'Frank Ruhl Libre'];
 
   // Displayed in AppBar — tracks the chapter currently at the top of the viewport
   int _bookIndex = 0;
@@ -1693,7 +1685,8 @@ class _ReaderSessionState extends State<_ReaderSession>
   bool _showCantillation = true;
   bool _glossInterlinear = false;
   bool _morphologyInterlinear = false;
-  ReaderView _readerView = ReaderView.interlinear;
+  bool _rapidReading = false;
+  bool _showInterlinear = true;
   RapidReveal _rapidReveal = RapidReveal.verse;
 
   // What rapid reading has revealed, by (book index, chapter, verse): the
@@ -1921,61 +1914,149 @@ class _ReaderSessionState extends State<_ReaderSession>
     _savePrefs();
   }
 
-  /// The reader's text and Hebrew view toggles. A narrow reader (a tile of
-  /// the workspace, say) has no room in its bar for both, and gathers them
-  /// into one menu instead.
-  List<Widget> _viewActions({required bool compact}) {
-    if (compact) {
-      return [
+  /// The reader's top-bar actions, as many as [width] leaves room for beside
+  /// the title. Rapid reading always keeps its button, being the toggle a
+  /// reader reaches for mid-passage; the rest give way in [_barPriority]
+  /// order to one overflow menu.
+  List<Widget> _barActions(double width) {
+    const titleRoom = 200.0;
+    final slots = ((width - titleRoom) / kMinInteractiveDimension).floor();
+    final others = _ReaderBarAction.values
+        .where((action) => action != _ReaderBarAction.rapidReading)
+        .toList();
+    final Set<_ReaderBarAction> shown;
+    if (slots >= _ReaderBarAction.values.length) {
+      shown = _ReaderBarAction.values.toSet();
+    } else {
+      // One slot for rapid reading and one for the menu.
+      shown = {
+        _ReaderBarAction.rapidReading,
+        ..._barPriority.take(math.max(0, slots - 2)),
+      };
+    }
+    final overflow = others.where((action) => !shown.contains(action));
+    return [
+      for (final action in _ReaderBarAction.values)
+        if (shown.contains(action)) _barButton(action),
+      if (overflow.isNotEmpty)
         PopupMenuButton<Object>(
           key: const ValueKey('reader-view-menu'),
-          icon: const Icon(Icons.tune),
-          tooltip: 'View',
+          icon: const Icon(Icons.more_vert),
+          tooltip: 'More',
           onSelected: (choice) => switch (choice) {
             ReaderText text => _setReaderText(text),
-            ReaderView view => _setReaderView(view),
+            _ReaderBarAction action => _runBarAction(action),
             _ => null,
           },
           itemBuilder: (context) => [
-            for (final text in ReaderText.values)
-              CheckedPopupMenuItem(
-                value: text,
-                checked: text == _readerText,
-                child: Text(text.label),
-              ),
-            const PopupMenuDivider(),
-            for (final view in ReaderView.values)
-              CheckedPopupMenuItem(
-                value: view,
-                checked: view == _readerView,
-                child: Text(view.label),
-              ),
+            for (final action in overflow) ..._barMenuItems(action),
           ],
         ),
-      ];
-    }
-    return [
-      IconButton(
-        key: const ValueKey('reader-text-toggle'),
-        icon: Icon(switch (_readerText) {
-          ReaderText.source => Icons.format_textdirection_r_to_l,
-          ReaderText.english => Icons.format_textdirection_l_to_r,
-          ReaderText.parallel => Icons.vertical_split_outlined,
-        }),
-        onPressed: _cycleReaderText,
-        tooltip: '${_readerText.label} · switch to ${_readerText.next.label}',
-      ),
-      IconButton(
-        key: const ValueKey('reader-view-toggle'),
-        icon: Icon(switch (_readerView) {
-          ReaderView.interlinear => Icons.subtitles_outlined,
-          ReaderView.plain => Icons.notes,
-          ReaderView.rapid => Icons.touch_app_outlined,
-        }),
-        onPressed: _cycleReaderView,
-        tooltip: '${_readerView.label} · switch to ${_readerView.next.label}',
-      ),
     ];
+  }
+
+  /// Which actions stay in the bar as it narrows, the first kept longest.
+  static const _barPriority = [
+    _ReaderBarAction.interlinear,
+    _ReaderBarAction.text,
+    _ReaderBarAction.back,
+    _ReaderBarAction.forward,
+    _ReaderBarAction.crossReferences,
+  ];
+
+  void _runBarAction(_ReaderBarAction action) => switch (action) {
+    _ReaderBarAction.crossReferences => widget.onCrossReferencesRequested(
+      _bookIndex,
+      _chapter,
+      null,
+    ),
+    _ReaderBarAction.text => _cycleReaderText(),
+    _ReaderBarAction.interlinear => _toggleInterlinear(),
+    _ReaderBarAction.rapidReading => _toggleRapidReading(),
+    _ReaderBarAction.back => _canGoBack ? _goBack() : null,
+    _ReaderBarAction.forward => _canGoForward ? _goForward() : null,
+  };
+
+  Widget _barButton(_ReaderBarAction action) => switch (action) {
+    _ReaderBarAction.crossReferences => IconButton(
+      key: const ValueKey('reader-cross-references'),
+      icon: const Icon(Icons.link),
+      onPressed: () => _runBarAction(action),
+      tooltip: 'Cross references in this chapter',
+    ),
+    _ReaderBarAction.text => IconButton(
+      key: const ValueKey('reader-text-toggle'),
+      icon: Icon(switch (_readerText) {
+        ReaderText.source => Icons.format_textdirection_r_to_l,
+        ReaderText.english => Icons.format_textdirection_l_to_r,
+        ReaderText.parallel => Icons.vertical_split_outlined,
+      }),
+      onPressed: _cycleReaderText,
+      tooltip: '${_readerText.label} · switch to ${_readerText.next.label}',
+    ),
+    _ReaderBarAction.interlinear => IconButton(
+      key: const ValueKey('reader-interlinear-toggle'),
+      isSelected: _interlinearShown,
+      icon: const Icon(Icons.subtitles_off_outlined),
+      selectedIcon: const Icon(Icons.subtitles),
+      onPressed: _toggleInterlinear,
+      tooltip: _interlinearShown ? 'Hide interlinear' : 'Show interlinear',
+    ),
+    _ReaderBarAction.rapidReading => IconButton(
+      key: const ValueKey('reader-rapid-toggle'),
+      isSelected: _rapidReading,
+      icon: const Icon(Icons.touch_app_outlined),
+      selectedIcon: const Icon(Icons.touch_app),
+      onPressed: _toggleRapidReading,
+      tooltip: _rapidReading ? 'Stop rapid reading' : 'Rapid reading',
+    ),
+    _ReaderBarAction.back => IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: _canGoBack ? _goBack : null,
+      tooltip: 'Back',
+    ),
+    _ReaderBarAction.forward => IconButton(
+      icon: const Icon(Icons.arrow_forward),
+      onPressed: _canGoForward ? _goForward : null,
+      tooltip: 'Forward',
+    ),
+  };
+
+  List<PopupMenuEntry<Object>> _barMenuItems(_ReaderBarAction action) {
+    PopupMenuItem<Object> item(IconData icon, String label, {bool? enabled}) =>
+        PopupMenuItem(
+          value: action,
+          enabled: enabled ?? true,
+          child: ListTile(leading: Icon(icon), title: Text(label)),
+        );
+    return switch (action) {
+      _ReaderBarAction.crossReferences => [
+        item(Icons.link, 'Cross references'),
+      ],
+      _ReaderBarAction.text => [
+        for (final text in ReaderText.values)
+          CheckedPopupMenuItem(
+            value: text,
+            checked: text == _readerText,
+            child: Text(text.label),
+          ),
+        const PopupMenuDivider(),
+      ],
+      _ReaderBarAction.interlinear => [
+        CheckedPopupMenuItem(
+          value: action,
+          checked: _interlinearShown,
+          child: const Text('Interlinear'),
+        ),
+      ],
+      _ReaderBarAction.rapidReading => const [],
+      _ReaderBarAction.back => [
+        item(Icons.arrow_back, 'Back', enabled: _canGoBack),
+      ],
+      _ReaderBarAction.forward => [
+        item(Icons.arrow_forward, 'Forward', enabled: _canGoForward),
+      ],
+    };
   }
 
   void _requestSyntax(int bookIndex, int chapter) {
@@ -2137,6 +2218,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
+    final reading = readReadingSettings(prefs);
     setState(() {
       _bookIndex = (prefs.readInt(_sessionKey(_kBook)) ?? 0).clamp(
         0,
@@ -2147,39 +2229,9 @@ class _ReaderSessionState extends State<_ReaderSession>
         kBooks[_bookIndex].chapters,
       );
       _visibleVerse = (prefs.readInt(_sessionKey(_kVerse)) ?? 1).clamp(1, 999);
-      _ntSyriac = prefs.readBool(_kNtSyriac) ?? false;
-      _englishBookNames = prefs.readBool(_kEnglishBookNames) ?? false;
-      _hebrewNumerals = prefs.readBool(_kHebrewNumerals) ?? true;
+      _adoptReadingSettings(reading);
       _crossReferenceMinScore = prefs.readDouble(_kCrossReferenceMinScore) ?? 0;
-      _fontSize = snapFontSize(prefs.readDouble(_kFontSize));
-      final savedFamily = prefs.readString(_kFontFamily) ?? 'Cardo';
-      _fontFamily = _fontFamilies.contains(savedFamily) ? savedFamily : 'Cardo';
-      _showCantillation = prefs.readBool(_kShowCantillation) ?? true;
-      _glossInterlinear = prefs.readBool(_kGlossInterlinear) ?? false;
-      _morphologyInterlinear = prefs.readBool(_kMorphologyInterlinear) ?? false;
-      _readerView =
-          ReaderView.values.asNameMap()[prefs.readString(_kReaderView)] ??
-          ReaderView.interlinear;
-      _rapidReveal =
-          RapidReveal.values.asNameMap()[prefs.readString(_kRapidReveal)] ??
-          RapidReveal.verse;
-      _highlightProperNames = prefs.readBool(_kHighlightProperNames) ?? false;
-      _syntaxRoles = prefs.readBool(_kSyntaxRoles) ?? false;
-      _syntaxView =
-          SyntaxView.values.asNameMap()[prefs.readString(_kSyntaxView)] ??
-          SyntaxView.outline;
-      _readerText =
-          ReaderText.values.asNameMap()[prefs.readString(_kReaderText)] ??
-          ReaderText.source;
       _studyWorkspaceVisible = prefs.readBool(_kStudyWorkspaceVisible) ?? false;
-      _ketivDisplay = KetivDisplay.values.firstWhere(
-        (option) => option.name == prefs.readString(_kKetivDisplay),
-        orElse: () => KetivDisplay.superscript,
-      );
-      _readerLayoutMode = ReaderLayoutMode.values.firstWhere(
-        (option) => option.name == prefs.readString(_kReaderLayoutMode),
-        orElse: () => ReaderLayoutMode.automatic,
-      );
       final savedPlans = prefs.readStringList(_kReadingPlans);
       if (savedPlans != null) {
         _readingPlans = savedPlans
@@ -2263,24 +2315,9 @@ class _ReaderSessionState extends State<_ReaderSession>
       prefs.setInt(_sessionKey(_kBook), _bookIndex),
       prefs.setInt(_sessionKey(_kChapter), _chapter),
       prefs.setInt(_sessionKey(_kVerse), _visibleVerse),
-      prefs.setBool(_kNtSyriac, _ntSyriac),
-      prefs.setBool(_kEnglishBookNames, _englishBookNames),
-      prefs.setBool(_kHebrewNumerals, _hebrewNumerals),
+      writeReadingSettings(prefs, _readingSettings),
       prefs.setDouble(_kCrossReferenceMinScore, _crossReferenceMinScore),
-      prefs.setDouble(_kFontSize, _fontSize),
-      prefs.setString(_kFontFamily, _fontFamily),
-      prefs.setBool(_kShowCantillation, _showCantillation),
-      prefs.setBool(_kGlossInterlinear, _glossInterlinear),
-      prefs.setBool(_kMorphologyInterlinear, _morphologyInterlinear),
-      prefs.setString(_kReaderView, _readerView.name),
-      prefs.setString(_kRapidReveal, _rapidReveal.name),
-      prefs.setBool(_kHighlightProperNames, _highlightProperNames),
-      prefs.setBool(_kSyntaxRoles, _syntaxRoles),
-      prefs.setString(_kSyntaxView, _syntaxView.name),
-      prefs.setString(_kReaderText, _readerText.name),
       prefs.setBool(_kStudyWorkspaceVisible, _studyWorkspaceVisible),
-      prefs.setString(_kKetivDisplay, _ketivDisplay.name),
-      prefs.setString(_kReaderLayoutMode, _readerLayoutMode.name),
     ]);
   }
 
@@ -2303,22 +2340,11 @@ class _ReaderSessionState extends State<_ReaderSession>
         settings.morphologyInterlinear != _morphologyInterlinear ||
         settings.highlightProperNames != _highlightProperNames;
     setState(() {
-      _ntSyriac = settings.ntSyriac;
-      _englishBookNames = settings.englishBookNames;
-      _hebrewNumerals = settings.hebrewNumerals;
-      _showCantillation = settings.showCantillation;
-      _glossInterlinear = settings.glossInterlinear;
-      _morphologyInterlinear = settings.morphologyInterlinear;
-      _highlightProperNames = settings.highlightProperNames;
-      _syntaxRoles = settings.syntaxRoles;
-      _syntaxView = settings.syntaxView;
-      _readerText = settings.readerText;
-      if (settings.rapidReveal != _rapidReveal) _revealed.clear();
-      _rapidReveal = settings.rapidReveal;
-      _ketivDisplay = settings.ketivDisplay;
-      _fontSize = settings.fontSize;
-      _fontFamily = settings.fontFamily;
-      _readerLayoutMode = settings.readerLayoutMode;
+      if (settings.rapidReading != _rapidReading ||
+          settings.rapidReveal != _rapidReveal) {
+        _revealed.clear();
+      }
+      _adoptReadingSettings(settings);
     });
     if (reloadChapter) {
       _pendingVerse = _visibleVerse;
@@ -2326,6 +2352,26 @@ class _ReaderSessionState extends State<_ReaderSession>
     } else {
       _savePrefs();
     }
+  }
+
+  void _adoptReadingSettings(AppReadingSettings settings) {
+    _ntSyriac = settings.ntSyriac;
+    _englishBookNames = settings.englishBookNames;
+    _hebrewNumerals = settings.hebrewNumerals;
+    _showCantillation = settings.showCantillation;
+    _glossInterlinear = settings.glossInterlinear;
+    _morphologyInterlinear = settings.morphologyInterlinear;
+    _highlightProperNames = settings.highlightProperNames;
+    _syntaxRoles = settings.syntaxRoles;
+    _syntaxView = settings.syntaxView;
+    _readerText = settings.readerText;
+    _rapidReading = settings.rapidReading;
+    _showInterlinear = settings.showInterlinear;
+    _rapidReveal = settings.rapidReveal;
+    _ketivDisplay = settings.ketivDisplay;
+    _fontSize = settings.fontSize;
+    _fontFamily = settings.fontFamily;
+    _readerLayoutMode = settings.readerLayoutMode;
   }
 
   AppReadingSettings get _readingSettings => AppReadingSettings(
@@ -2344,20 +2390,44 @@ class _ReaderSessionState extends State<_ReaderSession>
     syntaxRoles: _syntaxRoles,
     syntaxView: _syntaxView,
     readerText: _readerText,
+    rapidReading: _rapidReading,
+    showInterlinear: _showInterlinear,
   );
 
-  void _cycleReaderView() => _setReaderView(_readerView.next);
+  /// Whether the interlinear shows beneath every word: on, and not hidden
+  /// behind rapid reading's taps.
+  bool get _interlinearShown => _showInterlinear && !_rapidReading;
 
-  void _setReaderView(ReaderView next) {
+  /// Shows or hides the interlinear. Showing it leaves rapid reading, whose
+  /// whole point is that the interlinear stays hidden until asked for.
+  void _toggleInterlinear() {
+    final show = !_interlinearShown;
     setState(() {
-      _readerView = next;
+      _showInterlinear = show;
+      if (show && _rapidReading) {
+        _rapidReading = false;
+        _revealed.clear();
+      }
+    });
+    _ensureInterlinearLayer(show);
+  }
+
+  /// Starts or ends rapid reading: the Hebrew alone, a tap revealing the
+  /// interlinear where it is needed. Ending it returns to the interlinear as
+  /// it was before.
+  void _toggleRapidReading() {
+    final rapid = !_rapidReading;
+    setState(() {
+      _rapidReading = rapid;
       _revealed.clear();
     });
-    // An interlinear with no layers enabled would look just like the bare
-    // text, so asking for one turns the glosses on.
-    if (next != ReaderView.plain &&
-        !_glossInterlinear &&
-        !_morphologyInterlinear) {
+    _ensureInterlinearLayer(rapid || _showInterlinear);
+  }
+
+  /// An interlinear with no layers enabled would look just like the bare
+  /// text, so asking for one turns the glosses on.
+  void _ensureInterlinearLayer(bool wanted) {
+    if (wanted && !_glossInterlinear && !_morphologyInterlinear) {
       _applyReadingSettings(_readingSettings.copyWith(glossInterlinear: true));
     } else {
       _savePrefs();
@@ -2395,14 +2465,13 @@ class _ReaderSessionState extends State<_ReaderSession>
   }
 
   Set<int>? _interlinearPositions(int bookIndex, int chapter, int verse) =>
-      switch (_readerView) {
-        ReaderView.interlinear => null,
-        ReaderView.plain => const <int>{},
-        ReaderView.rapid =>
-          _revealed.containsKey((bookIndex, chapter, verse))
-              ? _revealed[(bookIndex, chapter, verse)]
-              : const <int>{},
-      };
+      _rapidReading
+      ? (_revealed.containsKey((bookIndex, chapter, verse))
+            ? _revealed[(bookIndex, chapter, verse)]
+            : const <int>{})
+      : _showInterlinear
+      ? null
+      : const <int>{};
 
   Future<void> _showAppSettings() async {
     await showAppSettings(
@@ -4385,10 +4454,10 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   Widget _session(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) =>
-        _sessionScaffold(context, compact: constraints.maxWidth < 480),
+        _sessionScaffold(context, width: constraints.maxWidth),
   );
 
-  Widget _sessionScaffold(BuildContext context, {required bool compact}) {
+  Widget _sessionScaffold(BuildContext context, {required double width}) {
     final book = kBooks[_bookIndex];
     final theme = Theme.of(context);
     return Scaffold(
@@ -4445,26 +4514,7 @@ class _ReaderSessionState extends State<_ReaderSession>
           ],
         ),
         centerTitle: true,
-        actions: [
-          IconButton(
-            key: const ValueKey('reader-cross-references'),
-            icon: const Icon(Icons.link),
-            onPressed: () =>
-                widget.onCrossReferencesRequested(_bookIndex, _chapter, null),
-            tooltip: 'Cross references in this chapter',
-          ),
-          ..._viewActions(compact: compact),
-          IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: _canGoBack ? _goBack : null,
-            tooltip: 'Back',
-          ),
-          IconButton(
-            icon: const Icon(Icons.arrow_forward),
-            onPressed: _canGoForward ? _goForward : null,
-            tooltip: 'Forward',
-          ),
-        ],
+        actions: _barActions(width),
       ),
       body: Center(
         child: ConstrainedBox(
@@ -4607,7 +4657,7 @@ class _ReaderSessionState extends State<_ReaderSession>
                 }
               }),
               onWordTap: (word, readerGloss, position, root) {
-                if (_readerView == ReaderView.rapid) {
+                if (_rapidReading) {
                   if (position != null) {
                     _toggleReveal(b, c, entry.verse, position);
                   }
