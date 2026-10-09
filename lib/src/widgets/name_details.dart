@@ -375,6 +375,13 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
             'From STEP Bible\'s TIPNR (Tyndale House Cambridge, CC BY 4.0)',
             if (info.locations.any((l) => l.confidence >= 0))
               'Locations from OpenBible.info (CC BY 4.0)',
+            // Haqor's own identifications carry a label but no confidence;
+            // TIPNR's positions carry neither.
+            if (info.locations.any(
+              (l) => l.confidence < 0 && l.label.isNotEmpty,
+            ))
+              "Location as Haqor identifies it, in place of OpenBible.info's "
+                  '(see About)',
           ].join('. '),
           style: theme.textTheme.bodySmall?.copyWith(
             color: scheme.onSurfaceVariant,

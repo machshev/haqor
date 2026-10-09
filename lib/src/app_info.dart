@@ -147,7 +147,10 @@ const dataSourceCredits = <DataSourceCredit>[
     title: 'OpenBible.info Bible Geocoding',
     description:
         'Where each place named in the Bible may have been, with how '
-        'confident scholarship is in each identification.',
+        'confident scholarship is in each identification. Haqor places the '
+        'exodus and the cities of the plain by its own reading instead: the '
+        'sea crossed from the Nuweiba beach into Midian, Mount Sinai at Jabal '
+        'al-Lawz, and Sodom and Gomorrah at Bab edh-Dhra and Numeira.',
     licence: 'CC BY 4.0',
     url: 'https://github.com/openbibleinfo/Bible-Geocoding-Data',
   ),

@@ -17,9 +17,9 @@ import 'dart:math' as math;
 
 import 'package:image/image.dart' as img;
 
-/// [west, south, east, north] in degrees: Israel, Lebanon and Transjordan, with
-/// a margin of desert and sea for the relief to fade out over.
-const box = [32.4, 28.0, 38.8, 35.4];
+/// [west, south, east, north] in degrees: Israel, Lebanon, Transjordan, Sinai
+/// and Midian, with a margin of desert and sea for the relief to fade out over.
+const box = [32.4, 27.2, 38.8, 35.4];
 
 /// Pixels per degree of latitude; longitude has fewer, by the cosine of the
 /// maps' reference latitude.

@@ -323,6 +323,13 @@ licensed CC BY 4.0, over coastlines, lakes and rivers from
 and valleys shaded from NASA's Shuttle Radar Topography Mission elevations
 (public domain), by way of the
 [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) open dataset.
+Haqor changes OpenBible.info's data for the exodus and the cities of the
+plain, in place of its identifications: it places the crossing of the sea from
+the Nuweiba beach into Midian and Mount Sinai at Jabal al-Lawz (after Ron Wyatt
+and Lennart Möller), and Sodom, Gomorrah, Admah, Zeboiim and Zoar at Bab
+edh-Dhra, Numeira, Feifa, Khanazir and es-Safi, with Lot's cave above es-Safi
+(after Joel Kramer). haqor-core's `data/place_overrides.json` lists the
+changes.
 
 **Thematic cross references** — *The Treasury of Scripture Knowledge*
 (Samuel Bagster & Sons, 1830s; commonly credited to R. A. Torrey), from the
