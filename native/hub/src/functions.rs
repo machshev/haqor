@@ -19,7 +19,7 @@ use crate::signals::{
 };
 use crate::signals::{
     ChapterPlaceEntry, ChapterPlaces, GetChapterPlaces, GetNameEntity, NameEntityInfo,
-    NameFormEntry, NameLinkEntry, NameSummaryEntry, PlaceLocationEntry, SenseChoice,
+    NameFormEntry, NameLinkEntry, NameSummaryEntry, NameVerse, PlaceLocationEntry, SenseChoice,
     WordSenseEntry,
 };
 #[cfg(target_arch = "wasm32")]
@@ -2066,17 +2066,18 @@ pub async fn get_name_entity(bible: SharedBible) {
             .send_signal_to_dart();
             continue;
         };
-        let mut verses: Vec<WordOccurrence> = Vec::new();
+        let mut verses: Vec<NameVerse> = Vec::new();
         for at in bible.name_occurrences(req.id).unwrap_or_default() {
-            let same = verses
-                .last()
-                .is_some_and(|v| (v.book, v.chapter, v.verse) == (at.book, at.chapter, at.verse));
-            if !same {
-                verses.push(WordOccurrence {
+            match verses.last_mut() {
+                Some(v) if (v.book, v.chapter, v.verse) == (at.book, at.chapter, at.verse) => {
+                    v.positions.push(at.position);
+                }
+                _ => verses.push(NameVerse {
                     book: at.book,
                     chapter: at.chapter,
                     verse: at.verse,
-                });
+                    positions: vec![at.position],
+                }),
             }
         }
         NameEntityInfo {

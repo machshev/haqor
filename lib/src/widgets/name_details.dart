@@ -4,10 +4,19 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
+import '../app_settings.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
+import '../external_link.dart';
 import 'place_map.dart';
-import 'word_info_sheet.dart' show BibleRefPreviewDialog;
+import 'verse_text_cache.dart';
+import 'word_info_sheet.dart'
+    show
+        BibleRefPreviewDialog,
+        CanonDistribution,
+        OccurrenceVerseRow,
+        VerseModeIcon,
+        WordInfoSheet;
 
 /// The icon for a kind of name: `person`, `place` or `other`.
 IconData nameKindIcon(String kind) => switch (kind) {
@@ -55,6 +64,19 @@ class NameCard extends StatelessWidget {
 String mentionsLabel(int occurrences) =>
     'Named $occurrences time${occurrences == 1 ? '' : 's'} in the Hebrew Bible';
 
+/// A position in Google Maps, as a search for it, so the pin lands on it.
+Uri googleMapsUri(double latitude, double longitude) => Uri.https(
+  'www.google.com',
+  '/maps/search/',
+  {'api': '1', 'query': '$latitude,$longitude'},
+);
+
+/// A position in Google Earth, seen from 5 km, tilted to show the lie of
+/// the land.
+Uri googleEarthUri(double latitude, double longitude) => Uri.parse(
+  'https://earth.google.com/web/@$latitude,$longitude,0a,5000d,35y,0h,45t,0r',
+);
+
 /// What a link says the other is, in the singular.
 String _relationLabel(String relation) => switch (relation) {
   'father' => 'Father',
@@ -78,8 +100,8 @@ String? _flagLabel(String flag) => switch (flag) {
 
 /// Everything known of a person, place or other named thing: what the text
 /// says of them, their family and other links (each opening its own page),
-/// the forms of their name, where a place may have been, and every verse
-/// naming them.
+/// the forms of their name (each opening its word sheet), where a place may
+/// have been, and every verse naming them, the name marked in each.
 class NameDetailsPage extends StatefulWidget {
   const NameDetailsPage({
     super.key,
@@ -88,6 +110,7 @@ class NameDetailsPage extends StatefulWidget {
     this.useEnglishBookNames = false,
     this.onNavigateToPassage,
     this.sendRequest,
+    this.sendVerseTextsRequest,
     this.basemap,
   });
 
@@ -103,8 +126,9 @@ class NameDetailsPage extends StatefulWidget {
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
 
-  /// Stands in for the signal to Rust, for tests.
+  /// Stand in for the signals to Rust, for tests.
   final void Function(GetNameEntity)? sendRequest;
+  final void Function(GetVerseTexts)? sendVerseTextsRequest;
   final Basemap? basemap;
 
   /// Open the page for [id] over [context].
@@ -135,10 +159,17 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
   StreamSubscription<RustSignalPack<NameEntityInfo>>? _sub;
   int? _requestId;
   NameEntityInfo? _info;
-  bool _allVerses = false;
 
-  /// Verses listed before "Show all".
-  static const _versesShown = 60;
+  /// The verses' text, read as their rows scroll into view.
+  late final VerseTextCache _verseTexts = VerseTextCache(
+    send: widget.sendVerseTextsRequest,
+  );
+
+  /// Show the verses in English, as the word sheet's Occurrences tab does.
+  bool _englishOnly = false;
+
+  /// The books the verse list is narrowed to (1-based); empty for all.
+  final Set<int> _books = {};
 
   @override
   void initState() {
@@ -158,12 +189,21 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
     } else {
       request.sendSignalToRust();
     }
+    occurrenceVerseEnglishOnlyEnabled().then((enabled) {
+      if (mounted) setState(() => _englishOnly = enabled);
+    });
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _verseTexts.dispose();
     super.dispose();
+  }
+
+  void _toggleEnglishOnly() {
+    setState(() => _englishOnly = !_englishOnly);
+    setOccurrenceVerseEnglishOnlyEnabled(_englishOnly);
   }
 
   void _openOther(NameSummaryEntry other) => Navigator.of(context).push(
@@ -175,35 +215,84 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
         useEnglishBookNames: widget.useEnglishBookNames,
         onNavigateToPassage: widget.onNavigateToPassage,
         sendRequest: widget.sendRequest,
+        sendVerseTextsRequest: widget.sendVerseTextsRequest,
         basemap: widget.basemap,
       ),
     ),
   );
 
-  void _openVerse(WordOccurrence verse) {
-    final bookIndex = verse.book - 1;
-    final reference =
-        '${bookDisplayName(bookIndex, useEnglish: widget.useEnglishBookNames)} '
-        '${verse.chapter}:${verse.verse}';
+  /// Go to a verse in the reader, closing every page of names on the way.
+  void Function(int bookIndex, int chapter, int verse)? get _navigate {
     final navigate = widget.onNavigateToPassage;
+    if (navigate == null) return null;
+    return (bookIndex, chapter, verse) {
+      Navigator.of(
+        context,
+      ).popUntil((route) => route.settings.name != NameDetailsPage.routeName);
+      navigate(bookIndex, chapter, verse);
+    };
+  }
+
+  /// Go to a verse naming it, or with no reader to go to, show it.
+  void _openVerse(NameVerse verse) {
+    final bookIndex = verse.book - 1;
+    final navigate = _navigate;
+    if (navigate != null) {
+      navigate(bookIndex, verse.chapter, verse.verse);
+      return;
+    }
     showDialog<void>(
       context: context,
       builder: (_) => BibleRefPreviewDialog(
-        displayRef: reference,
+        displayRef: _reference(verse),
         bookIndex: bookIndex,
         chapter: verse.chapter,
         verse: verse.verse,
-        onNavigate: navigate == null
+      ),
+    );
+  }
+
+  String _reference(NameVerse verse) =>
+      '${bookDisplayName(verse.book - 1, useEnglish: widget.useEnglishBookNames)} '
+      '${verse.chapter}:${verse.verse}';
+
+  /// The word sheet of a form of the name, as for a word in the reader.
+  void _openForm(NameFormEntry form) {
+    final navigate = _navigate;
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheet) => WordInfoSheet(
+        word: form.hebrew,
+        syriac: false,
+        sendVerseTextsRequest: widget.sendVerseTextsRequest,
+        useEnglishBookNames: widget.useEnglishBookNames,
+        reportContext: {'nameForm': form.hebrew, 'nameEntity': widget.id},
+        onNavigateToPassage: navigate == null
             ? null
-            : () {
-                Navigator.of(context).popUntil(
-                  (route) => route.settings.name != NameDetailsPage.routeName,
-                );
-                navigate(bookIndex, verse.chapter, verse.verse);
+            : (bookIndex, chapter, verse) {
+                Navigator.pop(sheet);
+                navigate(bookIndex, chapter, verse);
               },
       ),
     );
   }
+
+  Widget _verseRow(NameVerse verse) => OccurrenceVerseRow(
+    key: ValueKey('${verse.book}:${verse.chapter}:${verse.verse}'),
+    cache: _verseTexts,
+    displayRef: _reference(verse),
+    bookIndex: verse.book - 1,
+    chapter: verse.chapter,
+    verse: verse.verse,
+    highlightWords: const [],
+    positions: verse.positions,
+    englishOnly: _englishOnly,
+    useEnglishBookNames: widget.useEnglishBookNames,
+    onTap: () => _openVerse(verse),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -243,149 +332,187 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
     for (final link in info.links) {
       linkGroups.putIfAbsent(link.relation, () => []).add(link);
     }
-    final verses = _allVerses
+    // How often each book names it, for the book filter, and the verses in
+    // the books chosen.
+    final countsByBook = <int, int>{};
+    for (final verse in info.verses) {
+      countsByBook[verse.book] =
+          (countsByBook[verse.book] ?? 0) + verse.positions.length;
+    }
+    final verses = _books.isEmpty
         ? info.verses
-        : info.verses.take(_versesShown).toList();
+        : [
+            for (final verse in info.verses)
+              if (_books.contains(verse.book)) verse,
+          ];
     final bottom = MediaQuery.viewPaddingOf(context).bottom;
-    final horizontalSlack = math.max(
-      0.0,
-      (MediaQuery.sizeOf(context).width - 760) / 2,
+    // A readable measure on a wide window.
+    final double side =
+        20 + math.max(0.0, (MediaQuery.sizeOf(context).width - 760) / 2);
+
+    final head = <Widget>[
+      Row(
+        children: [
+          Icon(nameKindIcon(summary.kind), color: scheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              kind,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+      if (summary.description.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Text(summary.description, style: theme.textTheme.titleMedium),
+      ],
+      if (info.locations.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            height: 260,
+            child: PlaceMap(
+              basemap: widget.basemap,
+              pins: [
+                for (final (i, location) in info.locations.indexed)
+                  MapPin(
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                    label: i == 0 ? summary.name : '',
+                    primary: i == 0,
+                    confidence: location.confidence < 0
+                        ? null
+                        : location.confidence,
+                  ),
+              ],
+            ),
+          ),
+        ),
+        section('Where it was', [
+          for (final (i, location) in info.locations.indexed)
+            _LocationRow(location: location, likeliest: i == 0),
+        ]),
+      ],
+      if (info.text.isNotEmpty)
+        section('In the text', [
+          for (final line in info.text.split('\n'))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(line, style: theme.textTheme.bodyMedium),
+            ),
+        ]),
+      for (final MapEntry(key: relation, value: links) in linkGroups.entries)
+        section(_relationLabel(relation), [
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final link in links)
+                ActionChip(
+                  avatar: Icon(nameKindIcon(link.other.kind), size: 18),
+                  label: Text(
+                    [
+                      link.other.name,
+                      if (_flagLabel(link.flag) case final flag?) '($flag)',
+                    ].join(' '),
+                  ),
+                  tooltip: link.other.description.isEmpty
+                      ? null
+                      : link.other.description,
+                  onPressed: () => _openOther(link.other),
+                ),
+            ],
+          ),
+        ]),
+      if (info.forms.isNotEmpty)
+        section('Forms of the name', [
+          for (final form in info.forms)
+            _FormRow(form: form, onOpen: () => _openForm(form)),
+        ]),
+      if (info.verses.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 20),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  [
+                    mentionsLabel(summary.occurrences),
+                    if (_books.isNotEmpty)
+                      '${verses.length} of ${info.verses.length} verses'
+                    else if (info.verses.length != summary.occurrences)
+                      '${info.verses.length} verses',
+                  ].join(' · '),
+                  style: heading,
+                ),
+              ),
+              IconButton(
+                tooltip: _englishOnly
+                    ? 'Show Hebrew verse text'
+                    : 'Show English-only verse text',
+                icon: VerseModeIcon(englishOnly: _englishOnly),
+                onPressed: _toggleEnglishOnly,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+      if (info.verses.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: CanonDistribution(
+            countsByBook: countsByBook,
+            selectedBooks: _books,
+            useEnglishBookNames: widget.useEnglishBookNames,
+            onSelect: (books) => setState(() {
+              _books
+                ..clear()
+                ..addAll(books);
+            }),
+          ),
+        ),
+    ];
+    final foot = Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Text(
+        [
+          'From STEP Bible\'s TIPNR (Tyndale House Cambridge, CC BY 4.0)',
+          if (info.locations.any((l) => l.confidence >= 0))
+            'Locations from OpenBible.info (CC BY 4.0)',
+          // Haqor's own identifications carry a label but no confidence;
+          // TIPNR's positions carry neither.
+          if (info.locations.any((l) => l.confidence < 0 && l.label.isNotEmpty))
+            "Location as Haqor identifies it, in place of OpenBible.info's "
+                '(see About)',
+        ].join('. '),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
     );
 
-    return ListView(
-      // A readable measure on a wide window.
-      padding: EdgeInsets.fromLTRB(
-        20 + horizontalSlack,
-        8,
-        20 + horizontalSlack,
-        24 + bottom,
-      ),
-      children: [
-        Row(
-          children: [
-            Icon(nameKindIcon(summary.kind), color: scheme.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                kind,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
+    // The verses are built as they scroll into view, so a name in a thousand
+    // verses costs no more to open than one in three.
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(side, 8, side, 0),
+          sliver: SliverList.list(children: head),
         ),
-        if (summary.description.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(summary.description, style: theme.textTheme.titleMedium),
-        ],
-        if (info.locations.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              height: 260,
-              child: PlaceMap(
-                basemap: widget.basemap,
-                pins: [
-                  for (final (i, location) in info.locations.indexed)
-                    MapPin(
-                      latitude: location.latitude,
-                      longitude: location.longitude,
-                      label: i == 0 ? summary.name : '',
-                      primary: i == 0,
-                      confidence: location.confidence < 0
-                          ? null
-                          : location.confidence,
-                    ),
-                ],
-              ),
-            ),
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: side - 4),
+          sliver: SliverList.builder(
+            itemCount: verses.length,
+            itemBuilder: (context, i) => _verseRow(verses[i]),
           ),
-          if (info.locations.length > 1 ||
-              info.locations.first.label.isNotEmpty)
-            section('Where it was', [
-              for (final (i, location) in info.locations.indexed)
-                _LocationRow(location: location, likeliest: i == 0),
-            ]),
-        ],
-        if (info.text.isNotEmpty)
-          section('In the text', [
-            for (final line in info.text.split('\n'))
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(line, style: theme.textTheme.bodyMedium),
-              ),
-          ]),
-        for (final MapEntry(key: relation, value: links) in linkGroups.entries)
-          section(_relationLabel(relation), [
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final link in links)
-                  ActionChip(
-                    avatar: Icon(nameKindIcon(link.other.kind), size: 18),
-                    label: Text(
-                      [
-                        link.other.name,
-                        if (_flagLabel(link.flag) case final flag?) '($flag)',
-                      ].join(' '),
-                    ),
-                    tooltip: link.other.description.isEmpty
-                        ? null
-                        : link.other.description,
-                    onPressed: () => _openOther(link.other),
-                  ),
-              ],
-            ),
-          ]),
-        if (info.forms.isNotEmpty)
-          section('Forms of the name', [
-            for (final form in info.forms) _FormRow(form: form),
-          ]),
-        if (info.verses.isNotEmpty)
-          section(mentionsLabel(summary.occurrences), [
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final verse in verses)
-                  ActionChip(
-                    label: Text(
-                      '${bookSelectorLabel(verse.book - 1, useEnglish: widget.useEnglishBookNames)} '
-                      '${verse.chapter}:${verse.verse}',
-                    ),
-                    onPressed: () => _openVerse(verse),
-                  ),
-              ],
-            ),
-            if (verses.length < info.verses.length)
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton(
-                  onPressed: () => setState(() => _allVerses = true),
-                  child: Text('Show all ${info.verses.length} verses'),
-                ),
-              ),
-          ]),
-        const SizedBox(height: 24),
-        Text(
-          [
-            'From STEP Bible\'s TIPNR (Tyndale House Cambridge, CC BY 4.0)',
-            if (info.locations.any((l) => l.confidence >= 0))
-              'Locations from OpenBible.info (CC BY 4.0)',
-            // Haqor's own identifications carry a label but no confidence;
-            // TIPNR's positions carry neither.
-            if (info.locations.any(
-              (l) => l.confidence < 0 && l.label.isNotEmpty,
-            ))
-              "Location as Haqor identifies it, in place of OpenBible.info's "
-                  '(see About)',
-          ].join('. '),
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-          ),
+        ),
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(side, 0, side, 24 + bottom),
+          sliver: SliverToBoxAdapter(child: foot),
         ),
       ],
     );
@@ -417,48 +544,85 @@ class _LocationRow extends StatelessWidget {
       subtitle: Text(
         [if (location.kind.isNotEmpty) location.kind, ?confidence].join(' · '),
       ),
+      trailing: PopupMenuButton<Uri>(
+        tooltip: 'Open in Google Maps or Google Earth',
+        icon: const Icon(Icons.open_in_new, size: 20),
+        onSelected: (uri) => openExternalLink(uri),
+        itemBuilder: (_) => [
+          PopupMenuItem(
+            value: googleMapsUri(location.latitude, location.longitude),
+            child: const ListTile(
+              leading: Icon(Icons.map_outlined),
+              title: Text('Google Maps'),
+            ),
+          ),
+          PopupMenuItem(
+            value: googleEarthUri(location.latitude, location.longitude),
+            child: const ListTile(
+              leading: Icon(Icons.public),
+              title: Text('Google Earth'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
+/// A form of the name, its Hebrew a link to its word sheet.
 class _FormRow extends StatelessWidget {
-  const _FormRow({required this.form});
+  const _FormRow({required this.form, required this.onOpen});
 
   final NameFormEntry form;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(form.english.join(', '), style: theme.textTheme.bodyLarge),
-                Text(
-                  form.significance,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+    final link = theme.colorScheme.primary;
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: onOpen,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    form.english.join(', '),
+                    style: theme.textTheme.bodyLarge,
                   ),
+                  Text(
+                    form.significance,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Tooltip(
+              message: 'Open the word',
+              child: Text(
+                form.hebrew,
+                textDirection: TextDirection.rtl,
+                style: TextStyle(
+                  fontFamily: 'Noto Serif Hebrew',
+                  fontFamilyFallback: const ['Cardo'],
+                  fontSize: 22,
+                  color: link,
+                  decoration: TextDecoration.underline,
+                  decorationColor: link.withValues(alpha: .5),
                 ),
-              ],
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            form.hebrew,
-            textDirection: TextDirection.rtl,
-            style: const TextStyle(
-              fontFamily: 'Noto Serif Hebrew',
-              fontFamilyFallback: ['Cardo'],
-              fontSize: 22,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

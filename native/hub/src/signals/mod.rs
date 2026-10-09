@@ -855,7 +855,19 @@ pub struct NameEntityInfo {
     /// The likeliest first; empty for all but places.
     pub locations: Vec<PlaceLocationEntry>,
     /// The verses naming it, in canonical order.
-    pub verses: Vec<WordOccurrence>,
+    pub verses: Vec<NameVerse>,
+}
+
+/// A verse naming a person, place or other named thing, and the words in it
+/// that do.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct NameVerse {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    /// Lexical indexes of the naming words within the verse, as
+    /// [`Occurrence::position`].
+    pub positions: Vec<u32>,
 }
 
 /// Ask for the places a chapter names, for a map of the chapter.

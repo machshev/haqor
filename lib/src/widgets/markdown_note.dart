@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
-import 'package:url_launcher/url_launcher.dart';
+
+import '../external_link.dart';
 
 /// A study note written in Markdown, rendered in [style] (the ambient text
 /// style by default). Web and email links open outside the app.
@@ -71,7 +72,7 @@ Future<void> _openLink(BuildContext context, String? href) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
   var opened = false;
   try {
-    opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    opened = await openExternalLink(uri);
   } catch (_) {}
   if (!opened) {
     messenger?.showSnackBar(SnackBar(content: Text('Could not open $href')));

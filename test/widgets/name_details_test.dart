@@ -35,7 +35,7 @@ void _deliverEntity(
   NameSummaryEntry summary, {
   List<NameLinkEntry> links = const [],
   List<PlaceLocationEntry> locations = const [],
-  List<WordOccurrence> verses = const [],
+  List<NameVerse> verses = const [],
 }) {
   assignRustSignal['NameEntityInfo']!(
     NameEntityInfo(
@@ -64,12 +64,17 @@ void main() {
     tester,
   ) async {
     final requests = <GetNameEntity>[];
+    final verseRequests = <GetVerseTexts>[];
+    final navigated = <(int, int, int)>[];
     await tester.pumpWidget(
       MaterialApp(
         home: NameDetailsPage(
           id: 7,
           title: 'Zechariah',
           sendRequest: requests.add,
+          sendVerseTextsRequest: verseRequests.add,
+          onNavigateToPassage: (book, chapter, verse) =>
+              navigated.add((book, chapter, verse)),
           basemap: _basemap,
         ),
       ),
@@ -92,8 +97,8 @@ void main() {
         ),
       ],
       verses: [
-        WordOccurrence(book: 11, chapter: 14, verse: 29),
-        WordOccurrence(book: 11, chapter: 15, verse: 8),
+        NameVerse(book: 11, chapter: 14, verse: 29, positions: [8]),
+        NameVerse(book: 11, chapter: 15, verse: 8, positions: [3, 9]),
       ],
     );
     await tester.pumpAndSettle();
@@ -105,7 +110,34 @@ void main() {
     expect(find.text('a son of Jeroboam.'), findsOneWidget);
     expect(find.text('Father'), findsOneWidget);
     expect(find.text('Zechariah, Zachariah'), findsOneWidget);
-    expect(find.text('Named 3 times in the Hebrew Bible'), findsOneWidget);
+    expect(
+      find.text('Named 3 times in the Hebrew Bible · 2 verses'),
+      findsOneWidget,
+    );
+    // The verses are listed as the Occurrences tab lists them, the name
+    // marked where it stands, and their text asked for in one round-trip.
+    final rows = tester
+        .widgetList<OccurrenceVerseRow>(find.byType(OccurrenceVerseRow))
+        .toList();
+    expect(
+      [for (final r in rows) r.positions],
+      [
+        [8],
+        [3, 9],
+      ],
+    );
+    expect(verseRequests, hasLength(1));
+    // The book filter is the Occurrences tab's, counting each naming word.
+    final books = tester.widget<CanonDistribution>(
+      find.byType(CanonDistribution),
+    );
+    expect(books.countsByBook, {11: 3});
+    // A form of the name links to its word sheet.
+    expect(find.byTooltip('Open the word'), findsOneWidget);
+
+    await tester.ensureVisible(find.byType(OccurrenceVerseRow).last);
+    await tester.tap(find.byType(OccurrenceVerseRow).last);
+    expect(navigated, [(10, 15, 8)]);
     // A person has no map.
     expect(find.byType(PlaceMap), findsNothing);
 
@@ -159,6 +191,25 @@ void main() {
     expect(find.text('Tell el-Muqayyar'), findsOneWidget);
     expect(find.text('settlement · 70% confident'), findsOneWidget);
     expect(find.text('Urfa'), findsOneWidget);
+
+    // Each location opens in Google Maps or Google Earth.
+    await tester.tap(
+      find.byTooltip('Open in Google Maps or Google Earth').first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Google Maps'), findsOneWidget);
+    expect(find.text('Google Earth'), findsOneWidget);
+  });
+
+  test('the Google links land on the position', () {
+    expect(
+      googleMapsUri(31.253928, 35.534184).toString(),
+      'https://www.google.com/maps/search/?api=1&query=31.253928%2C35.534184',
+    );
+    expect(
+      googleEarthUri(31.253928, 35.534184).toString(),
+      'https://earth.google.com/web/@31.253928,35.534184,0a,5000d,35y,0h,45t,0r',
+    );
   });
 
   testWidgets('a chapter map lists its places and opens them', (tester) async {

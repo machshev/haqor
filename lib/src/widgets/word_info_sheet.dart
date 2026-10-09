@@ -1596,7 +1596,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               ),
               if (proximity != null) _proximityControls(context),
               const SizedBox(height: 2),
-              _CanonDistribution(
+              CanonDistribution(
                 countsByBook: bookCounts,
                 selectedBooks: _books,
                 useEnglishBookNames: widget.useEnglishBookNames,
@@ -2656,8 +2656,9 @@ class OccurrenceVerseRow extends StatelessWidget {
 /// A compact, all-books overview. Tapping it opens the labelled distribution
 /// and book/category multi-select; the small chart itself stays useful as a
 /// histogram instead of asking touch users to aim at an unnamed bar.
-class _CanonDistribution extends StatelessWidget {
-  const _CanonDistribution({
+class CanonDistribution extends StatelessWidget {
+  const CanonDistribution({
+    super.key,
     required this.countsByBook,
     required this.selectedBooks,
     required this.onSelect,
