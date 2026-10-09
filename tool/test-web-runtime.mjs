@@ -124,11 +124,14 @@ try {
     assert.equal(await evaluate("performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/main.dart.js'))"), true, 'JavaScript fallback was not loaded');
   }
   await evaluate("document.querySelector('flt-semantics-placeholder')?.click()");
-  const click = async label => {
+  // A button by its label, or with `prefix`, by how its label starts: a card
+  // reads its title and description as one.
+  const click = async (label, {prefix = false} = {}) => {
     for (let i = 0; i < 100; i++) {
       if (await evaluate(`(() => {
+        const matches = text => text != null && (${prefix} ? text.startsWith(${JSON.stringify(label)}) : text === ${JSON.stringify(label)});
         const button = [...document.querySelectorAll('[role="button"]')].find(element =>
-          element.getAttribute('aria-label') === ${JSON.stringify(label)} || element.textContent === ${JSON.stringify(label)});
+          matches(element.getAttribute('aria-label')) || matches(element.textContent));
         if (!button) return false;
         button.click(); return true;
       })()`)) return;
@@ -143,6 +146,9 @@ try {
     }
     throw new Error(`Screen text not found: ${text}: ${await evaluate("document.querySelector(\'flt-semantics-host\')?.textContent")}`);
   };
+  // A fresh install opens on the welcome question; keep the defaults.
+  await waitForText('How familiar are you with Hebrew?');
+  await click('Reading Hebrew', {prefix: true});
   await click('Memorise');
   await waitForText('Choose a passage');
   await click('Back');
