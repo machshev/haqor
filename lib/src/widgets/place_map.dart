@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:typed_data';
+import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -34,6 +36,155 @@ class Basemap {
     ];
     return Basemap._(shapes('land'), shapes('lakes'), shapes('rivers'));
   }
+}
+
+/// The hills and valleys of the land of Israel and its neighbours, shaded and
+/// tinted by height over the [Basemap]'s land. `tool/build_relief.dart` builds
+/// the asset from SRTM elevations: each pixel's red is the light its slope
+/// catches from the north-west, 128 on level ground, and its green its height
+/// between [lowest] and [highest] metres.
+class Relief {
+  Relief._(
+    this.pixels,
+    this.width,
+    this.height,
+    this.bounds,
+    this.lowest,
+    this.highest,
+  );
+
+  /// RGBA, row by row from the north-west corner.
+  final Uint8List pixels;
+  final int width, height;
+
+  /// [west, south, east, north] in degrees.
+  final List<double> bounds;
+  final double lowest, highest;
+
+  static const asset = 'assets/map/relief.png';
+  static const metadataAsset = 'assets/map/relief.json';
+  static Future<Relief>? _loading;
+
+  /// The bundled relief, read once.
+  static Future<Relief> load() => _loading ??= () async {
+    final metadata =
+        jsonDecode(await rootBundle.loadString(metadataAsset))
+            as Map<String, dynamic>;
+    final bytes = await rootBundle.load(asset);
+    final codec = await ui.instantiateImageCodec(bytes.buffer.asUint8List());
+    final image = (await codec.getNextFrame()).image;
+    final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final relief = Relief._(
+      data!.buffer.asUint8List(),
+      image.width,
+      image.height,
+      [
+        for (final v in metadata['bounds'] as List<dynamic>)
+          (v as num).toDouble(),
+      ],
+      (metadata['lowest'] as num).toDouble(),
+      (metadata['highest'] as num).toDouble(),
+    );
+    image.dispose();
+    codec.dispose();
+    return relief;
+  }();
+
+  final _images = <(int, bool), Future<ui.Image>>{};
+
+  /// The relief coloured over [land], shadows deeper and lights fainter when
+  /// [dark]; made once for each.
+  Future<ui.Image> image(Color land, {required bool dark}) =>
+      _images[(land.toARGB32(), dark)] ??= () async {
+        final rgba = await compute(_colour, (
+          pixels: pixels,
+          width: width,
+          height: height,
+          bounds: bounds,
+          lowest: lowest,
+          highest: highest,
+          land: land.toARGB32(),
+          dark: dark,
+        ));
+        final done = Completer<ui.Image>();
+        ui.decodeImageFromPixels(
+          rgba,
+          width,
+          height,
+          ui.PixelFormat.rgba8888,
+          done.complete,
+        );
+        return done.future;
+      }();
+}
+
+/// Heights in metres and the tints they take, low green to high brown, and
+/// Hermon's snow.
+const _hypsometric = <(double, int)>[
+  (-450, 0xFF6E9F6A),
+  (0, 0xFF93B57E),
+  (250, 0xFFC2C08A),
+  (700, 0xFFCDA772),
+  (1200, 0xFFA8805A),
+  (2000, 0xFF8E7462),
+  (2800, 0xFFF2EFEA),
+];
+
+/// The degrees over which the relief fades out at its edges, so it meets the
+/// plain land beyond without a seam.
+const _reliefFade = .8;
+
+Uint8List _colour(
+  ({
+    Uint8List pixels,
+    int width,
+    int height,
+    List<double> bounds,
+    double lowest,
+    double highest,
+    int land,
+    bool dark,
+  })
+  r,
+) {
+  final land = Color(r.land);
+  final tint = r.dark ? .22 : .5;
+  final shadow = r.dark ? .6 : .5;
+  final light = r.dark ? .15 : .4;
+  // The tint for each green value.
+  final ramp = List.generate(256, (g) {
+    final metres = r.lowest + (r.highest - r.lowest) * g / 255;
+    var i = 1;
+    while (i < _hypsometric.length - 1 && _hypsometric[i].$1 < metres) {
+      i++;
+    }
+    final (m0, c0) = _hypsometric[i - 1];
+    final (m1, c1) = _hypsometric[i];
+    final t = ((metres - m0) / (m1 - m0)).clamp(0.0, 1.0);
+    return Color.lerp(land, Color.lerp(Color(c0), Color(c1), t), tint)!;
+  });
+  final [west, south, east, north] = r.bounds;
+  final perX = (east - west) / r.width, perY = (north - south) / r.height;
+  double fade(double d) => (d / _reliefFade).clamp(0.0, 1.0);
+  final out = Uint8List(r.width * r.height * 4);
+  for (var y = 0; y < r.height; y++) {
+    final edgeY = fade(math.min(y + .5, r.height - y - .5) * perY);
+    for (var x = 0; x < r.width; x++) {
+      final i = (y * r.width + x) * 4;
+      final alpha = edgeY * fade(math.min(x + .5, r.width - x - .5) * perX);
+      final s = (r.pixels[i] - 128) / 128;
+      final base = ramp[r.pixels[i + 1]];
+      final c = s < 0
+          ? Color.lerp(base, const Color(0xFF000000), -s * shadow)!
+          : Color.lerp(base, const Color(0xFFFFFFFF), s * light)!;
+      // Premultiplied, as raw pixels are drawn.
+      out[i] = (c.r * 255 * alpha).round();
+      out[i + 1] = (c.g * 255 * alpha).round();
+      out[i + 2] = (c.b * 255 * alpha).round();
+      out[i + 3] = (alpha * 255).round();
+    }
+  }
+  return out;
 }
 
 /// A place on a [PlaceMap].
@@ -76,14 +227,19 @@ class PlaceMap extends StatefulWidget {
     required this.pins,
     this.onPinTap,
     this.basemap,
+    this.relief,
     this.minSpan = 1.6,
   });
 
   final List<MapPin> pins;
   final ValueChanged<MapPin>? onPinTap;
 
-  /// The basemap to draw; the bundled one when null. A test passes its own.
+  /// The basemap to draw; the bundled one, with the bundled [relief], when
+  /// null. A test passes its own.
   final Basemap? basemap;
+
+  /// The relief shaded over the land; none when null and a [basemap] is given.
+  final Relief? relief;
 
   /// The fewest degrees of latitude the opening view shows, so a single place
   /// is seen with its surroundings.
@@ -95,6 +251,10 @@ class PlaceMap extends StatefulWidget {
 
 class _PlaceMapState extends State<PlaceMap> {
   Basemap? _basemap;
+  Relief? _relief;
+  // The relief coloured for the theme, and the colours it was made for.
+  ui.Image? _reliefImage;
+  (Relief, Color, bool)? _reliefFor;
   // The point at the middle of the view, in degrees, and degrees of latitude
   // to logical pixels.
   Offset _center = const Offset(35.2, 31.8);
@@ -112,11 +272,27 @@ class _PlaceMapState extends State<PlaceMap> {
   void initState() {
     super.initState();
     _basemap = widget.basemap;
+    _relief = widget.relief;
     if (_basemap == null) {
       Basemap.load().then((map) {
         if (mounted) setState(() => _basemap = map);
       });
+      if (_relief == null) {
+        Relief.load().then((relief) {
+          if (mounted) setState(() => _relief = relief);
+        });
+      }
     }
+  }
+
+  /// Colour the relief over [land], once for each theme.
+  void _colourRelief(Color land, bool dark) {
+    final relief = _relief;
+    if (relief == null || _reliefFor == (relief, land, dark)) return;
+    final key = _reliefFor = (relief, land, dark);
+    relief.image(land, dark: dark).then((image) {
+      if (mounted && _reliefFor == key) setState(() => _reliefImage = image);
+    });
   }
 
   @override
@@ -215,6 +391,7 @@ class _PlaceMapState extends State<PlaceMap> {
       label: scheme.onSurface,
       halo: scheme.surface,
     );
+    _colourRelief(colors.land, dark);
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = constraints.biggest;
@@ -272,6 +449,8 @@ class _PlaceMapState extends State<PlaceMap> {
                       size: size,
                       painter: _MapPainter(
                         basemap: _basemap,
+                        relief: _relief,
+                        reliefImage: _reliefImage,
                         pins: widget.pins,
                         center: _center,
                         scale: _scale,
@@ -299,7 +478,7 @@ class _PlaceMapState extends State<PlaceMap> {
                 right: 6,
                 bottom: 4,
                 child: Text(
-                  'Natural Earth · OpenBible.info',
+                  'Natural Earth · SRTM · OpenBible.info',
                   style: theme.textTheme.labelSmall?.copyWith(
                     fontSize: 9,
                     color: scheme.onSurfaceVariant,
@@ -408,6 +587,8 @@ class _BasemapPaths {
 class _MapPainter extends CustomPainter {
   _MapPainter({
     required this.basemap,
+    required this.relief,
+    required this.reliefImage,
     required this.pins,
     required this.center,
     required this.scale,
@@ -416,6 +597,8 @@ class _MapPainter extends CustomPainter {
   });
 
   final Basemap? basemap;
+  final Relief? relief;
+  final ui.Image? reliefImage;
   final List<MapPin> pins;
   final Offset center;
   final double scale;
@@ -437,6 +620,22 @@ class _MapPainter extends CustomPainter {
       // Filled, not outlined: the detailed Levant is clipped out of a larger
       // shape, and an outline would draw the clip's edges as coast.
       canvas.drawPath(paths.land, Paint()..color = colors.land);
+      final relief = this.relief, image = reliefImage;
+      if (relief != null && image != null) {
+        // Over the land only: the elevations run out to sea, and the coast
+        // stays crisp.
+        final [west, south, east, north] = relief.bounds;
+        canvas
+          ..save()
+          ..clipPath(paths.land)
+          ..drawImageRect(
+            image,
+            Offset.zero & Size(image.width.toDouble(), image.height.toDouble()),
+            Rect.fromLTRB(west * _xScale, -north, east * _xScale, -south),
+            Paint()..filterQuality = FilterQuality.medium,
+          )
+          ..restore();
+      }
       canvas.drawPath(paths.lakes, Paint()..color = colors.sea);
       canvas.drawPath(
         paths.rivers,
@@ -523,6 +722,7 @@ class _MapPainter extends CustomPainter {
   @override
   bool shouldRepaint(_MapPainter old) =>
       old.basemap != basemap ||
+      old.reliefImage != reliefImage ||
       old.pins != pins ||
       old.center != center ||
       old.scale != scale ||

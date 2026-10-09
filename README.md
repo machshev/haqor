@@ -319,7 +319,10 @@ sheet's person and place pages and sense chips are drawn from them.
 **Places on the map** — OpenBible.info's
 [Bible Geocoding Data](https://github.com/openbibleinfo/Bible-Geocoding-Data),
 licensed CC BY 4.0, over coastlines, lakes and rivers from
-[Natural Earth](https://www.naturalearthdata.com/) (public domain).
+[Natural Earth](https://www.naturalearthdata.com/) (public domain) and hills
+and valleys shaded from NASA's Shuttle Radar Topography Mission elevations
+(public domain), by way of the
+[Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) open dataset.
 
 **Thematic cross references** — *The Treasury of Scripture Knowledge*
 (Samuel Bagster & Sons, 1830s; commonly credited to R. A. Torrey), from the

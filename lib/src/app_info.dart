@@ -158,6 +158,14 @@ const dataSourceCredits = <DataSourceCredit>[
     url: 'https://www.naturalearthdata.com/',
   ),
   DataSourceCredit(
+    title: 'Terrain Tiles (SRTM)',
+    description:
+        'The hills and valleys shaded on the place maps, from NASA\'s Shuttle '
+        'Radar Topography Mission, by way of the Terrain Tiles open dataset.',
+    licence: 'Public domain',
+    url: 'https://registry.opendata.aws/terrain-tiles/',
+  ),
+  DataSourceCredit(
     title: 'SEDRA',
     description:
         'Syriac lexical and morphological data, with the New Testament text '
