@@ -661,6 +661,76 @@ void linkTileTests() {
     await tester.pumpAndSettle();
     expect(removed, [link]);
   });
+
+  testWidgets('a bookmarked person opens their page and can be removed', (
+    tester,
+  ) async {
+    const boaz = StudyName(
+      id: 1248,
+      name: 'Boaz',
+      description: 'Husband of Ruth',
+      note: 'The kinsman-redeemer',
+    );
+    const workspace = StudyWorkspace(id: 's', name: 'Study', names: [boaz]);
+    final opened = <StudyName>[];
+    final removed = <StudyName>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StudyWorkspacePanel(
+            workspaces: const [workspace],
+            activeWorkspace: workspace,
+            currentPassage: const StudyPassage(
+              bookIndex: 0,
+              chapter: 1,
+              verse: 1,
+            ),
+            useEnglishBookNames: true,
+            onCreate: () {},
+            onSelect: (_) {},
+            onRename: () {},
+            onDelete: () {},
+            onToggleHighlights: (_) {},
+            onCreateGroup: (_) {},
+            onEditGroup: (_) {},
+            onDeleteGroup: (_) {},
+            onBookmarkCurrent: (_) {},
+            onOpenPassage: (_) {},
+            onEditPassage: (_) {},
+            onUpdatePassage: (_) {},
+            onRemovePassage: (_) {},
+            onEditWord: (_) {},
+            onUpdateWord: (_) {},
+            onSwitchWordKind: (_) {},
+            onRemoveWord: (_) {},
+            onOpenWord: (_) {},
+            onCreateNote: (_) {},
+            onEditNote: (_) {},
+            onUpdateNote: (_) {},
+            onRemoveNote: (_) {},
+            onMoveItem: (_, _, _) {},
+            onOpenName: opened.add,
+            onRemoveName: removed.add,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('Person bookmark'), findsOneWidget);
+    expect(find.text('Husband of Ruth'), findsOneWidget);
+    expect(
+      find.text('The kinsman-redeemer', findRichText: true),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Boaz'));
+    expect(opened, [boaz]);
+
+    await tester.tap(find.byTooltip('Bookmark options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(removed, [boaz]);
+  });
 }
 
 // A short label sits left of its menu row's centre, so tap the row itself.

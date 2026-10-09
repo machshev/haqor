@@ -4,6 +4,7 @@ import '../bible_data.dart';
 import '../study_workspace.dart';
 import 'cross_references_sheet.dart' show crossReferenceStrength;
 import 'markdown_note.dart';
+import 'name_details.dart' show nameKindIcon;
 
 class StudyWorkspacePanel extends StatelessWidget {
   const StudyWorkspacePanel({
@@ -40,6 +41,9 @@ class StudyWorkspacePanel extends StatelessWidget {
     this.onEditLink,
     this.onUpdateLink,
     this.onRemoveLink,
+    this.onOpenName,
+    this.onEditName,
+    this.onRemoveName,
     this.onToggleHeadings,
     this.onCreateSection,
     this.onEditSection,
@@ -83,6 +87,12 @@ class StudyWorkspacePanel extends StatelessWidget {
   final ValueChanged<StudyLink>? onEditLink;
   final ValueChanged<StudyLink>? onUpdateLink;
   final ValueChanged<StudyLink>? onRemoveLink;
+
+  /// Bookmarked people and places: open one's page, edit its note, or
+  /// remove it.
+  final ValueChanged<StudyName>? onOpenName;
+  final ValueChanged<StudyName>? onEditName;
+  final ValueChanged<StudyName>? onRemoveName;
 
   /// Passage summaries and their section headings: show them in the reader,
   /// add one (a summary, or a heading when the parent is a section), edit,
@@ -297,6 +307,7 @@ class StudyWorkspacePanel extends StatelessWidget {
     StudyItemType.word => (item.value as StudyWord).surface,
     StudyItemType.note => markdownPlainText((item.value as StudyNote).text),
     StudyItemType.link => _linkLabel(item.value as StudyLink),
+    StudyItemType.name => (item.value as StudyName).name,
     StudyItemType.group => (item.value as StudyGroup).name,
     StudyItemType.section => (item.value as StudySection).title,
   };
@@ -371,6 +382,12 @@ class StudyWorkspacePanel extends StatelessWidget {
             context,
             workspace,
             item.value as StudyLink,
+            depth: depth,
+          ),
+          StudyItemType.name => _nameTile(
+            context,
+            workspace,
+            item.value as StudyName,
             depth: depth,
           ),
           StudyItemType.group ||
@@ -1051,6 +1068,93 @@ class StudyWorkspacePanel extends StatelessWidget {
           ),
           PopupMenuItem(
             value: _LinkAction.remove,
+            child: ListTile(
+              leading: Icon(Icons.bookmark_remove_outlined),
+              title: Text('Remove'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _nameTile(
+    BuildContext context,
+    StudyWorkspace workspace,
+    StudyName name, {
+    required int depth,
+  }) {
+    final theme = Theme.of(context);
+    final open = onOpenName;
+    final subtitle = _noteSubtitle(
+      name.description.isEmpty ? null : name.description,
+      name.note,
+    );
+    return ListTile(
+      key: ValueKey(name.key),
+      dense: true,
+      titleAlignment: subtitle == null
+          ? ListTileTitleAlignment.center
+          : ListTileTitleAlignment.top,
+      minTileHeight: 32,
+      minVerticalPadding: 0,
+      contentPadding: EdgeInsetsDirectional.only(
+        start: 16 + depth * 12.0,
+        end: 0,
+      ),
+      leading: Tooltip(
+        message: switch (name.kind) {
+          'person' => 'Person bookmark',
+          'place' => 'Place bookmark',
+          _ => 'Name bookmark',
+        },
+        child: Icon(nameKindIcon(name.kind), size: 18),
+      ),
+      title: Text(
+        name.name,
+        style: TextStyle(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      subtitle: subtitle,
+      onTap: open == null ? null : () => open(name),
+      trailing: PopupMenuButton<_NameAction>(
+        tooltip: 'Bookmark options',
+        iconSize: 18,
+        padding: const EdgeInsets.all(6),
+        style: const ButtonStyle(
+          minimumSize: WidgetStatePropertyAll(Size(32, 32)),
+          maximumSize: WidgetStatePropertyAll(Size(32, 32)),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onSelected: (action) async {
+          switch (action) {
+            case _NameAction.note:
+              onEditName?.call(name);
+            case _NameAction.move:
+              await _moveTo(context, workspace, name);
+            case _NameAction.remove:
+              onRemoveName?.call(name);
+          }
+        },
+        itemBuilder: (_) => const [
+          PopupMenuItem(
+            value: _NameAction.note,
+            child: ListTile(
+              leading: Icon(Icons.note_alt_outlined),
+              title: Text('Edit note'),
+            ),
+          ),
+          PopupMenuItem(
+            value: _NameAction.move,
+            child: ListTile(
+              leading: Icon(Icons.drive_file_move_outline),
+              title: Text('Move to group'),
+            ),
+          ),
+          PopupMenuItem(
+            value: _NameAction.remove,
             child: ListTile(
               leading: Icon(Icons.bookmark_remove_outlined),
               title: Text('Remove'),
@@ -2057,3 +2161,5 @@ enum _WordAction { highlight, switchKind, note, move, color, remove }
 enum _NoteAction { edit, move, remove }
 
 enum _LinkAction { show, note, move, remove }
+
+enum _NameAction { note, move, remove }

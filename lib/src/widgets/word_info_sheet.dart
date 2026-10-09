@@ -101,6 +101,7 @@ class WordInfoSheet extends StatefulWidget {
     this.onOpenWord,
     this.isStudyBookmarked,
     this.onToggleStudyBookmark,
+    this.nameBookmarks,
     this.reportContext,
     this.sendInfoRequest,
     this.sendOccurrencesRequest,
@@ -161,6 +162,9 @@ class WordInfoSheet extends StatefulWidget {
   onNavigateToPassage;
   final bool Function(StudyWord word)? isStudyBookmarked;
   final Future<bool> Function(StudyWord word)? onToggleStudyBookmark;
+
+  /// Bookmarking, on its page, the person or place the word names.
+  final NameBookmarks? nameBookmarks;
   final Map<String, Object?>? reportContext;
 
   @override
@@ -743,6 +747,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         sendDictionaryRequest: widget.sendDictionaryRequest,
         isStudyBookmarked: widget.isStudyBookmarked,
         onToggleStudyBookmark: widget.onToggleStudyBookmark,
+        nameBookmarks: widget.nameBookmarks,
         useEnglishBookNames: widget.useEnglishBookNames,
         reportContext: {
           ...?widget.reportContext,
@@ -1373,6 +1378,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     title: name.name,
     useEnglishBookNames: widget.useEnglishBookNames,
     onNavigateToPassage: widget.onNavigateToPassage,
+    bookmarks: widget.nameBookmarks,
   );
 
   /// The senses of the word, the one it has here marked, each narrowing the

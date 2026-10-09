@@ -696,7 +696,91 @@ typedef StudyReaderHeading = ({
   int depth,
 });
 
-enum StudyItemType { passage, word, note, link, group, section }
+/// A bookmarked person or place (or other named thing): its record, with its
+/// name, kind and the few words saying who or what it is, so the outline can
+/// show it without asking the core.
+@immutable
+class StudyName {
+  const StudyName({
+    required this.id,
+    required this.name,
+    this.kind = 'person',
+    this.description = '',
+    this.groupId,
+    this.note = '',
+    this.order = 0,
+    this.extra = const {},
+  });
+
+  /// Keys this version does not know, kept so that saving does not erase
+  /// fields a newer version wrote.
+  final Map<String, Object?> extra;
+
+  /// The record's id, as the name signals carry it.
+  final int id;
+  final String name;
+
+  /// `person`, `place` or `other`.
+  final String kind;
+  final String description;
+  final String? groupId;
+  final String note;
+  final int order;
+
+  String get key => 'name-$id';
+
+  StudyName copyWith({String? Function()? groupId, String? note, int? order}) =>
+      StudyName(
+        extra: extra,
+        id: id,
+        name: name,
+        kind: kind,
+        description: description,
+        groupId: groupId == null ? this.groupId : groupId(),
+        note: note ?? this.note,
+        order: order ?? this.order,
+      );
+
+  Map<String, Object?> toJson() => {
+    ...extra,
+    'id': id,
+    'name': name,
+    'kind': kind,
+    if (description.isNotEmpty) 'description': description,
+    if (groupId != null) 'group': groupId,
+    if (note.isNotEmpty) 'note': note,
+    'order': order,
+  };
+
+  static StudyName? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final id = value['id'];
+    final name = value['name'];
+    if (id is! int || name is! String || name.isEmpty) return null;
+    return StudyName(
+      extra: _extraKeys(value, const {
+        'id',
+        'name',
+        'kind',
+        'description',
+        'group',
+        'note',
+        'order',
+      }),
+      id: id,
+      name: name,
+      kind: value['kind'] is String ? value['kind'] as String : 'person',
+      description: value['description'] is String
+          ? value['description'] as String
+          : '',
+      groupId: value['group'] is String ? value['group'] as String : null,
+      note: value['note'] is String ? value['note'] as String : '',
+      order: value['order'] is int ? value['order'] as int : 0,
+    );
+  }
+}
+
+enum StudyItemType { passage, word, note, link, name, group, section }
 
 @immutable
 class StudyItem {
@@ -706,12 +790,13 @@ class StudyItem {
   final Object value;
   final int order;
 
-  /// The item for a passage, word, note or link.
+  /// The item for a passage, word, note, link or name.
   factory StudyItem.of(Object value) => switch (value) {
     StudyPassage() => StudyItem._(StudyItemType.passage, value, value.order),
     StudyWord() => StudyItem._(StudyItemType.word, value, value.order),
     StudyNote() => StudyItem._(StudyItemType.note, value, value.order),
     StudyLink() => StudyItem._(StudyItemType.link, value, value.order),
+    StudyName() => StudyItem._(StudyItemType.name, value, value.order),
     _ => throw ArgumentError.value(value, 'value', 'not a movable item'),
   };
 
@@ -720,6 +805,7 @@ class StudyItem {
     StudyItemType.word => (value as StudyWord).key,
     StudyItemType.note => 'note-${(value as StudyNote).id}',
     StudyItemType.link => (value as StudyLink).key,
+    StudyItemType.name => (value as StudyName).key,
     StudyItemType.group => 'group-${(value as StudyGroup).id}',
     StudyItemType.section => 'section-${(value as StudySection).id}',
   };
@@ -729,6 +815,7 @@ class StudyItem {
     StudyItemType.word => (value as StudyWord).groupId,
     StudyItemType.note => (value as StudyNote).groupId,
     StudyItemType.link => (value as StudyLink).groupId,
+    StudyItemType.name => (value as StudyName).groupId,
     StudyItemType.group => (value as StudyGroup).parentId,
     StudyItemType.section => (value as StudySection).parentId,
   };
@@ -806,6 +893,7 @@ class StudyWorkspace {
     this.words = const [],
     this.notes = const [],
     this.links = const [],
+    this.names = const [],
     this.sections = const [],
     this.extra = const {},
   });
@@ -821,6 +909,7 @@ class StudyWorkspace {
   final List<StudyWord> words;
   final List<StudyNote> notes;
   final List<StudyLink> links;
+  final List<StudyName> names;
   final List<StudySection> sections;
 
   /// Keys this version does not know, kept so that saving does not erase
@@ -836,6 +925,7 @@ class StudyWorkspace {
     List<StudyWord>? words,
     List<StudyNote>? notes,
     List<StudyLink>? links,
+    List<StudyName>? names,
     List<StudySection>? sections,
   }) => StudyWorkspace(
     id: id,
@@ -847,6 +937,7 @@ class StudyWorkspace {
     words: words ?? this.words,
     notes: notes ?? this.notes,
     links: links ?? this.links,
+    names: names ?? this.names,
     sections: sections ?? this.sections,
     extra: extra,
   );
@@ -875,6 +966,31 @@ class StudyWorkspace {
 
   StudyWorkspace removeLink(StudyLink link) => copyWith(
     links: links.where((candidate) => candidate.key != link.key).toList(),
+  );
+
+  /// The bookmarked person or place of record [id], if there is one.
+  StudyName? nameFor(int id) {
+    for (final name in names) {
+      if (name.id == id) return name;
+    }
+    return null;
+  }
+
+  StudyWorkspace putName(StudyName name) {
+    final updated = List<StudyName>.of(names);
+    final index = updated.indexWhere((candidate) => candidate.id == name.id);
+    if (index < 0) {
+      updated.add(name.copyWith(order: nextOrder(name.groupId)));
+    } else {
+      updated[index] = updated[index].groupId == name.groupId
+          ? name
+          : name.copyWith(order: nextOrder(name.groupId));
+    }
+    return copyWith(names: updated);
+  }
+
+  StudyWorkspace removeName(StudyName name) => copyWith(
+    names: names.where((candidate) => candidate.id != name.id).toList(),
   );
 
   StudyWord? wordForRoot(String root) {
@@ -1159,6 +1275,9 @@ class StudyWorkspace {
       for (final link in links)
         if (link.groupId == groupId)
           StudyItem._(StudyItemType.link, link, link.order),
+      for (final name in names)
+        if (name.groupId == groupId)
+          StudyItem._(StudyItemType.name, name, name.order),
       for (final group in groups)
         if (group.parentId == groupId)
           StudyItem._(StudyItemType.group, group, group.order),
@@ -1204,6 +1323,9 @@ class StudyWorkspace {
     }
     for (final link in links) {
       if (link.groupId == groupId) consider(link.order);
+    }
+    for (final name in names) {
+      if (name.groupId == groupId) consider(name.order);
     }
     for (final group in groups) {
       if (group.parentId == groupId) consider(group.order);
@@ -1398,6 +1520,14 @@ class StudyWorkspace {
                   : link,
           ],
         ),
+        StudyItemType.name => copyWith(
+          names: [
+            for (final name in names)
+              name.id == (item.value as StudyName).id
+                  ? name.copyWith(groupId: () => groupId, order: order)
+                  : name,
+          ],
+        ),
         StudyItemType.group => copyWith(
           groups: [
             for (final group in groups)
@@ -1465,6 +1595,12 @@ class StudyWorkspace {
               ? link.copyWith(groupId: () => parentId)
               : link,
       ],
+      names: [
+        for (final name in names)
+          name.groupId == group.id
+              ? name.copyWith(groupId: () => parentId)
+              : name,
+      ],
       sections: [
         for (final section in sections)
           section.parentId == group.id
@@ -1524,6 +1660,10 @@ class StudyWorkspace {
         for (final link in links)
           link.copyWith(groupId: () => reparent(link.groupId)),
       ],
+      names: [
+        for (final name in names)
+          name.copyWith(groupId: () => reparent(name.groupId)),
+      ],
     );
   }
 
@@ -1539,6 +1679,7 @@ class StudyWorkspace {
     'words': words.map((word) => word.toJson()).toList(),
     'notes': notes.map((note) => note.toJson()).toList(),
     if (links.isNotEmpty) 'links': links.map((link) => link.toJson()).toList(),
+    if (names.isNotEmpty) 'names': names.map((name) => name.toJson()).toList(),
     if (sections.isNotEmpty)
       'sections': sections.map((section) => section.toJson()).toList(),
   };
@@ -1759,6 +1900,17 @@ class StudyWorkspace {
             : link.copyWith(groupId: () => null),
     ];
 
+    // Names came after mixed ordering too.
+    final names = [
+      for (final name
+          in (value['names'] is List ? value['names'] as List : const [])
+              .map(StudyName.fromJson)
+              .whereType<StudyName>())
+        name.groupId == null || groupIds.contains(name.groupId)
+            ? name
+            : name.copyWith(groupId: () => null),
+    ];
+
     // Older data had no mixed item ordering. Preserve its visible order
     // (passages followed by words) and turn former group notes into ordinary
     // paragraph items at the start of each group.
@@ -1830,6 +1982,9 @@ class StudyWorkspace {
     for (final link in links) {
       accountFor(link.groupId, link.order);
     }
+    for (final name in names) {
+      accountFor(name.groupId, name.order);
+    }
     for (final section in sections) {
       accountFor(section.parentId, section.order);
     }
@@ -1854,6 +2009,7 @@ class StudyWorkspace {
       words: words,
       notes: notes,
       links: links,
+      names: names,
       sections: sections,
       extra: _extraKeys(value, const {
         'id',
@@ -1866,6 +2022,7 @@ class StudyWorkspace {
         'words',
         'notes',
         'links',
+        'names',
         'sections',
         // Older shapes, migrated on load.
         'themes',

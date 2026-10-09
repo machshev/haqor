@@ -4,6 +4,7 @@ import 'package:haqor/src/study_workspace.dart';
 
 void main() {
   linkTests();
+  nameTests();
   sectionTests();
 
   test(
@@ -522,6 +523,75 @@ void linkTests() {
     }]''').single;
     expect(workspace.links, hasLength(1));
     expect(workspace.links.single.groupId, isNull);
+  });
+}
+
+void nameTests() {
+  const boaz = StudyName(
+    id: 1248,
+    name: 'Boaz',
+    description: 'Husband of Ruth',
+  );
+
+  test('person and place bookmarks survive notes, moves, storage and group '
+      'removal', () {
+    var workspace = const StudyWorkspace(
+      id: 's',
+      name: 'Study',
+      groups: [StudyGroup(id: 'g', name: 'Ruth')],
+    ).putName(boaz);
+    workspace = workspace.putName(
+      const StudyName(id: 3519, name: 'Bethlehem', kind: 'place'),
+    );
+    expect(workspace.nameFor(1248), isNotNull);
+    expect(workspace.itemsIn(null).map((i) => i.type), [
+      StudyItemType.group,
+      StudyItemType.name,
+      StudyItemType.name,
+    ]);
+
+    final item = workspace.itemsIn(null)[1];
+    workspace = workspace.moveItem(item, 'g');
+    workspace = workspace.putName(
+      workspace.nameFor(1248)!.copyWith(note: 'The kinsman-redeemer'),
+    );
+    workspace = decodeStudyWorkspaces(
+      encodeStudyWorkspaces([workspace]),
+    ).single;
+    final stored = workspace.nameFor(1248)!;
+    expect(stored.name, 'Boaz');
+    expect(stored.kind, 'person');
+    expect(stored.description, 'Husband of Ruth');
+    expect(stored.groupId, 'g');
+    expect(stored.note, 'The kinsman-redeemer');
+    expect(workspace.nameFor(3519)!.kind, 'place');
+    expect(workspace.itemsIn('g').single.key, boaz.key);
+
+    // Removing its group keeps the bookmark at the group's level.
+    workspace = workspace.removeGroup(workspace.groups.single);
+    expect(workspace.nameFor(1248)!.groupId, isNull);
+    workspace = workspace.removeName(stored);
+    expect(workspace.nameFor(1248), isNull);
+  });
+
+  test('a study without names stores none, and bad ones load safely', () {
+    expect(
+      const StudyWorkspace(
+        id: 's',
+        name: 'Study',
+      ).toJson().containsKey('names'),
+      isFalse,
+    );
+    final workspace = decodeStudyWorkspaces('''[{
+      "id": "s", "name": "Study", "ordered": true,
+      "names": [
+        {"id": 1248, "name": "Boaz", "group": "gone", "order": 2},
+        {"id": "1248", "name": "Boaz"},
+        {"id": 7}
+      ]
+    }]''').single;
+    expect(workspace.names, hasLength(1));
+    expect(workspace.names.single.groupId, isNull);
   });
 }
 

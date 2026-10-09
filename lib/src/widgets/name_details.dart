@@ -8,6 +8,7 @@ import '../app_settings.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../external_link.dart';
+import '../study_workspace.dart';
 import 'place_map.dart';
 import 'verse_text_cache.dart';
 import 'word_info_sheet.dart'
@@ -77,6 +78,17 @@ Uri googleEarthUri(double latitude, double longitude) => Uri.parse(
   'https://earth.google.com/web/@$latitude,$longitude,0a,5000d,35y,0h,45t,0r',
 );
 
+/// How a name page bookmarks its person or place in the active study.
+class NameBookmarks {
+  const NameBookmarks({required this.isBookmarked, required this.toggle});
+
+  final bool Function(int id) isBookmarked;
+
+  /// Bookmarks the name, or removes it when it is there: true when it ends
+  /// up bookmarked.
+  final Future<bool> Function(StudyName name) toggle;
+}
+
 /// What a link says the other is, in the singular.
 String _relationLabel(String relation) => switch (relation) {
   'father' => 'Father',
@@ -112,6 +124,7 @@ class NameDetailsPage extends StatefulWidget {
     this.sendRequest,
     this.sendVerseTextsRequest,
     this.basemap,
+    this.bookmarks,
   });
 
   /// The route's name, so going to a passage can close every page of names
@@ -131,6 +144,9 @@ class NameDetailsPage extends StatefulWidget {
   final void Function(GetVerseTexts)? sendVerseTextsRequest;
   final Basemap? basemap;
 
+  /// Bookmarking in the active study; without it the page has no bookmark.
+  final NameBookmarks? bookmarks;
+
   /// Open the page for [id] over [context].
   static Future<void> open(
     BuildContext context, {
@@ -138,6 +154,7 @@ class NameDetailsPage extends StatefulWidget {
     String? title,
     bool useEnglishBookNames = false,
     void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
+    NameBookmarks? bookmarks,
   }) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       settings: const RouteSettings(name: routeName),
@@ -146,6 +163,7 @@ class NameDetailsPage extends StatefulWidget {
         title: title,
         useEnglishBookNames: useEnglishBookNames,
         onNavigateToPassage: onNavigateToPassage,
+        bookmarks: bookmarks,
       ),
     ),
   );
@@ -217,9 +235,26 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
         sendRequest: widget.sendRequest,
         sendVerseTextsRequest: widget.sendVerseTextsRequest,
         basemap: widget.basemap,
+        bookmarks: widget.bookmarks,
       ),
     ),
   );
+
+  /// Bookmark the person or place in the active study, or remove it.
+  Future<void> _toggleBookmark(
+    NameBookmarks bookmarks,
+    NameSummaryEntry name,
+  ) async {
+    await bookmarks.toggle(
+      StudyName(
+        id: name.id,
+        name: name.name,
+        kind: name.kind,
+        description: name.description,
+      ),
+    );
+    if (mounted) setState(() {});
+  }
 
   /// Go to a verse in the reader, closing every page of names on the way.
   void Function(int bookIndex, int chapter, int verse)? get _navigate {
@@ -269,6 +304,7 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
         syriac: false,
         sendVerseTextsRequest: widget.sendVerseTextsRequest,
         useEnglishBookNames: widget.useEnglishBookNames,
+        nameBookmarks: widget.bookmarks,
         reportContext: {'nameForm': form.hebrew, 'nameEntity': widget.id},
         onNavigateToPassage: navigate == null
             ? null
@@ -298,7 +334,24 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
   Widget build(BuildContext context) {
     final info = _info;
     return Scaffold(
-      appBar: AppBar(title: Text(info?.summary.name ?? widget.title ?? '')),
+      appBar: AppBar(
+        title: Text(info?.summary.name ?? widget.title ?? ''),
+        actions: [
+          if (widget.bookmarks case final bookmarks?)
+            if (info != null && info.found)
+              bookmarks.isBookmarked(info.summary.id)
+                  ? IconButton(
+                      tooltip: 'Remove from the study',
+                      icon: const Icon(Icons.bookmark),
+                      onPressed: () => _toggleBookmark(bookmarks, info.summary),
+                    )
+                  : IconButton(
+                      tooltip: 'Bookmark in the study',
+                      icon: const Icon(Icons.bookmark_border),
+                      onPressed: () => _toggleBookmark(bookmarks, info.summary),
+                    ),
+        ],
+      ),
       body: info == null
           ? const Center(child: CircularProgressIndicator())
           : !info.found
@@ -639,6 +692,7 @@ class ChapterPlacesSheet extends StatefulWidget {
     this.onNavigateToPassage,
     this.sendRequest,
     this.basemap,
+    this.bookmarks,
   });
 
   /// Zero-based, as the reader counts books.
@@ -649,6 +703,7 @@ class ChapterPlacesSheet extends StatefulWidget {
   onNavigateToPassage;
   final void Function(GetChapterPlaces)? sendRequest;
   final Basemap? basemap;
+  final NameBookmarks? bookmarks;
 
   @override
   State<ChapterPlacesSheet> createState() => _ChapterPlacesSheetState();
@@ -692,6 +747,7 @@ class _ChapterPlacesSheetState extends State<ChapterPlacesSheet> {
     id: place.id,
     title: place.name,
     useEnglishBookNames: widget.useEnglishBookNames,
+    bookmarks: widget.bookmarks,
     onNavigateToPassage: widget.onNavigateToPassage == null
         ? null
         : (book, chapter, verse) {
@@ -790,6 +846,7 @@ class ChapterPeopleSheet extends StatefulWidget {
     this.useEnglishBookNames = false,
     this.onNavigateToPassage,
     this.sendRequest,
+    this.bookmarks,
   });
 
   /// Zero-based, as the reader counts books.
@@ -799,6 +856,7 @@ class ChapterPeopleSheet extends StatefulWidget {
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
   final void Function(GetChapterPeople)? sendRequest;
+  final NameBookmarks? bookmarks;
 
   @override
   State<ChapterPeopleSheet> createState() => _ChapterPeopleSheetState();
@@ -842,6 +900,7 @@ class _ChapterPeopleSheetState extends State<ChapterPeopleSheet> {
     id: person.id,
     title: person.name,
     useEnglishBookNames: widget.useEnglishBookNames,
+    bookmarks: widget.bookmarks,
     onNavigateToPassage: widget.onNavigateToPassage == null
         ? null
         : (book, chapter, verse) {

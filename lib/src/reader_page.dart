@@ -1000,6 +1000,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       onToggleStudyBookmark: (bookmark) async {
         return await _activeReader?._toggleStudyWordBookmark(bookmark) ?? false;
       },
+      nameBookmarks: _activeReader?._nameBookmarks,
       onNavigateToPassage: (book, chapter, verse) {
         _activeReader?._navigateTo(book, chapter, verse: verse);
         if (_mobileLayout == true) _showReaderPage();
@@ -2934,6 +2935,55 @@ class _ReaderSessionState extends State<_ReaderSession>
     _replaceStudyWorkspace(workspace.removeLink(link));
   }
 
+  /// Bookmarking a person or place, on its page, in the active study.
+  NameBookmarks get _nameBookmarks => NameBookmarks(
+    isBookmarked: (id) => _activeStudyWorkspace?.nameFor(id) != null,
+    toggle: _toggleStudyNameBookmark,
+  );
+
+  /// Bookmarks a person or place in the active study (creating one if need
+  /// be), or removes it when it is already there. True when it was added.
+  Future<bool> _toggleStudyNameBookmark(StudyName name) async {
+    final workspace = await _ensureStudyWorkspace();
+    if (workspace == null || !mounted) return false;
+    final existing = workspace.nameFor(name.id);
+    if (existing == null) {
+      _replaceStudyWorkspace(workspace.putName(name));
+      return true;
+    }
+    _replaceStudyWorkspace(workspace.removeName(existing));
+    return false;
+  }
+
+  Future<void> _editStudyName(StudyName name) async {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    final note = await showMarkdownNoteDialog(
+      context,
+      title: 'Note on ${name.name}',
+      initialValue: name.note,
+      label: 'Note',
+    );
+    if (note == null || !mounted) return;
+    _replaceStudyWorkspace(workspace.putName(name.copyWith(note: note)));
+  }
+
+  void _removeStudyName(StudyName name) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    _replaceStudyWorkspace(workspace.removeName(name));
+  }
+
+  void _openStudyName(StudyName name) => NameDetailsPage.open(
+    context,
+    id: name.id,
+    title: name.name,
+    useEnglishBookNames: _englishBookNames,
+    bookmarks: _nameBookmarks,
+    onNavigateToPassage: (book, chapter, verse) =>
+        _navigateTo(book, chapter, verse: verse),
+  );
+
   Future<void> _createStudyNote(String? groupId) async {
     final workspace = await _ensureStudyWorkspace();
     if (workspace == null || !mounted) return;
@@ -3234,6 +3284,7 @@ class _ReaderSessionState extends State<_ReaderSession>
           bookIndex: _bookIndex,
           chapter: _chapter,
           useEnglishBookNames: _englishBookNames,
+          bookmarks: _nameBookmarks,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
         ),
@@ -3255,6 +3306,7 @@ class _ReaderSessionState extends State<_ReaderSession>
           bookIndex: _bookIndex,
           chapter: _chapter,
           useEnglishBookNames: _englishBookNames,
+          bookmarks: _nameBookmarks,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
         ),
@@ -3394,6 +3446,18 @@ class _ReaderSessionState extends State<_ReaderSession>
             },
             onRemoveLink: (link) {
               _removeStudyLink(link);
+              setSheetState(() {});
+            },
+            onOpenName: (name) {
+              Navigator.pop(sheetContext);
+              _openStudyName(name);
+            },
+            onEditName: (name) async {
+              await _editStudyName(name);
+              if (sheetContext.mounted) setSheetState(() {});
+            },
+            onRemoveName: (name) {
+              _removeStudyName(name);
               setSheetState(() {});
             },
             onToggleHeadings: (enabled) {
@@ -4439,6 +4503,9 @@ class _ReaderSessionState extends State<_ReaderSession>
         onEditLink: _editStudyLink,
         onUpdateLink: _updateStudyLink,
         onRemoveLink: _removeStudyLink,
+        onOpenName: _openStudyName,
+        onEditName: _editStudyName,
+        onRemoveName: _removeStudyName,
         onToggleHeadings: _toggleStudyHeadings,
         onCreateSection: _createStudySection,
         onEditSection: _editStudySection,

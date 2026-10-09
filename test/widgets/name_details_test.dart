@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:haqor/src/bindings/bindings.dart';
+import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/name_details.dart';
 import 'package:haqor/src/widgets/place_map.dart';
 import 'package:haqor/src/widgets/word_info_sheet.dart';
@@ -66,6 +67,7 @@ void main() {
     final requests = <GetNameEntity>[];
     final verseRequests = <GetVerseTexts>[];
     final navigated = <(int, int, int)>[];
+    final bookmarked = <int, StudyName>{};
     await tester.pumpWidget(
       MaterialApp(
         home: NameDetailsPage(
@@ -76,6 +78,14 @@ void main() {
           onNavigateToPassage: (book, chapter, verse) =>
               navigated.add((book, chapter, verse)),
           basemap: _basemap,
+          bookmarks: NameBookmarks(
+            isBookmarked: bookmarked.containsKey,
+            toggle: (name) async {
+              if (bookmarked.remove(name.id) != null) return false;
+              bookmarked[name.id] = name;
+              return true;
+            },
+          ),
         ),
       ),
     );
@@ -132,6 +142,18 @@ void main() {
       find.byType(CanonDistribution),
     );
     expect(books.countsByBook, {11: 3});
+    // The page bookmarks its person in the study, and unbookmarks them.
+    await tester.tap(find.byTooltip('Bookmark in the study'));
+    await tester.pump();
+    expect(bookmarked[7]?.name, 'Zechariah');
+    expect(
+      bookmarked[7]?.description,
+      'King living at the time of Divided Monarchy',
+    );
+    await tester.tap(find.byTooltip('Remove from the study'));
+    await tester.pump();
+    expect(bookmarked, isEmpty);
+    expect(find.byTooltip('Bookmark in the study'), findsOneWidget);
     // A form of the name links to its word sheet.
     expect(find.byTooltip('Open the word'), findsOneWidget);
 
