@@ -18,9 +18,9 @@ use crate::signals::{
     WordOccurrences,
 };
 use crate::signals::{
-    ChapterPlaceEntry, ChapterPlaces, GetChapterPlaces, GetNameEntity, NameEntityInfo,
-    NameFormEntry, NameLinkEntry, NameSummaryEntry, NameVerse, PlaceLocationEntry, SenseChoice,
-    WordSenseEntry,
+    ChapterPeople, ChapterPersonEntry, ChapterPlaceEntry, ChapterPlaces, ChapterRelationEntry,
+    GetChapterPeople, GetChapterPlaces, GetNameEntity, NameEntityInfo, NameFormEntry,
+    NameLinkEntry, NameSummaryEntry, NameVerse, PlaceLocationEntry, SenseChoice, WordSenseEntry,
 };
 #[cfg(target_arch = "wasm32")]
 use crate::signals::{FlushProgress, ProgressSnapshot};
@@ -2113,6 +2113,66 @@ pub async fn get_name_entity(bible: SharedBible) {
         }
         .send_signal_to_dart();
     }
+}
+
+pub async fn get_chapter_people(bible: SharedBible) {
+    let receiver = GetChapterPeople::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let people = chapter_people(&lock(&bible), req.book, req.chapter).unwrap_or_else(|e| {
+            debug_print!("get_chapter_people error: {:?}", e);
+            Vec::new()
+        });
+        ChapterPeople {
+            request_id: req.request_id,
+            book: req.book,
+            chapter: req.chapter,
+            people,
+        }
+        .send_signal_to_dart();
+    }
+}
+
+/// The people a chapter names, in the order it first names them, each with
+/// the verses naming them and their links to the others.
+fn chapter_people(bible: &Bible, book: u8, chapter: u8) -> Result<Vec<ChapterPersonEntry>, String> {
+    let mut people: Vec<(haqor_core::names::NameEntity, Vec<u8>)> = Vec::new();
+    let names = bible
+        .chapter_names(book, chapter)
+        .map_err(|e| format!("{e:?}"))?;
+    for (verse, _, id) in names {
+        if let Some((_, verses)) = people.iter_mut().find(|(p, _)| p.summary.id == id) {
+            if verses.last() != Some(&verse) {
+                verses.push(verse);
+            }
+            continue;
+        }
+        let Some(entity) = bible.name_entity(id).map_err(|e| format!("{e:?}"))? else {
+            continue;
+        };
+        if entity.summary.kind == haqor_core::names::NameKind::Person {
+            people.push((entity, vec![verse]));
+        }
+    }
+    let named: std::collections::HashSet<u32> = people.iter().map(|(p, _)| p.summary.id).collect();
+    Ok(people
+        .into_iter()
+        .map(|(entity, verses)| ChapterPersonEntry {
+            relations: entity
+                .links
+                .into_iter()
+                .filter(|l| named.contains(&l.other.id))
+                .map(|l| ChapterRelationEntry {
+                    relation: l.relation,
+                    flag: l.flag,
+                    other_id: l.other.id,
+                })
+                .collect(),
+            person: name_summary_entry(entity.summary),
+            verses,
+        })
+        .collect())
 }
 
 pub async fn get_chapter_places(bible: SharedBible) {

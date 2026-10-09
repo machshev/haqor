@@ -778,3 +778,165 @@ class _ChapterPlacesSheetState extends State<ChapterPlacesSheet> {
     );
   }
 }
+
+/// The people a chapter names, in the order it first names them: who each is,
+/// how they are related to the others named there, and the verses naming
+/// them. Tapping one opens their page.
+class ChapterPeopleSheet extends StatefulWidget {
+  const ChapterPeopleSheet({
+    super.key,
+    required this.bookIndex,
+    required this.chapter,
+    this.useEnglishBookNames = false,
+    this.onNavigateToPassage,
+    this.sendRequest,
+  });
+
+  /// Zero-based, as the reader counts books.
+  final int bookIndex;
+  final int chapter;
+  final bool useEnglishBookNames;
+  final void Function(int bookIndex, int chapter, int verse)?
+  onNavigateToPassage;
+  final void Function(GetChapterPeople)? sendRequest;
+
+  @override
+  State<ChapterPeopleSheet> createState() => _ChapterPeopleSheetState();
+}
+
+class _ChapterPeopleSheetState extends State<ChapterPeopleSheet> {
+  static int _nextRequestId = 1;
+  StreamSubscription<RustSignalPack<ChapterPeople>>? _sub;
+  int? _requestId;
+  ChapterPeople? _people;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = ChapterPeople.rustSignalStream.listen((pack) {
+      final people = pack.message;
+      if (!mounted || people.requestId != _requestId) return;
+      setState(() => _people = people);
+    });
+    final request = GetChapterPeople(
+      requestId: _requestId = _nextRequestId++,
+      book: widget.bookIndex + 1,
+      chapter: widget.chapter,
+    );
+    final send = widget.sendRequest;
+    if (send != null) {
+      send(request);
+    } else {
+      request.sendSignalToRust();
+    }
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  void _open(NameSummaryEntry person) => NameDetailsPage.open(
+    context,
+    id: person.id,
+    title: person.name,
+    useEnglishBookNames: widget.useEnglishBookNames,
+    onNavigateToPassage: widget.onNavigateToPassage == null
+        ? null
+        : (book, chapter, verse) {
+            Navigator.of(context).maybePop();
+            widget.onNavigateToPassage!(book, chapter, verse);
+          },
+  );
+
+  /// How [entry] is related to the others, by kind: "Father: Lamech".
+  static String _relations(
+    ChapterPersonEntry entry,
+    Map<int, NameSummaryEntry> byId,
+  ) {
+    final groups = <String, List<String>>{};
+    for (final relation in entry.relations) {
+      final other = byId[relation.otherId];
+      if (other == null) continue;
+      groups
+          .putIfAbsent(_relationLabel(relation.relation), () => [])
+          .add(
+            [
+              other.name,
+              if (_flagLabel(relation.flag) case final flag?) '($flag)',
+            ].join(' '),
+          );
+    }
+    return [
+      for (final MapEntry(:key, :value) in groups.entries)
+        '$key: ${value.join(', ')}',
+    ].join(' · ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final people = _people;
+    final title =
+        'People in ${bookDisplayName(widget.bookIndex, useEnglish: widget.useEnglishBookNames)} '
+        '${widget.chapter}';
+    final byId = <int, NameSummaryEntry>{
+      for (final p in people?.people ?? const <ChapterPersonEntry>[])
+        p.person.id: p.person,
+    };
+    return SafeArea(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Text(title, style: theme.textTheme.titleMedium),
+          ),
+          Expanded(
+            child: people == null
+                ? const Center(child: CircularProgressIndicator())
+                : people.people.isEmpty
+                ? Center(
+                    child: Text(
+                      'This chapter names no one.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  )
+                : ListView(
+                    children: [
+                      for (final entry in people.people)
+                        _personTile(theme, entry, byId),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _personTile(
+    ThemeData theme,
+    ChapterPersonEntry entry,
+    Map<int, NameSummaryEntry> byId,
+  ) {
+    final person = entry.person;
+    final relations = _relations(entry, byId);
+    final lines = [
+      [
+        if (person.description.isNotEmpty) person.description,
+        if (person.origin.isNotEmpty) person.origin,
+      ].join(' · '),
+      relations,
+      'verse${entry.verses.length == 1 ? '' : 's'} ${entry.verses.join(', ')}',
+    ].where((line) => line.isNotEmpty).toList();
+    return ListTile(
+      leading: Icon(nameKindIcon(person.kind)),
+      title: Text(person.name),
+      subtitle: Text(lines.join('\n')),
+      isThreeLine: lines.length > 1,
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _open(person),
+    );
+  }
+}

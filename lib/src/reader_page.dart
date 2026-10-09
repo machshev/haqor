@@ -186,6 +186,7 @@ class _SelectedWord {
 enum _ReaderBarAction {
   crossReferences,
   places,
+  people,
   text,
   interlinear,
   rapidReading,
@@ -1965,6 +1966,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     _ReaderBarAction.forward,
     _ReaderBarAction.crossReferences,
     _ReaderBarAction.places,
+    _ReaderBarAction.people,
   ];
 
   void _runBarAction(_ReaderBarAction action) => switch (action) {
@@ -1974,6 +1976,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       null,
     ),
     _ReaderBarAction.places => _showChapterPlaces(),
+    _ReaderBarAction.people => _showChapterPeople(),
     _ReaderBarAction.text => _cycleReaderText(),
     _ReaderBarAction.interlinear => _toggleInterlinear(),
     _ReaderBarAction.rapidReading => _toggleRapidReading(),
@@ -1993,6 +1996,12 @@ class _ReaderSessionState extends State<_ReaderSession>
       icon: const Icon(Icons.map_outlined),
       onPressed: _isOldTestament ? () => _runBarAction(action) : null,
       tooltip: 'Places in this chapter',
+    ),
+    _ReaderBarAction.people => IconButton(
+      key: const ValueKey('reader-people'),
+      icon: const Icon(Icons.people_outline),
+      onPressed: _isOldTestament ? () => _runBarAction(action) : null,
+      tooltip: 'People in this chapter',
     ),
     _ReaderBarAction.text => IconButton(
       key: const ValueKey('reader-text-toggle'),
@@ -2045,6 +2054,9 @@ class _ReaderSessionState extends State<_ReaderSession>
       ],
       _ReaderBarAction.places => [
         item(Icons.map_outlined, 'Places', enabled: _isOldTestament),
+      ],
+      _ReaderBarAction.people => [
+        item(Icons.people_outline, 'People', enabled: _isOldTestament),
       ],
       _ReaderBarAction.text => [
         for (final text in ReaderText.values)
@@ -3206,7 +3218,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   }
 
   /// Whether the chapter at the top of the reader is in the Hebrew Bible,
-  /// whose words alone are linked to the places they name.
+  /// whose words alone are linked to the people and places they name.
   bool get _isOldTestament => _bookIndex < 39;
 
   /// The places the chapter at the top of the reader names, on a map.
@@ -3219,6 +3231,27 @@ class _ReaderSessionState extends State<_ReaderSession>
       builder: (sheetContext) => SizedBox(
         height: MediaQuery.sizeOf(sheetContext).height * 0.82,
         child: ChapterPlacesSheet(
+          bookIndex: _bookIndex,
+          chapter: _chapter,
+          useEnglishBookNames: _englishBookNames,
+          onNavigateToPassage: (book, chapter, verse) =>
+              _navigateTo(book, chapter, verse: verse),
+        ),
+      ),
+    );
+  }
+
+  /// The people the chapter at the top of the reader names, and how they are
+  /// related.
+  Future<void> _showChapterPeople() async {
+    if (!_isOldTestament) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.sizeOf(sheetContext).height * 0.82,
+        child: ChapterPeopleSheet(
           bookIndex: _bookIndex,
           chapter: _chapter,
           useEnglishBookNames: _englishBookNames,

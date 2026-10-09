@@ -263,6 +263,71 @@ void main() {
     expect(map.pins.single.id, 5);
   });
 
+  testWidgets("a chapter's people say who each is to the others", (
+    tester,
+  ) async {
+    final requests = <GetChapterPeople>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChapterPeopleSheet(
+            bookIndex: 30,
+            chapter: 4,
+            useEnglishBookNames: true,
+            sendRequest: requests.add,
+          ),
+        ),
+      ),
+    );
+    expect(requests.single.book, 31);
+    assignRustSignal['ChapterPeople']!(
+      ChapterPeople(
+        requestId: requests.single.requestId,
+        book: 31,
+        chapter: 4,
+        people: [
+          ChapterPersonEntry(
+            person: _summary(1, 'Boaz', description: 'Husband of Ruth'),
+            verses: const [1, 13],
+            relations: [
+              ChapterRelationEntry(relation: 'partner', flag: '', otherId: 2),
+              ChapterRelationEntry(relation: 'child', flag: '', otherId: 3),
+            ],
+          ),
+          ChapterPersonEntry(
+            person: _summary(2, 'Ruth', origin: 'Moab'),
+            verses: const [13],
+            relations: [
+              ChapterRelationEntry(relation: 'partner', flag: '', otherId: 1),
+            ],
+          ),
+          ChapterPersonEntry(
+            person: _summary(3, 'Obed'),
+            verses: const [17, 21, 22],
+            relations: [
+              ChapterRelationEntry(relation: 'father', flag: '', otherId: 1),
+              ChapterRelationEntry(relation: 'mother', flag: '', otherId: 2),
+            ],
+          ),
+        ],
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('People in Ruth 4'), findsOneWidget);
+    expect(
+      find.text(
+        'Husband of Ruth\nMarried to: Ruth · Children: Obed\nverses 1, 13',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Father: Boaz · Mother: Ruth\nverses 17, 21, 22'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('tapping a pin reports it', (tester) async {
     MapPin? tapped;
     const pin = MapPin(latitude: 31.7, longitude: 35.2, label: 'Bethlehem');

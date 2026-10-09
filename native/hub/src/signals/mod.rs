@@ -897,6 +897,45 @@ pub struct ChapterPlaces {
     pub places: Vec<ChapterPlaceEntry>,
 }
 
+/// Ask for the people a chapter names, for a list of who is who in it.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetChapterPeople {
+    pub request_id: u32,
+    pub book: u8,
+    pub chapter: u8,
+}
+
+/// How a person is linked to another the chapter names.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ChapterRelationEntry {
+    /// What the other is to them, as [`NameLinkEntry::relation`]: `father`,
+    /// `mother`, `sibling`, `partner`, `child`, …
+    pub relation: String,
+    /// As [`NameLinkEntry::flag`].
+    pub flag: String,
+    pub other_id: u32,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ChapterPersonEntry {
+    pub person: NameSummaryEntry,
+    /// The verses of the chapter naming them.
+    pub verses: Vec<u8>,
+    /// Their links to the others in [`ChapterPeople::people`].
+    pub relations: Vec<ChapterRelationEntry>,
+}
+
+/// Reply to [`GetChapterPeople`]: the people (men, women and peoples, not
+/// gods) in the order the chapter first names them. Empty for the New
+/// Testament.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct ChapterPeople {
+    pub request_id: u32,
+    pub book: u8,
+    pub chapter: u8,
+    pub people: Vec<ChapterPersonEntry>,
+}
+
 /// Occurrence lists for a looked-up word, fetched lazily via
 /// [`GetWordOccurrences`] when the Occurrences tab is opened. The split keeps
 /// the initial [`WordInfo`] response (lexicon + morphology) fast, since these
