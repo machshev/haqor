@@ -3303,6 +3303,24 @@ class _ReaderSessionState extends State<_ReaderSession>
             );
             onOpenReader?.call();
           },
+          reload: () {
+            final workspace = _activeStudyWorkspace;
+            final current = workspace?.timelineById(timeline.id);
+            if (workspace == null || current == null) return null;
+            return (
+              timeline: current,
+              entries: workspace.entriesOf(timeline.id),
+            );
+          },
+          onEditTimeline: () async {
+            final current = _activeStudyWorkspace?.timelineById(timeline.id);
+            if (current != null) await _editStudyTimeline(current);
+          },
+          // The verse being read is no clue to an entry added here.
+          onAddEntry: (span) =>
+              _createStudyTimelineEntry(timeline.id, span, linkVerse: false),
+          onEditEntry: _editStudyTimelineEntry,
+          onRemoveEntry: (entry) async => _removeStudyTimelineEntry(entry),
         ),
       ),
     );
@@ -3332,7 +3350,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   StudyTimelineEntry _newStudyTimelineEntry(
     String timelineId, {
     required bool span,
-    required StudyPassage verse,
+    StudyPassage? verse,
   }) => StudyTimelineEntry(
     id: DateTime.now().microsecondsSinceEpoch.toString(),
     title: '',
@@ -3340,24 +3358,29 @@ class _ReaderSessionState extends State<_ReaderSession>
     start: const TimelineTime(0),
     end: span ? const TimelineTime(0) : null,
     verses: [
-      StudyPassage(
-        bookIndex: verse.bookIndex,
-        chapter: verse.chapter,
-        verse: verse.verse,
-      ),
+      if (verse != null)
+        StudyPassage(
+          bookIndex: verse.bookIndex,
+          chapter: verse.chapter,
+          verse: verse.verse,
+        ),
     ],
   );
 
-  /// Adds an event or span to a timeline, linked to the verse being read.
-  Future<void> _createStudyTimelineEntry(String timelineId, bool span) =>
-      _askForStudyTimelineEntry(
-        _newStudyTimelineEntry(
-          timelineId,
-          span: span,
-          verse: _currentStudyPassage,
-        ),
-        creating: true,
-      );
+  /// Adds an event or span to a timeline, linked to the verse being read
+  /// unless [linkVerse] is false.
+  Future<void> _createStudyTimelineEntry(
+    String timelineId,
+    bool span, {
+    bool linkVerse = true,
+  }) => _askForStudyTimelineEntry(
+    _newStudyTimelineEntry(
+      timelineId,
+      span: span,
+      verse: linkVerse ? _currentStudyPassage : null,
+    ),
+    creating: true,
+  );
 
   /// Adds, from the reader, an event or span linked to a verse: to the
   /// timeline last given an entry in its book, else the newest timeline,

@@ -306,7 +306,13 @@ void main() {
       'name': 'Study',
       'ordered': true,
       'timelines': [
-        {'id': 't', 'title': 'Days', 'unit': 'Day', 'parent': 'gone'},
+        {
+          'id': 't',
+          'title': 'Days',
+          'scale': 'years',
+          'unit': 'Day',
+          'parent': 'gone',
+        },
         {'id': 't', 'title': 'Duplicate'},
         {'id': 'untitled', 'title': ''},
       ],
@@ -338,7 +344,12 @@ void main() {
     })!;
     expect(workspace.timelines.single.title, 'Days');
     expect(workspace.timelines.single.parentId, isNull);
-    expect(workspace.timelineEntries.map((e) => e.id), ['a', 'e']);
+    // Iyyar has 29 days: an entry on its 30th is settled on its last.
+    expect(workspace.timelineEntries.map((e) => e.id), ['a', 'f', 'e']);
+    expect(
+      workspace.timelineEntries[1].start,
+      const TimelineTime(1, month: 2, day: 29),
+    );
     final rest = workspace.timelineEntries.last;
     expect(rest.verses.single.reference, '2:1–3');
     expect(rest.toJson()['future'], 'kept');
@@ -357,6 +368,164 @@ void main() {
       StudyTimeline.fromJson({'id': 't', 'title': 'Days'})!.scale,
       TimelineScale.units,
     );
+  });
+
+  test('chosen years have a second Adar, and durations count it', () {
+    final leap = kings.copyWith(
+      leapMonths: TimelineLeapMonths.chosen,
+      leapYears: {-1446},
+    );
+    expect(leap.monthsIn(-1446), 13);
+    expect(leap.monthsIn(-1445), 12);
+    expect(leap.daysInYear(-1446), 384);
+    expect(leap.monthName(-1446, 12), 'Adar I');
+    expect(leap.monthName(-1446, 13), 'Adar II');
+    expect(leap.monthName(-1445, 12), 'Adar');
+    expect(leap.daysInMonth(-1446, 12), 30);
+    expect(leap.daysInMonth(-1446, 13), 29);
+    expect(leap.daysInMonth(-1445, 12), 29);
+    expect(leap.fits(const TimelineTime(-1446, month: 13, day: 29)), isTrue);
+    expect(leap.fits(const TimelineTime(-1445, month: 13)), isFalse);
+    expect(
+      leap.formatTime(const TimelineTime(-1446, month: 13, day: 14)),
+      '14 Adar II 1446 BC',
+    );
+    TimelineTime? add(TimelineTime start, int n, TimelineDurationUnit unit) =>
+        leap.addDuration(start, TimelineDuration(n.toDouble(), unit));
+    const nisan1 = TimelineTime(-1446, month: 1, day: 1);
+    expect(
+      add(nisan1, 384, TimelineDurationUnit.days),
+      const TimelineTime(-1445, month: 1, day: 1),
+    );
+    expect(
+      add(nisan1, 354, TimelineDurationUnit.days),
+      const TimelineTime(-1446, month: 12, day: 30),
+    );
+    expect(
+      add(const TimelineTime(-1446, month: 12), 1, TimelineDurationUnit.months),
+      const TimelineTime(-1446, month: 13),
+    );
+    expect(
+      add(const TimelineTime(-1446, month: 13), 1, TimelineDurationUnit.months),
+      const TimelineTime(-1445, month: 1),
+    );
+    expect(
+      add(nisan1, 13, TimelineDurationUnit.months),
+      const TimelineTime(-1445, month: 1, day: 1),
+    );
+    // A year on from Adar II, in a year without it, is in Adar.
+    expect(
+      add(
+        const TimelineTime(-1446, month: 13, day: 29),
+        1,
+        TimelineDurationUnit.years,
+      ),
+      const TimelineTime(-1445, month: 12, day: 29),
+    );
+    // Adar II falls after Adar I and before the next Nisan.
+    expect(
+      leap.positionOf(const TimelineTime(-1446, month: 13)),
+      allOf(
+        greaterThan(leap.positionOf(const TimelineTime(-1446, month: 12))),
+        lessThan(leap.positionOf(const TimelineTime(-1445, month: 1))),
+      ),
+    );
+    final stored = StudyTimeline.fromJson(leap.toJson())!;
+    expect(stored.leapMonths, TimelineLeapMonths.chosen);
+    expect(stored.leapYears, {-1446});
+
+    // Taking the second Adar away keeps an entry in it, settled in Adar.
+    var workspace = build()
+        .putTimeline(leap)
+        .putTimelineEntry(
+          const StudyTimelineEntry(
+            id: 'purim',
+            title: 'Late feast',
+            timelineId: 'kings',
+            start: TimelineTime(-1446, month: 13, day: 14),
+          ),
+        );
+    expect(workspace.timelineEntries.any((e) => e.id == 'purim'), isTrue);
+    workspace = workspace.putTimeline(leap.copyWith(leapYears: {}));
+    expect(
+      workspace.timelineEntries.firstWhere((e) => e.id == 'purim').start,
+      const TimelineTime(-1446, month: 12, day: 14),
+    );
+  });
+
+  test(
+    'the fixed 19-year cycle places the second Adar by year of the world',
+    () {
+      final cycle = kings.copyWith(leapMonths: TimelineLeapMonths.cycle);
+      // AM 5784 was a leap year: its Adar II fell in March 2024, at the end of
+      // the year that began at Nisan 2023. AM 5785 was not; AM 5787 is.
+      expect(hebrewCycleLeapYear(5784), isTrue);
+      expect(hebrewCycleLeapYear(5785), isFalse);
+      expect(cycle.isLeapYear(2023), isTrue);
+      expect(cycle.isLeapYear(2024), isFalse);
+      expect(cycle.isLeapYear(2026), isTrue);
+      // Seven years in every nineteen.
+      final leaps = [
+        for (var year = -1500; year < -1481; year++)
+          if (cycle.isLeapYear(year.toDouble())) year,
+      ];
+      expect(leaps, hasLength(7));
+      // Years of a timeline's own cannot be placed in the cycle.
+      final reign = cycle.copyWith(scale: TimelineScale.years);
+      expect(reign.isLeapYear(3), isFalse);
+    },
+  );
+
+  test("a year's calendar has months and days but no years", () {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+    );
+    const passover = TimelineTime(0, month: 1, day: 14);
+    expect(feasts.formatTime(passover), '14 Nisan');
+    expect(feasts.formatTime(const TimelineTime(0, month: 7)), 'Tishri');
+    expect(feasts.fits(passover), isTrue);
+    expect(feasts.fits(const TimelineTime(0)), isFalse);
+    expect(feasts.fits(const TimelineTime(3, month: 1)), isFalse);
+    expect(feasts.durationUnitsFor(passover), [
+      TimelineDurationUnit.months,
+      TimelineDurationUnit.days,
+    ]);
+    expect(
+      feasts.addDuration(
+        const TimelineTime(0, month: 1, day: 15),
+        const TimelineDuration(6, TimelineDurationUnit.days),
+      ),
+      const TimelineTime(0, month: 1, day: 21),
+    );
+    // A span must end within the year.
+    expect(
+      feasts.addDuration(
+        const TimelineTime(0, month: 12, day: 25),
+        const TimelineDuration(7, TimelineDurationUnit.days),
+      ),
+      isNull,
+    );
+    expect(feasts.monthsIn(0), 12);
+    final leap = feasts.copyWith(leapMonths: TimelineLeapMonths.chosen);
+    expect(leap.monthsIn(0), 13);
+    expect(
+      leap.addDuration(
+        const TimelineTime(0, month: 12, day: 25),
+        const TimelineDuration(7, TimelineDurationUnit.days),
+      ),
+      const TimelineTime(0, month: 13, day: 2),
+    );
+
+    // Turned into a year's calendar, a timeline's entries lose their years.
+    final workspace = build().putTimeline(
+      kings.copyWith(scale: TimelineScale.annual),
+    );
+    final exodusNow = workspace.timelineEntries.firstWhere(
+      (e) => e.id == 'exodus',
+    );
+    expect(exodusNow.start, const TimelineTime(0, month: 1, day: 15));
   });
 
   test('a study without timelines stores none', () {

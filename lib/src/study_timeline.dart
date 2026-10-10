@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 
 import 'study_workspace.dart' show StudyPassage;
@@ -12,14 +14,34 @@ enum TimelineScale {
 
   /// Plain numbers in a unit the study names: days, weeks, generations.
   units,
+
+  /// One year's calendar, the same every year, such as the feasts: times
+  /// are a month and day, without a year (stored as year 0).
+  annual,
 }
 
 /// What a span's length is counted in.
 enum TimelineDurationUnit { years, months, days, units }
 
+/// Which years of a year-counting timeline have a second Adar, the month
+/// added to keep the lunar year in step with the seasons.
+enum TimelineLeapMonths {
+  /// None: every year has twelve months.
+  none,
+
+  /// The years the timeline lists ([StudyTimeline.leapYears]).
+  chosen,
+
+  /// The years the fixed Hebrew 19-year cycle gives: the 3rd, 6th, 8th,
+  /// 11th, 14th, 17th and 19th of each cycle, counted in years of the world
+  /// (anno mundi). Only calendar years can be placed in it.
+  cycle,
+}
+
 /// The months of the Bible's year, from Nisan (Abib), its first month. They
-/// are lunar: 30 and 29 days by turns, Nisan's 30, a year of 354 days. The
-/// month added in some years (a second Adar) is not counted.
+/// are lunar: 30 and 29 days by turns, Nisan's 30, a year of 354 days. In a
+/// leap year Adar becomes Adar I, of 30 days, and Adar II follows as a
+/// thirteenth month of 29: a year of 384 days.
 const hebrewMonthNames = [
   'Nisan',
   'Iyyar',
@@ -35,14 +57,23 @@ const hebrewMonthNames = [
   'Adar',
 ];
 
-/// The days in a lunar [month] (1-based, from Nisan).
-int lunarMonthDays(int month) => month.isOdd ? 30 : 29;
+/// The most months and days a year-counting time may give, whatever its
+/// year: a leap year's thirteen months, and a month's thirty days.
+const _mostMonths = 13;
+const _mostDays = 30;
 
-const _lunarYearDays = 354;
-
-/// The days of the lunar year before [month] begins: 29 for each month
-/// before it, and one more for each of those (Nisan, Sivan, …) of 30.
+/// The days of a twelve-month year before [month] begins: 29 for each month
+/// before it, and one more for each of those (Nisan, Sivan, …) of 30. The
+/// same holds for every month up to Adar I in a leap year.
 int _daysBefore(int month) => (month - 1) * 29 + month ~/ 2;
+
+/// Whether the Hebrew year [am] (anno mundi) has a second Adar in the fixed
+/// 19-year cycle.
+bool hebrewCycleLeapYear(int am) => (7 * am + 1) % 19 < 7;
+
+/// A Nisan-to-Adar year counted with a year zero (1 BC is 0) runs into the
+/// spring of the next, when its Adars fall, in this year of the world.
+const _anno = 3761;
 
 /// A number on a timeline's scale as written: whole numbers without a
 /// decimal point, others with at most two places.
@@ -78,20 +109,25 @@ class TimelineTime {
       ? TimelineDurationUnit.months
       : TimelineDurationUnit.years;
 
+  /// Whether it is well formed in any year; whether its year has the month
+  /// and its month the day is for its timeline to say
+  /// ([StudyTimeline.fits]).
   bool get isValid =>
       value.isFinite &&
       (month == null ||
-          (month! >= 1 && month! <= 12 && value == value.roundToDouble())) &&
-      (day == null ||
-          (month != null && day! >= 1 && day! <= lunarMonthDays(month!)));
+          (month! >= 1 &&
+              month! <= _mostMonths &&
+              value == value.roundToDouble())) &&
+      (day == null || (month != null && day! >= 1 && day! <= _mostDays));
 
-  /// Where it falls on a continuous axis, for ordering and drawing: the
-  /// year, then the month and day as fractions of it. On a [calendar] axis
-  /// a BC year moves up one, so 1 BC runs straight on into AD 1.
+  /// Where it falls on a continuous axis, for ordering: the year, then the
+  /// month and day as fractions of it, allowing for a thirteenth month. On
+  /// a [calendar] axis a BC year moves up one, so 1 BC runs straight on
+  /// into AD 1. [StudyTimeline.positionOf] places it more exactly.
   double position({bool calendar = false}) =>
       (calendar && value < 0 ? value + 1 : value) +
-      (month == null ? 0 : (month! - 1) / 12) +
-      (day == null ? 0 : (day! - 1) / _lunarYearDays);
+      (month == null ? 0 : (month! - 1) / _mostMonths) +
+      (day == null ? 0 : (day! - 1) / (_mostMonths * _mostDays));
 
   @override
   bool operator ==(Object other) =>
@@ -154,6 +190,8 @@ class StudyTimeline {
     required this.title,
     this.scale = TimelineScale.units,
     this.unit = 'Year',
+    this.leapMonths = TimelineLeapMonths.none,
+    this.leapYears = const {},
     this.note = '',
     this.parentId,
     this.order = 0,
@@ -170,6 +208,11 @@ class StudyTimeline {
 
   /// What the scale counts, unless it counts calendar years.
   final String unit;
+
+  /// Which of its years have a second Adar; for [TimelineLeapMonths.chosen],
+  /// [leapYears] lists them as written (BC negative).
+  final TimelineLeapMonths leapMonths;
+  final Set<int> leapYears;
   final String note;
   final String? parentId;
   final int order;
@@ -177,22 +220,90 @@ class StudyTimeline {
   bool get isValid => id.isNotEmpty && title.isNotEmpty;
   bool get isCalendar => scale == TimelineScale.calendar;
 
-  /// Whether it counts years, whose times may name a month and day.
-  bool get countsYears => scale != TimelineScale.units;
+  bool get isAnnual => scale == TimelineScale.annual;
 
-  /// The units a span starting at [start] may give its length in: years,
-  /// then months and days as far as the start names them; or the
-  /// timeline's own unit.
-  List<TimelineDurationUnit> durationUnitsFor(TimelineTime start) => countsYears
+  /// Whether it counts years, calendar ones or its own.
+  bool get countsYears =>
+      scale == TimelineScale.calendar || scale == TimelineScale.years;
+
+  /// Whether its times may name a month and day: counting years, or one
+  /// year's calendar, where they must name the month.
+  bool get hasMonths => countsYears || isAnnual;
+
+  /// The units a span starting at [start] may give its length in: years
+  /// where it counts them, then months and days as far as the start names
+  /// them; or the timeline's own unit.
+  List<TimelineDurationUnit> durationUnitsFor(TimelineTime start) => hasMonths
       ? [
-          TimelineDurationUnit.years,
+          if (countsYears) TimelineDurationUnit.years,
           if (start.month != null) TimelineDurationUnit.months,
           if (start.day != null) TimelineDurationUnit.days,
         ]
       : const [TimelineDurationUnit.units];
 
-  /// Where [time] falls on this timeline's continuous axis.
-  double positionOf(TimelineTime time) => time.position(calendar: isCalendar);
+  /// How its leap years are found in fact: none off the year scales, and
+  /// the cycle only for calendar years.
+  TimelineLeapMonths get _leap => !countsYears
+      ? TimelineLeapMonths.none
+      : leapMonths == TimelineLeapMonths.cycle && !isCalendar
+      ? TimelineLeapMonths.none
+      : leapMonths;
+
+  /// Whether the year [value] (as written) has a second Adar. One year's
+  /// calendar has it, or not, whatever the setting that turns it on.
+  bool isLeapYear(double value) => isAnnual
+      ? leapMonths != TimelineLeapMonths.none
+      : switch (_leap) {
+          TimelineLeapMonths.none => false,
+          TimelineLeapMonths.chosen => leapYears.contains(value.round()),
+          TimelineLeapMonths.cycle => hebrewCycleLeapYear(
+            _astronomical(value) + _anno,
+          ),
+        };
+
+  int monthsIn(double value) => isLeapYear(value) ? 13 : 12;
+
+  int daysInYear(double value) => isLeapYear(value) ? 384 : 354;
+
+  /// The days in [month] of the year [value]: 30 and 29 by turns from
+  /// Nisan; in a leap year Adar I has 30 and Adar II 29.
+  int daysInMonth(double value, int month) {
+    if (month == 13) return 29;
+    if (month == 12 && isLeapYear(value)) return 30;
+    return month.isOdd ? 30 : 29;
+  }
+
+  /// The month's name in the year [value]: Adar I and Adar II in a leap
+  /// year.
+  String monthName(double value, int month) {
+    if (month == 13) return 'Adar II';
+    if (month == 12 && isLeapYear(value)) return 'Adar I';
+    return hebrewMonthNames[month - 1];
+  }
+
+  /// Whether [time] can stand on this timeline: its year has its month and
+  /// its month its day; on one year's calendar, it names its month.
+  bool fits(TimelineTime time) {
+    if (!time.isValid) return false;
+    final month = time.month;
+    if (isAnnual && (month == null || time.value != 0)) return false;
+    if (month == null || !hasMonths) return true;
+    if (month > monthsIn(time.value)) return false;
+    final day = time.day;
+    return day == null || day <= daysInMonth(time.value, month);
+  }
+
+  /// Where [time] falls on this timeline's continuous axis: its year, and
+  /// the days of the year before its month and day as a fraction of it.
+  double positionOf(TimelineTime time) {
+    final month = time.month;
+    if (month == null || !hasMonths) {
+      return time.position(calendar: isCalendar);
+    }
+    final year = TimelineTime(time.value).position(calendar: isCalendar);
+    final days = _daysBefore(month) + (time.day ?? 1) - 1;
+    return year + days / daysInYear(time.value);
+  }
 
   /// A year as written turned into one counted with a year zero (1 BC is 0),
   /// so that years can be added across the turn of the era; and back.
@@ -205,64 +316,81 @@ class StudyTimeline {
       (isCalendar && year <= 0 ? year - 1 : year).toDouble();
 
   /// The time [duration] after [start], or null when the duration is finer
-  /// than the start (months from a year alone) or the start is not a whole
-  /// year where it must be. Months are lunar (see [hebrewMonthNames]); a
-  /// month added to a 30th ends on a 29-day month's last day.
+  /// than the start (months from a year alone), or the start is not a
+  /// whole year where it must be or does not fit the timeline. Months are
+  /// lunar, a second Adar in each leap year (see [hebrewMonthNames]). A
+  /// month or year added to a day its end month lacks ends on that month's
+  /// last day; one added to Adar II, in a year without it, in Adar. On one
+  /// year's calendar a span must end within the year.
   TimelineTime? addDuration(TimelineTime start, TimelineDuration duration) {
-    if (!duration.isValid || !start.isValid) return null;
+    final end = _addDuration(start, duration);
+    return isAnnual && end != null && end.value != start.value ? null : end;
+  }
+
+  TimelineTime? _addDuration(TimelineTime start, TimelineDuration duration) {
+    if (!duration.isValid || !fits(start)) return null;
     if (!durationUnitsFor(start).contains(duration.unit)) return null;
     final amount = duration.amount;
-    if (!countsYears) return TimelineTime(start.value + amount);
+    if (!hasMonths) return TimelineTime(start.value + amount);
     if (start.value != start.value.roundToDouble()) return null;
     final n = amount.round();
-    final year = _astronomical(start.value);
+    var year = _astronomical(start.value);
     switch (duration.unit) {
       case TimelineDurationUnit.units:
         return null;
       case TimelineDurationUnit.years:
-        final end = TimelineTime(
-          _written(year + n),
-          month: start.month,
-          day: start.day,
-        );
-        return _clampDay(end);
+        return _settle(_written(year + n), start.month, start.day);
       case TimelineDurationUnit.months:
-        final total = year * 12 + (start.month! - 1) + n;
-        final endYear = (total / 12).floor();
-        return _clampDay(
-          TimelineTime(
-            _written(endYear),
-            month: total - endYear * 12 + 1,
-            day: start.day,
-          ),
-        );
-      case TimelineDurationUnit.days:
-        final ordinal =
-            year * _lunarYearDays +
-            _daysBefore(start.month!) +
-            (start.day! - 1) +
-            n;
-        final endYear = (ordinal / _lunarYearDays).floor();
-        final inYear = ordinal - endYear * _lunarYearDays;
-        var month = 12;
-        while (_daysBefore(month) > inYear) {
-          month--;
+        var month = start.month!;
+        var left = n;
+        while (left > 0) {
+          final rest = monthsIn(_written(year)) - month;
+          if (left <= rest) {
+            month += left;
+            left = 0;
+          } else {
+            left -= rest + 1;
+            year++;
+            month = 1;
+          }
         }
-        return TimelineTime(
-          _written(endYear),
-          month: month,
-          day: inYear - _daysBefore(month) + 1,
-        );
+        return _settle(_written(year), month, start.day);
+      case TimelineDurationUnit.days:
+        var day = _daysBefore(start.month!) + start.day! - 1 + n;
+        while (day >= daysInYear(_written(year))) {
+          day -= daysInYear(_written(year));
+          year++;
+        }
+        final value = _written(year);
+        var month = 1;
+        while (day >= daysInMonth(value, month)) {
+          day -= daysInMonth(value, month);
+          month++;
+        }
+        return TimelineTime(value, month: month, day: day + 1);
     }
   }
 
-  TimelineTime _clampDay(TimelineTime time) {
-    final day = time.day;
-    if (day == null) return time;
-    final most = lunarMonthDays(time.month!);
-    return day <= most
-        ? time
-        : TimelineTime(time.value, month: time.month, day: most);
+  /// [time] moved to where it can stand on this timeline: without a year
+  /// on one year's calendar, Adar II as Adar in a year without it, and a
+  /// day its month lacks as the month's last. Times off the year scales,
+  /// and those it cannot place (a year's calendar without a month), are
+  /// left as they are.
+  TimelineTime settle(TimelineTime time) {
+    if (!hasMonths || time.month == null || !time.isValid) return time;
+    return _settle(isAnnual ? 0 : time.value, time.month, time.day);
+  }
+
+  /// The time [month] and [day] of [value] give, kept within the year's
+  /// months and the month's days.
+  TimelineTime _settle(double value, int? month, int? day) {
+    if (month == null) return TimelineTime(value);
+    final kept = math.min(month, monthsIn(value));
+    return TimelineTime(
+      value,
+      month: kept,
+      day: day == null ? null : math.min(day, daysInMonth(value, kept)),
+    );
   }
 
   /// The year (or count) alone as written: "1446 BC" or "AD 30" counting
@@ -281,9 +409,10 @@ class StudyTimeline {
   String formatTime(TimelineTime time) {
     final value = formatValue(time.value);
     final month = time.month;
-    if (month == null || !countsYears) return value;
-    final name = hebrewMonthNames[month - 1];
+    if (month == null || !hasMonths) return value;
+    final name = monthName(time.value, month);
     final date = time.day == null ? name : '${time.day} $name';
+    if (isAnnual) return date;
     return isCalendar ? '$date $value' : '$date, $value';
   }
 
@@ -308,6 +437,8 @@ class StudyTimeline {
     String? title,
     TimelineScale? scale,
     String? unit,
+    TimelineLeapMonths? leapMonths,
+    Set<int>? leapYears,
     String? note,
     String? Function()? parentId,
     int? order,
@@ -317,6 +448,8 @@ class StudyTimeline {
     title: title ?? this.title,
     scale: scale ?? this.scale,
     unit: unit ?? this.unit,
+    leapMonths: leapMonths ?? this.leapMonths,
+    leapYears: leapYears ?? this.leapYears,
     note: note ?? this.note,
     parentId: parentId == null ? this.parentId : parentId(),
     order: order ?? this.order,
@@ -328,6 +461,8 @@ class StudyTimeline {
     'title': title,
     'scale': scale.name,
     'unit': unit,
+    if (leapMonths != TimelineLeapMonths.none) 'leapMonths': leapMonths.name,
+    if (leapYears.isNotEmpty) 'leapYears': leapYears.toList()..sort(),
     if (note.isNotEmpty) 'note': note,
     if (parentId != null) 'parent': parentId,
     'order': order,
@@ -351,6 +486,8 @@ class StudyTimeline {
         'scale',
         'era',
         'unit',
+        'leapMonths',
+        'leapYears',
         'note',
         'parent',
         'order',
@@ -359,6 +496,15 @@ class StudyTimeline {
       title: title,
       scale: scale,
       unit: value['unit'] is String ? value['unit'] as String : 'Year',
+      leapMonths:
+          TimelineLeapMonths.values
+              .where((l) => l.name == value['leapMonths'])
+              .firstOrNull ??
+          TimelineLeapMonths.none,
+      leapYears: {
+        if (value['leapYears'] is List)
+          ...(value['leapYears'] as List).whereType<int>(),
+      },
       note: value['note'] is String ? value['note'] as String : '',
       parentId: value['parent'] is String ? value['parent'] as String : null,
       order: value['order'] is int ? value['order'] as int : 0,

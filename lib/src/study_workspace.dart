@@ -1804,7 +1804,7 @@ class StudyWorkspace {
       timelineEntries: [
         for (final entry in timelineEntries)
           entry.timelineId == timeline.id
-              ? entry.fittedTo(timeline) ??
+              ? _settled(entry, timeline).fittedTo(timeline) ??
                     entry.withTime(start: entry.start, end: entry.end)
               : entry,
       ],
@@ -1812,12 +1812,32 @@ class StudyWorkspace {
     return fitted._putTimeline(timeline);
   }
 
-  /// [entry] with a duration-given end worked out on its timeline's scale,
-  /// or, where the duration does not fit it, kept as a plain end.
+  /// [entry] with its times settled where [timeline] can place them (see
+  /// [StudyTimeline.settle]).
+  static StudyTimelineEntry _settled(
+    StudyTimelineEntry entry,
+    StudyTimeline timeline,
+  ) {
+    final end = entry.end;
+    final start = timeline.settle(entry.start);
+    final settledEnd = end == null ? null : timeline.settle(end);
+    if (start == entry.start && settledEnd == end) return entry;
+    return entry.withTime(
+      start: start,
+      end: settledEnd,
+      duration: entry.duration,
+    );
+  }
+
+  /// [entry] settled on its timeline, with a duration-given end worked out
+  /// on its scale, or, where the duration does not fit it, kept as a plain
+  /// end.
   StudyTimelineEntry _refit(StudyTimelineEntry entry) {
     final timeline = timelineById(entry.timelineId);
-    return (timeline == null ? null : entry.fittedTo(timeline)) ??
-        entry.withTime(start: entry.start, end: entry.end);
+    if (timeline == null) return entry;
+    final settled = _settled(entry, timeline);
+    return settled.fittedTo(timeline) ??
+        settled.withTime(start: settled.start, end: settled.end);
   }
 
   StudyWorkspace _putTimeline(StudyTimeline timeline) {
@@ -1887,7 +1907,7 @@ class StudyWorkspace {
   StudyWorkspace putTimelineEntry(StudyTimelineEntry entry) {
     final timeline = timelineById(entry.timelineId);
     if (timeline == null) return this;
-    final fitted = entry.fittedTo(timeline);
+    final fitted = _settled(entry, timeline).fittedTo(timeline);
     if (fitted == null || !fitted.isValid) return this;
     entry = fitted;
     final updated = List<StudyTimelineEntry>.of(timelineEntries);
@@ -2080,6 +2100,9 @@ class StudyWorkspace {
               .whereType<StudyTimeline>())
         if (timelineIds.add(timeline.id)) timeline,
     ];
+    // One dated to a month or day its timeline's year lacks is settled on
+    // the nearest it has, and kept only if it then fits.
+    final timelineOf = {for (final t in timelines) t.id: t};
     final entryIds = <String>{};
     final timelineEntries = [
       for (final entry
@@ -2088,8 +2111,12 @@ class StudyWorkspace {
                   : const [])
               .map(StudyTimelineEntry.fromJson)
               .whereType<StudyTimelineEntry>())
-        if (timelineIds.contains(entry.timelineId) && entryIds.add(entry.id))
-          entry,
+        if (timelineOf[entry.timelineId] case final timeline?)
+          if (_settled(entry, timeline) case final settled
+              when timeline.fits(settled.start) &&
+                  (settled.end == null || timeline.fits(settled.end!)) &&
+                  entryIds.add(entry.id))
+            settled,
     ];
 
     final groupIds = {

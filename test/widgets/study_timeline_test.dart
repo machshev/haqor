@@ -77,7 +77,7 @@ void main() {
     expect(months.map((t) => t.label), contains('Tishri'));
     final extent = timelineExtent(_timeline, [_temple]);
     final temple = _timeline.positionOf(_temple.start);
-    expect(temple, closeTo(-965 + 1 / 12 + 1 / 354, 1e-9));
+    expect(temple, closeTo(-965 + 31 / 354, 1e-9));
     expect((extent.start, extent.end), (temple - 1, temple + 1));
   });
 
@@ -313,7 +313,9 @@ void main() {
       find.byKey(const ValueKey('timeline-entry-start')),
       '966',
     );
-    await tester.tap(find.byKey(const ValueKey('timeline-entry-start-month')));
+    await tester.tap(
+      find.byKey(const ValueKey('timeline-entry-start-month-12')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('2 · Iyyar').last);
     await tester.pumpAndSettle();
@@ -322,9 +324,11 @@ void main() {
     // With a month but no day the length may be in years or months.
     expect(find.text('Give the start a day to count days.'), findsOneWidget);
     await tester.ensureVisible(
-      find.byKey(const ValueKey('timeline-entry-start-day-2')),
+      find.byKey(const ValueKey('timeline-entry-start-day-2-29')),
     );
-    await tester.tap(find.byKey(const ValueKey('timeline-entry-start-day-2')));
+    await tester.tap(
+      find.byKey(const ValueKey('timeline-entry-start-day-2-29')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('2').last);
     await tester.pumpAndSettle();
@@ -432,5 +436,210 @@ void main() {
     expect(opened?.chapter, 6);
     // The page closes back to the reader.
     expect(find.text('open'), findsOneWidget);
+  });
+
+  testWidgets('the timeline editor takes chosen leap years with their era', (
+    tester,
+  ) async {
+    StudyTimeline? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              saved = await showDialog<StudyTimeline>(
+                context: context,
+                builder: (_) => const StudyTimelineEditor(
+                  initial: StudyTimeline(
+                    id: 't',
+                    title: 'Exodus',
+                    scale: TimelineScale.calendar,
+                  ),
+                  creating: false,
+                ),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('timeline-leap-calendar')));
+    await tester.pumpAndSettle();
+    expect(find.text('Fixed 19-year cycle'), findsWidgets);
+    await tester.tap(find.text('In chosen years').last);
+    await tester.pumpAndSettle();
+    final years = find.byKey(const ValueKey('timeline-leap-years'));
+    await tester.enterText(years, '1446');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Write each year with BC or AD, as 1446 BC.'),
+      findsOneWidget,
+    );
+    await tester.enterText(years, '1446 BC, 1443 bc; AD 30');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(saved?.leapMonths, TimelineLeapMonths.chosen);
+    expect(saved?.leapYears, {-1446, -1443, 30});
+  });
+
+  testWidgets("an entry on a year's calendar takes a month and day only", (
+    tester,
+  ) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+    );
+    StudyTimelineEntry? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              saved = await showDialog<StudyTimelineEntry>(
+                context: context,
+                builder: (_) => StudyTimelineEntryEditor(
+                  initial: const StudyTimelineEntry(
+                    id: 'new',
+                    title: '',
+                    timelineId: 'feasts',
+                    start: TimelineTime(0),
+                    end: TimelineTime(0),
+                  ),
+                  creating: true,
+                  timelines: const [feasts],
+                  useEnglishBookNames: true,
+                  loadChapter: _chapter,
+                ),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // No year to enter.
+    expect(find.byKey(const ValueKey('timeline-entry-start')), findsNothing);
+    await tester.enterText(
+      find.byKey(const ValueKey('timeline-entry-title')),
+      'Unleavened Bread',
+    );
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter when it starts.'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('timeline-entry-start-month-12')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 · Nisan').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('timeline-entry-start-day-1-30')),
+    );
+    await tester.pumpAndSettle();
+    // The menu builds only the days in view.
+    await tester.scrollUntilVisible(
+      find.text('15'),
+      48,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.text('15').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Duration'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('timeline-entry-duration')),
+      '6',
+    );
+    await tester.pump();
+    expect(find.text('Ends 21 Nisan'), findsOneWidget);
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(saved?.start, const TimelineTime(0, month: 1, day: 15));
+    expect(saved?.end, const TimelineTime(0, month: 1, day: 21));
+    expect(
+      saved?.duration,
+      const TimelineDuration(6, TimelineDurationUnit.days),
+    );
+  });
+
+  testWidgets('the timeline page adds, edits and removes entries in place', (
+    tester,
+  ) async {
+    var timeline = _timeline;
+    var entries = [_temple];
+    final calls = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => TimelinePage(
+                  timeline: timeline,
+                  entries: entries,
+                  useEnglishBookNames: true,
+                  onOpenPassage: (_) {},
+                  reload: () => (timeline: timeline, entries: entries),
+                  onEditTimeline: () async {
+                    calls.add('timeline');
+                    timeline = timeline.copyWith(title: 'Kings of Israel');
+                  },
+                  onAddEntry: (span) async {
+                    calls.add('add ${span ? 'span' : 'event'}');
+                    entries = [...entries, _reign];
+                  },
+                  onEditEntry: (entry) async {
+                    calls.add('edit ${entry.id}');
+                    entries = [
+                      for (final e in entries)
+                        e.id == entry.id ? e.copyWith(title: 'Temple') : e,
+                    ];
+                  },
+                  onRemoveEntry: (entry) async {
+                    calls.add('remove ${entry.id}');
+                    entries = [
+                      for (final e in entries)
+                        if (e.id != entry.id) e,
+                    ];
+                  },
+                ),
+              ),
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Edit timeline'));
+    await tester.pumpAndSettle();
+    expect(find.text('Kings of Israel'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Add to timeline'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add span'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('timeline-row-reign')), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Edit event'));
+    await tester.pumpAndSettle();
+    expect(find.text('Temple'), findsWidgets);
+
+    await tester.tap(find.byKey(const ValueKey('timeline-row-temple')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('timeline-row-temple')), findsNothing);
+    expect(calls, ['timeline', 'add span', 'edit temple', 'remove temple']);
   });
 }

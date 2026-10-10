@@ -8,12 +8,13 @@ import 'markdown_note.dart';
 
 /// The stretch of a timeline's axis its entries cover (as positions, see
 /// [StudyTimeline.positionOf]), with a margin either side; a single point
-/// gets one unit either side.
+/// gets one unit either side, and one year's calendar its whole year.
 ({double start, double end}) timelineExtent(
   StudyTimeline timeline,
   List<StudyTimelineEntry> entries,
 ) {
-  if (entries.isEmpty) return (start: 0, end: 1);
+  // One year's calendar shows its whole year.
+  if (entries.isEmpty || timeline.isAnnual) return (start: 0, end: 1);
   final start = entries
       .map((e) => timeline.positionOf(e.start))
       .reduce(math.min);
@@ -78,12 +79,25 @@ List<TimelineTick> timelineTicks(
   // An axis position as written: a BC year sits one below its position.
   double written(double position) =>
       calendar && position <= 0 ? position - 1 : position;
-  // Months are marked only where at least two fit in a year.
-  if (timeline.countsYears && rough <= 0.5) {
-    final step = [1, 2, 3, 6].firstWhere((m) => m / 12 >= rough);
+  // Months are marked only where at least two fit in a year; one year's
+  // calendar has only its months to mark.
+  if (timeline.isAnnual || (timeline.countsYears && rough <= 0.5)) {
+    final step = [
+      1,
+      2,
+      3,
+      6,
+    ].firstWhere((m) => m / 12 >= rough, orElse: () => 6);
     return [
-      for (var year = start.floor(); year <= end.ceil(); year++)
-        for (var month = 1; month <= 12; month += step)
+      for (final year
+          in timeline.isAnnual
+              ? const [0]
+              : [for (var y = start.floor(); y <= end.ceil(); y++) y])
+        for (
+          var month = 1;
+          month <= timeline.monthsIn(written(year.toDouble()));
+          month += step
+        )
           if (TimelineTime(written(year.toDouble()), month: month)
               case final time
               when timeline.positionOf(time) >= start &&
@@ -92,7 +106,7 @@ List<TimelineTick> timelineTicks(
               position: timeline.positionOf(time),
               label: month == 1
                   ? timeline.formatTime(time)
-                  : hebrewMonthNames[month - 1],
+                  : timeline.monthName(time.value, month),
             ),
     ];
   }
@@ -545,9 +559,19 @@ class _StripPainter extends CustomPainter {
       );
 }
 
+/// A timeline and its entries as they stand.
+typedef TimelineContents = ({
+  StudyTimeline timeline,
+  List<StudyTimelineEntry> entries,
+});
+
+/// What an entry's details sheet was closed to do.
+enum _EntryChoice { edit, remove }
+
 /// The full view of a timeline: drawn to scale, zoomable and scrollable,
 /// with its entries listed beneath. An entry opens its details, from which
-/// its linked verses open in the reader through [onOpenPassage].
+/// its linked verses open in the reader through [onOpenPassage]. Given the
+/// callbacks, the timeline and its entries are edited here too.
 class TimelinePage extends StatefulWidget {
   const TimelinePage({
     super.key,
@@ -556,6 +580,11 @@ class TimelinePage extends StatefulWidget {
     required this.useEnglishBookNames,
     required this.onOpenPassage,
     this.initialSelectedId,
+    this.reload,
+    this.onEditTimeline,
+    this.onAddEntry,
+    this.onEditEntry,
+    this.onRemoveEntry,
   });
 
   final StudyTimeline timeline;
@@ -566,6 +595,18 @@ class TimelinePage extends StatefulWidget {
   /// The entry to show picked out when the page opens.
   final String? initialSelectedId;
 
+  /// Reads the timeline again after an edit; null when it is gone, which
+  /// closes the page.
+  final TimelineContents? Function()? reload;
+
+  /// Edit the timeline, add an event or (`span` true) a span to it, edit
+  /// or remove an entry; the page reads the timeline again after each.
+  /// Without them the page only shows the timeline.
+  final Future<void> Function()? onEditTimeline;
+  final Future<void> Function(bool span)? onAddEntry;
+  final Future<void> Function(StudyTimelineEntry entry)? onEditEntry;
+  final Future<void> Function(StudyTimelineEntry entry)? onRemoveEntry;
+
   @override
   State<TimelinePage> createState() => _TimelinePageState();
 }
@@ -574,6 +615,8 @@ class _TimelinePageState extends State<TimelinePage> {
   /// Null until fitted to the screen's width on the first layout.
   double? _pixelsPerUnit;
   late String? _selectedId = widget.initialSelectedId;
+  late StudyTimeline _timeline = widget.timeline;
+  late List<StudyTimelineEntry> _entries = widget.entries;
   final _horizontal = ScrollController();
 
   @override
@@ -582,10 +625,28 @@ class _TimelinePageState extends State<TimelinePage> {
     super.dispose();
   }
 
+  /// Runs an edit, then shows the timeline as it now stands, or closes the
+  /// page when the timeline is gone.
+  Future<void> _edit(Future<void> Function() edit) async {
+    await edit();
+    final reload = widget.reload;
+    if (!mounted || reload == null) return;
+    final contents = reload();
+    if (contents == null) {
+      Navigator.pop(context);
+      return;
+    }
+    setState(() {
+      _timeline = contents.timeline;
+      _entries = contents.entries;
+      if (!_entries.any((e) => e.id == _selectedId)) _selectedId = null;
+    });
+  }
+
   /// The scale fitting every time into [width], leaving room after the last
   /// for a label of its own (up to a third of the width).
   double _fit(double width) {
-    final extent = timelineExtent(widget.timeline, widget.entries);
+    final extent = timelineExtent(_timeline, _entries);
     final label = math.min(width / 3, 140.0);
     return math.max(
       1e-6,
@@ -616,7 +677,9 @@ class _TimelinePageState extends State<TimelinePage> {
 
   Future<void> _show(StudyTimelineEntry entry) async {
     setState(() => _selectedId = entry.id);
-    final passage = await showModalBottomSheet<StudyPassage>(
+    final edit = widget.onEditEntry;
+    final remove = widget.onRemoveEntry;
+    final choice = await showModalBottomSheet<Object>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
@@ -632,7 +695,7 @@ class _TimelinePageState extends State<TimelinePage> {
                 Text(entry.title, style: theme.textTheme.titleLarge),
                 const SizedBox(height: 4),
                 Text(
-                  timelineEntryTime(widget.timeline, entry),
+                  timelineEntryTime(_timeline, entry),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -656,28 +719,61 @@ class _TimelinePageState extends State<TimelinePage> {
                     ],
                   ),
                 ],
+                if (edit != null || remove != null) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      if (edit != null)
+                        TextButton.icon(
+                          onPressed: () =>
+                              Navigator.pop(sheetContext, _EntryChoice.edit),
+                          icon: const Icon(Icons.edit_note),
+                          label: Text(
+                            entry.isSpan ? 'Edit span' : 'Edit event',
+                          ),
+                        ),
+                      if (remove != null)
+                        TextButton.icon(
+                          onPressed: () =>
+                              Navigator.pop(sheetContext, _EntryChoice.remove),
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Remove'),
+                        ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
         );
       },
     );
-    if (passage == null || !mounted) return;
-    Navigator.pop(context);
-    widget.onOpenPassage(passage);
+    if (!mounted) return;
+    switch (choice) {
+      case StudyPassage passage:
+        Navigator.pop(context);
+        widget.onOpenPassage(passage);
+      case _EntryChoice.edit:
+        await _edit(() => edit!(entry));
+      case _EntryChoice.remove:
+        await _edit(() => remove!(entry));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final entries = List.of(widget.entries)..sort(compareTimelineEntries);
+    final entries = List.of(_entries)..sort(compareTimelineEntries);
+    final add = widget.onAddEntry;
+    final editTimeline = widget.onEditTimeline;
+    final editEntry = widget.onEditEntry;
     return LayoutBuilder(
       builder: (context, constraints) {
         final viewport = constraints.maxWidth;
         final ppu = _pixelsPerUnit ?? _fit(viewport);
         return Scaffold(
           appBar: AppBar(
-            title: Text(widget.timeline.title),
+            title: Text(_timeline.title),
             actions: [
               IconButton(
                 tooltip: 'Zoom out',
@@ -698,15 +794,47 @@ class _TimelinePageState extends State<TimelinePage> {
                 icon: const Icon(Icons.zoom_in),
                 onPressed: entries.isEmpty ? null : () => _zoom(1.5, viewport),
               ),
+              if (add != null)
+                PopupMenuButton<bool>(
+                  tooltip: 'Add to timeline',
+                  icon: const Icon(Icons.add),
+                  onSelected: (span) => _edit(() => add(span)),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: false,
+                      child: ListTile(
+                        leading: Icon(Icons.radio_button_checked),
+                        title: Text('Add event'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: true,
+                      child: ListTile(
+                        leading: Icon(Icons.linear_scale),
+                        title: Text('Add span'),
+                      ),
+                    ),
+                  ],
+                ),
+              if (editTimeline != null)
+                IconButton(
+                  tooltip: 'Edit timeline',
+                  icon: const Icon(Icons.edit_note),
+                  onPressed: () => _edit(editTimeline),
+                ),
             ],
           ),
           body: entries.isEmpty
-              ? const Center(
+              ? Center(
                   child: Padding(
-                    padding: EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(24),
                     child: Text(
-                      'Add events and spans to this timeline from its menu '
-                      'in the outline, or from a verse in the reader.',
+                      add == null
+                          ? 'Add events and spans to this timeline from its '
+                                'menu in the outline, or from a verse in the '
+                                'reader.'
+                          : 'Add events and spans with the + above, or from a '
+                                'verse in the reader.',
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -726,7 +854,7 @@ class _TimelinePageState extends State<TimelinePage> {
                           padding: const EdgeInsets.only(top: 12),
                           child: SingleChildScrollView(
                             child: TimelineChart(
-                              timeline: widget.timeline,
+                              timeline: _timeline,
                               entries: entries,
                               pixelsPerUnit: ppu,
                               selectedId: _selectedId,
@@ -740,10 +868,10 @@ class _TimelinePageState extends State<TimelinePage> {
                     Expanded(
                       child: ListView(
                         children: [
-                          if (widget.timeline.note.isNotEmpty)
+                          if (_timeline.note.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                              child: MarkdownNote(widget.timeline.note),
+                              child: MarkdownNote(_timeline.note),
                             ),
                           for (final entry in entries)
                             ListTile(
@@ -760,11 +888,21 @@ class _TimelinePageState extends State<TimelinePage> {
                               title: Text(entry.title),
                               subtitle: Text(
                                 [
-                                  timelineEntryTime(widget.timeline, entry),
+                                  timelineEntryTime(_timeline, entry),
                                   ...entry.verses.map(_reference),
                                 ].join(' · '),
                               ),
                               onTap: () => _show(entry),
+                              trailing: editEntry == null
+                                  ? null
+                                  : IconButton(
+                                      tooltip: entry.isSpan
+                                          ? 'Edit span'
+                                          : 'Edit event',
+                                      icon: const Icon(Icons.edit_note),
+                                      onPressed: () =>
+                                          _edit(() => editEntry(entry)),
+                                    ),
                             ),
                         ],
                       ),
