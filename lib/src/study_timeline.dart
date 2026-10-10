@@ -228,7 +228,6 @@ class StudyTimeline {
     this.monthNaming = TimelineMonthNaming.postExile,
     this.nisanWeekday = 1,
     this.weekYear,
-    this.sabbaths = const {},
     this.note = '',
     this.parentId,
     this.order = 0,
@@ -259,10 +258,6 @@ class StudyTimeline {
   /// one (and always on one year's calendar), in every year.
   final int nisanWeekday;
   final double? weekYear;
-
-  /// The days kept as Sabbaths besides the seventh: the high Sabbaths of
-  /// the feasts. On one year's calendar their year is 0.
-  final Set<TimelineTime> sabbaths;
   final String note;
   final String? parentId;
   final int order;
@@ -331,26 +326,21 @@ class StudyTimeline {
     return (nisanWeekday - 1 + days) % 7 + 1;
   }
 
-  /// Whether [time] is a Sabbath: the seventh day of its week, or one of
-  /// [sabbaths].
-  bool isSabbath(TimelineTime time) =>
-      weekdayOf(time) == 7 || isHighSabbath(time);
+  /// Whether [time] falls on the day [day]: its month and day, and its year
+  /// unless this is one year's calendar.
+  bool isOnDay(TimelineTime time, TimelineTime day) =>
+      time.month == day.month &&
+      time.day == day.day &&
+      (isAnnual || time.value == day.value);
 
-  bool isHighSabbath(TimelineTime time) => sabbaths.contains(
-    TimelineTime(isAnnual ? 0 : time.value, month: time.month, day: time.day),
-  );
-
-  /// This timeline with [day] kept as a high Sabbath, or no longer.
-  StudyTimeline withHighSabbath(TimelineTime day, bool kept) {
-    final key = TimelineTime(
-      isAnnual ? 0 : day.value,
-      month: day.month,
-      day: day.day,
-    );
-    return copyWith(
-      sabbaths: kept ? {...sabbaths, key} : ({...sabbaths}..remove(key)),
-    );
-  }
+  /// The high Sabbaths among [entries] that fall on [day].
+  List<StudyTimelineEntry> highSabbathsOn(
+    Iterable<StudyTimelineEntry> entries,
+    TimelineTime day,
+  ) => [
+    for (final entry in entries)
+      if (entry.isHighSabbath && isOnDay(entry.start, day)) entry,
+  ];
 
   /// The year after (or, with [step] -1, before) [value]: by era there is
   /// no year 0.
@@ -565,7 +555,6 @@ class StudyTimeline {
     TimelineMonthNaming? monthNaming,
     int? nisanWeekday,
     double? Function()? weekYear,
-    Set<TimelineTime>? sabbaths,
     String? note,
     String? Function()? parentId,
     int? order,
@@ -580,7 +569,6 @@ class StudyTimeline {
     monthNaming: monthNaming ?? this.monthNaming,
     nisanWeekday: nisanWeekday ?? this.nisanWeekday,
     weekYear: weekYear == null ? this.weekYear : weekYear(),
-    sabbaths: sabbaths ?? this.sabbaths,
     note: note ?? this.note,
     parentId: parentId == null ? this.parentId : parentId(),
     order: order ?? this.order,
@@ -598,17 +586,6 @@ class StudyTimeline {
       'monthNames': monthNaming.name,
     if (nisanWeekday != 1) 'nisanWeekday': nisanWeekday,
     if (weekYear != null) 'weekYear': _jsonNumber(weekYear!),
-    if (sabbaths.isNotEmpty)
-      'sabbaths': [
-        for (final day
-            in sabbaths.toList()
-              ..sort((a, b) => a.position().compareTo(b.position())))
-          {
-            if (!isAnnual) 'year': _jsonNumber(day.value),
-            'month': day.month,
-            'day': day.day,
-          },
-      ],
     if (note.isNotEmpty) 'note': note,
     if (parentId != null) 'parent': parentId,
     'order': order,
@@ -669,25 +646,29 @@ class StudyTimeline {
       weekYear: value['weekYear'] is num
           ? (value['weekYear'] as num).toDouble()
           : null,
-      sabbaths: {
-        if (value['sabbaths'] is List)
-          for (final day in value['sabbaths'] as List)
-            if (day is Map &&
-                day['month'] is int &&
-                day['day'] is int &&
-                (day['year'] == null || day['year'] is num))
-              TimelineTime(
-                (day['year'] as num?)?.toDouble() ?? 0,
-                month: day['month'] as int,
-                day: day['day'] as int,
-              ),
-      },
       note: value['note'] is String ? value['note'] as String : '',
       parentId: value['parent'] is String ? value['parent'] as String : null,
       order: value['order'] is int ? value['order'] as int : 0,
     );
     return timeline.isValid ? timeline : null;
   }
+
+  /// The high Sabbaths a timeline stored by date alone, before they became
+  /// events (see [StudyTimelineEntry.sabbath]); dropped from the timeline
+  /// on load, as `sabbaths` is a key it knows.
+  static List<TimelineTime> legacySabbaths(Object? value) => [
+    if (value is Map && value['sabbaths'] is List)
+      for (final day in value['sabbaths'] as List)
+        if (day is Map &&
+            day['month'] is int &&
+            day['day'] is int &&
+            (day['year'] == null || day['year'] is num))
+          TimelineTime(
+            (day['year'] as num?)?.toDouble() ?? 0,
+            month: day['month'] as int,
+            day: day['day'] as int,
+          ),
+  ];
 }
 
 /// An event (a point in time) or a span (from [start] to [end]) on a
@@ -707,6 +688,7 @@ class StudyTimelineEntry {
     this.date = '',
     this.verses = const [],
     this.note = '',
+    this.sabbath = false,
     this.order = 0,
     this.extra = const {},
   });
@@ -730,9 +712,14 @@ class StudyTimelineEntry {
   /// The verse ranges it is linked to; only their references are used.
   final List<StudyPassage> verses;
   final String note;
+
+  /// Whether this event is a high Sabbath: a feast day kept as a Sabbath,
+  /// its day coloured as one in the calendar. Spans are not.
+  final bool sabbath;
   final int order;
 
   bool get isSpan => end != null;
+  bool get isHighSabbath => sabbath && !isSpan;
   TimelineTime get last => end ?? start;
   String get key => 'timeline-entry-$id';
 
@@ -762,6 +749,7 @@ class StudyTimelineEntry {
     date: date,
     verses: verses,
     note: note,
+    sabbath: sabbath,
     order: order,
   );
 
@@ -783,6 +771,7 @@ class StudyTimelineEntry {
     String? date,
     List<StudyPassage>? verses,
     String? note,
+    bool? sabbath,
     int? order,
   }) => StudyTimelineEntry(
     extra: extra,
@@ -795,6 +784,7 @@ class StudyTimelineEntry {
     date: date ?? this.date,
     verses: verses ?? this.verses,
     note: note ?? this.note,
+    sabbath: sabbath ?? this.sabbath,
     order: order ?? this.order,
   );
 
@@ -824,6 +814,7 @@ class StudyTimelineEntry {
           },
       ],
     if (note.isNotEmpty) 'note': note,
+    if (sabbath) 'sabbath': true,
     'order': order,
   };
 
@@ -859,6 +850,7 @@ class StudyTimelineEntry {
         'date',
         'verses',
         'note',
+        'sabbath',
         'order',
       }),
       id: id,
@@ -886,6 +878,7 @@ class StudyTimelineEntry {
             ?StudyPassage.fromJson(raw),
       ],
       note: value['note'] is String ? value['note'] as String : '',
+      sabbath: value['sabbath'] == true,
       order: value['order'] is int ? value['order'] as int : 0,
     );
     return entry.isValid ? entry : null;

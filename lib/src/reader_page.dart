@@ -3320,12 +3320,14 @@ class _ReaderSessionState extends State<_ReaderSession>
           },
           onUpdateTimeline: (changed) async => _updateStudyTimeline(changed),
           // The verse being read is no clue to an entry added here.
-          onAddEntry: (span, at) => _createStudyTimelineEntry(
-            timeline.id,
-            span,
-            linkVerse: false,
-            at: at,
-          ),
+          onAddEntry: (span, at, {sabbath = false}) =>
+              _createStudyTimelineEntry(
+                timeline.id,
+                span,
+                linkVerse: false,
+                at: at,
+                sabbath: sabbath,
+              ),
           onEditEntry: _editStudyTimelineEntry,
           onRemoveEntry: (entry) async => _removeStudyTimelineEntry(entry),
         ),
@@ -3359,9 +3361,11 @@ class _ReaderSessionState extends State<_ReaderSession>
     required bool span,
     StudyPassage? verse,
     TimelineTime? at,
+    bool sabbath = false,
   }) => StudyTimelineEntry(
     id: DateTime.now().microsecondsSinceEpoch.toString(),
-    title: '',
+    title: sabbath ? 'High Sabbath' : '',
+    sabbath: sabbath,
     timelineId: timelineId,
     start: at ?? const TimelineTime(0),
     end: span ? at ?? const TimelineTime(0) : null,
@@ -3376,18 +3380,21 @@ class _ReaderSessionState extends State<_ReaderSession>
   );
 
   /// Adds an event or span to a timeline, linked to the verse being read
-  /// unless [linkVerse] is false, starting [at] a day where one is chosen.
+  /// unless [linkVerse] is false, starting [at] a day where one is chosen;
+  /// with [sabbath], a high Sabbath on that day.
   Future<void> _createStudyTimelineEntry(
     String timelineId,
     bool span, {
     bool linkVerse = true,
     TimelineTime? at,
+    bool sabbath = false,
   }) => _askForStudyTimelineEntry(
     _newStudyTimelineEntry(
       timelineId,
       span: span,
       verse: linkVerse ? _currentStudyPassage : null,
       at: at,
+      sabbath: sabbath,
     ),
     creating: true,
   );
@@ -3473,11 +3480,7 @@ class _ReaderSessionState extends State<_ReaderSession>
             for (final entry in entries)
               if (workspace.timelineById(entry.timelineId) case final timeline?)
                 ListTile(
-                  leading: Icon(
-                    entry.isSpan
-                        ? Icons.linear_scale
-                        : Icons.radio_button_checked,
-                  ),
+                  leading: Icon(timelineEntryIcon(entry)),
                   title: Text(entry.title),
                   subtitle: Text(
                     '${timeline.title} · '

@@ -292,13 +292,18 @@ class _Month extends StatelessWidget {
             inYear(entry.start))
           entry,
     ];
+    // A high Sabbath shows in its day's colour, not as a dot.
+    final dots = [
+      for (final entry in events)
+        if (!entry.isHighSabbath) entry,
+    ];
     final over = [
       for (final span in spans)
         if (position >= span.days.first - 1e-9 &&
             position <= span.days.last + 1e-9)
           span.entry,
     ];
-    final high = timeline.isHighSabbath(day);
+    final high = events.any((entry) => entry.isHighSabbath);
     final sabbath = timeline.weekdayOf(day) == 7;
     final isSelected =
         selected != null &&
@@ -339,13 +344,13 @@ class _Month extends StatelessWidget {
                 ),
               ),
             ),
-            if (events.isNotEmpty)
+            if (dots.isNotEmpty)
               Align(
                 alignment: const Alignment(0, 0.55),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    for (final _ in events.take(3))
+                    for (final _ in dots.take(3))
                       Container(
                         width: 5,
                         height: 5,

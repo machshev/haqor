@@ -2118,6 +2118,29 @@ class StudyWorkspace {
                   entryIds.add(entry.id))
             settled,
     ];
+    // High Sabbaths were once kept on their timeline by date alone; each
+    // becomes a high Sabbath event there.
+    for (final raw
+        in value['timelines'] is List ? value['timelines'] as List : const []) {
+      final timeline = raw is Map ? timelineOf[raw['id']] : null;
+      if (timeline == null) continue;
+      for (final day in StudyTimeline.legacySabbaths(raw)) {
+        final start = timeline.settle(day);
+        final id =
+            '${timeline.id}-sabbath-'
+            '${formatTimelineNumber(start.value)}-${start.month}-${start.day}';
+        if (!timeline.fits(start) || !entryIds.add(id)) continue;
+        timelineEntries.add(
+          StudyTimelineEntry(
+            id: id,
+            title: 'High Sabbath',
+            timelineId: timeline.id,
+            start: start,
+            sabbath: true,
+          ),
+        );
+      }
+    }
 
     final groupIds = {
       ...groups.map((group) => group.id),

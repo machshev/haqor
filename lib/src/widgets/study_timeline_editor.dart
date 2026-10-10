@@ -426,7 +426,7 @@ class StudyTimelineEntryEditor extends StatefulWidget {
 class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   late final TextEditingController _title, _date, _note, _amount;
   late final _TimeDraft _start, _end;
-  late bool _span, _byDuration;
+  late bool _span, _byDuration, _sabbath;
   late TimelineDurationUnit _durationUnit;
   late String _timelineId;
   late List<StudyPassage> _verses;
@@ -443,6 +443,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     final calendar = _timeline.isCalendar;
     _title = TextEditingController(text: e.title);
     _span = e.isSpan;
+    _sabbath = e.sabbath;
     // A new entry starts empty, BC by default counting by era.
     // A day already chosen (from the calendar) is kept.
     _start = _TimeDraft(
@@ -569,6 +570,10 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     } else {
       error = _timeProblem(start);
     }
+    final sabbath = _sabbath && !_span && timeline.hasMonths;
+    if (error == null && sabbath && start!.day == null) {
+      error = 'A high Sabbath needs its month and day.';
+    }
     if (error == null && _span) {
       if (_byDuration) {
         duration = _duration;
@@ -613,6 +618,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
             date: _date.text.trim(),
             verses: _verses,
             note: _note.text.trim(),
+            sabbath: sabbath,
           ),
     );
   }
@@ -839,7 +845,13 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     final theme = Theme.of(context);
     final noun = _span ? 'span' : 'event';
     return AlertDialog(
-      title: Text(widget.creating ? 'New timeline $noun' : 'Edit $noun'),
+      title: Text(
+        _sabbath && !_span && _timeline.hasMonths
+            ? (widget.creating ? 'New high Sabbath' : 'Edit high Sabbath')
+            : widget.creating
+            ? 'New timeline $noun'
+            : 'Edit $noun',
+      ),
       content: SizedBox(
         width: 540,
         child: SingleChildScrollView(
@@ -898,6 +910,22 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
               ],
               const SizedBox(height: 12),
               _time(_start, label: _span ? 'Start' : 'When', key: 'start'),
+              if (!_span && _timeline.hasMonths)
+                SwitchListTile(
+                  key: const ValueKey('timeline-entry-sabbath'),
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.star_outline),
+                  title: const Text('High Sabbath'),
+                  subtitle: const Text(
+                    'A feast day kept as a Sabbath, coloured as one in the '
+                    'calendar.',
+                  ),
+                  value: _sabbath,
+                  onChanged: (on) => setState(() {
+                    _sabbath = on;
+                    _error = null;
+                  }),
+                ),
               if (_span) ...[
                 const SizedBox(height: 16),
                 SegmentedButton<bool>(

@@ -528,29 +528,19 @@ void main() {
     expect(exodusNow.start, const TimelineTime(0, month: 1, day: 15));
   });
 
-  test('weeks run on from 1 Nisan, and high Sabbaths are kept by date', () {
+  test('weeks run on from 1 Nisan through the years', () {
     const feasts = StudyTimeline(
       id: 'feasts',
       title: 'Feasts',
       scale: TimelineScale.annual,
       nisanWeekday: 7,
     );
-    const nisan = TimelineTime(0, month: 1, day: 1);
-    expect(feasts.weekdayOf(nisan), 7);
-    expect(feasts.isSabbath(nisan), isTrue);
+    expect(feasts.weekdayOf(const TimelineTime(0, month: 1, day: 1)), 7);
     expect(feasts.weekdayOf(const TimelineTime(0, month: 1, day: 8)), 7);
     expect(feasts.weekdayOf(const TimelineTime(0, month: 1, day: 14)), 6);
     // Iyyar begins 30 days on: two weeks and two days.
     expect(feasts.weekdayOf(const TimelineTime(0, month: 2, day: 1)), 2);
-    const unleavened = TimelineTime(0, month: 1, day: 15);
-    expect(feasts.isHighSabbath(unleavened), isFalse);
-    final kept = feasts.withHighSabbath(unleavened, true);
-    expect(kept.isHighSabbath(unleavened), isTrue);
-    expect(kept.isSabbath(unleavened), isTrue);
-    final stored = StudyTimeline.fromJson(kept.toJson())!;
-    expect(stored.sabbaths, {unleavened});
-    expect(stored.nisanWeekday, 7);
-    expect(kept.withHighSabbath(unleavened, false).sabbaths, isEmpty);
+    expect(StudyTimeline.fromJson(feasts.toJson())!.nisanWeekday, 7);
 
     // Counting years, the weeks run on through 354- and 384-day years.
     final years = kings.copyWith(
@@ -564,22 +554,91 @@ void main() {
     expect(years.weekdayOf(const TimelineTime(-1445, month: 1, day: 1)), 7);
     // And back: 1 Nisan 1447 BC is 354 days (50 weeks and 4 days) before.
     expect(years.weekdayOf(const TimelineTime(-1447, month: 1, day: 1)), 4);
-    // High Sabbaths on a timeline of years are kept in their year.
-    final high = years.withHighSabbath(
-      const TimelineTime(-1446, month: 1, day: 15),
-      true,
-    );
-    expect(
-      high.isHighSabbath(const TimelineTime(-1446, month: 1, day: 15)),
-      isTrue,
-    );
-    expect(
-      high.isHighSabbath(const TimelineTime(-1445, month: 1, day: 15)),
-      isFalse,
-    );
-    expect(StudyTimeline.fromJson(high.toJson())!.sabbaths, high.sabbaths);
     expect(kings.nextYear(-1), 1);
     expect(kings.nextYear(1, step: -1), -1);
+  });
+
+  test('high Sabbaths are events, with notes, found by their day', () {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+    );
+    const firstDay = StudyTimelineEntry(
+      id: 'first',
+      title: 'First day of Unleavened Bread',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 15),
+      note: 'No servile work (Leviticus 23:7)',
+      sabbath: true,
+    );
+    final workspace = const StudyWorkspace(
+      id: 's',
+      name: 'Study',
+    ).putTimeline(feasts).putTimelineEntry(firstDay);
+    final stored = decodeStudyWorkspaces(
+      encodeStudyWorkspaces([workspace]),
+    ).single.timelineEntries.single;
+    expect(stored.isHighSabbath, isTrue);
+    expect(stored.note, firstDay.note);
+    expect(stored.toJson()['sabbath'], isTrue);
+    expect(
+      feasts.highSabbathsOn([stored], const TimelineTime(0, month: 1, day: 15)),
+      [stored],
+    );
+    expect(
+      feasts.highSabbathsOn([stored], const TimelineTime(0, month: 1, day: 16)),
+      isEmpty,
+    );
+    // A span is never one.
+    expect(
+      firstDay
+          .withTime(start: firstDay.start, end: firstDay.start)
+          .isHighSabbath,
+      isFalse,
+    );
+    // On a timeline of years, a high Sabbath is kept in its year.
+    expect(
+      kings.highSabbathsOn([
+        firstDay.withTime(
+          start: const TimelineTime(-1446, month: 1, day: 15),
+          end: null,
+        ),
+      ], const TimelineTime(-1445, month: 1, day: 15)),
+      isEmpty,
+    );
+  });
+
+  test('high Sabbaths kept by date alone become events on load', () {
+    final workspace = StudyWorkspace.fromJson({
+      'id': 's',
+      'name': 'Study',
+      'ordered': true,
+      'timelines': [
+        {
+          'id': 'feasts',
+          'title': 'Feasts',
+          'scale': 'annual',
+          'sabbaths': [
+            {'month': 1, 'day': 15},
+            {'month': 7, 'day': 10},
+            {'month': 'bad', 'day': 1},
+          ],
+        },
+      ],
+    })!;
+    expect(
+      workspace.timelines.single.toJson().containsKey('sabbaths'),
+      isFalse,
+    );
+    final sabbaths = workspace.entriesOf('feasts');
+    expect(sabbaths.map((e) => (e.title, e.start, e.isHighSabbath)), [
+      ('High Sabbath', const TimelineTime(0, month: 1, day: 15), true),
+      ('High Sabbath', const TimelineTime(0, month: 7, day: 10), true),
+    ]);
+    // Loading again keeps them once.
+    final again = decodeStudyWorkspaces(encodeStudyWorkspaces([workspace]));
+    expect(again.single.entriesOf('feasts'), hasLength(2));
   });
 
   test('months are named as after or before the exile, or numbered', () {

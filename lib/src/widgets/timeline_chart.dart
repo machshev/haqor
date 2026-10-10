@@ -141,6 +141,20 @@ double _textWidth(String text, TextStyle? style) {
   return painter.width;
 }
 
+/// An entry's icon: a span's line, an event's dot, or a high Sabbath's star.
+IconData timelineEntryIcon(StudyTimelineEntry entry) => entry.isSpan
+    ? Icons.linear_scale
+    : entry.isHighSabbath
+    ? Icons.star
+    : Icons.radio_button_checked;
+
+/// What an entry is called: "Span", "Event" or "High Sabbath".
+String timelineEntryKind(StudyTimelineEntry entry) => entry.isSpan
+    ? 'Span'
+    : entry.isHighSabbath
+    ? 'High Sabbath'
+    : 'Event';
+
 /// How an entry's time reads: its date as written, or else its time on the
 /// timeline's scale, a span's from start to end.
 String timelineEntryTime(StudyTimeline timeline, StudyTimelineEntry entry) {
@@ -321,17 +335,24 @@ class _EntryMark extends StatelessWidget {
             : Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: TimelineChart._dot,
-                    height: TimelineChart._dot,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: scheme.tertiary,
-                      border: selected
-                          ? Border.all(color: scheme.onSurface, width: 2)
-                          : null,
+                  if (entry.isHighSabbath)
+                    Icon(
+                      Icons.star,
+                      size: TimelineChart._dot + 2,
+                      color: selected ? scheme.onSurface : scheme.tertiary,
+                    )
+                  else
+                    Container(
+                      width: TimelineChart._dot,
+                      height: TimelineChart._dot,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: scheme.tertiary,
+                        border: selected
+                            ? Border.all(color: scheme.onSurface, width: 2)
+                            : null,
+                      ),
                     ),
-                  ),
                   const SizedBox(width: 4),
                   Flexible(child: label),
                 ],
@@ -571,7 +592,7 @@ enum _EntryChoice { edit, remove }
 
 /// What a day's sheet in the calendar was closed to do, besides editing
 /// one of its entries.
-enum _DayChoice { add, keepSabbath, dropSabbath }
+enum _DayChoice { add, addSabbath }
 
 /// The full view of a timeline: drawn to scale, zoomable and scrollable,
 /// with its entries listed beneath. An entry opens its details, from which
@@ -612,13 +633,14 @@ class TimelinePage extends StatefulWidget {
   final TimelineContents? Function()? reload;
 
   /// Edit the timeline in its editor, or save a change made here (its
-  /// weekdays, a high Sabbath); add an event or (`span` true) a span to it,
-  /// starting [at] a day where one is chosen; edit or remove an entry. The
-  /// page reads the timeline again after each. Without them the page only
-  /// shows the timeline.
+  /// weekdays); add an event or (`span` true) a span to it, starting [at] a
+  /// day where one is chosen, or a high Sabbath ([sabbath] true) on one;
+  /// edit or remove an entry. The page reads the timeline again after
+  /// each. Without them the page only shows the timeline.
   final Future<void> Function()? onEditTimeline;
   final Future<void> Function(StudyTimeline timeline)? onUpdateTimeline;
-  final Future<void> Function(bool span, TimelineTime? at)? onAddEntry;
+  final Future<void> Function(bool span, TimelineTime? at, {bool sabbath})?
+  onAddEntry;
   final Future<void> Function(StudyTimelineEntry entry)? onEditEntry;
   final Future<void> Function(StudyTimelineEntry entry)? onRemoveEntry;
 
@@ -789,8 +811,9 @@ class _TimelinePageState extends State<TimelinePage> {
     }
   }
 
-  /// A day of the calendar: its entries, and, given the callbacks, a switch
-  /// to keep it as a high Sabbath and a way to add an event on it.
+  /// A day of the calendar: its entries (among them any high Sabbath), and,
+  /// given the callbacks, ways to keep it as a high Sabbath, an event of its
+  /// own with a title and notes, or to add another event on it.
   Future<void> _showDay(TimelineTime day) async {
     setState(() => _selectedDay = day);
     final timeline = _timeline;
@@ -801,9 +824,8 @@ class _TimelinePageState extends State<TimelinePage> {
             when position >= days.first - 1e-9 && position <= days.last + 1e-9)
           entry,
     ];
-    final update = widget.onUpdateTimeline;
     final add = widget.onAddEntry;
-    final high = timeline.isHighSabbath(day);
+    final high = timeline.highSabbathsOn(entries, day).isNotEmpty;
     final weekday = timeline.weekdayOf(day);
     final choice = await showModalBottomSheet<Object>(
       context: context,
@@ -834,26 +856,26 @@ class _TimelinePageState extends State<TimelinePage> {
                 for (final entry in entries)
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      entry.isSpan
-                          ? Icons.linear_scale
-                          : Icons.radio_button_checked,
-                    ),
+                    leading: Icon(timelineEntryIcon(entry)),
                     title: Text(entry.title),
-                    subtitle: Text(timelineEntryTime(timeline, entry)),
+                    subtitle: Text(
+                      [
+                        timelineEntryTime(timeline, entry),
+                        if (entry.note.isNotEmpty)
+                          markdownPlainText(entry.note),
+                      ].join(' · '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     onTap: () => Navigator.pop(sheetContext, entry),
                   ),
-                if (update != null)
-                  SwitchListTile(
+                if (add != null && !high)
+                  TextButton.icon(
                     key: const ValueKey('calendar-high-sabbath'),
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('High Sabbath'),
-                    subtitle: const Text('A feast day kept as a Sabbath.'),
-                    value: high,
-                    onChanged: (keep) => Navigator.pop(
-                      sheetContext,
-                      keep ? _DayChoice.keepSabbath : _DayChoice.dropSabbath,
-                    ),
+                    onPressed: () =>
+                        Navigator.pop(sheetContext, _DayChoice.addSabbath),
+                    icon: const Icon(Icons.star_outline),
+                    label: const Text('Keep as a high Sabbath'),
                   ),
                 if (add != null)
                   TextButton.icon(
@@ -878,12 +900,8 @@ class _TimelinePageState extends State<TimelinePage> {
         }
       case _DayChoice.add:
         await _edit(() => add!(false, day));
-      case _DayChoice.keepSabbath || _DayChoice.dropSabbath:
-        await _edit(
-          () => update!(
-            timeline.withHighSabbath(day, choice == _DayChoice.keepSabbath),
-          ),
-        );
+      case _DayChoice.addSabbath:
+        await _edit(() => add!(false, day, sabbath: true));
     }
   }
 
@@ -1107,9 +1125,7 @@ class _TimelinePageState extends State<TimelinePage> {
                               key: ValueKey('timeline-row-${entry.id}'),
                               selected: entry.id == _selectedId,
                               leading: Icon(
-                                entry.isSpan
-                                    ? Icons.linear_scale
-                                    : Icons.radio_button_checked,
+                                timelineEntryIcon(entry),
                                 color: entry.isSpan
                                     ? theme.colorScheme.primary
                                     : theme.colorScheme.tertiary,

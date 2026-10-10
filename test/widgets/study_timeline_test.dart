@@ -593,7 +593,7 @@ void main() {
                     calls.add('timeline');
                     timeline = timeline.copyWith(title: 'Kings of Israel');
                   },
-                  onAddEntry: (span, _) async {
+                  onAddEntry: (span, _, {sabbath = false}) async {
                     calls.add('add ${span ? 'span' : 'event'}');
                     entries = [...entries, _reign];
                   },
@@ -644,7 +644,7 @@ void main() {
     expect(calls, ['timeline', 'add span', 'edit temple', 'remove temple']);
   });
 
-  testWidgets('the calendar shows Sabbaths and keeps high Sabbaths', (
+  testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
     tester,
   ) async {
     var timeline = const StudyTimeline(
@@ -652,7 +652,7 @@ void main() {
       title: 'Feasts of Yahweh',
       scale: TimelineScale.annual,
     );
-    const entries = [
+    var entries = const [
       StudyTimelineEntry(
         id: 'passover',
         title: 'Passover',
@@ -660,7 +660,7 @@ void main() {
         start: TimelineTime(0, month: 1, day: 14),
       ),
     ];
-    final added = <TimelineTime?>[];
+    final added = <(TimelineTime?, bool)>[];
     tester.view.physicalSize = const Size(1000, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -674,7 +674,21 @@ void main() {
           initialCalendar: true,
           reload: () => (timeline: timeline, entries: entries),
           onUpdateTimeline: (changed) async => timeline = changed,
-          onAddEntry: (span, at) async => added.add(at),
+          onAddEntry: (span, at, {sabbath = false}) async {
+            added.add((at, sabbath));
+            // As the reader would, once the editor is saved.
+            entries = [
+              ...entries,
+              StudyTimelineEntry(
+                id: 'added-${added.length}',
+                title: sabbath ? 'First day of Unleavened Bread' : 'Event',
+                timelineId: 'feasts',
+                start: at!,
+                note: sabbath ? 'No servile work' : '',
+                sabbath: sabbath,
+              ),
+            ];
+          },
         ),
       ),
     );
@@ -711,21 +725,30 @@ void main() {
     expect(timeline.weekYear, isNull);
     expect(decoration(1, 1)?.color, scheme.secondaryContainer);
 
-    // Keep 15 Nisan as a high Sabbath.
+    // Keep 15 Nisan as a high Sabbath: an event of its own, with a note.
     await tester.tap(find.byKey(const ValueKey('calendar-day-1-15')));
     await tester.pumpAndSettle();
     expect(find.text('15 Nisan'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('calendar-high-sabbath')));
     await tester.pumpAndSettle();
-    expect(timeline.sabbaths, {const TimelineTime(0, month: 1, day: 15)});
+    expect(added, [(const TimelineTime(0, month: 1, day: 15), true)]);
     expect(decoration(1, 15)?.color, scheme.tertiaryContainer);
+    // Its day now lists it, with its note, and offers no second one.
+    await tester.tap(find.byKey(const ValueKey('calendar-day-1-15')));
+    await tester.pumpAndSettle();
+    expect(find.text('High Sabbath · Sabbath'), findsOneWidget);
+    expect(find.text('First day of Unleavened Bread'), findsOneWidget);
+    expect(find.textContaining('No servile work'), findsOneWidget);
+    expect(find.byKey(const ValueKey('calendar-high-sabbath')), findsNothing);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
 
     // Add an event on a day.
     await tester.tap(find.byKey(const ValueKey('calendar-day-7-10')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add event on this day'));
     await tester.pumpAndSettle();
-    expect(added, [const TimelineTime(0, month: 7, day: 10)]);
+    expect(added.last, (const TimelineTime(0, month: 7, day: 10), false));
 
     // And back to the timeline.
     await tester.tap(find.byTooltip('Show timeline'));
@@ -734,5 +757,73 @@ void main() {
       find.byKey(const ValueKey('timeline-mark-passover')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('an event marked a high Sabbath needs its day', (tester) async {
+    tester.view.physicalSize = const Size(1000, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    StudyTimelineEntry? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              saved = await showDialog<StudyTimelineEntry>(
+                context: context,
+                builder: (_) => StudyTimelineEntryEditor(
+                  initial: const StudyTimelineEntry(
+                    id: 'new',
+                    title: '',
+                    timelineId: 'kings',
+                    start: TimelineTime(0),
+                  ),
+                  creating: true,
+                  timelines: const [_timeline],
+                  useEnglishBookNames: true,
+                  loadChapter: _chapter,
+                ),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('timeline-entry-title')),
+      'Day of Atonement',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('timeline-entry-start')),
+      '1445',
+    );
+    await tester.tap(find.byKey(const ValueKey('timeline-entry-sabbath')));
+    await tester.pumpAndSettle();
+    expect(find.text('New high Sabbath'), findsOneWidget);
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('A high Sabbath needs its month and day.'),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('timeline-entry-start-month-12')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('7 · Tishri').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('timeline-entry-start-day-7-30')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('10').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(saved?.isHighSabbath, isTrue);
+    expect(saved?.start, const TimelineTime(-1445, month: 7, day: 10));
   });
 }

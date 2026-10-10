@@ -5,7 +5,8 @@ import '../study_workspace.dart';
 import 'cross_references_sheet.dart' show crossReferenceStrength;
 import 'markdown_note.dart';
 import 'name_details.dart' show nameKindIcon;
-import 'timeline_chart.dart' show TimelineStrip, timelineEntryTime;
+import 'timeline_chart.dart'
+    show TimelineStrip, timelineEntryIcon, timelineEntryKind, timelineEntryTime;
 
 class StudyWorkspacePanel extends StatelessWidget {
   const StudyWorkspacePanel({
@@ -999,9 +1000,9 @@ class StudyWorkspacePanel extends StatelessWidget {
         end: 0,
       ),
       leading: Tooltip(
-        message: entry.isSpan ? 'Span' : 'Event',
+        message: timelineEntryKind(entry),
         child: Icon(
-          entry.isSpan ? Icons.linear_scale : Icons.radio_button_checked,
+          timelineEntryIcon(entry),
           size: 18,
           color: entry.isSpan
               ? theme.colorScheme.primary
