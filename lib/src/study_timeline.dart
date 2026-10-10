@@ -38,6 +38,39 @@ enum TimelineLeapMonths {
   cycle,
 }
 
+/// How a timeline names its months; all count from Nisan (Abib), the first.
+enum TimelineMonthNaming {
+  /// The names used after the exile: Nisan, Iyyar, … Adar
+  /// ([hebrewMonthNames]).
+  postExile,
+
+  /// The four names given before the exile, Abib, Ziv, Ethanim and Bul
+  /// ([preExileMonthNames]); the other months by number.
+  preExile,
+
+  /// Every month by number, as Scripture most often gives them.
+  numbered,
+}
+
+/// The months named before the exile: Abib, the first (Exodus 13:4); Ziv,
+/// the second (1 Kings 6:1); Ethanim, the seventh (1 Kings 8:2); and Bul,
+/// the eighth (1 Kings 6:38).
+const preExileMonthNames = {1: 'Abib', 2: 'Ziv', 7: 'Ethanim', 8: 'Bul'};
+
+/// [n] as an ordinal: 1st, 2nd, 3rd, 4th, … 11th, 12th, 13th, … 21st.
+String ordinal(int n) {
+  final teen = n % 100 >= 11 && n % 100 <= 13;
+  final suffix = teen
+      ? 'th'
+      : switch (n % 10) {
+          1 => 'st',
+          2 => 'nd',
+          3 => 'rd',
+          _ => 'th',
+        };
+  return '$n$suffix';
+}
+
 /// The months of the Bible's year, from Nisan (Abib), its first month. They
 /// are lunar: 30 and 29 days by turns, Nisan's 30, a year of 354 days. In a
 /// leap year Adar becomes Adar I, of 30 days, and Adar II follows as a
@@ -192,6 +225,7 @@ class StudyTimeline {
     this.unit = 'Year',
     this.leapMonths = TimelineLeapMonths.none,
     this.leapYears = const {},
+    this.monthNaming = TimelineMonthNaming.postExile,
     this.nisanWeekday = 1,
     this.weekYear,
     this.sabbaths = const {},
@@ -216,6 +250,9 @@ class StudyTimeline {
   /// [leapYears] lists them as written (BC negative).
   final TimelineLeapMonths leapMonths;
   final Set<int> leapYears;
+
+  /// How its months are named.
+  final TimelineMonthNaming monthNaming;
 
   /// The day of the week 1 Nisan falls on, 1 to 6 or 7 for the Sabbath: in
   /// [weekYear], from which the weeks run on through the years; or, without
@@ -330,12 +367,42 @@ class StudyTimeline {
     return month.isOdd ? 30 : 29;
   }
 
-  /// The month's name in the year [value]: Adar I and Adar II in a leap
-  /// year.
+  /// The month's name in the year [value], as the timeline names them:
+  /// "Nisan" (Adar I and Adar II in a leap year), "Abib", or by number,
+  /// "3rd month". The months added in a leap year have no name before the
+  /// exile, and go by number.
   String monthName(double value, int month) {
-    if (month == 13) return 'Adar II';
-    if (month == 12 && isLeapYear(value)) return 'Adar I';
-    return hebrewMonthNames[month - 1];
+    final name = _monthName(value, month);
+    return name ?? '${ordinal(month)} month';
+  }
+
+  /// The month's name, or null for one known only by its number.
+  String? _monthName(double value, int month) => switch (monthNaming) {
+    TimelineMonthNaming.numbered => null,
+    TimelineMonthNaming.preExile => preExileMonthNames[month],
+    TimelineMonthNaming.postExile =>
+      month == 13
+          ? 'Adar II'
+          : month == 12 && isLeapYear(value)
+          ? 'Adar I'
+          : hebrewMonthNames[month - 1],
+  };
+
+  /// A month as offered to choose from: its number with its name, "1 ·
+  /// Nisan", or for one known only by number, "3rd month".
+  String monthChoice(double value, int month) {
+    final name = _monthName(value, month);
+    return name == null ? '${ordinal(month)} month' : '$month · $name';
+  }
+
+  /// A day of a month as written: "14 Nisan", or for a month known only
+  /// by number, "14th of the 3rd month".
+  String formatDate(double value, int month, int? day) {
+    final name = _monthName(value, month);
+    if (day == null) return monthName(value, month);
+    return name == null
+        ? '${ordinal(day)} of the ${ordinal(month)} month'
+        : '$day $name';
   }
 
   /// Whether [time] can stand on this timeline: its year has its month and
@@ -467,8 +534,7 @@ class StudyTimeline {
     final value = formatValue(time.value);
     final month = time.month;
     if (month == null || !hasMonths) return value;
-    final name = monthName(time.value, month);
-    final date = time.day == null ? name : '${time.day} $name';
+    final date = formatDate(time.value, month, time.day);
     if (isAnnual) return date;
     return isCalendar ? '$date $value' : '$date, $value';
   }
@@ -496,6 +562,7 @@ class StudyTimeline {
     String? unit,
     TimelineLeapMonths? leapMonths,
     Set<int>? leapYears,
+    TimelineMonthNaming? monthNaming,
     int? nisanWeekday,
     double? Function()? weekYear,
     Set<TimelineTime>? sabbaths,
@@ -510,6 +577,7 @@ class StudyTimeline {
     unit: unit ?? this.unit,
     leapMonths: leapMonths ?? this.leapMonths,
     leapYears: leapYears ?? this.leapYears,
+    monthNaming: monthNaming ?? this.monthNaming,
     nisanWeekday: nisanWeekday ?? this.nisanWeekday,
     weekYear: weekYear == null ? this.weekYear : weekYear(),
     sabbaths: sabbaths ?? this.sabbaths,
@@ -526,6 +594,8 @@ class StudyTimeline {
     'unit': unit,
     if (leapMonths != TimelineLeapMonths.none) 'leapMonths': leapMonths.name,
     if (leapYears.isNotEmpty) 'leapYears': leapYears.toList()..sort(),
+    if (monthNaming != TimelineMonthNaming.postExile)
+      'monthNames': monthNaming.name,
     if (nisanWeekday != 1) 'nisanWeekday': nisanWeekday,
     if (weekYear != null) 'weekYear': _jsonNumber(weekYear!),
     if (sabbaths.isNotEmpty)
@@ -564,6 +634,7 @@ class StudyTimeline {
         'unit',
         'leapMonths',
         'leapYears',
+        'monthNames',
         'nisanWeekday',
         'weekYear',
         'sabbaths',
@@ -584,6 +655,11 @@ class StudyTimeline {
         if (value['leapYears'] is List)
           ...(value['leapYears'] as List).whereType<int>(),
       },
+      monthNaming:
+          TimelineMonthNaming.values
+              .where((n) => n.name == value['monthNames'])
+              .firstOrNull ??
+          TimelineMonthNaming.postExile,
       nisanWeekday:
           value['nisanWeekday'] is int &&
               (value['nisanWeekday'] as int) >= 1 &&

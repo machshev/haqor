@@ -582,6 +582,48 @@ void main() {
     expect(kings.nextYear(1, step: -1), -1);
   });
 
+  test('months are named as after or before the exile, or numbered', () {
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 30].map(ordinal), [
+      '1st',
+      '2nd',
+      '3rd',
+      '4th',
+      '11th',
+      '12th',
+      '13th',
+      '21st',
+      '22nd',
+      '23rd',
+      '30th',
+    ]);
+    const passover = TimelineTime(-1446, month: 1, day: 14);
+    expect(kings.formatTime(passover), '14 Nisan 1446 BC');
+    final before = kings.copyWith(monthNaming: TimelineMonthNaming.preExile);
+    expect(before.formatTime(passover), '14 Abib 1446 BC');
+    expect(before.formatTime(const TimelineTime(-966, month: 2)), 'Ziv 966 BC');
+    expect(
+      before.formatTime(const TimelineTime(-966, month: 3, day: 10)),
+      '10th of the 3rd month 966 BC',
+    );
+    expect(before.monthChoice(-966, 7), '7 · Ethanim');
+    expect(before.monthChoice(-966, 9), '9th month');
+    final numbered = kings.copyWith(monthNaming: TimelineMonthNaming.numbered);
+    expect(numbered.formatTime(passover), '14th of the 1st month 1446 BC');
+    expect(numbered.monthName(-966, 7), '7th month');
+    // The months added in a leap year have no name before the exile.
+    final leap = before.copyWith(
+      leapMonths: TimelineLeapMonths.chosen,
+      leapYears: {-1446},
+    );
+    expect(leap.monthName(-1446, 12), '12th month');
+    expect(leap.monthName(-1446, 13), '13th month');
+    expect(
+      StudyTimeline.fromJson(numbered.toJson())!.monthNaming,
+      TimelineMonthNaming.numbered,
+    );
+    expect(kings.toJson().containsKey('monthNames'), isFalse);
+  });
+
   test('a study without timelines stores none', () {
     final json = const StudyWorkspace(id: 's', name: 'Study').toJson();
     expect(json.containsKey('timelines'), isFalse);

@@ -223,7 +223,7 @@ class _Month extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              '$month · ${timeline.monthName(year, month)}',
+              timeline.monthChoice(year, month),
               key: ValueKey('calendar-month-$month'),
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w600,

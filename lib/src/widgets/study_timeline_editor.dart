@@ -26,6 +26,7 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
   late final TextEditingController _title, _unit, _note, _leapYears;
   late TimelineScale _scale;
   late TimelineLeapMonths _leap;
+  late TimelineMonthNaming _naming;
   String? _error;
 
   @override
@@ -37,6 +38,7 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
     _note = TextEditingController(text: t.note);
     _scale = t.scale;
     _leap = t.leapMonths;
+    _naming = t.monthNaming;
     _leapYears = TextEditingController(
       text: (t.leapYears.toList()..sort())
           .map(
@@ -138,6 +140,7 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
           TimelineScale.units => unit,
         },
         leapMonths: leap,
+        monthNaming: _naming,
         leapYears: leapYears,
         note: _note.text.trim(),
       ),
@@ -219,21 +222,58 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
                   child: Text(
                     _scale == TimelineScale.annual
                         ? 'Times are a month and day of the biblical year, '
-                              'without a year: lunar months from Nisan, of 30 '
-                              'and 29 days by turns.'
+                              'without a year: lunar months from the first '
+                              '(Nisan, Abib), of 30 and 29 days by turns.'
                         : 'Times may name a month and day of the biblical '
-                              'year: lunar months from Nisan, of 30 and 29 '
-                              'days by turns.',
+                              'year: lunar months from the first (Nisan, '
+                              'Abib), of 30 and 29 days by turns.',
                     style: small,
                   ),
                 ),
+              if (hasMonths) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<TimelineMonthNaming>(
+                  key: const ValueKey('timeline-month-names'),
+                  initialValue: _naming,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Month names'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: TimelineMonthNaming.postExile,
+                      child: Text('After the exile: Nisan, Iyyar, Sivan…'),
+                    ),
+                    DropdownMenuItem(
+                      value: TimelineMonthNaming.preExile,
+                      child: Text('Before the exile: Abib, Ziv, 3rd month…'),
+                    ),
+                    DropdownMenuItem(
+                      value: TimelineMonthNaming.numbered,
+                      child: Text('Numbered: 1st month, 2nd month…'),
+                    ),
+                  ],
+                  onChanged: (naming) {
+                    if (naming != null) setState(() => _naming = naming);
+                  },
+                ),
+                if (_naming == TimelineMonthNaming.preExile)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Scripture names four months before the exile: Abib '
+                      '(1st), Ziv (2nd), Ethanim (7th) and Bul (8th). The '
+                      'others go by number.',
+                      style: small,
+                    ),
+                  ),
+              ],
               if (_scale == TimelineScale.annual)
                 SwitchListTile(
                   key: const ValueKey('timeline-leap-annual'),
                   contentPadding: EdgeInsets.zero,
                   title: const Text('With a second Adar'),
                   subtitle: const Text(
-                    'Adar I of 30 days, then Adar II of 29: a year of 384 '
+                    'A 12th month (Adar I) of 30 days, then a 13th (Adar '
+                    'II) of 29: a year of 384 '
                     'days.',
                   ),
                   value: _leap != TimelineLeapMonths.none,
@@ -297,7 +337,8 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
-                      'A leap year has Adar I of 30 days, then Adar II of 29.',
+                      "A leap year's 12th month (Adar I) has 30 days, and a "
+                      '13th (Adar II) follows with 29.',
                       style: small,
                     ),
                   ),
@@ -671,7 +712,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                     for (var m = 1; m <= months; m++)
                       DropdownMenuItem(
                         value: m,
-                        child: Text('$m · ${timeline.monthName(year, m)}'),
+                        child: Text(timeline.monthChoice(year, m)),
                       ),
                   ],
                   onChanged: (m) => setState(() {
