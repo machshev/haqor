@@ -5,8 +5,9 @@ import '../bindings/bindings.dart';
 import '../study_workspace.dart';
 import 'markdown_note.dart';
 
-/// Edits a timeline: its title, the unit its scale counts in, whether it
-/// counts years BC and AD, and its note.
+/// Edits a timeline: its title, how it counts time (calendar years BC and
+/// AD, years of its own, or another unit) and what it calls them, and its
+/// note.
 class StudyTimelineEditor extends StatefulWidget {
   const StudyTimelineEditor({
     super.key,
@@ -23,7 +24,7 @@ class StudyTimelineEditor extends StatefulWidget {
 
 class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
   late final TextEditingController _title, _unit, _note;
-  late bool _era;
+  late TimelineScale _scale;
   String? _error;
 
   @override
@@ -33,7 +34,7 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
     _title = TextEditingController(text: t.title);
     _unit = TextEditingController(text: t.unit);
     _note = TextEditingController(text: t.note);
-    _era = t.era;
+    _scale = t.scale;
   }
 
   @override
@@ -50,12 +51,17 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
       setState(() => _error = 'Give the timeline a title.');
       return;
     }
+    final unit = _unit.text.trim();
     Navigator.pop(
       context,
       widget.initial.copyWith(
         title: title,
-        unit: _era ? 'Year' : _unit.text.trim(),
-        era: _era,
+        scale: _scale,
+        unit: switch (_scale) {
+          TimelineScale.calendar => 'Year',
+          TimelineScale.years => unit.isEmpty ? 'Year' : unit,
+          TimelineScale.units => unit,
+        },
         note: _note.text.trim(),
       ),
     );
@@ -79,24 +85,51 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
               onChanged: (_) => setState(() => _error = null),
             ),
             const SizedBox(height: 12),
-            SwitchListTile(
-              key: const ValueKey('timeline-era'),
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Calendar years (BC / AD)'),
-              subtitle: const Text(
-                'Otherwise times are numbers counted in a unit of your own, '
-                'such as days or years of a reign.',
-              ),
-              value: _era,
-              onChanged: (era) => setState(() => _era = era),
+            DropdownButtonFormField<TimelineScale>(
+              key: const ValueKey('timeline-scale'),
+              initialValue: _scale,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Counts'),
+              items: const [
+                DropdownMenuItem(
+                  value: TimelineScale.calendar,
+                  child: Text('Calendar years (BC / AD)'),
+                ),
+                DropdownMenuItem(
+                  value: TimelineScale.years,
+                  child: Text('Years of its own, such as a reign'),
+                ),
+                DropdownMenuItem(
+                  value: TimelineScale.units,
+                  child: Text('Another unit, such as days'),
+                ),
+              ],
+              onChanged: (scale) {
+                if (scale != null) setState(() => _scale = scale);
+              },
             ),
-            if (!_era)
+            if (_scale != TimelineScale.calendar) ...[
+              const SizedBox(height: 12),
               TextField(
                 key: const ValueKey('timeline-unit'),
                 controller: _unit,
-                decoration: const InputDecoration(
-                  labelText: 'Unit',
-                  hintText: 'Day, Year of David, Week…',
+                decoration: InputDecoration(
+                  labelText: _scale == TimelineScale.years
+                      ? 'Years called'
+                      : 'Unit',
+                  hintText: _scale == TimelineScale.years
+                      ? 'Year of David, Year of the exile…'
+                      : 'Day, Week, Generation…',
+                ),
+              ),
+            ],
+            if (_scale != TimelineScale.units)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Times may name a month and day of the biblical year: '
+                  'lunar months from Nisan, of 30 and 29 days by turns.',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
             const SizedBox(height: 12),
@@ -126,9 +159,33 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
   );
 }
 
+/// The parts of a time being entered: the year (or count), whether it is
+/// BC, and the month and day within the year where the timeline counts
+/// years.
+class _TimeDraft {
+  _TimeDraft(TimelineTime? time, {required bool calendar})
+    : number = TextEditingController(
+        text: time == null
+            ? ''
+            : formatTimelineNumber(calendar ? time.value.abs() : time.value),
+      ),
+      bc = time == null ? calendar : time.value < 0,
+      month = time?.month,
+      day = time?.day;
+
+  final TextEditingController number;
+
+  /// Counting by era, whether the year is BC; its number is entered
+  /// without a sign.
+  bool bc;
+  int? month, day;
+
+  void dispose() => number.dispose();
+}
+
 /// Edits an event or a span: its title, which timeline it is on, its time
-/// (a point, or a start and end) on that timeline's scale, how the date is
-/// written, the verses it is linked to and its note.
+/// (a point, or a start and either an end or a duration) on that timeline's
+/// scale, how the date is written, the verses it is linked to and its note.
 class StudyTimelineEntryEditor extends StatefulWidget {
   const StudyTimelineEntryEditor({
     super.key,
@@ -153,10 +210,11 @@ class StudyTimelineEntryEditor extends StatefulWidget {
 }
 
 class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
-  late final TextEditingController _title, _start, _end, _date, _note;
-  late bool _span;
+  late final TextEditingController _title, _date, _note, _amount;
+  late final _TimeDraft _start, _end;
+  late bool _span, _byDuration;
+  late TimelineDurationUnit _durationUnit;
   late String _timelineId;
-  late bool _startBc, _endBc;
   late List<StudyPassage> _verses;
   String? _error;
 
@@ -167,19 +225,23 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   void initState() {
     super.initState();
     final e = widget.initial;
-    _title = TextEditingController(text: e.title);
     _timelineId = e.timelineId;
+    final calendar = _timeline.isCalendar;
+    _title = TextEditingController(text: e.title);
     _span = e.isSpan;
-    final era = _timeline.era;
-    // Counting by era, a time is entered as a year with BC or AD beside it.
-    String shown(double? value) =>
-        value == null ? '' : formatTimelineNumber(era ? value.abs() : value);
-    _start = TextEditingController(
-      text: shown(widget.creating ? null : e.start),
+    // A new entry starts empty, BC by default counting by era.
+    _start = _TimeDraft(widget.creating ? null : e.start, calendar: calendar);
+    _end = _TimeDraft(widget.creating ? null : e.end, calendar: calendar);
+    final duration = e.duration;
+    _byDuration = duration != null;
+    _amount = TextEditingController(
+      text: duration == null ? '' : formatTimelineNumber(duration.amount),
     );
-    _end = TextEditingController(text: shown(widget.creating ? null : e.end));
-    _startBc = e.start < 0 || (widget.creating && era);
-    _endBc = (e.end ?? e.start) < 0 || (widget.creating && era);
+    _durationUnit =
+        duration?.unit ??
+        (_timeline.countsYears
+            ? TimelineDurationUnit.years
+            : TimelineDurationUnit.units);
     _date = TextEditingController(text: e.date);
     _note = TextEditingController(text: e.note);
     _verses = List.of(e.verses);
@@ -187,34 +249,104 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
 
   @override
   void dispose() {
-    for (final c in [_title, _start, _end, _date, _note]) {
+    for (final c in [_title, _date, _note, _amount]) {
       c.dispose();
     }
+    _start.dispose();
+    _end.dispose();
     super.dispose();
   }
 
-  double? _read(TextEditingController controller, bool bc) {
-    final value = double.tryParse(controller.text.trim());
-    if (value == null || !value.isFinite) return null;
-    if (!_timeline.era) return value;
-    return bc ? -value.abs() : value.abs();
+  /// The time [draft] gives, or null when it gives none; on a calendar
+  /// timeline the year is entered without a sign, BC or AD beside it.
+  TimelineTime? _read(_TimeDraft draft) {
+    final timeline = _timeline;
+    final typed = double.tryParse(draft.number.text.trim());
+    if (typed == null || !typed.isFinite) return null;
+    final value = timeline.isCalendar
+        ? (draft.bc ? -typed.abs() : typed.abs())
+        : typed;
+    final month = timeline.countsYears ? draft.month : null;
+    return TimelineTime(
+      value,
+      month: month,
+      day: month == null ? null : draft.day,
+    );
+  }
+
+  /// Why [time] cannot stand on this timeline, or null when it can.
+  String? _timeProblem(TimelineTime time) {
+    if (_timeline.isCalendar && time.value == 0) {
+      return 'There is no year 0: 1 BC is followed by AD 1.';
+    }
+    if (time.month != null && time.value != time.value.roundToDouble()) {
+      return 'A year with a month must be a whole year.';
+    }
+    if (!time.isValid) return 'Choose a day within the month.';
+    return null;
+  }
+
+  /// The units a duration may be given in from the start entered so far.
+  List<TimelineDurationUnit> get _durationUnits {
+    final start = _read(_start) ?? const TimelineTime(1);
+    return _timeline.durationUnitsFor(start);
+  }
+
+  TimelineDuration? get _duration {
+    final amount = double.tryParse(_amount.text.trim());
+    if (amount == null) return null;
+    final units = _durationUnits;
+    return TimelineDuration(
+      amount,
+      units.contains(_durationUnit) ? _durationUnit : units.first,
+    );
+  }
+
+  /// The end the duration gives from the start, as entered so far.
+  TimelineTime? get _durationEnd {
+    final start = _read(_start);
+    final duration = _duration;
+    if (start == null || duration == null) return null;
+    return _timeline.addDuration(start, duration);
   }
 
   void _save() {
     final title = _title.text.trim();
-    final start = _read(_start, _startBc);
-    final end = _span ? _read(_end, _endBc) : null;
-    final String? error;
+    final timeline = _timeline;
+    final start = _read(_start);
+    TimelineTime? end;
+    TimelineDuration? duration;
+    String? error;
     if (title.isEmpty) {
       error = _span ? 'Give the span a title.' : 'Give the event a title.';
     } else if (start == null) {
       error = _span ? 'Enter when it starts.' : 'Enter when it happens.';
-    } else if (_span && end == null) {
-      error = 'Enter when it ends.';
-    } else if (_span && end! < start) {
-      error = 'The end must be at or after the start.';
     } else {
-      error = null;
+      error = _timeProblem(start);
+    }
+    if (error == null && _span) {
+      if (_byDuration) {
+        duration = _duration;
+        if (duration == null || !duration.isValid) {
+          error = timeline.countsYears
+              ? 'Enter how long it lasts, in whole years, months or days.'
+              : 'Enter how long it lasts.';
+        } else {
+          end = timeline.addDuration(start!, duration);
+          if (end == null) error = 'Enter how long it lasts.';
+        }
+      } else {
+        end = _read(_end);
+        if (end == null) {
+          error = 'Enter when it ends.';
+        } else {
+          error = _timeProblem(end);
+          if (error == null &&
+              timeline.positionOf(end) < timeline.positionOf(start!)) {
+            error = 'The end must be at or after the start.';
+          }
+        }
+      }
     }
     if (error != null) {
       setState(() => _error = error);
@@ -223,7 +355,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     Navigator.pop(
       context,
       widget.initial
-          .withTime(start: start!, end: end)
+          .withTime(start: start!, end: end, duration: duration)
           .copyWith(
             title: title,
             timelineId: _timelineId,
@@ -252,46 +384,187 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     });
   }
 
-  Widget _time({
-    required String label,
-    required TextEditingController controller,
-    required bool bc,
-    required ValueChanged<bool> onEra,
-    required Key key,
-  }) {
-    final era = _timeline.era;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+  void _changed() => setState(() => _error = null);
+
+  Widget _time(_TimeDraft draft, {required String label, required String key}) {
+    final timeline = _timeline;
+    final calendar = timeline.isCalendar;
+    final month = draft.month;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: TextField(
-            key: key,
-            controller: controller,
-            keyboardType: const TextInputType.numberWithOptions(
-              signed: true,
-              decimal: true,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: TextField(
+                key: ValueKey('timeline-entry-$key'),
+                controller: draft.number,
+                keyboardType: const TextInputType.numberWithOptions(
+                  signed: true,
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: calendar ? '$label year' : label,
+                  prefixText: calendar || timeline.unit.isEmpty
+                      ? null
+                      : '${timeline.unit} ',
+                ),
+                onChanged: (_) => _changed(),
+              ),
             ),
-            decoration: InputDecoration(
-              labelText: label,
-              prefixText: era || _timeline.unit.isEmpty
-                  ? null
-                  : '${_timeline.unit} ',
-            ),
-            onChanged: (_) => setState(() => _error = null),
-          ),
-        ),
-        if (era) ...[
-          const SizedBox(width: 12),
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(value: true, label: Text('BC')),
-              ButtonSegment(value: false, label: Text('AD')),
+            if (calendar) ...[
+              const SizedBox(width: 12),
+              SegmentedButton<bool>(
+                key: ValueKey('timeline-entry-$key-era'),
+                segments: const [
+                  ButtonSegment(value: true, label: Text('BC')),
+                  ButtonSegment(value: false, label: Text('AD')),
+                ],
+                selected: {draft.bc},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) => setState(() {
+                  // A span starting BC most often ends BC too.
+                  if (identical(draft, _start) &&
+                      _end.number.text.trim().isEmpty) {
+                    _end.bc = s.single;
+                  }
+                  draft.bc = s.single;
+                  _error = null;
+                }),
+              ),
             ],
-            selected: {bc},
-            showSelectedIcon: false,
-            onSelectionChanged: (s) => onEra(s.single),
+          ],
+        ),
+        if (timeline.countsYears) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<int?>(
+                  key: ValueKey('timeline-entry-$key-month'),
+                  initialValue: month,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Month'),
+                  items: [
+                    const DropdownMenuItem(child: Text('—')),
+                    for (var m = 1; m <= 12; m++)
+                      DropdownMenuItem(
+                        value: m,
+                        child: Text('$m · ${hebrewMonthNames[m - 1]}'),
+                      ),
+                  ],
+                  onChanged: (m) => setState(() {
+                    draft.month = m;
+                    if (m == null || (draft.day ?? 0) > lunarMonthDays(m)) {
+                      draft.day = null;
+                    }
+                    _error = null;
+                  }),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 96,
+                child: DropdownButtonFormField<int?>(
+                  key: ValueKey('timeline-entry-$key-day-$month'),
+                  initialValue: draft.day,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Day'),
+                  items: [
+                    const DropdownMenuItem(child: Text('—')),
+                    if (month != null)
+                      for (var d = 1; d <= lunarMonthDays(month); d++)
+                        DropdownMenuItem(value: d, child: Text('$d')),
+                  ],
+                  onChanged: month == null
+                      ? null
+                      : (d) => setState(() {
+                          draft.day = d;
+                          _error = null;
+                        }),
+                ),
+              ),
+            ],
           ),
         ],
+      ],
+    );
+  }
+
+  Widget _durationFields(ThemeData theme) {
+    final timeline = _timeline;
+    final units = _durationUnits;
+    final unit = units.contains(_durationUnit) ? _durationUnit : units.first;
+    final end = _durationEnd;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: TextField(
+                key: const ValueKey('timeline-entry-duration'),
+                controller: _amount,
+                keyboardType: TextInputType.numberWithOptions(
+                  decimal: !timeline.countsYears,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Lasting',
+                  suffixText: timeline.countsYears || timeline.unit.isEmpty
+                      ? null
+                      : timeline.unit,
+                ),
+                onChanged: (_) => _changed(),
+              ),
+            ),
+            if (timeline.countsYears) ...[
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 120,
+                child: DropdownButtonFormField<TimelineDurationUnit>(
+                  key: ValueKey('timeline-entry-duration-unit-${units.length}'),
+                  initialValue: unit,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'In'),
+                  items: [
+                    for (final u in units)
+                      DropdownMenuItem(value: u, child: Text(u.name)),
+                  ],
+                  onChanged: (u) {
+                    if (u != null) {
+                      setState(() {
+                        _durationUnit = u;
+                        _error = null;
+                      });
+                    }
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
+        if (timeline.countsYears && units.length < 3)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              units.length == 1
+                  ? 'Give the start a month to count months, and a day to '
+                        'count days.'
+                  : 'Give the start a day to count days.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        if (end != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Ends ${timeline.formatTime(end)}',
+              key: const ValueKey('timeline-entry-duration-end'),
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
       ],
     );
   }
@@ -337,7 +610,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                 decoration: InputDecoration(
                   labelText: _span ? 'Span title' : 'Event title',
                 ),
-                onChanged: (_) => setState(() => _error = null),
+                onChanged: (_) => _changed(),
               ),
               if (widget.timelines.length > 1) ...[
                 const SizedBox(height: 12),
@@ -359,26 +632,26 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                 ),
               ],
               const SizedBox(height: 12),
-              _time(
-                key: const ValueKey('timeline-entry-start'),
-                label: _span ? 'Start' : 'When',
-                controller: _start,
-                bc: _startBc,
-                onEra: (bc) => setState(() {
-                  // A span starting BC most often ends BC too.
-                  if (_end.text.trim().isEmpty) _endBc = bc;
-                  _startBc = bc;
-                }),
-              ),
+              _time(_start, label: _span ? 'Start' : 'When', key: 'start'),
               if (_span) ...[
-                const SizedBox(height: 12),
-                _time(
-                  key: const ValueKey('timeline-entry-end'),
-                  label: 'End',
-                  controller: _end,
-                  bc: _endBc,
-                  onEra: (bc) => setState(() => _endBc = bc),
+                const SizedBox(height: 16),
+                SegmentedButton<bool>(
+                  key: const ValueKey('timeline-entry-span-by'),
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('End')),
+                    ButtonSegment(value: true, label: Text('Duration')),
+                  ],
+                  selected: {_byDuration},
+                  onSelectionChanged: (s) => setState(() {
+                    _byDuration = s.single;
+                    _error = null;
+                  }),
                 ),
+                const SizedBox(height: 8),
+                if (_byDuration)
+                  _durationFields(theme)
+                else
+                  _time(_end, label: 'End', key: 'end'),
               ],
               const SizedBox(height: 12),
               TextField(
@@ -386,7 +659,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                 controller: _date,
                 decoration: const InputDecoration(
                   labelText: 'Date as written (optional)',
-                  hintText: 'c., Nisan 14, the seventh month…',
+                  hintText: 'c., in the days of…',
                 ),
               ),
               const SizedBox(height: 16),

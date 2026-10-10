@@ -6,12 +6,18 @@ import '../bible_data.dart';
 import '../study_workspace.dart';
 import 'markdown_note.dart';
 
-/// The stretch of a timeline's scale its entries cover, with a margin either
-/// side; a single point gets one unit either side.
-({double start, double end}) timelineExtent(List<StudyTimelineEntry> entries) {
+/// The stretch of a timeline's axis its entries cover (as positions, see
+/// [StudyTimeline.positionOf]), with a margin either side; a single point
+/// gets one unit either side.
+({double start, double end}) timelineExtent(
+  StudyTimeline timeline,
+  List<StudyTimelineEntry> entries,
+) {
   if (entries.isEmpty) return (start: 0, end: 1);
-  var start = entries.map((e) => e.start).reduce(math.min);
-  var end = entries.map((e) => e.last).reduce(math.max);
+  final start = entries
+      .map((e) => timeline.positionOf(e.start))
+      .reduce(math.min);
+  final end = entries.map((e) => timeline.positionOf(e.last)).reduce(math.max);
   if (end - start < 1e-9) return (start: start - 1, end: end + 1);
   final margin = (end - start) * 0.04;
   return (start: start - margin, end: end + margin);
@@ -31,7 +37,7 @@ typedef TimelineSlot = ({
 /// least room an entry's mark and label take from its start.
 List<TimelineSlot> packTimelineLanes(
   List<StudyTimelineEntry> entries, {
-  required double Function(double time) x,
+  required double Function(TimelineTime time) x,
   required double Function(StudyTimelineEntry entry) width,
   double gap = 8,
 }) {
@@ -52,9 +58,15 @@ List<TimelineSlot> packTimelineLanes(
   return slots;
 }
 
-/// Round times between [start] and [end] to mark on an axis [pixels] wide,
-/// about [spacing] pixels apart: steps of 1, 2 or 5 times a power of ten.
-List<double> timelineTicks(
+/// A marked time on an axis: where it falls, and how it reads.
+typedef TimelineTick = ({double position, String label});
+
+/// Round times between the axis positions [start] and [end] of [timeline]
+/// to mark on an axis [pixels] wide, about [spacing] pixels apart: steps of
+/// 1, 2 or 5 times a power of ten (whole years, where it counts years, and
+/// no year zero counting by era), or, zoomed in within a year, its months.
+List<TimelineTick> timelineTicks(
+  StudyTimeline timeline,
   double start,
   double end,
   double pixels, {
@@ -62,12 +74,46 @@ List<double> timelineTicks(
 }) {
   if (end <= start || pixels <= 0) return const [];
   final rough = (end - start) * spacing / pixels;
+  final calendar = timeline.isCalendar;
+  // An axis position as written: a BC year sits one below its position.
+  double written(double position) =>
+      calendar && position <= 0 ? position - 1 : position;
+  // Months are marked only where at least two fit in a year.
+  if (timeline.countsYears && rough <= 0.5) {
+    final step = [1, 2, 3, 6].firstWhere((m) => m / 12 >= rough);
+    return [
+      for (var year = start.floor(); year <= end.ceil(); year++)
+        for (var month = 1; month <= 12; month += step)
+          if (TimelineTime(written(year.toDouble()), month: month)
+              case final time
+              when timeline.positionOf(time) >= start &&
+                  timeline.positionOf(time) <= end)
+            (
+              position: timeline.positionOf(time),
+              label: month == 1
+                  ? timeline.formatTime(time)
+                  : hebrewMonthNames[month - 1],
+            ),
+    ];
+  }
   final power = math.pow(10, (math.log(rough) / math.ln10).floor()).toDouble();
-  final step = [1, 2, 5, 10]
+  var step = [1, 2, 5, 10]
       .map((m) => m * power)
       .firstWhere((s) => s >= rough, orElse: () => 10 * power);
-  final first = (start / step).ceil() * step;
-  return [for (var t = first; t <= end + step * 1e-9; t += step) t];
+  if (timeline.countsYears) step = math.max(1, step.roundToDouble());
+  final last = written(end);
+  return [
+    for (
+      var value = (written(start) / step).ceil() * step;
+      value <= last + step * 1e-9;
+      value += step
+    )
+      if (!calendar || value != 0)
+        (
+          position: timeline.positionOf(TimelineTime(value)),
+          label: timeline.formatValue(value),
+        ),
+  ];
 }
 
 /// A label's width in [style].
@@ -83,9 +129,11 @@ double _textWidth(String text, TextStyle? style) {
 /// How an entry's time reads: its date as written, or else its time on the
 /// timeline's scale, a span's from start to end.
 String timelineEntryTime(StudyTimeline timeline, StudyTimelineEntry entry) {
+  final duration = entry.duration;
   final time = entry.isSpan
       ? '${timeline.formatTime(entry.start)} – '
             '${timeline.formatTime(entry.end!)}'
+            '${duration == null ? '' : ' (${timeline.formatDuration(duration)})'}'
       : timeline.formatTime(entry.start);
   return entry.date.isEmpty ? time : '${entry.date} $time';
 }
@@ -114,10 +162,11 @@ class TimelineChart extends StatelessWidget {
   static const _dot = 10.0;
 
   static double widthFor(
+    StudyTimeline timeline,
     List<StudyTimelineEntry> entries,
     double pixelsPerUnit,
   ) {
-    final extent = timelineExtent(entries);
+    final extent = timelineExtent(timeline, entries);
     return (extent.end - extent.start) * pixelsPerUnit + padding * 2;
   }
 
@@ -125,8 +174,10 @@ class TimelineChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final labelStyle = theme.textTheme.bodySmall;
-    final extent = timelineExtent(entries);
-    double x(double time) => padding + (time - extent.start) * pixelsPerUnit;
+    final extent = timelineExtent(timeline, entries);
+    double px(double position) =>
+        padding + (position - extent.start) * pixelsPerUnit;
+    double x(TimelineTime time) => px(timeline.positionOf(time));
     final slots = packTimelineLanes(
       entries,
       x: x,
@@ -138,7 +189,7 @@ class TimelineChart extends StatelessWidget {
         : slots.map((s) => s.lane).reduce(math.max) + 1;
     // Room too for the labels running past the last time.
     final width = slots.fold(
-      widthFor(entries, pixelsPerUnit),
+      widthFor(timeline, entries, pixelsPerUnit),
       (width, slot) => math.max(width, slot.right + padding / 2),
     );
     final height = lanes * laneHeight + axisHeight;
@@ -154,7 +205,7 @@ class TimelineChart extends StatelessWidget {
                 timeline: timeline,
                 start: extent.start,
                 end: extent.end,
-                x: x,
+                x: px,
                 axisY: axisY,
                 width: width,
                 guides: [
@@ -313,14 +364,15 @@ class _AxisPainter extends CustomPainter {
     );
     var lastRight = double.negativeInfinity;
     for (final tick in timelineTicks(
+      timeline,
       start,
       end,
       width - TimelineChart.padding * 2,
     )) {
-      final tx = x(tick);
+      final tx = x(tick.position);
       canvas.drawLine(Offset(tx, axisY), Offset(tx, axisY + 5), line);
       final painter = TextPainter(
-        text: TextSpan(text: timeline.formatTime(tick), style: labelStyle),
+        text: TextSpan(text: tick.label, style: labelStyle),
         maxLines: 1,
         textDirection: TextDirection.ltr,
       )..layout();
@@ -363,9 +415,17 @@ class TimelineStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     if (entries.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    final extent = timelineExtent(entries);
-    final first = entries.map((e) => e.start).reduce(math.min);
-    final last = entries.map((e) => e.last).reduce(math.max);
+    final extent = timelineExtent(timeline, entries);
+    final first = entries
+        .map((e) => e.start)
+        .reduce(
+          (a, b) => timeline.positionOf(a) <= timeline.positionOf(b) ? a : b,
+        );
+    final last = entries
+        .map((e) => e.last)
+        .reduce(
+          (a, b) => timeline.positionOf(a) >= timeline.positionOf(b) ? a : b,
+        );
     return Semantics(
       button: onTap != null,
       label: 'Open timeline',
@@ -379,7 +439,8 @@ class TimelineStrip extends StatelessWidget {
             builder: (context, constraints) {
               final width = constraints.maxWidth;
               final scale = (width - 8) / (extent.end - extent.start);
-              double x(double time) => 4 + (time - extent.start) * scale;
+              double x(TimelineTime time) =>
+                  4 + (timeline.positionOf(time) - extent.start) * scale;
               final slots = packTimelineLanes(
                 entries,
                 x: x,
@@ -442,7 +503,7 @@ class _StripPainter extends CustomPainter {
   });
 
   final List<TimelineSlot> slots;
-  final double Function(double) x;
+  final double Function(TimelineTime) x;
   final Color span, event, axis;
 
   @override
@@ -524,7 +585,7 @@ class _TimelinePageState extends State<TimelinePage> {
   /// The scale fitting every time into [width], leaving room after the last
   /// for a label of its own (up to a third of the width).
   double _fit(double width) {
-    final extent = timelineExtent(widget.entries);
+    final extent = timelineExtent(widget.timeline, widget.entries);
     final label = math.min(width / 3, 140.0);
     return math.max(
       1e-6,

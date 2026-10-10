@@ -5,6 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'surface.dart';
 import 'bible_data.dart';
+import 'study_timeline.dart';
+
+export 'study_timeline.dart';
 
 const studyWorkspacesKey = 'study_workspaces_v1';
 const activeStudyWorkspaceKey = 'active_study_workspace';
@@ -778,281 +781,6 @@ class StudyName {
       order: value['order'] is int ? value['order'] as int : 0,
     );
   }
-}
-
-/// A number on a timeline's scale as written: whole numbers without a
-/// decimal point, others with at most two places.
-String formatTimelineNumber(double value) {
-  if (value == value.roundToDouble()) return value.round().toString();
-  return value
-      .toStringAsFixed(2)
-      .replaceFirst(RegExp(r'0+$'), '')
-      .replaceFirst(RegExp(r'\.$'), '');
-}
-
-/// A custom timeline: an outline container, like a passage summary, whose
-/// events and spans are placed on a numbered scale of its own. The scale is
-/// counted in [unit]s ("Year", "Day", "Year of Solomon"); with [era], years
-/// count BC (negative) and AD (positive). Any other item may sit in it too.
-@immutable
-class StudyTimeline {
-  const StudyTimeline({
-    required this.id,
-    required this.title,
-    this.unit = 'Year',
-    this.era = false,
-    this.note = '',
-    this.parentId,
-    this.order = 0,
-    this.extra = const {},
-  });
-
-  /// Keys this version does not know, kept so that saving does not erase
-  /// fields a newer version wrote.
-  final Map<String, Object?> extra;
-
-  final String id;
-  final String title;
-  final String unit;
-  final bool era;
-  final String note;
-  final String? parentId;
-  final int order;
-
-  bool get isValid => id.isNotEmpty && title.isNotEmpty;
-
-  /// A point on the scale as written: "1446 BC" or "AD 30" counting by era,
-  /// else the unit and number, as "Day 3".
-  String formatTime(double value) {
-    final number = formatTimelineNumber(value.abs());
-    if (era) {
-      if (value < 0) return '$number BC';
-      if (value > 0) return 'AD $number';
-    }
-    final signed = formatTimelineNumber(value);
-    return unit.isEmpty ? signed : '$unit $signed';
-  }
-
-  StudyTimeline copyWith({
-    String? title,
-    String? unit,
-    bool? era,
-    String? note,
-    String? Function()? parentId,
-    int? order,
-  }) => StudyTimeline(
-    extra: extra,
-    id: id,
-    title: title ?? this.title,
-    unit: unit ?? this.unit,
-    era: era ?? this.era,
-    note: note ?? this.note,
-    parentId: parentId == null ? this.parentId : parentId(),
-    order: order ?? this.order,
-  );
-
-  Map<String, Object?> toJson() => {
-    ...extra,
-    'id': id,
-    'title': title,
-    'unit': unit,
-    if (era) 'era': true,
-    if (note.isNotEmpty) 'note': note,
-    if (parentId != null) 'parent': parentId,
-    'order': order,
-  };
-
-  static StudyTimeline? fromJson(Object? value) {
-    if (value is! Map) return null;
-    final id = value['id'];
-    final title = value['title'];
-    if (id is! String || title is! String) return null;
-    final timeline = StudyTimeline(
-      extra: _extraKeys(value, const {
-        'id',
-        'title',
-        'unit',
-        'era',
-        'note',
-        'parent',
-        'order',
-      }),
-      id: id,
-      title: title,
-      unit: value['unit'] is String ? value['unit'] as String : 'Year',
-      era: value['era'] == true,
-      note: value['note'] is String ? value['note'] as String : '',
-      parentId: value['parent'] is String ? value['parent'] as String : null,
-      order: value['order'] is int ? value['order'] as int : 0,
-    );
-    return timeline.isValid ? timeline : null;
-  }
-}
-
-/// An event (a point in time) or a span (from [start] to [end]) on a
-/// timeline, which it lives directly in, with the verses it is linked to.
-/// [date] is how the time is written where the number alone would not say
-/// it ("c.", "Nisan 14"), shown beside it.
-@immutable
-class StudyTimelineEntry {
-  const StudyTimelineEntry({
-    required this.id,
-    required this.title,
-    required this.timelineId,
-    required this.start,
-    this.end,
-    this.date = '',
-    this.verses = const [],
-    this.note = '',
-    this.order = 0,
-    this.extra = const {},
-  });
-
-  /// Keys this version does not know, kept so that saving does not erase
-  /// fields a newer version wrote.
-  final Map<String, Object?> extra;
-
-  final String id;
-  final String title;
-  final String timelineId;
-  final double start;
-
-  /// Present only for a span.
-  final double? end;
-  final String date;
-
-  /// The verse ranges it is linked to; only their references are used.
-  final List<StudyPassage> verses;
-  final String note;
-  final int order;
-
-  bool get isSpan => end != null;
-  double get last => end ?? start;
-  String get key => 'timeline-entry-$id';
-
-  bool get isValid =>
-      id.isNotEmpty &&
-      title.isNotEmpty &&
-      start.isFinite &&
-      (end == null || (end!.isFinite && end! >= start));
-
-  bool linksVerse(int book, int chapter, int verse) =>
-      verses.any((passage) => passage.containsVerse(book, chapter, verse));
-
-  /// Change only the time and verses; retain the outline place and notes.
-  StudyTimelineEntry withTime({required double start, required double? end}) =>
-      StudyTimelineEntry(
-        extra: extra,
-        id: id,
-        title: title,
-        timelineId: timelineId,
-        start: start,
-        end: end,
-        date: date,
-        verses: verses,
-        note: note,
-        order: order,
-      );
-
-  StudyTimelineEntry copyWith({
-    String? title,
-    String? timelineId,
-    String? date,
-    List<StudyPassage>? verses,
-    String? note,
-    int? order,
-  }) => StudyTimelineEntry(
-    extra: extra,
-    id: id,
-    title: title ?? this.title,
-    timelineId: timelineId ?? this.timelineId,
-    start: start,
-    end: end,
-    date: date ?? this.date,
-    verses: verses ?? this.verses,
-    note: note ?? this.note,
-    order: order ?? this.order,
-  );
-
-  static Object _number(double value) =>
-      value == value.roundToDouble() && value.abs() < 1e15
-      ? value.round()
-      : value;
-
-  Map<String, Object?> toJson() => {
-    ...extra,
-    'id': id,
-    'title': title,
-    'timeline': timelineId,
-    'start': _number(start),
-    if (end != null) 'end': _number(end!),
-    if (date.isNotEmpty) 'date': date,
-    if (verses.isNotEmpty)
-      'verses': [
-        for (final passage in verses)
-          {
-            'book': passage.bookIndex,
-            'chapter': passage.chapter,
-            'verse': passage.verse,
-            if (passage.wholeChapter) 'wholeChapter': true,
-            if (passage.endChapter != null) 'endChapter': passage.endChapter,
-            if (passage.endVerse != null) 'endVerse': passage.endVerse,
-          },
-      ],
-    if (note.isNotEmpty) 'note': note,
-    'order': order,
-  };
-
-  static StudyTimelineEntry? fromJson(Object? value) {
-    if (value is! Map) return null;
-    final id = value['id'];
-    final title = value['title'];
-    final timelineId = value['timeline'];
-    final start = value['start'];
-    final end = value['end'];
-    if (id is! String ||
-        title is! String ||
-        timelineId is! String ||
-        start is! num ||
-        (end != null && end is! num)) {
-      return null;
-    }
-    final entry = StudyTimelineEntry(
-      extra: _extraKeys(value, const {
-        'id',
-        'title',
-        'timeline',
-        'start',
-        'end',
-        'date',
-        'verses',
-        'note',
-        'order',
-      }),
-      id: id,
-      title: title,
-      timelineId: timelineId,
-      start: start.toDouble(),
-      end: (end as num?)?.toDouble(),
-      date: value['date'] is String ? value['date'] as String : '',
-      verses: [
-        if (value['verses'] is List)
-          for (final raw in value['verses'] as List)
-            ?StudyPassage.fromJson(raw),
-      ],
-      note: value['note'] is String ? value['note'] as String : '',
-      order: value['order'] is int ? value['order'] as int : 0,
-    );
-    return entry.isValid ? entry : null;
-  }
-}
-
-/// Orders a timeline's entries by when they start, then end.
-int compareTimelineEntries(StudyTimelineEntry a, StudyTimelineEntry b) {
-  final start = a.start.compareTo(b.start);
-  if (start != 0) return start;
-  final last = a.last.compareTo(b.last);
-  return last != 0 ? last : a.order.compareTo(b.order);
 }
 
 enum StudyItemType {
@@ -1931,7 +1659,7 @@ class StudyWorkspace {
           timelineEntries: [
             for (final entry in timelineEntries)
               entry.id == (item.value as StudyTimelineEntry).id
-                  ? entry.copyWith(timelineId: groupId, order: order)
+                  ? _refit(entry.copyWith(timelineId: groupId, order: order))
                   : entry,
           ],
         ),
@@ -2068,7 +1796,31 @@ class StudyWorkspace {
     );
   }
 
+  /// Adds or replaces a timeline. The ends of its spans given by duration
+  /// are worked out again on its scale; one whose duration no longer fits
+  /// (the scale no longer counts years) keeps its end as a plain end.
   StudyWorkspace putTimeline(StudyTimeline timeline) {
+    final fitted = copyWith(
+      timelineEntries: [
+        for (final entry in timelineEntries)
+          entry.timelineId == timeline.id
+              ? entry.fittedTo(timeline) ??
+                    entry.withTime(start: entry.start, end: entry.end)
+              : entry,
+      ],
+    );
+    return fitted._putTimeline(timeline);
+  }
+
+  /// [entry] with a duration-given end worked out on its timeline's scale,
+  /// or, where the duration does not fit it, kept as a plain end.
+  StudyTimelineEntry _refit(StudyTimelineEntry entry) {
+    final timeline = timelineById(entry.timelineId);
+    return (timeline == null ? null : entry.fittedTo(timeline)) ??
+        entry.withTime(start: entry.start, end: entry.end);
+  }
+
+  StudyWorkspace _putTimeline(StudyTimeline timeline) {
     final updated = List<StudyTimeline>.of(timelines);
     final index = updated.indexWhere((t) => t.id == timeline.id);
     if (index < 0) {
@@ -2129,8 +1881,15 @@ class StudyWorkspace {
 
   /// Adds or replaces an entry. It must be valid and in a timeline; one
   /// moved to another timeline lands last there.
+  ///
+  /// A span given by its duration has its end worked out on the timeline;
+  /// one whose duration does not fit it is refused.
   StudyWorkspace putTimelineEntry(StudyTimelineEntry entry) {
-    if (timelineById(entry.timelineId) == null || !entry.isValid) return this;
+    final timeline = timelineById(entry.timelineId);
+    if (timeline == null) return this;
+    final fitted = entry.fittedTo(timeline);
+    if (fitted == null || !fitted.isValid) return this;
+    entry = fitted;
     final updated = List<StudyTimelineEntry>.of(timelineEntries);
     final index = updated.indexWhere((e) => e.id == entry.id);
     if (index < 0) {

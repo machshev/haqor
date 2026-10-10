@@ -3234,7 +3234,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       StudyTimeline(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         title: '',
-        era: true,
+        scale: TimelineScale.calendar,
         parentId: parentId,
       ),
       creating: true,
@@ -3337,8 +3337,8 @@ class _ReaderSessionState extends State<_ReaderSession>
     id: DateTime.now().microsecondsSinceEpoch.toString(),
     title: '',
     timelineId: timelineId,
-    start: 0,
-    end: span ? 0 : null,
+    start: const TimelineTime(0),
+    end: span ? const TimelineTime(0) : null,
     verses: [
       StudyPassage(
         bookIndex: verse.bookIndex,

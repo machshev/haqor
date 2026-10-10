@@ -448,7 +448,9 @@ void main() {
       find.byKey(const ValueKey('timeline-title')),
       'Creation',
     );
-    await tester.tap(find.byKey(const ValueKey('timeline-era')));
+    await tester.tap(find.byKey(const ValueKey('timeline-scale')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Another unit, such as days').last);
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('timeline-unit')), 'Day');
     await tester.tap(find.text('Add'));
@@ -475,11 +477,11 @@ void main() {
         )
         .single;
     final timeline = saved.timelines.single;
-    expect(timeline.formatTime(1), 'Day 1');
+    expect(timeline.formatTime(const study.TimelineTime(1)), 'Day 1');
     final entry = saved.timelineEntries.single;
     expect(
       (entry.title, entry.start, entry.timelineId),
-      ('Light', 1.0, timeline.id),
+      ('Light', const study.TimelineTime(1), timeline.id),
     );
     expect(entry.verses.single.locationKey, '0:1:3');
 
