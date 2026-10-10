@@ -17,6 +17,7 @@ PlaceListEntry _place(
   List<int> regions = const [],
   int occurrences = 1,
   List<List<double>> area = const [],
+  bool estimated = false,
 }) => PlaceListEntry(
   place: NameSummaryEntry(
     id: id,
@@ -34,6 +35,7 @@ PlaceListEntry _place(
     label: '',
     area: area,
     line: const [],
+    estimated: estimated,
   ),
   otherNames: otherNames,
   regions: regions,
@@ -84,7 +86,8 @@ Future<void> _pumpPlaces(WidgetTester tester) async {
       ),
     ),
   );
-  final nazareth = _place(4, 'Nazareth', occurrences: 0);
+  // Nazareth's site stands in for one Haqor only estimates.
+  final nazareth = _place(4, 'Nazareth', occurrences: 0, estimated: true);
   final bethlehem = _place(1, 'Bethlehem');
   final egypt = _place(5, 'Egypt', kind: 'region');
   assignRustSignal['Journeys']!(
@@ -258,9 +261,11 @@ void _journeyTests() {
     expect(find.text('Joseph takes the child to Egypt.'), findsOneWidget);
     expect(find.textContaining('not on the map'), findsOneWidget);
     expect(find.textContaining('Until Herod is dead.'), findsOneWidget);
+    expect(find.textContaining('low certainty'), findsOneWidget);
     // The stop with no site is passed over: one leg, by sea, by its point.
     final map = tester.widget<PlaceMap>(find.byType(PlaceMap));
     expect(map.pins.map((p) => p.label), ['Bethlehem', 'Nazareth of Galilee']);
+    expect(map.pins.map((p) => p.estimated), [false, true]);
     expect(map.legs, hasLength(1));
     expect(map.legs.single.bySea, isTrue);
     expect(map.legs.single.points, [35.2, 31.7, 34, 31, 35.2, 31.7]);

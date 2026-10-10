@@ -249,6 +249,7 @@ class MapPin {
     this.id,
     this.primary = true,
     this.confidence,
+    this.estimated = false,
     this.kind = '',
     this.area = const [],
     this.line = const [],
@@ -268,6 +269,10 @@ class MapPin {
   /// 0 to 1000; candidates fade with it. Null draws at full strength.
   final int? confidence;
 
+  /// Haqor's estimate of a site no one has found: drawn hollow and faint,
+  /// as of low certainty.
+  final bool estimated;
+
   /// `settlement`, `river`, `region`, …: a region is drawn as its [area]
   /// rather than as a pin.
   final String kind;
@@ -283,8 +288,11 @@ class MapPin {
   /// Drawn as ground, named across its middle, rather than as a pin.
   bool get isArea => _areaKinds.contains(kind);
 
-  /// The strength it is drawn at, by its [confidence].
-  double get strength => confidence == null
+  /// The strength it is drawn at, by its [confidence]; an [estimated] site
+  /// at the least.
+  double get strength => estimated
+      ? 0.35
+      : confidence == null
       ? 1.0
       : (0.35 + 0.65 * confidence!.clamp(0, 1000) / 1000);
 }
@@ -1037,7 +1045,7 @@ class _MapPainter extends CustomPainter {
         }
         continue;
       }
-      if (pin.primary) {
+      if (pin.primary && !pin.estimated) {
         canvas.drawCircle(point, 7, Paint()..color = colors.pinBorder);
         canvas.drawCircle(
           point,

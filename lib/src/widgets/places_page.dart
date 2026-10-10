@@ -271,6 +271,7 @@ class _PlacesPageState extends State<PlacesPage> {
                     label: p.location.label,
                     area: const [],
                     line: p.location.line,
+                    estimated: p.location.estimated,
                   ),
                   label: p.place.name,
                   id: p.place.id,
@@ -286,6 +287,7 @@ class _PlacesPageState extends State<PlacesPage> {
       if (kind.isNotEmpty) kind,
       for (final id in p.regions) ?_regionNames[id],
       if (label.isNotEmpty && label != p.place.name) label,
+      if (p.location.estimated) 'low certainty',
       if (p.place.occurrences > 0) mentionsLabel(p.place.occurrences),
       ?_onJourneys(p.place.id),
     ].join(' · ');
@@ -376,6 +378,7 @@ class _PlacesPageState extends State<PlacesPage> {
                   _verseLabel(s),
                   if (s.bySea) 'by sea',
                   if (!s.drawn) 'not on the map',
+                  if (s.drawn && s.location.estimated) 'low certainty',
                 ].join(' · '),
                 if (s.note.isNotEmpty) s.note,
               ].join('\n'),

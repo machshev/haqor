@@ -582,6 +582,7 @@ MapPin placePin(
   id: id,
   primary: primary,
   confidence: location.confidence < 0 ? null : location.confidence,
+  estimated: location.estimated,
   kind: location.kind,
   area: location.area,
   line: location.line,
@@ -596,7 +597,9 @@ class _LocationRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final confidence = location.confidence < 0
+    final confidence = location.estimated
+        ? 'estimated · low certainty'
+        : location.confidence < 0
         ? null
         : '${(location.confidence / 10).round()}% confident';
     return ListTile(

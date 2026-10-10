@@ -844,6 +844,9 @@ pub struct PlaceLocationEntry {
     /// The course it runs, for a river, a wadi or a road: lines of
     /// longitude, latitude pairs. Empty for a point or an area.
     pub line: Vec<Vec<f64>>,
+    /// Haqor's own estimate of a site no one has found, placed between the
+    /// places either side of it on its journey: low certainty.
+    pub estimated: bool,
 }
 
 /// Reply to [`GetNameEntity`].

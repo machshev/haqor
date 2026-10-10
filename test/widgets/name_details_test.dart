@@ -196,6 +196,7 @@ void main() {
           label: 'Tell el-Muqayyar',
           area: const [],
           line: const [],
+          estimated: false,
         ),
         PlaceLocationEntry(
           latitude: 37.15,
@@ -205,6 +206,7 @@ void main() {
           label: 'Urfa',
           area: const [],
           line: const [],
+          estimated: false,
         ),
       ],
     );
@@ -276,6 +278,7 @@ void main() {
               label: 'Bethlehem',
               area: const [],
               line: const [],
+              estimated: false,
             ),
             verses: const [1, 2, 19],
           ),

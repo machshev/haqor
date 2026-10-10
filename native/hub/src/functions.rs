@@ -887,6 +887,7 @@ fn place_location_entry(l: haqor_core::names::PlaceLocation) -> PlaceLocationEnt
         label: l.label,
         area,
         line,
+        estimated: l.estimated,
     }
 }
 
