@@ -26,8 +26,8 @@ const _superscriptScale = 0.58;
 const _superscriptRise = 0.36;
 
 /// The column between the Hebrew and English side by side: room for a verse
-/// number, its note mark and its cross-reference marker.
-const _parallelGutterWidth = 72.0;
+/// number, with its note mark and cross-reference marker stacked beneath it.
+const _parallelGutterWidth = 28.0;
 
 String compactInterlinearMorphology(String morphology) {
   const abbreviations = {
@@ -628,37 +628,56 @@ class _VerseRowState extends State<VerseRow> {
     // the gaps are fixed sides rather than directional ones. English opens
     // its line the other way, and side by side the marks stand between the
     // two texts.
-    Widget verseMarksFor(EdgeInsets padding, TextDirection direction) =>
-        Padding(
-          padding: padding,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            textDirection: direction,
-            children: [
-              _VerseNumber(
-                key: ValueKey('verse-number-${widget.entry.verse}'),
-                label: widget.hebrewNumerals
-                    ? _toHebrewNumeral(widget.entry.verse)
-                    : '${widget.entry.verse}',
-                onMenu: widget.onVerseMenu,
+    //
+    // Stacked (side by side), the number keeps the first line's height so it
+    // stays level with both texts, and the marks hang beneath it.
+    Widget verseMarksFor(
+      EdgeInsets padding,
+      TextDirection direction, {
+      bool stacked = false,
+    }) {
+      final number = _VerseNumber(
+        key: ValueKey('verse-number-${widget.entry.verse}'),
+        label: widget.hebrewNumerals
+            ? _toHebrewNumeral(widget.entry.verse)
+            : '${widget.entry.verse}',
+        onMenu: widget.onVerseMenu,
+      );
+      return Padding(
+        padding: padding,
+        child: Flex(
+          direction: stacked ? Axis.vertical : Axis.horizontal,
+          mainAxisSize: MainAxisSize.min,
+          textDirection: direction,
+          children: [
+            if (stacked)
+              SizedBox(
+                height: widget.fontSize * 1.6,
+                child: Center(child: number),
+              )
+            else
+              number,
+            if (widget.studyNote)
+              Padding(
+                padding: stacked
+                    ? const EdgeInsets.only(bottom: 4)
+                    : const EdgeInsets.only(right: 2),
+                child: Icon(
+                  Icons.sticky_note_2_outlined,
+                  size: 12,
+                  color: theme.colorScheme.secondary,
+                ),
               ),
-              if (widget.studyNote)
-                Padding(
-                  padding: const EdgeInsets.only(right: 2),
-                  child: Icon(
-                    Icons.sticky_note_2_outlined,
-                    size: 12,
-                    color: theme.colorScheme.secondary,
-                  ),
-                ),
-              if (_crossReferenceCount > 0 && widget.onCrossReferences != null)
-                _CrossReferenceMarker(
-                  count: _crossReferenceCount,
-                  onTap: widget.onCrossReferences!,
-                ),
-            ],
-          ),
-        );
+            if (_crossReferenceCount > 0 && widget.onCrossReferences != null)
+              _CrossReferenceMarker(
+                count: _crossReferenceCount,
+                onTap: widget.onCrossReferences!,
+              ),
+          ],
+        ),
+      );
+    }
+
     final verseMarks = verseMarksFor(
       const EdgeInsets.only(left: 6),
       TextDirection.rtl,
@@ -906,9 +925,10 @@ class _VerseRowState extends State<VerseRow> {
           // two texts' inner edges run straight down the page.
           SizedBox(
             width: _parallelGutterWidth,
-            height: widget.fontSize * 1.6,
-            child: Center(
-              child: verseMarksFor(EdgeInsets.zero, TextDirection.rtl),
+            child: verseMarksFor(
+              EdgeInsets.zero,
+              TextDirection.rtl,
+              stacked: true,
             ),
           ),
           Expanded(
