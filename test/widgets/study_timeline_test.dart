@@ -59,6 +59,23 @@ void main() {
       ('Temple begun', 1),
       ('Later', 2),
     ]);
+    // High Sabbaths share a lane of their own, however close together.
+    StudyTimelineEntry sabbath(String title, double at) => StudyTimelineEntry(
+      id: title,
+      title: title,
+      timelineId: 'kings',
+      start: TimelineTime(at),
+      sabbath: true,
+    );
+    expect(
+      packTimelineLanes(
+        [_reign, sabbath('First', -969), sabbath('Second', -969)],
+        x: (t) => t.value,
+        width: (_) => 2,
+        gap: 1,
+      ).map((s) => (s.entry.title, s.lane)),
+      [('Solomon reigns', 1), ('First', 0), ('Second', 0)],
+    );
     const days = StudyTimeline(id: 'd', title: 'Days', unit: 'Day');
     expect(timelineTicks(days, 0, 100, 500).map((t) => t.label), [
       'Day 0',
@@ -557,7 +574,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('timeline-entry-duration')),
-      '6',
+      '7',
     );
     await tester.pump();
     expect(find.text('Ends 21 Nisan'), findsOneWidget);
@@ -567,7 +584,7 @@ void main() {
     expect(saved?.end, const TimelineTime(0, month: 1, day: 21));
     expect(
       saved?.duration,
-      const TimelineDuration(6, TimelineDurationUnit.days),
+      const TimelineDuration(7, TimelineDurationUnit.days),
     );
   });
 

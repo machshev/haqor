@@ -36,18 +36,25 @@ typedef TimelineSlot = ({
 
 /// Packs [entries] into as few lanes as fit, in time order, each entry in
 /// the first lane free [gap] before it. [x] places a time; [width] is the
-/// least room an entry's mark and label take from its start.
+/// least room an entry's mark and label take from its start. High
+/// Sabbaths, stars without labels, all share the first lane.
 List<TimelineSlot> packTimelineLanes(
   List<StudyTimelineEntry> entries, {
   required double Function(TimelineTime time) x,
   required double Function(StudyTimelineEntry entry) width,
   double gap = 8,
 }) {
-  final laneEnds = <double>[];
+  final sorted = List.of(entries)..sort(compareTimelineEntries);
+  final sabbaths = sorted.any((e) => e.isHighSabbath);
+  final laneEnds = <double>[if (sabbaths) double.infinity];
   final slots = <TimelineSlot>[];
-  for (final entry in List.of(entries)..sort(compareTimelineEntries)) {
+  for (final entry in sorted) {
     final left = x(entry.start);
     final right = math.max(x(entry.last), left + width(entry));
+    if (entry.isHighSabbath) {
+      slots.add((entry: entry, lane: 0, left: left, right: right));
+      continue;
+    }
     var lane = laneEnds.indexWhere((end) => end + gap <= left);
     if (lane < 0) {
       lane = laneEnds.length;
@@ -210,8 +217,9 @@ class TimelineChart extends StatelessWidget {
     final slots = packTimelineLanes(
       entries,
       x: x,
-      width: (e) =>
-          (e.isSpan ? 6 : _dot + 4) + _textWidth(e.title, labelStyle) + 4,
+      width: (e) => e.isHighSabbath
+          ? _dot + 2
+          : (e.isSpan ? 6 : _dot + 4) + _textWidth(e.title, labelStyle) + 4,
     );
     final lanes = slots.isEmpty
         ? 1
@@ -262,7 +270,9 @@ class TimelineChart extends StatelessWidget {
                 entry: slot.entry,
                 barWidth: math.max(4, x(slot.entry.last) - x(slot.entry.start)),
                 selected: slot.entry.id == selectedId,
-                tooltip: timelineEntryTime(timeline, slot.entry),
+                tooltip: slot.entry.isHighSabbath
+                    ? '${slot.entry.title} · ${timelineEntryTime(timeline, slot.entry)}'
+                    : timelineEntryTime(timeline, slot.entry),
                 onTap: onTapEntry == null
                     ? null
                     : () => onTapEntry!(slot.entry),
@@ -353,8 +363,11 @@ class _EntryMark extends StatelessWidget {
                             : null,
                       ),
                     ),
-                  const SizedBox(width: 4),
-                  Flexible(child: label),
+                  // A high Sabbath's title is in its tooltip alone.
+                  if (!entry.isHighSabbath) ...[
+                    const SizedBox(width: 4),
+                    Flexible(child: label),
+                  ],
                 ],
               ),
       ),

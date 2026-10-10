@@ -434,8 +434,11 @@ class StudyTimeline {
   /// whole year where it must be or does not fit the timeline. Months are
   /// lunar, a second Adar in each leap year (see [hebrewMonthNames]). A
   /// month or year added to a day its end month lacks ends on that month's
-  /// last day; one added to Adar II, in a year without it, in Adar. On one
-  /// year's calendar a span must end within the year.
+  /// last day; one added to Adar II, in a year without it, in Adar. Days
+  /// are counted inclusively, as the seven days of Unleavened Bread run
+  /// from the 15th to the 21st: the end is the last of them, so a span of
+  /// days lasts at least one. On one year's calendar a span must end within
+  /// the year.
   TimelineTime? addDuration(TimelineTime start, TimelineDuration duration) {
     final end = _addDuration(start, duration);
     return isAnnual && end != null && end.value != start.value ? null : end;
@@ -470,7 +473,8 @@ class StudyTimeline {
         }
         return _settle(_written(year), month, start.day);
       case TimelineDurationUnit.days:
-        var day = _daysBefore(start.month!) + start.day! - 1 + n;
+        if (n < 1) return null;
+        var day = _daysBefore(start.month!) + start.day! - 1 + n - 1;
         while (day >= daysInYear(_written(year))) {
           day -= daysInYear(_written(year));
           year++;

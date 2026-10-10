@@ -2101,7 +2101,8 @@ class StudyWorkspace {
         if (timelineIds.add(timeline.id)) timeline,
     ];
     // One dated to a month or day its timeline's year lacks is settled on
-    // the nearest it has, and kept only if it then fits.
+    // the nearest it has, and kept only if it then fits; a span given by
+    // its duration has its end worked out again, as the count may change.
     final timelineOf = {for (final t in timelines) t.id: t};
     final entryIds = <String>{};
     final timelineEntries = [
@@ -2116,7 +2117,7 @@ class StudyWorkspace {
               when timeline.fits(settled.start) &&
                   (settled.end == null || timeline.fits(settled.end!)) &&
                   entryIds.add(entry.id))
-            settled,
+            settled.fittedTo(timeline) ?? settled,
     ];
     // High Sabbaths were once kept on their timeline by date alone; each
     // becomes a high Sabbath event there.

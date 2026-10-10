@@ -156,20 +156,25 @@ void main() {
     );
     expect(
       add(kings, const TimelineTime(-1446, month: 1, day: 1), 30, days),
-      const TimelineTime(-1446, month: 2, day: 1),
+      const TimelineTime(-1446, month: 1, day: 30),
     );
     expect(
       add(kings, const TimelineTime(-1446, month: 1, day: 1), 354, days),
-      const TimelineTime(-1445, month: 1, day: 1),
+      const TimelineTime(-1446, month: 12, day: 29),
     );
     expect(
-      add(kings, const TimelineTime(-1446, month: 12, day: 29), 1, days),
+      add(kings, const TimelineTime(-1446, month: 12, day: 29), 2, days),
       const TimelineTime(-1445, month: 1, day: 1),
     );
     expect(
       add(kings, const TimelineTime(-1445, month: 1, day: 1), -1, days),
       null,
       reason: 'a negative duration is refused',
+    );
+    expect(
+      add(kings, const TimelineTime(-1445, month: 1, day: 1), 0, days),
+      null,
+      reason: 'days are counted inclusively, so a span lasts at least one',
     );
     // A duration no finer than its start.
     expect(kings.durationUnitsFor(const TimelineTime(-970)), [years]);
@@ -395,11 +400,11 @@ void main() {
     const nisan1 = TimelineTime(-1446, month: 1, day: 1);
     expect(
       add(nisan1, 384, TimelineDurationUnit.days),
-      const TimelineTime(-1445, month: 1, day: 1),
+      const TimelineTime(-1446, month: 13, day: 29),
     );
     expect(
       add(nisan1, 354, TimelineDurationUnit.days),
-      const TimelineTime(-1446, month: 12, day: 30),
+      const TimelineTime(-1446, month: 12, day: 29),
     );
     expect(
       add(const TimelineTime(-1446, month: 12), 1, TimelineDurationUnit.months),
@@ -495,7 +500,7 @@ void main() {
     expect(
       feasts.addDuration(
         const TimelineTime(0, month: 1, day: 15),
-        const TimelineDuration(6, TimelineDurationUnit.days),
+        const TimelineDuration(7, TimelineDurationUnit.days),
       ),
       const TimelineTime(0, month: 1, day: 21),
     );
@@ -503,7 +508,7 @@ void main() {
     expect(
       feasts.addDuration(
         const TimelineTime(0, month: 12, day: 25),
-        const TimelineDuration(7, TimelineDurationUnit.days),
+        const TimelineDuration(8, TimelineDurationUnit.days),
       ),
       isNull,
     );
@@ -513,7 +518,7 @@ void main() {
     expect(
       leap.addDuration(
         const TimelineTime(0, month: 12, day: 25),
-        const TimelineDuration(7, TimelineDurationUnit.days),
+        const TimelineDuration(8, TimelineDurationUnit.days),
       ),
       const TimelineTime(0, month: 13, day: 2),
     );
