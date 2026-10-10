@@ -19,8 +19,10 @@ use crate::signals::{
 };
 use crate::signals::{
     ChapterPeople, ChapterPersonEntry, ChapterPlaceEntry, ChapterPlaces, ChapterRelationEntry,
-    GetChapterPeople, GetChapterPlaces, GetNameEntity, NameEntityInfo, NameFormEntry,
-    NameLinkEntry, NameSummaryEntry, NameVerse, PlaceLocationEntry, SenseChoice, WordSenseEntry,
+    GetChapterPeople, GetChapterPlaces, GetJourneys, GetNameEntity, GetPlaces, JourneyEntry,
+    JourneyStopEntry, Journeys, NameEntityInfo, NameFormEntry, NameLinkEntry, NameSummaryEntry,
+    NameVerse, PlaceListEntry, PlaceLocationEntry, PlaceRegionEntry, Places, SenseChoice,
+    WordSenseEntry,
 };
 #[cfg(target_arch = "wasm32")]
 use crate::signals::{FlushProgress, ProgressSnapshot};
@@ -2207,6 +2209,81 @@ pub async fn get_chapter_places(bible: SharedBible) {
                     place: name_summary_entry(p.place),
                     location: place_location_entry(p.location),
                     verses: p.verses,
+                })
+                .collect(),
+        }
+        .send_signal_to_dart();
+    }
+}
+
+pub async fn get_places(bible: SharedBible) {
+    let receiver = GetPlaces::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let gazetteer = lock(&bible).places().unwrap_or_else(|e| {
+            debug_print!("get_places error: {:?}", e);
+            Default::default()
+        });
+        Places {
+            request_id: req.request_id,
+            places: gazetteer
+                .places
+                .into_iter()
+                .map(|p| PlaceListEntry {
+                    place: name_summary_entry(p.place),
+                    location: place_location_entry(p.location),
+                    other_names: p.other_names,
+                    regions: p.regions,
+                })
+                .collect(),
+            regions: gazetteer
+                .regions
+                .into_iter()
+                .map(|r| PlaceRegionEntry {
+                    id: r.id,
+                    name: r.name,
+                    group: r.group,
+                })
+                .collect(),
+        }
+        .send_signal_to_dart();
+    }
+}
+
+pub async fn get_journeys(bible: SharedBible) {
+    let receiver = GetJourneys::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let journeys = lock(&bible).journeys().unwrap_or_else(|e| {
+            debug_print!("get_journeys error: {:?}", e);
+            Vec::new()
+        });
+        Journeys {
+            request_id: req.request_id,
+            journeys: journeys
+                .into_iter()
+                .map(|j| JourneyEntry {
+                    id: j.id,
+                    name: j.name,
+                    summary: j.summary,
+                    stops: j
+                        .stops
+                        .into_iter()
+                        .map(|s| JourneyStopEntry {
+                            place: name_summary_entry(s.place),
+                            label: s.label,
+                            location: place_location_entry(s.location),
+                            book: s.book,
+                            chapter: s.chapter,
+                            verse: s.verse,
+                            by_sea: s.by_sea,
+                            drawn: s.drawn,
+                            via: s.via.concat(),
+                            note: s.note,
+                        })
+                        .collect(),
                 })
                 .collect(),
         }

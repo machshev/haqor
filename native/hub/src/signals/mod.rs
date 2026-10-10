@@ -903,6 +903,87 @@ pub struct ChapterPlaces {
     pub places: Vec<ChapterPlaceEntry>,
 }
 
+/// Ask for every place with a position, for a gazetteer to search.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetPlaces {
+    pub request_id: u32,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct PlaceListEntry {
+    pub place: NameSummaryEntry,
+    /// Its likeliest location.
+    pub location: PlaceLocationEntry,
+    /// The English names translations give it and its Hebrew spellings,
+    /// besides its name, for a search to find it by.
+    pub other_names: Vec<String>,
+    /// The [`PlaceRegionEntry::id`]s of the regions it lies in.
+    pub regions: Vec<u32>,
+}
+
+/// A region the gazetteer can be narrowed to.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct PlaceRegionEntry {
+    /// The region's own place id, a [`PlaceListEntry`]'s too.
+    pub id: u32,
+    pub name: String,
+    /// The part of the world it is in: `Land of Israel`, `Asia Minor`, …
+    pub group: String,
+}
+
+/// Reply to [`GetPlaces`]: the places by name, and the regions in their
+/// groups, roughly from the land of Israel outwards. Empty for a database
+/// built before names were.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct Places {
+    pub request_id: u32,
+    pub places: Vec<PlaceListEntry>,
+    pub regions: Vec<PlaceRegionEntry>,
+}
+
+/// Ask for the journeys the Bible narrates, to draw on a map.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetJourneys {
+    pub request_id: u32,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct JourneyStopEntry {
+    pub place: NameSummaryEntry,
+    /// What the stop is called: the place's name, or another the journey
+    /// knows it by (Ptolemais for Acco).
+    pub label: String,
+    /// The place's likeliest location.
+    pub location: PlaceLocationEntry,
+    /// The verse taking the journey there; the book counted from 1.
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub by_sea: bool,
+    /// False for a station Haqor gives no site, listed but not drawn.
+    pub drawn: bool,
+    /// Longitude, latitude pairs a sea leg passes on its way here.
+    pub via: Vec<f64>,
+    /// A line about what happens there; may be empty.
+    pub note: String,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct JourneyEntry {
+    pub id: u32,
+    pub name: String,
+    pub summary: String,
+    pub stops: Vec<JourneyStopEntry>,
+}
+
+/// Reply to [`GetJourneys`], in Haqor's order: roughly the Bible's. Empty for
+/// a database built before journeys were.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct Journeys {
+    pub request_id: u32,
+    pub journeys: Vec<JourneyEntry>,
+}
+
 /// Ask for the people a chapter names, for a list of who is who in it.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetChapterPeople {

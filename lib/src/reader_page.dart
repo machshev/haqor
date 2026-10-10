@@ -25,9 +25,12 @@ import 'widgets/chapter_selector.dart';
 import 'widgets/cross_references_sheet.dart';
 import 'widgets/markdown_note.dart';
 import 'widgets/name_details.dart';
+import 'widgets/places_page.dart';
 import 'widgets/study_workspace_panel.dart';
 import 'widgets/study_passage_editor.dart';
 import 'widgets/study_section_editor.dart';
+import 'widgets/study_timeline_editor.dart';
+import 'widgets/timeline_chart.dart';
 import 'widgets/syntax_sheet.dart';
 import 'widgets/verse_row.dart';
 import 'widgets/word_info_sheet.dart';
@@ -198,6 +201,7 @@ enum _ReaderMenuAction {
   studyWorkspace,
   crossReferences,
   readingPlan,
+  places,
   tutor,
   memorise,
   reportIssue,
@@ -213,6 +217,8 @@ enum _VerseMenuAction {
   chapterCrossReferences,
   syntax,
   memoriseChapter,
+  addTimelineEvent,
+  addTimelineSpan,
 }
 
 enum _WordMenuAction {
@@ -221,6 +227,7 @@ enum _WordMenuAction {
   bookmarkRoot,
   bookmarkForm,
   addHeading,
+  addTimelineEntry,
 }
 
 enum _StudyHeadingAction { edit, addSubheading, delete }
@@ -1104,6 +1111,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   List<_ReaderMenuAction> get _workspaceActions => [
     _ReaderMenuAction.studyWorkspace,
     _ReaderMenuAction.readingPlan,
+    _ReaderMenuAction.places,
     _ReaderMenuAction.tutor,
     _ReaderMenuAction.memorise,
     if (_activeReader?._adminMode ?? false) _ReaderMenuAction.reportIssue,
@@ -1122,6 +1130,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           Icons.auto_stories_outlined,
           'Reading plan',
         ),
+        _ReaderMenuAction.places => (Icons.travel_explore, 'Bible places'),
         _ReaderMenuAction.tutor => (Icons.school_outlined, 'Tutor'),
         _ReaderMenuAction.memorise => (Icons.psychology_outlined, 'Memorise'),
         _ReaderMenuAction.reportIssue => (
@@ -3209,6 +3218,252 @@ class _ReaderSessionState extends State<_ReaderSession>
     );
   }
 
+  Future<StudyTimeline?> _askForStudyTimeline(
+    StudyTimeline timeline, {
+    required bool creating,
+  }) => showDialog<StudyTimeline>(
+    context: context,
+    builder: (_) => StudyTimelineEditor(initial: timeline, creating: creating),
+  );
+
+  /// Adds a timeline to the container [parentId], or the top, returning it.
+  Future<StudyTimeline?> _createStudyTimeline(String? parentId) async {
+    final workspace = await _ensureStudyWorkspace();
+    if (workspace == null || !mounted) return null;
+    final created = await _askForStudyTimeline(
+      StudyTimeline(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        title: '',
+        era: true,
+        parentId: parentId,
+      ),
+      creating: true,
+    );
+    final latest = _activeStudyWorkspace;
+    if (created == null || latest == null || !mounted) return null;
+    _replaceStudyWorkspace(latest.putTimeline(created));
+    return created;
+  }
+
+  Future<void> _editStudyTimeline(StudyTimeline timeline) async {
+    final edited = await _askForStudyTimeline(timeline, creating: false);
+    final workspace = _activeStudyWorkspace;
+    if (edited == null || workspace == null || !mounted) return;
+    _replaceStudyWorkspace(workspace.putTimeline(edited));
+  }
+
+  Future<void> _deleteStudyTimeline(StudyTimeline timeline) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Delete ${timeline.title}?'),
+        content: const Text(
+          'Its events and spans will be deleted. Its other study items will '
+          'be kept and moved up one level.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    final latest = _activeStudyWorkspace;
+    if (confirmed == true && latest != null && mounted) {
+      _replaceStudyWorkspace(latest.removeTimeline(timeline));
+    }
+  }
+
+  /// Opens a timeline's full view; its verses open in the reader, and then
+  /// [onOpenReader] brings the reader forward.
+  void _openStudyTimeline(
+    StudyTimeline timeline, {
+    String? selectedId,
+    VoidCallback? onOpenReader,
+  }) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TimelinePage(
+          timeline: timeline,
+          entries: workspace.entriesOf(timeline.id),
+          useEnglishBookNames: _englishBookNames,
+          initialSelectedId: selectedId,
+          onOpenPassage: (passage) {
+            _navigateTo(
+              passage.bookIndex,
+              passage.chapter,
+              verse: passage.wholeChapter ? null : passage.verse,
+            );
+            onOpenReader?.call();
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _askForStudyTimelineEntry(
+    StudyTimelineEntry entry, {
+    required bool creating,
+  }) async {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null || workspace.timelines.isEmpty) return;
+    final edited = await showDialog<StudyTimelineEntry>(
+      context: context,
+      builder: (_) => StudyTimelineEntryEditor(
+        initial: entry,
+        creating: creating,
+        timelines: workspace.timelines,
+        useEnglishBookNames: _englishBookNames,
+        loadChapter: _loadStudyChapter,
+      ),
+    );
+    final latest = _activeStudyWorkspace;
+    if (edited == null || latest == null || !mounted) return;
+    _replaceStudyWorkspace(latest.putTimelineEntry(edited));
+  }
+
+  StudyTimelineEntry _newStudyTimelineEntry(
+    String timelineId, {
+    required bool span,
+    required StudyPassage verse,
+  }) => StudyTimelineEntry(
+    id: DateTime.now().microsecondsSinceEpoch.toString(),
+    title: '',
+    timelineId: timelineId,
+    start: 0,
+    end: span ? 0 : null,
+    verses: [
+      StudyPassage(
+        bookIndex: verse.bookIndex,
+        chapter: verse.chapter,
+        verse: verse.verse,
+      ),
+    ],
+  );
+
+  /// Adds an event or span to a timeline, linked to the verse being read.
+  Future<void> _createStudyTimelineEntry(String timelineId, bool span) =>
+      _askForStudyTimelineEntry(
+        _newStudyTimelineEntry(
+          timelineId,
+          span: span,
+          verse: _currentStudyPassage,
+        ),
+        creating: true,
+      );
+
+  /// Adds, from the reader, an event or span linked to a verse: to the
+  /// timeline last given an entry in its book, else the newest timeline,
+  /// else a new one. Markers are then shown, to see it land.
+  Future<void> _addStudyTimelineEntryAt(
+    int book,
+    int chapter,
+    int verse, {
+    required bool span,
+  }) async {
+    final workspace = await _ensureStudyWorkspace();
+    if (workspace == null || !mounted) return;
+    StudyTimeline? timeline;
+    for (final entry in workspace.timelineEntries.reversed) {
+      if (entry.verses.any((p) => p.bookIndex == book)) {
+        timeline = workspace.timelineById(entry.timelineId);
+        break;
+      }
+    }
+    timeline ??= workspace.timelines.lastOrNull;
+    timeline ??= await _createStudyTimeline(null);
+    if (timeline == null || !mounted) return;
+    await _askForStudyTimelineEntry(
+      _newStudyTimelineEntry(
+        timeline.id,
+        span: span,
+        verse: StudyPassage(bookIndex: book, chapter: chapter, verse: verse),
+      ),
+      creating: true,
+    );
+    final latest = _activeStudyWorkspace;
+    if (latest != null &&
+        !latest.timelineMarkersEnabled &&
+        latest.timelineEntriesAt(book, chapter, verse).isNotEmpty) {
+      _replaceStudyWorkspace(latest.copyWith(timelineMarkersEnabled: true));
+    }
+  }
+
+  Future<void> _editStudyTimelineEntry(StudyTimelineEntry entry) =>
+      _askForStudyTimelineEntry(entry, creating: false);
+
+  void _removeStudyTimelineEntry(StudyTimelineEntry entry) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace != null) {
+      _replaceStudyWorkspace(workspace.removeTimelineEntry(entry));
+    }
+  }
+
+  void _toggleStudyTimelineMarkers(bool enabled) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    _replaceStudyWorkspace(workspace.copyWith(timelineMarkersEnabled: enabled));
+  }
+
+  /// The events and spans linked to a verse, from its marker: each opens its
+  /// timeline, picked out there, or its editor.
+  Future<void> _showStudyTimelineEntriesAt(
+    int book,
+    int chapter,
+    int verse,
+  ) async {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return;
+    final entries = workspace.timelineEntriesAt(book, chapter, verse);
+    if (entries.isEmpty) return;
+    final choice = await showModalBottomSheet<(StudyTimelineEntry, bool)>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final entry in entries)
+              if (workspace.timelineById(entry.timelineId) case final timeline?)
+                ListTile(
+                  leading: Icon(
+                    entry.isSpan
+                        ? Icons.linear_scale
+                        : Icons.radio_button_checked,
+                  ),
+                  title: Text(entry.title),
+                  subtitle: Text(
+                    '${timeline.title} · '
+                    '${timelineEntryTime(timeline, entry)}',
+                  ),
+                  onTap: () => Navigator.pop(sheetContext, (entry, false)),
+                  trailing: IconButton(
+                    tooltip: entry.isSpan ? 'Edit span' : 'Edit event',
+                    icon: const Icon(Icons.edit_note),
+                    onPressed: () => Navigator.pop(sheetContext, (entry, true)),
+                  ),
+                ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    final (entry, edit) = choice;
+    if (edit) {
+      await _editStudyTimelineEntry(entry);
+      return;
+    }
+    final timeline = _activeStudyWorkspace?.timelineById(entry.timelineId);
+    if (timeline != null) _openStudyTimeline(timeline, selectedId: entry.id);
+  }
+
   void _moveStudyItem(StudyItem item, String? groupId, int? index) {
     final workspace = _activeStudyWorkspace;
     if (workspace != null) {
@@ -3483,6 +3738,40 @@ class _ReaderSessionState extends State<_ReaderSession>
             onOpenSection: (section) {
               Navigator.pop(sheetContext);
               _openStudySection(section);
+            },
+            onToggleTimelineMarkers: (enabled) {
+              _toggleStudyTimelineMarkers(enabled);
+              setSheetState(() {});
+            },
+            onCreateTimeline: (parentId) async {
+              await _createStudyTimeline(parentId);
+              if (sheetContext.mounted) setSheetState(() {});
+            },
+            onEditTimeline: (timeline) async {
+              await _editStudyTimeline(timeline);
+              if (sheetContext.mounted) setSheetState(() {});
+            },
+            onDeleteTimeline: (timeline) async {
+              await _deleteStudyTimeline(timeline);
+              if (sheetContext.mounted) setSheetState(() {});
+            },
+            onOpenTimeline: (timeline) => _openStudyTimeline(
+              timeline,
+              onOpenReader: () {
+                if (sheetContext.mounted) Navigator.pop(sheetContext);
+              },
+            ),
+            onCreateTimelineEntry: (timelineId, span) async {
+              await _createStudyTimelineEntry(timelineId, span);
+              if (sheetContext.mounted) setSheetState(() {});
+            },
+            onEditTimelineEntry: (entry) async {
+              await _editStudyTimelineEntry(entry);
+              if (sheetContext.mounted) setSheetState(() {});
+            },
+            onRemoveTimelineEntry: (entry) {
+              _removeStudyTimelineEntry(entry);
+              setSheetState(() {});
             },
           ),
         ),
@@ -4270,6 +4559,21 @@ class _ReaderSessionState extends State<_ReaderSession>
             title: Text('Memorise this chapter'),
           ),
         ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: _VerseMenuAction.addTimelineEvent,
+          child: ListTile(
+            leading: Icon(Icons.radio_button_checked),
+            title: Text('Add timeline event here'),
+          ),
+        ),
+        const PopupMenuItem(
+          value: _VerseMenuAction.addTimelineSpan,
+          child: ListTile(
+            leading: Icon(Icons.linear_scale),
+            title: Text('Add timeline span here'),
+          ),
+        ),
       ],
     );
     if (!mounted) return;
@@ -4282,6 +4586,14 @@ class _ReaderSessionState extends State<_ReaderSession>
         await _showSyntax(bookIndex, chapter, verse);
       case _VerseMenuAction.memoriseChapter:
         await memoriseChapter(context, bookIndex, chapter);
+      case _VerseMenuAction.addTimelineEvent:
+      case _VerseMenuAction.addTimelineSpan:
+        await _addStudyTimelineEntryAt(
+          bookIndex,
+          chapter,
+          verse,
+          span: action == _VerseMenuAction.addTimelineSpan,
+        );
       case null:
         break;
     }
@@ -4390,12 +4702,21 @@ class _ReaderSessionState extends State<_ReaderSession>
             ),
           ),
         ),
+        PopupMenuItem(
+          value: _WordMenuAction.addTimelineEntry,
+          child: ListTile(
+            leading: const Icon(Icons.timeline),
+            title: Text('Add to timeline at $chapter:$verse'),
+          ),
+        ),
       ],
     );
     if (!mounted || action == null) return;
     switch (action) {
       case _WordMenuAction.addHeading:
         await _addStudyHeadingAt(bookIndex, chapter, verse);
+      case _WordMenuAction.addTimelineEntry:
+        await _addStudyTimelineEntryAt(bookIndex, chapter, verse, span: false);
       case _WordMenuAction.open:
       case _WordMenuAction.openNewPane:
         _showWordInfo(
@@ -4515,6 +4836,15 @@ class _ReaderSessionState extends State<_ReaderSession>
           _openStudySection(section);
           onOpenReader?.call();
         },
+        onToggleTimelineMarkers: _toggleStudyTimelineMarkers,
+        onCreateTimeline: _createStudyTimeline,
+        onEditTimeline: _editStudyTimeline,
+        onDeleteTimeline: _deleteStudyTimeline,
+        onOpenTimeline: (timeline) =>
+            _openStudyTimeline(timeline, onOpenReader: onOpenReader),
+        onCreateTimelineEntry: _createStudyTimelineEntry,
+        onEditTimelineEntry: _editStudyTimelineEntry,
+        onRemoveTimelineEntry: _removeStudyTimelineEntry,
       );
 
   Widget _readerSurface() {
@@ -4562,6 +4892,14 @@ class _ReaderSessionState extends State<_ReaderSession>
         _openCrossReferences();
       case _ReaderMenuAction.readingPlan:
         _showReadingPlan();
+      case _ReaderMenuAction.places:
+        PlacesPage.open(
+          context,
+          useEnglishBookNames: _englishBookNames,
+          bookmarks: _nameBookmarks,
+          onNavigateToPassage: (book, chapter, verse) =>
+              _navigateTo(book, chapter, verse: verse),
+        );
       case _ReaderMenuAction.tutor:
         Navigator.of(
           context,
@@ -4776,6 +5114,9 @@ class _ReaderSessionState extends State<_ReaderSession>
                     word.root.isNotEmpty)
                   word.root: Color(word.colorValue),
             };
+            final timelineEntries = workspace?.timelineMarkersEnabled ?? false
+                ? workspace!.timelineEntriesAt(b, c, entry.verse)
+                : const <StudyTimelineEntry>[];
             final translation = _translationFor(b, c, entry.verse);
             final row = VerseRow(
               key: section.verseKeys[entry.verse],
@@ -4837,6 +5178,11 @@ class _ReaderSessionState extends State<_ReaderSession>
                   (workspace?.highlightsEnabled ?? false) &&
                   (studyPassage?.highlightEnabled ?? false),
               studyNote: studyPassages.any((p) => p.note.isNotEmpty),
+              studyTimeline: timelineEntries.isEmpty
+                  ? null
+                  : timelineEntries.map((e) => e.title).join('\n'),
+              onStudyTimeline: () =>
+                  _showStudyTimelineEntriesAt(b, c, entry.verse),
               studyPhraseHighlightColors: {
                 if (workspace?.highlightsEnabled ?? false)
                   for (final p in studyPassages)

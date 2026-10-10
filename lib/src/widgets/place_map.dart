@@ -298,12 +298,27 @@ final _xScale = math.cos(_referenceLatitude * math.pi / 180);
 /// where the land of Israel fills the map.
 const _wadiScale = 150.0;
 
+/// One leg of a journey on a [PlaceMap], from one stop to the next.
+@immutable
+class MapLeg {
+  const MapLeg(this.points, {this.bySea = false});
+
+  /// Longitude, latitude pairs: the stop it leaves, any points it passes, and
+  /// the stop it reaches.
+  final List<double> points;
+
+  /// Drawn dashed, as a voyage.
+  final bool bySea;
+}
+
 /// A map of [pins] over the bundled [Basemap], panned by dragging and zoomed
-/// by pinching, the mouse wheel or its buttons. It opens fitted to the pins.
+/// by pinching, the mouse wheel or its buttons. It opens fitted to the pins
+/// and the [legs] of a journey drawn between them.
 class PlaceMap extends StatefulWidget {
   const PlaceMap({
     super.key,
     required this.pins,
+    this.legs = const [],
     this.onPinTap,
     this.basemap,
     this.relief,
@@ -311,6 +326,9 @@ class PlaceMap extends StatefulWidget {
   });
 
   final List<MapPin> pins;
+
+  /// A journey's legs, in order, each drawn with an arrow along it.
+  final List<MapLeg> legs;
   final ValueChanged<MapPin>? onPinTap;
 
   /// The basemap to draw; the bundled one, with the bundled [relief], when
@@ -408,8 +426,17 @@ class _PlaceMapState extends State<PlaceMap> {
   @override
   void didUpdateWidget(PlaceMap old) {
     super.didUpdateWidget(old);
-    if (!_samePins(old.pins, widget.pins)) _fitted = false;
+    if (!_samePins(old.pins, widget.pins) ||
+        !_sameLegs(old.legs, widget.legs)) {
+      _fitted = false;
+    }
   }
+
+  static bool _sameLegs(List<MapLeg> a, List<MapLeg> b) =>
+      a.length == b.length &&
+      [
+        for (var i = 0; i < a.length; i++) listEquals(a[i].points, b[i].points),
+      ].every((same) => same);
 
   static bool _samePins(List<MapPin> a, List<MapPin> b) {
     if (a.length != b.length) return false;
@@ -443,6 +470,11 @@ class _PlaceMapState extends State<PlaceMap> {
         for (var i = 0; i + 1 < part.length; i += 2) {
           add(part[i], part[i + 1]);
         }
+      }
+    }
+    for (final leg in widget.legs) {
+      for (var i = 0; i + 1 < leg.points.length; i += 2) {
+        add(leg.points[i], leg.points[i + 1]);
       }
     }
     _center = Offset((west + east) / 2, (south + north) / 2);
@@ -557,6 +589,7 @@ class _PlaceMapState extends State<PlaceMap> {
         dark ? .55 : .45,
       )!,
       pin: scheme.primary,
+      route: dark ? const Color(0xFFE58A6A) : const Color(0xFFB0432A),
       region: scheme.tertiary,
       pinBorder: scheme.surface,
       label: scheme.onSurface,
@@ -626,6 +659,7 @@ class _PlaceMapState extends State<PlaceMap> {
                               (layer, image),
                         ],
                         pins: widget.pins,
+                        legs: widget.legs,
                         center: _center,
                         scale: _scale,
                         colors: colors,
@@ -714,13 +748,14 @@ class _MapColors {
     required this.land,
     required this.river,
     required this.pin,
+    required this.route,
     required this.region,
     required this.pinBorder,
     required this.label,
     required this.halo,
   });
 
-  final Color sea, land, river, pin, region, pinBorder, label, halo;
+  final Color sea, land, river, pin, route, region, pinBorder, label, halo;
 
   @override
   bool operator ==(Object other) =>
@@ -729,11 +764,12 @@ class _MapColors {
       other.land == land &&
       other.river == river &&
       other.pin == pin &&
+      other.route == route &&
       other.region == region &&
       other.label == label;
 
   @override
-  int get hashCode => Object.hash(sea, land, river, pin, region, label);
+  int get hashCode => Object.hash(sea, land, river, pin, route, region, label);
 }
 
 /// Shapes as paths in map units (longitude shrunk by [_xScale], latitude
@@ -826,6 +862,7 @@ class _MapPainter extends CustomPainter {
     required this.basemap,
     required this.relief,
     required this.pins,
+    required this.legs,
     required this.center,
     required this.scale,
     required this.colors,
@@ -837,6 +874,7 @@ class _MapPainter extends CustomPainter {
   /// The relief layers coloured so far, coarsest first.
   final List<(Relief, ui.Image)> relief;
   final List<MapPin> pins;
+  final List<MapLeg> legs;
   final Offset center;
   final double scale;
   final _MapColors colors;
@@ -977,6 +1015,7 @@ class _MapPainter extends CustomPainter {
       size.height / 2 - (latitude - center.dy) * scale,
     );
     Offset at(MapPin p) => screen(p.longitude, p.latitude);
+    _paintLegs(canvas, size, screen);
     // Candidates under the likeliest locations, so a solid pin is never
     // hidden by a hollow one. A region is named across its ground instead.
     for (final pin in shaped) {
@@ -1085,11 +1124,125 @@ class _MapPainter extends CustomPainter {
     }
   }
 
+  /// The journey's legs under the pins, in screen space so a line keeps its
+  /// width at every zoom: solid over land, dashed over sea, with an arrow
+  /// halfway along each pointing the way it goes.
+  void _paintLegs(
+    Canvas canvas,
+    Size size,
+    Offset Function(double, double) screen,
+  ) {
+    if (legs.isEmpty) return;
+    final view = (Offset.zero & size).inflate(20);
+    final halo = Paint()
+      ..color = colors.halo.withValues(alpha: .7)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final line = Paint()
+      ..color = colors.route
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    for (final leg in legs) {
+      final points = [
+        for (var i = 0; i + 1 < leg.points.length; i += 2)
+          screen(leg.points[i], leg.points[i + 1]),
+      ];
+      if (points.length < 2) continue;
+      final path = Path();
+      if (leg.bySea) {
+        // Dashes of 7, gaps of 5, carried on from one segment to the next.
+        var along = 0.0;
+        for (var i = 0; i + 1 < points.length; i++) {
+          final a = points[i], b = points[i + 1];
+          final length = (b - a).distance;
+          if (!view.overlaps(Rect.fromPoints(a, b))) {
+            along += length;
+            continue;
+          }
+          var t = 0.0;
+          while (t < length) {
+            final phase = along % 12;
+            final run = phase < 7 ? 7 - phase : 12 - phase;
+            final end = math.min(length, t + run);
+            if (phase < 7) {
+              path
+                ..moveTo(
+                  a.dx + (b.dx - a.dx) * t / length,
+                  a.dy + (b.dy - a.dy) * t / length,
+                )
+                ..lineTo(
+                  a.dx + (b.dx - a.dx) * end / length,
+                  a.dy + (b.dy - a.dy) * end / length,
+                );
+            }
+            along += end - t;
+            t = end;
+          }
+        }
+      } else {
+        path.addPolygon(points, false);
+      }
+      canvas
+        ..drawPath(path, halo)
+        ..drawPath(path, line);
+      // The arrow, at the point halfway along the leg.
+      var total = 0.0;
+      for (var i = 0; i + 1 < points.length; i++) {
+        total += (points[i + 1] - points[i]).distance;
+      }
+      if (total < 24) continue;
+      var rest = total / 2;
+      for (var i = 0; i + 1 < points.length; i++) {
+        final a = points[i], b = points[i + 1];
+        final length = (b - a).distance;
+        if (rest > length) {
+          rest -= length;
+          continue;
+        }
+        final direction = (b - a) / length;
+        final tip = a + direction * rest + direction * 5;
+        final normal = Offset(-direction.dy, direction.dx);
+        final arrow = Path()
+          ..moveTo(tip.dx, tip.dy)
+          ..lineTo(
+            (tip - direction * 10 + normal * 5.5).dx,
+            (tip - direction * 10 + normal * 5.5).dy,
+          )
+          ..lineTo(
+            (tip - direction * 10 - normal * 5.5).dx,
+            (tip - direction * 10 - normal * 5.5).dy,
+          )
+          ..close();
+        canvas
+          ..drawPath(
+            arrow,
+            Paint()
+              ..color = colors.halo
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 3
+              ..strokeJoin = StrokeJoin.round,
+          )
+          ..drawPath(
+            arrow,
+            Paint()
+              ..color = colors.route
+              ..style = PaintingStyle.fill,
+          );
+        break;
+      }
+    }
+  }
+
   @override
   bool shouldRepaint(_MapPainter old) =>
       old.basemap != basemap ||
       !listEquals(old.relief, relief) ||
       old.pins != pins ||
+      old.legs != legs ||
       old.center != center ||
       old.scale != scale ||
       old.colors != colors ||
