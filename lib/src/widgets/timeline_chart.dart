@@ -110,10 +110,10 @@ List<TimelineTick> timelineTicks(
       calendar && position <= 0 ? position - 1 : position;
   // Zoomed in to within ten days a mark, days are marked, each in its
   // middle, as a day is a stretch of the axis: the first of a month by
-  // its name, and the others by number every so many days, leaving off
-  // any too near the next month's first.
+  // its name, and the others by number, every day or every 5th or 10th
+  // (5, 10, 15...), leaving off any too near the next month's first.
   if (timeline.hasMonths && rough <= 10 / 354) {
-    final step = [1, 2, 5, 10].firstWhere((d) => d / 354 >= rough);
+    final step = [1, 5, 10].firstWhere((d) => d / 354 >= rough);
     return [
       for (final year
           in timeline.isAnnual
