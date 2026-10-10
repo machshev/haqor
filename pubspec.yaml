@@ -84,6 +84,7 @@ flutter:
   assets:
     - assets/db/
     - assets/map/
+    - assets/map/relief/
 
   fonts:
     - family: Cardo

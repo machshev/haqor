@@ -318,11 +318,19 @@ sheet's person and place pages and sense chips are drawn from them.
 
 **Places on the map** — OpenBible.info's
 [Bible Geocoding Data](https://github.com/openbibleinfo/Bible-Geocoding-Data),
-licensed CC BY 4.0, over coastlines, lakes and rivers from
+licensed CC BY 4.0, with the ground its regions cover and the courses its
+rivers run, over coastlines, lakes and rivers from
 [Natural Earth](https://www.naturalearthdata.com/) (public domain) and hills
 and valleys shaded from NASA's Shuttle Radar Topography Mission elevations
 (public domain), by way of the
-[Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) open dataset.
+[Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) open dataset:
+coarse over all the lands of the Bible and finer over the Levant, the hills of
+Israel and Midian, and Jerusalem, Shechem, Galilee and Jabal al-Lawz. Over
+Israel and Transjordan the lakes, rivers and wadis, and wherever they are the
+courses of the rivers and the outlines of the lakes and islands places are
+mapped as, are OpenStreetMap's as OpenBible.info gathers them
+(© OpenStreetMap contributors,
+[ODbL 1.0](https://opendatacommons.org/licenses/odbl/)).
 Haqor changes OpenBible.info's data for the exodus and the cities of the
 plain, in place of its identifications: it places the crossing of the sea from
 the Nuweiba beach into Midian and Mount Sinai at Jabal al-Lawz (after Ron Wyatt

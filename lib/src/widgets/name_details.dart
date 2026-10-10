@@ -432,14 +432,10 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
               basemap: widget.basemap,
               pins: [
                 for (final (i, location) in info.locations.indexed)
-                  MapPin(
-                    latitude: location.latitude,
-                    longitude: location.longitude,
+                  placePin(
+                    location,
                     label: i == 0 ? summary.name : '',
                     primary: i == 0,
-                    confidence: location.confidence < 0
-                        ? null
-                        : location.confidence,
                   ),
               ],
             ),
@@ -571,6 +567,25 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
     );
   }
 }
+
+/// A place's location as a pin on a [PlaceMap]: a region as its ground, a
+/// river as its course.
+MapPin placePin(
+  PlaceLocationEntry location, {
+  required String label,
+  int? id,
+  bool primary = true,
+}) => MapPin(
+  latitude: location.latitude,
+  longitude: location.longitude,
+  label: label,
+  id: id,
+  primary: primary,
+  confidence: location.confidence < 0 ? null : location.confidence,
+  kind: location.kind,
+  area: location.area,
+  line: location.line,
+);
 
 class _LocationRow extends StatelessWidget {
   const _LocationRow({required this.location, required this.likeliest});
@@ -790,9 +805,8 @@ class _ChapterPlacesSheetState extends State<ChapterPlacesSheet> {
                           basemap: widget.basemap,
                           pins: [
                             for (final entry in places.places)
-                              MapPin(
-                                latitude: entry.location.latitude,
-                                longitude: entry.location.longitude,
+                              placePin(
+                                entry.location,
                                 label: entry.place.name,
                                 id: entry.place.id,
                               ),

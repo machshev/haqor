@@ -868,12 +868,23 @@ fn name_summary_entry(s: haqor_core::names::NameSummary) -> NameSummaryEntry {
 }
 
 fn place_location_entry(l: haqor_core::names::PlaceLocation) -> PlaceLocationEntry {
+    use haqor_core::names::PlaceShape;
+    let flat = |parts: &[Vec<[f64; 2]>]| -> Vec<Vec<f64>> {
+        parts.iter().map(|part| part.concat()).collect()
+    };
+    let (area, line) = match &l.shape {
+        Some(PlaceShape::Area(parts)) => (flat(parts), Vec::new()),
+        Some(PlaceShape::Line(parts)) => (Vec::new(), flat(parts)),
+        None => (Vec::new(), Vec::new()),
+    };
     PlaceLocationEntry {
         latitude: l.latitude,
         longitude: l.longitude,
         confidence: l.confidence.map_or(-1, i32::from),
         kind: l.kind,
         label: l.label,
+        area,
+        line,
     }
 }
 

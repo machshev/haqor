@@ -194,6 +194,8 @@ void main() {
           confidence: 703,
           kind: 'settlement',
           label: 'Tell el-Muqayyar',
+          area: const [],
+          line: const [],
         ),
         PlaceLocationEntry(
           latitude: 37.15,
@@ -201,6 +203,8 @@ void main() {
           confidence: 53,
           kind: 'settlement',
           label: 'Urfa',
+          area: const [],
+          line: const [],
         ),
       ],
     );
@@ -270,6 +274,8 @@ void main() {
               confidence: 1000,
               kind: 'settlement',
               label: 'Bethlehem',
+              area: const [],
+              line: const [],
             ),
             verses: const [1, 2, 19],
           ),

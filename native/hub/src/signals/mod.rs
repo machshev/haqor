@@ -838,6 +838,12 @@ pub struct PlaceLocationEntry {
     pub kind: String,
     /// The modern location it is identified with.
     pub label: String,
+    /// The ground it covers, for a region, a lake or a site with an outline:
+    /// rings of longitude, latitude pairs. Empty for a point or a course.
+    pub area: Vec<Vec<f64>>,
+    /// The course it runs, for a river, a wadi or a road: lines of
+    /// longitude, latitude pairs. Empty for a point or an area.
+    pub line: Vec<Vec<f64>>,
 }
 
 /// Reply to [`GetNameEntity`].

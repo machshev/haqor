@@ -1,0 +1,109 @@
+{
+  "source": "Terrain Tiles (Terrarium), registry.opendata.aws: SRTM and other public elevation data",
+  "layers": [
+    {
+      "file": "overview.png",
+      "bounds": [
+        -12.0,
+        4.0,
+        64.0,
+        48.0
+      ],
+      "lowest": -450.0,
+      "highest": 5200.0,
+      "fade": 2.0,
+      "minScale": 0.0
+    },
+    {
+      "file": "levant.png",
+      "bounds": [
+        32.4,
+        27.2,
+        38.8,
+        35.4
+      ],
+      "lowest": -450.0,
+      "highest": 2850.0,
+      "fade": 0.8,
+      "minScale": 0.0
+    },
+    {
+      "file": "israel.png",
+      "bounds": [
+        34.55,
+        30.85,
+        36.05,
+        33.45
+      ],
+      "lowest": -450.0,
+      "highest": 2850.0,
+      "fade": 0.15,
+      "minScale": 110.0
+    },
+    {
+      "file": "midian.png",
+      "bounds": [
+        34.4,
+        28.3,
+        35.6,
+        29.15
+      ],
+      "lowest": -450.0,
+      "highest": 2850.0,
+      "fade": 0.15,
+      "minScale": 110.0
+    },
+    {
+      "file": "judah.png",
+      "bounds": [
+        35.05,
+        31.5,
+        35.48,
+        31.98
+      ],
+      "lowest": -450.0,
+      "highest": 2850.0,
+      "fade": 0.04,
+      "minScale": 400.0
+    },
+    {
+      "file": "shechem.png",
+      "bounds": [
+        35.12,
+        32.02,
+        35.42,
+        32.34
+      ],
+      "lowest": -450.0,
+      "highest": 2850.0,
+      "fade": 0.04,
+      "minScale": 400.0
+    },
+    {
+      "file": "galilee.png",
+      "bounds": [
+        35.25,
+        32.64,
+        35.7,
+        32.95
+      ],
+      "lowest": -450.0,
+      "highest": 2850.0,
+      "fade": 0.04,
+      "minScale": 400.0
+    },
+    {
+      "file": "lawz.png",
+      "bounds": [
+        35.1,
+        28.5,
+        35.45,
+        28.85
+      ],
+      "lowest": -450.0,
+      "highest": 2850.0,
+      "fade": 0.04,
+      "minScale": 400.0
+    }
+  ]
+}
