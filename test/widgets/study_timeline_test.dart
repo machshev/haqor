@@ -48,8 +48,9 @@ Future<List<VerseEntry>> _chapter(int book, int chapter) async => [
 void main() {
   test('entries pack into the fewest lanes, in time order', () {
     final slots = packTimelineLanes(
+      _timeline,
       [_temple, _reign, _temple.copyWith(title: 'Later')],
-      x: (t) => t.value,
+      x: (p) => p,
       width: (_) => 2,
       gap: 1,
     );
@@ -69,8 +70,9 @@ void main() {
     );
     expect(
       packTimelineLanes(
+        _timeline,
         [_reign, sabbath('First', -969), sabbath('Second', -969)],
-        x: (t) => t.value,
+        x: (p) => p,
         width: (_) => 2,
         gap: 1,
       ).map((s) => (s.entry.title, s.lane)),
@@ -93,9 +95,42 @@ void main() {
     final months = timelineTicks(_timeline, -965, -964, 1200);
     expect(months.first.label, 'Nisan 966 BC');
     expect(months.map((t) => t.label), contains('Tishri'));
+    // Further in, days: each marked in its middle, every so many by number.
+    final feasts = _timeline.copyWith(scale: TimelineScale.annual);
+    const nisan15 = TimelineTime(0, month: 1, day: 15);
+    final days15 = timelineTicks(
+      feasts,
+      feasts.positionOf(nisan15),
+      feasts.positionOf(nisan15) + 10 / 354,
+      1000,
+    );
+    expect(days15.map((t) => t.label), [for (var d = 15; d < 25; d++) '$d']);
+    expect(days15.first.position, feasts.centreOf(nisan15));
+    final daysAcross = timelineTicks(feasts, 25 / 354, 40 / 354, 300);
+    expect(
+      daysAcross.map((t) => t.label),
+      ['1 Iyyar', '5', '10'],
+      reason: 'Nisan 30 is too near 1 Iyyar to be marked',
+    );
+    // A span runs to the end of its last day, past an event on that day.
+    const unleavened = StudyTimelineEntry(
+      id: 'u',
+      title: 'Unleavened Bread',
+      timelineId: 'kings',
+      start: nisan15,
+      end: TimelineTime(0, month: 1, day: 21),
+    );
+    final reach = timelineEntryReach(feasts, unleavened);
+    expect(reach.end - reach.start, closeTo(7 / 354, 1e-9));
+    expect(
+      reach.end,
+      greaterThan(feasts.centreOf(const TimelineTime(0, month: 1, day: 21))),
+    );
     final extent = timelineExtent(_timeline, [_temple]);
-    final temple = _timeline.positionOf(_temple.start);
-    expect(temple, closeTo(-965 + 31 / 354, 1e-9));
+    expect(_timeline.positionOf(_temple.start), closeTo(-965 + 31 / 354, 1e-9));
+    // An event stands in the middle of its day.
+    final temple = _timeline.centreOf(_temple.start);
+    expect(temple, closeTo(-965 + 31.5 / 354, 1e-9));
     expect((extent.start, extent.end), (temple - 1, temple + 1));
   });
 

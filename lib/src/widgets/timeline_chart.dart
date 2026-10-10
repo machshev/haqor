@@ -16,13 +16,29 @@ import 'timeline_calendar.dart';
 ) {
   // One year's calendar shows its whole year.
   if (entries.isEmpty || timeline.isAnnual) return (start: 0, end: 1);
-  final start = entries
-      .map((e) => timeline.positionOf(e.start))
-      .reduce(math.min);
-  final end = entries.map((e) => timeline.positionOf(e.last)).reduce(math.max);
+  final reaches = [for (final e in entries) timelineEntryReach(timeline, e)];
+  final start = reaches.map((r) => r.start).reduce(math.min);
+  final end = reaches.map((r) => r.end).reduce(math.max);
   if (end - start < 1e-9) return (start: start - 1, end: end + 1);
   final margin = (end - start) * 0.04;
   return (start: start - margin, end: end + margin);
+}
+
+/// The stretch of a timeline's axis [entry] covers, as positions: a span's
+/// from its start to the end of its last day (see [StudyTimeline.endOf]),
+/// and an event's the point in the middle of its day.
+({double start, double end}) timelineEntryReach(
+  StudyTimeline timeline,
+  StudyTimelineEntry entry,
+) {
+  if (!entry.isSpan) {
+    final at = timeline.centreOf(entry.start);
+    return (start: at, end: at);
+  }
+  return (
+    start: timeline.positionOf(entry.start),
+    end: timeline.endOf(entry.last),
+  );
 }
 
 /// An entry's place on a drawn timeline: its lane (row) and the horizontal
@@ -35,12 +51,15 @@ typedef TimelineSlot = ({
 });
 
 /// Packs [entries] into as few lanes as fit, in time order, each entry in
-/// the first lane free [gap] before it. [x] places a time; [width] is the
-/// least room an entry's mark and label take from its start. High
+/// the first lane free [gap] before it. [x] places an axis position, and
+/// an entry's slot runs from where its reach starts (see
+/// [timelineEntryReach]): a span's start, an event's middle. [width] is
+/// the least room an entry's mark and label take from there. High
 /// Sabbaths, stars without labels, all share the first lane.
 List<TimelineSlot> packTimelineLanes(
+  StudyTimeline timeline,
   List<StudyTimelineEntry> entries, {
-  required double Function(TimelineTime time) x,
+  required double Function(double position) x,
   required double Function(StudyTimelineEntry entry) width,
   double gap = 8,
 }) {
@@ -49,8 +68,9 @@ List<TimelineSlot> packTimelineLanes(
   final laneEnds = <double>[if (sabbaths) double.infinity];
   final slots = <TimelineSlot>[];
   for (final entry in sorted) {
-    final left = x(entry.start);
-    final right = math.max(x(entry.last), left + width(entry));
+    final reach = timelineEntryReach(timeline, entry);
+    final left = x(reach.start);
+    final right = math.max(x(reach.end), left + width(entry));
     if (entry.isHighSabbath) {
       slots.add((entry: entry, lane: 0, left: left, right: right));
       continue;
@@ -73,7 +93,8 @@ typedef TimelineTick = ({double position, String label});
 /// Round times between the axis positions [start] and [end] of [timeline]
 /// to mark on an axis [pixels] wide, about [spacing] pixels apart: steps of
 /// 1, 2 or 5 times a power of ten (whole years, where it counts years, and
-/// no year zero counting by era), or, zoomed in within a year, its months.
+/// no year zero counting by era), or, zoomed in within a year, its months,
+/// and further in its days.
 List<TimelineTick> timelineTicks(
   StudyTimeline timeline,
   double start,
@@ -87,6 +108,45 @@ List<TimelineTick> timelineTicks(
   // An axis position as written: a BC year sits one below its position.
   double written(double position) =>
       calendar && position <= 0 ? position - 1 : position;
+  // Zoomed in to within ten days a mark, days are marked, each in its
+  // middle, as a day is a stretch of the axis: the first of a month by
+  // its name, and the others by number every so many days, leaving off
+  // any too near the next month's first.
+  if (timeline.hasMonths && rough <= 10 / 354) {
+    final step = [1, 2, 5, 10].firstWhere((d) => d / 354 >= rough);
+    return [
+      for (final year
+          in timeline.isAnnual
+              ? const [0]
+              : [for (var y = start.floor(); y <= end.ceil(); y++) y])
+        for (
+          var month = 1;
+          month <= timeline.monthsIn(written(year.toDouble()));
+          month++
+        )
+          for (
+            var day = 1;
+            day <= timeline.daysInMonth(written(year.toDouble()), month);
+            day++
+          )
+            if (day == 1 ||
+                (day % step == 0 &&
+                    day + step / 2 <=
+                        timeline.daysInMonth(written(year.toDouble()), month)))
+              if (TimelineTime(written(year.toDouble()), month: month, day: day)
+                  case final time
+                  when timeline.centreOf(time) >= start &&
+                      timeline.centreOf(time) <= end)
+                (
+                  position: timeline.centreOf(time),
+                  label: day > 1
+                      ? '$day'
+                      : month == 1
+                      ? timeline.formatTime(time)
+                      : '1 ${timeline.monthName(time.value, month)}',
+                ),
+    ];
+  }
   // Months are marked only where at least two fit in a year; one year's
   // calendar has only its months to mark.
   if (timeline.isAnnual || (timeline.countsYears && rough <= 0.5)) {
@@ -197,6 +257,14 @@ class TimelineChart extends StatelessWidget {
   static const axisHeight = 36.0;
   static const _dot = 10.0;
 
+  /// How far an event's mark reaches back from its centre: half a dot,
+  /// or of a high Sabbath's star.
+  static double _inset(StudyTimelineEntry entry) => entry.isSpan
+      ? 0
+      : entry.isHighSabbath
+      ? (_dot + 2) / 2
+      : _dot / 2;
+
   static double widthFor(
     StudyTimeline timeline,
     List<StudyTimelineEntry> entries,
@@ -213,10 +281,10 @@ class TimelineChart extends StatelessWidget {
     final extent = timelineExtent(timeline, entries);
     double px(double position) =>
         padding + (position - extent.start) * pixelsPerUnit;
-    double x(TimelineTime time) => px(timeline.positionOf(time));
     final slots = packTimelineLanes(
+      timeline,
       entries,
-      x: x,
+      x: px,
       width: (e) => e.isHighSabbath
           ? _dot + 2
           : (e.isSpan ? 6 : _dot + 4) + _textWidth(e.title, labelStyle) + 4,
@@ -248,10 +316,7 @@ class TimelineChart extends StatelessWidget {
                 guides: [
                   for (final slot in slots)
                     if (!slot.entry.isSpan)
-                      (
-                        x: slot.left + _dot / 2,
-                        top: slot.lane * laneHeight + 15,
-                      ),
+                      (x: slot.left, top: slot.lane * laneHeight + 15),
                 ],
                 color: theme.colorScheme.outline,
                 labelStyle: labelStyle?.copyWith(
@@ -262,13 +327,17 @@ class TimelineChart extends StatelessWidget {
           ),
           for (final slot in slots)
             Positioned(
-              left: slot.left,
+              // An event's mark is centred on its time.
+              left: slot.left - _inset(slot.entry),
               top: slot.lane * laneHeight + 4,
-              width: slot.right - slot.left,
+              width: slot.right - slot.left + _inset(slot.entry),
               height: laneHeight - 8,
               child: _EntryMark(
                 entry: slot.entry,
-                barWidth: math.max(4, x(slot.entry.last) - x(slot.entry.start)),
+                barWidth: math.max(
+                  4,
+                  px(timelineEntryReach(timeline, slot.entry).end) - slot.left,
+                ),
                 selected: slot.entry.id == selectedId,
                 tooltip: slot.entry.isHighSabbath
                     ? '${slot.entry.title} · ${timelineEntryTime(timeline, slot.entry)}'
@@ -488,9 +557,10 @@ class TimelineStrip extends StatelessWidget {
             builder: (context, constraints) {
               final width = constraints.maxWidth;
               final scale = (width - 8) / (extent.end - extent.start);
-              double x(TimelineTime time) =>
-                  4 + (timeline.positionOf(time) - extent.start) * scale;
+              double x(double position) =>
+                  4 + (position - extent.start) * scale;
               final slots = packTimelineLanes(
+                timeline,
                 entries,
                 x: x,
                 width: (e) => e.isSpan ? 3 : 6,
@@ -511,7 +581,7 @@ class TimelineStrip extends StatelessWidget {
                           for (final s in slots)
                             if (s.lane < _maxLanes) s,
                         ],
-                        x: x,
+                        end: (e) => x(timelineEntryReach(timeline, e).end),
                         span: theme.colorScheme.primary,
                         event: theme.colorScheme.tertiary,
                         axis: theme.colorScheme.outlineVariant,
@@ -545,14 +615,16 @@ class TimelineStrip extends StatelessWidget {
 class _StripPainter extends CustomPainter {
   _StripPainter({
     required this.slots,
-    required this.x,
+    required this.end,
     required this.span,
     required this.event,
     required this.axis,
   });
 
   final List<TimelineSlot> slots;
-  final double Function(TimelineTime) x;
+
+  /// Where an entry's mark ends.
+  final double Function(StudyTimelineEntry) end;
   final Color span, event, axis;
 
   @override
@@ -569,7 +641,7 @@ class _StripPainter extends CustomPainter {
           RRect.fromLTRBR(
             slot.left,
             y - 2,
-            math.max(slot.left + 3, x(slot.entry.last)),
+            math.max(slot.left + 3, end(slot.entry)),
             y + 2,
             const Radius.circular(2),
           ),

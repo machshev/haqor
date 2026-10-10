@@ -419,6 +419,19 @@ class StudyTimeline {
     return year + days / daysInYear(time.value);
   }
 
+  /// Where [time] ends on the axis: a day where the next begins, as a day
+  /// is a stretch of it; a coarser time, or one off the year scales, where
+  /// it starts.
+  double endOf(TimelineTime time) {
+    final start = positionOf(time);
+    if (!hasMonths || time.month == null || time.day == null) return start;
+    return start + 1 / daysInYear(time.value);
+  }
+
+  /// The middle of [time] on the axis: the middle of a day, else where it
+  /// starts.
+  double centreOf(TimelineTime time) => (positionOf(time) + endOf(time)) / 2;
+
   /// A year as written turned into one counted with a year zero (1 BC is 0),
   /// so that years can be added across the turn of the era; and back.
   int _astronomical(double value) {
