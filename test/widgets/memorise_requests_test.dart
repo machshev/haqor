@@ -31,7 +31,7 @@ const _card = MemoryCard(
       chapter: 23,
       verse: 1,
       line: 0,
-      words: [MemoryWord(text: 'יְהוָה', gloss: 'the LORD', translit: 'YHWH')],
+      words: [MemoryWord(text: 'יְהוָה', gloss: 'Yahweh', translit: 'YHWH')],
     ),
   ],
   cue: '',
