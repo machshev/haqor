@@ -153,9 +153,13 @@ class VerseTextCache {
   static int _nextRequestId = 1;
 
   /// The mode letter a key ends in: `e` for glosses, `s` for Syriac script
-  /// and `h` for Hebrew. Glosses have no script, so `englishOnly` wins.
-  static String _mode(bool englishOnly, bool syriac) =>
-      englishOnly ? 'e' : (syriac ? 's' : 'h');
+  /// and `h` for Hebrew; for the Greek, `g`, and `G` for its English.
+  /// Glosses have no script, so `englishOnly` wins over `syriac`.
+  static String _mode(bool englishOnly, bool syriac, bool greek) => greek
+      ? (englishOnly ? 'G' : 'g')
+      : englishOnly
+      ? 'e'
+      : (syriac ? 's' : 'h');
 
   static String _key(int book, int chapter, int verse, String mode) =>
       '$book:$chapter:$verse:$mode';
@@ -178,8 +182,9 @@ class VerseTextCache {
     required int verse,
     required bool englishOnly,
     bool syriac = false,
+    bool greek = false,
   }) {
-    final key = _key(book, chapter, verse, _mode(englishOnly, syriac));
+    final key = _key(book, chapter, verse, _mode(englishOnly, syriac, greek));
     final existing = _entries[key];
     if (existing != null) {
       // A verse dropped from the queue while its rows were away, or one given
@@ -291,8 +296,9 @@ class VerseTextCache {
     _send(
       GetVerseTexts(
         requestId: requestId,
-        englishOnly: mode == 'e',
+        englishOnly: mode == 'e' || mode == 'G',
         syriac: mode == 's',
+        greek: mode == 'g' || mode == 'G',
         refs: [
           for (final key in keys)
             if (key.split(':') case [final book, final chapter, final verse, _])

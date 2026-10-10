@@ -199,6 +199,10 @@ pub struct GetVerseTexts {
     /// chapter with that setting on. Ignored with `english_only`, which has no
     /// script to choose.
     pub syriac: bool,
+    /// When true, return the New Testament's verses in Greek (the TR), and in
+    /// English-only mode the English of the Greek, its spans naming TR words.
+    /// Takes the place of `syriac`.
+    pub greek: bool,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
@@ -234,6 +238,11 @@ pub struct GetChapter {
     pub book: u8,
     pub chapter: u8,
     pub syriac: bool,
+    /// Read a New Testament chapter in Greek (the TR) in place of the
+    /// Peshitta: each word's English in context as its gloss, its grammar code
+    /// as its morphology, and its dictionary form as its root. Takes the place
+    /// of `syriac`.
+    pub greek: bool,
     /// Include compact interlinear glosses in the payload.
     pub include_glosses: bool,
     /// Include compact inline morphology labels in the payload.
@@ -288,6 +297,7 @@ pub struct ChapterText {
     pub book: u8,
     pub chapter: u8,
     pub syriac: bool,
+    pub greek: bool,
     pub include_glosses: bool,
     pub include_morphology: bool,
     pub include_names: bool,
@@ -512,6 +522,9 @@ pub struct GetChapterTranslation {
     pub request_id: u32,
     pub book: u8,
     pub chapter: u8,
+    /// The English of the Greek (the TR), its spans naming TR words, in place
+    /// of the English of the Hebrew or the Peshitta.
+    pub greek: bool,
 }
 
 /// A Hebrew word a [`TranslationSpanEntry`] renders. Usually in the span's
@@ -1745,4 +1758,49 @@ pub struct MemoryStats {
     /// included).
     pub forecast: Vec<i64>,
     pub achievements: Vec<MemoryAchievement>,
+}
+
+/// Ask for a word of the Greek New Testament (the TR), by where it stands.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetGreekWord {
+    /// Echoed back, as in [`GetWordInfo::request_id`].
+    pub request_id: u32,
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub position: u32,
+}
+
+/// Where a word of the Greek text stands.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct GreekOccurrenceEntry {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub position: u32,
+}
+
+/// Reply to [`GetGreekWord`]: the word, its tags, and every word sharing its
+/// dictionary form.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct GreekWordInfo {
+    pub request_id: u32,
+    /// Whether the word was found; nothing else is set when not.
+    pub found: bool,
+    /// The word, accented, with the punctuation after it.
+    pub word: String,
+    /// Its dictionary form and that form's gloss; empty for the few words
+    /// with no tags.
+    pub lemma: String,
+    pub gloss: String,
+    /// Its English in this verse.
+    pub english: String,
+    /// Its grammar code (`V-AAI-3S`) and the code in words.
+    pub grammar: String,
+    pub grammar_description: String,
+    /// The person or place it names, in brief.
+    pub name: Option<NameSummaryEntry>,
+    /// Every word of the TR with the same dictionary form, in order, this
+    /// one included.
+    pub occurrences: Vec<GreekOccurrenceEntry>,
 }

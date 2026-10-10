@@ -165,9 +165,16 @@ class AppReadingSettings {
     this.readerText = ReaderText.source,
     this.rapidReading = false,
     this.showInterlinear = true,
+    this.ntGreek = false,
   });
 
+  /// Whether the Peshitta is set in Syriac script rather than Hebrew.
   final bool ntSyriac;
+
+  /// Whether the reader shows the New Testament in Greek, the Textus
+  /// Receptus, in place of the Peshitta. Lists of verses elsewhere keep the
+  /// Peshitta, in the script [ntSyriac] says.
+  final bool ntGreek;
   final bool englishBookNames;
   final bool hebrewNumerals;
   final bool showCantillation;
@@ -217,6 +224,7 @@ class AppReadingSettings {
     ReaderText? readerText,
     bool? rapidReading,
     bool? showInterlinear,
+    bool? ntGreek,
   }) => AppReadingSettings(
     ntSyriac: ntSyriac ?? this.ntSyriac,
     englishBookNames: englishBookNames ?? this.englishBookNames,
@@ -235,6 +243,7 @@ class AppReadingSettings {
     readerText: readerText ?? this.readerText,
     rapidReading: rapidReading ?? this.rapidReading,
     showInterlinear: showInterlinear ?? this.showInterlinear,
+    ntGreek: ntGreek ?? this.ntGreek,
   );
 }
 
@@ -259,6 +268,7 @@ const kDefaultReadingSettings = AppReadingSettings(
 const kFontFamilies = ['Cardo', 'David Libre', 'Frank Ruhl Libre'];
 
 const _ntSyriacKey = 'nt_syriac';
+const _ntGreekKey = 'nt_greek';
 const _englishBookNamesKey = 'english_book_names';
 const _hebrewNumeralsKey = 'hebrew_numerals';
 const _fontSizeKey = 'font_size';
@@ -289,6 +299,7 @@ AppReadingSettings readReadingSettings(SharedPreferences prefs) {
   final family = prefs.readString(_fontFamilyKey);
   return AppReadingSettings(
     ntSyriac: prefs.readBool(_ntSyriacKey) ?? defaults.ntSyriac,
+    ntGreek: prefs.readBool(_ntGreekKey) ?? defaults.ntGreek,
     englishBookNames:
         prefs.readBool(_englishBookNamesKey) ?? defaults.englishBookNames,
     hebrewNumerals:
@@ -337,6 +348,7 @@ Future<void> writeReadingSettings(
   AppReadingSettings settings,
 ) => Future.wait([
   prefs.setBool(_ntSyriacKey, settings.ntSyriac),
+  prefs.setBool(_ntGreekKey, settings.ntGreek),
   prefs.setBool(_englishBookNamesKey, settings.englishBookNames),
   prefs.setBool(_hebrewNumeralsKey, settings.hebrewNumerals),
   prefs.setDouble(_fontSizeKey, settings.fontSize),
@@ -614,15 +626,34 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
     ),
     _LabelledSetting(
       label: 'New Testament text',
-      child: SegmentedButton<bool>(
+      description:
+          'The Peshitta in Hebrew or Syriac letters, or the Greek of the '
+          'Textus Receptus.',
+      child: SegmentedButton<_NtText>(
         segments: const [
-          ButtonSegment(value: false, label: Text('Hebrew')),
-          ButtonSegment(value: true, label: Text('Syriac')),
+          ButtonSegment(value: _NtText.hebrew, label: Text('Hebrew')),
+          ButtonSegment(value: _NtText.syriac, label: Text('Syriac')),
+          ButtonSegment(value: _NtText.greek, label: Text('Greek')),
         ],
-        selected: {_readingSettings.ntSyriac},
-        onSelectionChanged: (selection) => _updateReadingSettings(
-          _readingSettings.copyWith(ntSyriac: selection.single),
-        ),
+        selected: {
+          _readingSettings.ntGreek
+              ? _NtText.greek
+              : _readingSettings.ntSyriac
+              ? _NtText.syriac
+              : _NtText.hebrew,
+        },
+        onSelectionChanged: (selection) =>
+            _updateReadingSettings(switch (selection.single) {
+              _NtText.greek => _readingSettings.copyWith(ntGreek: true),
+              _NtText.syriac => _readingSettings.copyWith(
+                ntGreek: false,
+                ntSyriac: true,
+              ),
+              _NtText.hebrew => _readingSettings.copyWith(
+                ntGreek: false,
+                ntSyriac: false,
+              ),
+            }),
       ),
     ),
     SwitchListTile(
@@ -1056,3 +1087,6 @@ double snapFontSize(double? saved) {
     (best, size) => (size - saved).abs() < (best - saved).abs() ? size : best,
   );
 }
+
+/// The New Testament texts the setting chooses between.
+enum _NtText { hebrew, syriac, greek }

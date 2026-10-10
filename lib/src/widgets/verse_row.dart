@@ -7,7 +7,7 @@ import '../bindings/bindings.dart';
 import '../tutor/transliterate.dart';
 
 final RegExp _sourceTextLetter = RegExp(
-  r'[\u05D0-\u05EA\u0710-\u072F\u074D-\u074F]',
+  r'[\u05D0-\u05EA\u0710-\u072F\u074D-\u074F\u0370-\u03FF\u1F00-\u1FFF]',
 );
 final RegExp _hebrewMarks = RegExp(r'[^\u05D0-\u05EA]');
 final RegExp _yahwehWithPrefixes = RegExp(r'^[ובלכמשה]*יהוה$');
@@ -182,6 +182,7 @@ class VerseRow extends StatefulWidget {
     this.translationPending = false,
     this.onTranslationWordTap,
     this.onTranslationWordMenu,
+    this.sourceDirection = TextDirection.rtl,
   });
 
   final VerseEntry entry;
@@ -266,6 +267,10 @@ class VerseRow extends StatefulWidget {
   /// word it mainly renders and where on screen the press was.
   final void Function(TranslationWordEntry word, Offset globalPosition)?
   onTranslationWordMenu;
+
+  /// Which way the source text reads: right to left for the Hebrew and the
+  /// Peshitta, left to right for the Greek.
+  final TextDirection sourceDirection;
 
   @override
   State<VerseRow> createState() => _VerseRowState();
@@ -631,10 +636,10 @@ class _VerseRowState extends State<VerseRow> {
     // printed Bible, rather than standing in a margin column: a column would
     // indent every line by however wide that verse's marks happen to be.
     //
-    // The text is always right to left, whatever the app's own direction, so
-    // the gaps are fixed sides rather than directional ones. English opens
-    // its line the other way, and side by side the marks stand between the
-    // two texts.
+    // The text reads its own way, whatever the app's own direction (right
+    // to left but for the Greek), so the gaps are fixed sides rather than
+    // directional ones. English opens its line left to right, and side by
+    // side the marks stand between the two texts.
     //
     // Stacked (side by side), the number keeps the first line's height so it
     // stays level with both texts, and the marks hang beneath it.
@@ -704,9 +709,10 @@ class _VerseRowState extends State<VerseRow> {
       );
     }
 
+    final rtl = widget.sourceDirection == TextDirection.rtl;
     final verseMarks = verseMarksFor(
-      const EdgeInsets.only(left: 6),
-      TextDirection.rtl,
+      rtl ? const EdgeInsets.only(left: 6) : const EdgeInsets.only(right: 6),
+      widget.sourceDirection,
     );
 
     final translation = widget.translation;
@@ -730,7 +736,7 @@ class _VerseRowState extends State<VerseRow> {
           ? interlinearWords
           : interlinearWords.map(stripCantillation).toList();
       source = Align(
-        alignment: Alignment.topRight,
+        alignment: rtl ? Alignment.topRight : Alignment.topLeft,
         child: Wrap(
           // In an RTL wrap, `start` is the visual right edge.  Using
           // `end` puts a partially filled final run on the left.
@@ -738,7 +744,7 @@ class _VerseRowState extends State<VerseRow> {
           // Keep adjacent word columns visibly separated even when a gloss or
           // morphology label is very short.
           spacing: 6,
-          textDirection: TextDirection.rtl,
+          textDirection: widget.sourceDirection,
           children: [
             if (sourceMarks)
               Padding(
@@ -888,7 +894,7 @@ class _VerseRowState extends State<VerseRow> {
       }
       source = SelectableText.rich(
         TextSpan(children: spans),
-        textDirection: TextDirection.rtl,
+        textDirection: widget.sourceDirection,
       );
     }
 

@@ -12,6 +12,7 @@ import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/reader_page.dart';
 import 'package:haqor/src/study_workspace.dart' as study;
 import 'package:haqor/src/widgets/cross_references_sheet.dart';
+import 'package:haqor/src/widgets/greek_word_sheet.dart';
 import 'package:haqor/src/widgets/syntax_sheet.dart';
 import 'package:haqor/src/widgets/verse_row.dart';
 import 'package:haqor/src/widgets/study_workspace_panel.dart';
@@ -35,6 +36,10 @@ class _FakeRust {
   final List<GetThematicReferences> thematicRequests = [];
   final List<GetSyntaxTrees> syntaxRequests = [];
   final List<GetChapterTranslation> translationRequests = [];
+  final List<GetGreekWord> greekWordRequests = [];
+
+  /// Every chapter asked for, delivered or not.
+  final List<GetChapter> chapterRequests = [];
 
   void onWordInfo(GetWordInfo request) => wordRequests.add(request);
   void onOccurrences(GetWordOccurrences request) =>
@@ -44,7 +49,10 @@ class _FakeRust {
   void onStudyRequest(GetStudyState request) => studyRequests.add(request);
   void onStudySave(SaveStudyState request) => studySaves.add(request);
 
-  void onRequest(GetChapter request) => pending.add(request);
+  void onRequest(GetChapter request) {
+    pending.add(request);
+    chapterRequests.add(request);
+  }
 
   /// Serialize-and-deliver every pending chapter through the same
   /// [assignRustSignal] entry point rinf uses for real signals.
@@ -56,6 +64,7 @@ class _FakeRust {
         book: request.book,
         chapter: request.chapter,
         syriac: request.syriac,
+        greek: request.greek,
         includeGlosses: request.includeGlosses,
         includeMorphology: request.includeMorphology,
         includeNames: request.includeNames,
@@ -146,6 +155,7 @@ void main() {
   crossReferenceDockTests();
   syntaxTests();
   translationTests();
+  greekTests();
   compactViewMenuTests();
   readerViewTests();
 
@@ -2438,6 +2448,7 @@ Future<_FakeRust> _pumpWorkspace(
         sendThematicReferencesRequest: rust.thematicRequests.add,
         sendSyntaxTreesRequest: rust.syntaxRequests.add,
         sendTranslationRequest: rust.translationRequests.add,
+        sendGreekWordRequest: rust.greekWordRequests.add,
       ),
     ),
   );
@@ -2939,5 +2950,70 @@ void compactViewMenuTests() {
       expect(find.byKey(ValueKey(key)), findsOneWidget, reason: key);
     }
     expect(find.byKey(const ValueKey('reader-view-menu')), findsNothing);
+  });
+}
+
+void greekTests() {
+  testWidgets('the New Testament reads in Greek, its words in their own pane', (
+    tester,
+  ) async {
+    final rust = await _pumpWorkspace(
+      tester,
+      const Size(1366, 744),
+      prefs: {'book': 39, 'chapter': 1, 'nt_greek': true},
+    );
+    final request = rust.chapterRequests.firstWhere((r) => r.book == 40);
+    expect((request.greek, request.syriac), (true, false));
+    final row = tester.widget<VerseRow>(_verse(40, 1, 1));
+    expect(row.sourceDirection, TextDirection.ltr);
+
+    row.onWordTap('Βίβλος', null, 0, 'βίβλος');
+    await tester.pump();
+    expect(find.byType(GreekWordSheet), findsOneWidget);
+    // Not the Hebrew and Syriac word sheet.
+    expect(rust.wordRequests, isEmpty);
+    final word = rust.greekWordRequests.single;
+    expect((word.book, word.chapter, word.verse, word.position), (40, 1, 1, 0));
+
+    assignRustSignal['GreekWordInfo']!(
+      GreekWordInfo(
+        requestId: word.requestId,
+        found: true,
+        word: 'Βίβλος',
+        lemma: 'βίβλος',
+        gloss: 'book',
+        english: '[The] book',
+        grammar: 'N-NSF',
+        grammarDescription: 'noun, nominative singular feminine',
+        name: null,
+        occurrences: const [
+          GreekOccurrenceEntry(book: 40, chapter: 1, verse: 1, position: 0),
+          GreekOccurrenceEntry(book: 41, chapter: 12, verse: 26, position: 18),
+        ],
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    expect(
+      find.textContaining('nominative singular feminine', findRichText: true),
+      findsWidgets,
+    );
+    expect(find.text('2 occurrences of βίβλος'), findsOneWidget);
+    // Their verses are asked for in Greek.
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(rust.verseTextRequests.any((r) => r.greek), isTrue);
+  });
+
+  testWidgets('the Old Testament stays Hebrew, right to left', (tester) async {
+    final rust = await _pumpWorkspace(
+      tester,
+      const Size(1366, 744),
+      prefs: {'nt_greek': true},
+    );
+    expect(rust.chapterRequests.every((r) => !r.greek), isTrue);
+    expect(
+      tester.widget<VerseRow>(_verse(1, 1, 1)).sourceDirection,
+      TextDirection.rtl,
+    );
   });
 }

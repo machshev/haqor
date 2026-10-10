@@ -23,6 +23,7 @@ import 'tutor/onboarding.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
 import 'widgets/cross_references_sheet.dart';
+import 'widgets/greek_word_sheet.dart';
 import 'widgets/markdown_note.dart';
 import 'widgets/name_details.dart';
 import 'widgets/bible_timeline_page.dart';
@@ -162,7 +163,7 @@ class _Section {
        verseKeys = {for (final verse in verses) verse.verse: GlobalKey()};
 }
 
-typedef _ChapterRequest = (int, int, bool, bool, bool, bool, bool);
+typedef _ChapterRequest = (int, int, bool, bool, bool, bool, bool, bool);
 
 class _SelectedWord {
   const _SelectedWord({
@@ -174,6 +175,7 @@ class _SelectedWord {
     required this.root,
     this.readerGloss,
     this.bdbId,
+    this.greek = false,
   });
 
   final String word;
@@ -184,6 +186,10 @@ class _SelectedWord {
   final String root;
   final String? readerGloss;
   final String? bdbId;
+
+  /// Whether the word is the Greek New Testament's, which its own pane
+  /// shows.
+  final bool greek;
 }
 
 /// The reader top bar's own actions, in the order the bar shows them.
@@ -260,6 +266,7 @@ class BibleReaderPage extends StatefulWidget {
     this.sendStudyStateRequest,
     this.saveStudyState,
     this.sendWordInfoRequest,
+    this.sendGreekWordRequest,
     this.sendWordOccurrencesRequest,
     this.sendVerseTextsRequest,
     this.sendCrossReferencesRequest,
@@ -274,6 +281,9 @@ class BibleReaderPage extends StatefulWidget {
   final void Function(GetStudyState request)? sendStudyStateRequest;
   final void Function(SaveStudyState request)? saveStudyState;
   final void Function(GetWordInfo request)? sendWordInfoRequest;
+
+  /// Test seam: how the Greek word pane asks for its word.
+  final void Function(GetGreekWord request)? sendGreekWordRequest;
   final void Function(GetWordOccurrences request)? sendWordOccurrencesRequest;
   final void Function(GetVerseTexts request)? sendVerseTextsRequest;
   final void Function(GetCrossReferences request)? sendCrossReferencesRequest;
@@ -972,6 +982,28 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   Widget _wordInfoSheet(_WordPane pane) {
     final selected = pane.word;
+    if (selected.greek && selected.chapter != null) {
+      return GreekWordSheet(
+        key: ValueKey(
+          'greek:${selected.bookIndex}:${selected.chapter}:'
+          '${selected.verse}:${selected.position}',
+        ),
+        sendRequest: widget.sendGreekWordRequest,
+        sendVerseTextsRequest: widget.sendVerseTextsRequest,
+        word: selected.word,
+        book: selected.bookIndex + 1,
+        chapter: selected.chapter!,
+        verse: selected.verse ?? 1,
+        position: selected.position ?? 0,
+        useEnglishBookNames: _activeReader?._englishBookNames ?? false,
+        ntSyriac: _activeReader?._ntSyriac ?? false,
+        nameBookmarks: _activeReader?._nameBookmarks,
+        onNavigateToPassage: (book, chapter, verse) {
+          _activeReader?._navigateTo(book, chapter, verse: verse);
+          if (_mobileLayout == true) _showReaderPage();
+        },
+      );
+    }
     return WordInfoSheet(
       sendInfoRequest: widget.sendWordInfoRequest,
       sendOccurrencesRequest: widget.sendWordOccurrencesRequest,
@@ -1691,6 +1723,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   bool _loadingPrev = false;
 
   bool _ntSyriac = false;
+  bool _ntGreek = false;
   bool _englishBookNames = false;
   bool _hebrewNumerals = true;
 
@@ -1778,6 +1811,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         msg.book,
         msg.chapter,
         msg.syriac,
+        msg.greek,
         msg.includeGlosses,
         msg.includeMorphology,
         msg.includeNames,
@@ -1890,6 +1924,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       requestId: id,
       book: bookIndex + 1,
       chapter: chapter,
+      greek: _isGreek(bookIndex),
     );
     final send = widget.sendTranslationRequest;
     if (send != null) {
@@ -2217,7 +2252,10 @@ class _ReaderSessionState extends State<_ReaderSession>
     });
   }
 
-  bool _isSyriac(int bookIndex) => bookIndex >= 39 && _ntSyriac;
+  bool _isSyriac(int bookIndex) => bookIndex >= 39 && _ntSyriac && !_ntGreek;
+
+  /// Whether a book is read in Greek: the New Testament, set to the TR.
+  bool _isGreek(int bookIndex) => bookIndex >= 39 && _ntGreek;
 
   int? _currentSectionIndex() {
     final idx = _sections.indexWhere(
@@ -2375,11 +2413,18 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   void _applyReadingSettings(AppReadingSettings settings) {
     final reloadChapter =
-        (settings.ntSyriac != _ntSyriac && _bookIndex >= 39) ||
+        ((settings.ntSyriac != _ntSyriac || settings.ntGreek != _ntGreek) &&
+            _bookIndex >= 39) ||
         settings.glossInterlinear != _glossInterlinear ||
         settings.morphologyInterlinear != _morphologyInterlinear ||
         settings.highlightProperNames != _highlightProperNames;
     setState(() {
+      // The New Testament's English is Murdock's beside the Peshitta and
+      // the ULT's beside the Greek.
+      if (settings.ntGreek != _ntGreek) {
+        _translations.removeWhere((chapter, _) => chapter.$1 >= 39);
+        _translationRequests.removeWhere((_, chapter) => chapter.$1 >= 39);
+      }
       if (settings.rapidReading != _rapidReading ||
           settings.rapidReveal != _rapidReveal) {
         _revealed.clear();
@@ -2396,6 +2441,7 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   void _adoptReadingSettings(AppReadingSettings settings) {
     _ntSyriac = settings.ntSyriac;
+    _ntGreek = settings.ntGreek;
     _englishBookNames = settings.englishBookNames;
     _hebrewNumerals = settings.hebrewNumerals;
     _showCantillation = settings.showCantillation;
@@ -2416,6 +2462,7 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   AppReadingSettings get _readingSettings => AppReadingSettings(
     ntSyriac: _ntSyriac,
+    ntGreek: _ntGreek,
     englishBookNames: _englishBookNames,
     hebrewNumerals: _hebrewNumerals,
     showCantillation: _showCantillation,
@@ -2751,6 +2798,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       book: book + 1,
       chapter: chapter,
       syriac: _isSyriac(book),
+      greek: _isGreek(book),
       includeGlosses: false,
       includeMorphology: false,
       includeNames: false,
@@ -2762,6 +2810,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       if (msg.book == request.book &&
           msg.chapter == chapter &&
           msg.syriac == request.syriac &&
+          msg.greek == request.greek &&
           !result.isCompleted) {
         result.complete(msg.verses);
       }
@@ -4091,6 +4140,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     bookIndex + 1,
     chapter,
     _isSyriac(bookIndex),
+    _isGreek(bookIndex),
     _glossInterlinear,
     _morphologyInterlinear,
     _highlightProperNames,
@@ -4165,10 +4215,11 @@ class _ReaderSessionState extends State<_ReaderSession>
       book: bookIndex + 1,
       chapter: chapter,
       syriac: _isSyriac(bookIndex),
+      greek: _isGreek(bookIndex),
       includeGlosses: _glossInterlinear,
       includeMorphology: _morphologyInterlinear,
       includeNames: _highlightProperNames,
-      includeRoots: key.$7,
+      includeRoots: key.$8,
     );
     final send = widget.sendChapterRequest;
     if (send != null) {
@@ -4518,6 +4569,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       position: position,
       root: root,
       readerGloss: readerGloss,
+      greek: _isGreek(bookIndex),
     );
     widget.onWordInfoRequested(selected, newPane: newPane);
   }
@@ -4684,10 +4736,14 @@ class _ReaderSessionState extends State<_ReaderSession>
           enabled: false,
           height: 36,
           child: Align(
-            alignment: Alignment.centerRight,
+            alignment: _isGreek(bookIndex)
+                ? Alignment.centerLeft
+                : Alignment.centerRight,
             child: Text(
               word,
-              textDirection: TextDirection.rtl,
+              textDirection: _isGreek(bookIndex)
+                  ? TextDirection.ltr
+                  : TextDirection.rtl,
               style: TextStyle(
                 fontFamily: 'Cardo',
                 fontFamilyFallback: const ['Noto Serif Hebrew'],
@@ -5240,6 +5296,9 @@ class _ReaderSessionState extends State<_ReaderSession>
               crossReferenceMinScore: _crossReferenceMinScore,
               fontSize: _fontSize,
               fontFamily: _fontFamily,
+              sourceDirection: _isGreek(b)
+                  ? TextDirection.ltr
+                  : TextDirection.rtl,
               showCantillation: _showCantillation,
               glossInterlinear: _glossInterlinear,
               morphologyInterlinear: _morphologyInterlinear,

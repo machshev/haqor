@@ -26,6 +26,7 @@ use crate::signals::{
 };
 #[cfg(target_arch = "wasm32")]
 use crate::signals::{FlushProgress, ProgressSnapshot};
+use crate::signals::{GetGreekWord, GreekOccurrenceEntry, GreekWordInfo};
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -676,16 +677,26 @@ pub async fn get_verse_texts(bible: SharedBible) {
             (u8, u8),
             std::collections::HashMap<u8, Vec<TranslationSpanEntry>>,
         > = std::collections::HashMap::new();
+        // The Greek, likewise, where the batch asks for it.
+        let mut greek_chapters: std::collections::HashMap<
+            (u8, u8),
+            std::collections::HashMap<u8, haqor_core::greek::GreekVerse>,
+        > = std::collections::HashMap::new();
         let verses = req
             .refs
             .iter()
             .filter_map(|r| {
+                let greek = req.greek && r.book >= 40;
                 let translation = if req.english_only {
                     chapters
                         .entry((r.book, r.chapter))
                         .or_insert_with(|| {
-                            bible
-                                .chapter_translation(r.book, r.chapter)
+                            let spans = if greek {
+                                bible.greek_chapter_translation(r.book, r.chapter)
+                            } else {
+                                bible.chapter_translation(r.book, r.chapter)
+                            };
+                            spans
                                 .unwrap_or_default()
                                 .into_iter()
                                 .map(|(verse, spans)| (verse, translation_spans(spans)))
@@ -696,7 +707,34 @@ pub async fn get_verse_texts(bible: SharedBible) {
                 } else {
                     Vec::new()
                 };
-                let (text, gloss_words, source_words) = if req.english_only {
+                let greek_verse = if greek {
+                    greek_chapters
+                        .entry((r.book, r.chapter))
+                        .or_insert_with(|| {
+                            bible
+                                .greek_chapter(r.book, r.chapter)
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|verse| (verse.verse, verse))
+                                .collect()
+                        })
+                        .remove(&r.verse)
+                } else {
+                    None
+                };
+                let (text, gloss_words, source_words) = if let Some(verse) = greek_verse {
+                    let source_words: Vec<String> =
+                        verse.words.iter().map(|w| w.text.clone()).collect();
+                    if req.english_only {
+                        let gloss_words: Vec<String> =
+                            verse.words.iter().map(|w| w.english.clone()).collect();
+                        (gloss_words.join(" "), gloss_words, source_words)
+                    } else {
+                        (verse.text(), Vec::new(), Vec::new())
+                    }
+                } else if greek {
+                    return None;
+                } else if req.english_only {
                     let pairs = bible.verse_gloss_words(r.book, r.chapter, r.verse).ok()?;
                     let (source_words, gloss_words): (Vec<String>, Vec<String>) =
                         pairs.into_iter().unzip();
@@ -740,6 +778,10 @@ pub async fn get_chapter_text(bible: SharedBible) {
         let req = signal_pack.message;
         debug_print!("{:?}", req);
         let bible_guard = lock(&bible);
+        if req.greek && req.book >= 40 {
+            greek_chapter_text(&bible_guard, &req);
+            continue;
+        }
         match bible_guard.get_chapter(req.book, req.chapter, req.syriac) {
             Ok(raw) => {
                 let metadata = bible_guard
@@ -798,6 +840,7 @@ pub async fn get_chapter_text(bible: SharedBible) {
                     book: req.book,
                     chapter: req.chapter,
                     syriac: req.syriac,
+                    greek: false,
                     include_glosses: req.include_glosses,
                     include_morphology: req.include_morphology,
                     include_names: req.include_names,
@@ -809,6 +852,69 @@ pub async fn get_chapter_text(bible: SharedBible) {
             Err(e) => debug_print!("get_chapter_text error: {:?}", e),
         }
     }
+}
+
+/// A New Testament chapter in Greek, the TR, as [`get_chapter_text`] sends a
+/// chapter: each word's English in context as its gloss, its grammar code as
+/// its morphology, whether it names a person or place, and its dictionary
+/// form as its root, which study highlights key on.
+fn greek_chapter_text(bible: &haqor_core::bible::Bible, req: &GetChapter) {
+    let verses = match bible.greek_chapter(req.book, req.chapter) {
+        Ok(verses) => verses,
+        Err(e) => {
+            debug_print!("greek_chapter_text error: {:?}", e);
+            return;
+        }
+    };
+    let mut cross_references: std::collections::HashMap<u8, Vec<f32>> = bible
+        .chapter_cross_reference_scores(req.book, req.chapter)
+        .map(|scores| scores.into_iter().collect())
+        .unwrap_or_default();
+    let verses = verses
+        .into_iter()
+        .map(|verse| {
+            let words = &verse.words;
+            let text = verse.text();
+            VerseEntry {
+                verse: verse.verse,
+                text,
+                glosses: if req.include_glosses {
+                    words.iter().map(|w| w.english.clone()).collect()
+                } else {
+                    Vec::new()
+                },
+                morphologies: if req.include_morphology {
+                    words.iter().map(|w| w.grammar.clone()).collect()
+                } else {
+                    Vec::new()
+                },
+                names: if req.include_names {
+                    words.iter().map(|w| w.name.is_some()).collect()
+                } else {
+                    Vec::new()
+                },
+                roots: if req.include_roots {
+                    words.iter().map(|w| w.lemma.clone()).collect()
+                } else {
+                    Vec::new()
+                },
+                ketivs: Vec::new(),
+                cross_reference_scores: cross_references.remove(&verse.verse).unwrap_or_default(),
+            }
+        })
+        .collect();
+    ChapterText {
+        book: req.book,
+        chapter: req.chapter,
+        syriac: false,
+        greek: true,
+        include_glosses: req.include_glosses,
+        include_morphology: req.include_morphology,
+        include_names: req.include_names,
+        include_roots: req.include_roots,
+        verses,
+    }
+    .send_signal_to_dart();
 }
 
 /// Strip characters that appear in verse text but not in the words table:
@@ -2457,17 +2563,82 @@ fn translation_spans(
         .collect()
 }
 
+/// A word of the Greek New Testament: its tags, the person or place it
+/// names, and every word of the TR sharing its dictionary form.
+pub async fn get_greek_word(bible: SharedBible) {
+    let receiver = GetGreekWord::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let bible = lock(&bible);
+        let word = bible
+            .greek_word_at(req.book, req.chapter, req.verse, req.position)
+            .unwrap_or_else(|e| {
+                debug_print!("get_greek_word error: {:?}", e);
+                None
+            });
+        let Some(word) = word else {
+            GreekWordInfo {
+                request_id: req.request_id,
+                found: false,
+                word: String::new(),
+                lemma: String::new(),
+                gloss: String::new(),
+                english: String::new(),
+                grammar: String::new(),
+                grammar_description: String::new(),
+                name: None,
+                occurrences: Vec::new(),
+            }
+            .send_signal_to_dart();
+            continue;
+        };
+        let name = word
+            .name
+            .and_then(|id| bible.name_entity(id).ok().flatten())
+            .map(|entity| name_summary_entry(entity.summary));
+        let occurrences = bible
+            .greek_lemma_occurrences(&word.lemma)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|o| GreekOccurrenceEntry {
+                book: o.book,
+                chapter: o.chapter,
+                verse: o.verse,
+                position: o.position,
+            })
+            .collect();
+        GreekWordInfo {
+            request_id: req.request_id,
+            found: true,
+            grammar_description: haqor_core::greek::describe_grammar(&word.grammar),
+            word: word.text,
+            lemma: word.lemma,
+            gloss: word.gloss,
+            english: word.english,
+            grammar: word.grammar,
+            name,
+            occurrences,
+        }
+        .send_signal_to_dart();
+    }
+}
+
 pub async fn get_chapter_translation(bible: SharedBible) {
     let receiver = GetChapterTranslation::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let req = signal_pack.message;
         debug_print!("{:?}", req);
-        let verses = lock(&bible)
-            .chapter_translation(req.book, req.chapter)
-            .unwrap_or_else(|e| {
-                debug_print!("get_chapter_translation error: {:?}", e);
-                Vec::new()
-            });
+        let bible = lock(&bible);
+        let verses = if req.greek {
+            bible.greek_chapter_translation(req.book, req.chapter)
+        } else {
+            bible.chapter_translation(req.book, req.chapter)
+        };
+        let verses = verses.unwrap_or_else(|e| {
+            debug_print!("get_chapter_translation error: {:?}", e);
+            Vec::new()
+        });
         ChapterTranslation {
             request_id: req.request_id,
             book: req.book,

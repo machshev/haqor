@@ -27,6 +27,7 @@ class _FakeRust {
         book: request.book,
         chapter: request.chapter,
         syriac: request.syriac,
+        greek: request.greek,
         includeGlosses: request.includeGlosses,
         includeMorphology: request.includeMorphology,
         includeNames: request.includeNames,

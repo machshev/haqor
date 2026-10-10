@@ -30,6 +30,12 @@ void main() {
     expect(verseGlossPositions(words), [0, 1, 2]);
   });
 
+  test('Greek words, punctuation and all, consume gloss positions', () {
+    final words = 'Βίβλος γενέσεως Ἰησοῦ χριστοῦ, υἱοῦ Δαβίδ·'.split(' ');
+
+    expect(verseGlossPositions(words), [0, 1, 2, 3, 4, 5]);
+  });
+
   test('recognises Yahweh with or without an attached particle', () {
     expect(isYahweh('יְהוָה'), isTrue);
     expect(isYahweh('יַהְוֶה'), isTrue);
