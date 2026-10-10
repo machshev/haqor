@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/study_workspace.dart';
+import 'package:haqor/src/widgets/bible_timeline_page.dart';
 import 'package:haqor/src/widgets/name_details.dart';
 import 'package:haqor/src/widgets/place_map.dart';
 import 'package:haqor/src/widgets/word_info_sheet.dart';
@@ -37,6 +38,7 @@ void _deliverEntity(
   List<NameLinkEntry> links = const [],
   List<PlaceLocationEntry> locations = const [],
   List<NameVerse> verses = const [],
+  List<BibleEventEntry> events = const [],
 }) {
   assignRustSignal['NameEntityInfo']!(
     NameEntityInfo(
@@ -55,6 +57,7 @@ void _deliverEntity(
       links: links,
       locations: locations,
       verses: verses,
+      events: events,
     ).bincodeSerialize(),
     Uint8List(0),
   );
@@ -120,6 +123,28 @@ void main() {
     expect(find.text('a son of Jeroboam.'), findsOneWidget);
     expect(find.text('Father'), findsOneWidget);
     expect(find.text('Zechariah, Zachariah'), findsOneWidget);
+    // A person has no map, and no timeline without events.
+    expect(find.byType(PlaceMap), findsNothing);
+    expect(find.textContaining('Timeline'), findsNothing);
+    // The page bookmarks its person in the study, and unbookmarks them.
+    await tester.tap(find.byTooltip('Bookmark in the study'));
+    await tester.pump();
+    expect(bookmarked[7]?.name, 'Zechariah');
+    expect(
+      bookmarked[7]?.description,
+      'King living at the time of Divided Monarchy',
+    );
+    await tester.tap(find.byTooltip('Remove from the study'));
+    await tester.pump();
+    expect(bookmarked, isEmpty);
+    expect(find.byTooltip('Bookmark in the study'), findsOneWidget);
+    // A form of the name links to its word sheet.
+    expect(find.byTooltip('Open the word'), findsOneWidget);
+
+    // The verses have a tab of their own.
+    expect(find.byType(OccurrenceVerseRow), findsNothing);
+    await tester.tap(find.text('Verses (2)'));
+    await tester.pumpAndSettle();
     expect(
       find.text('Named 3 times in the Hebrew Bible · 2 verses'),
       findsOneWidget,
@@ -142,27 +167,12 @@ void main() {
       find.byType(CanonDistribution),
     );
     expect(books.countsByBook, {11: 3});
-    // The page bookmarks its person in the study, and unbookmarks them.
-    await tester.tap(find.byTooltip('Bookmark in the study'));
-    await tester.pump();
-    expect(bookmarked[7]?.name, 'Zechariah');
-    expect(
-      bookmarked[7]?.description,
-      'King living at the time of Divided Monarchy',
-    );
-    await tester.tap(find.byTooltip('Remove from the study'));
-    await tester.pump();
-    expect(bookmarked, isEmpty);
-    expect(find.byTooltip('Bookmark in the study'), findsOneWidget);
-    // A form of the name links to its word sheet.
-    expect(find.byTooltip('Open the word'), findsOneWidget);
-
     await tester.ensureVisible(find.byType(OccurrenceVerseRow).last);
     await tester.tap(find.byType(OccurrenceVerseRow).last);
     expect(navigated, [(10, 15, 8)]);
-    // A person has no map.
-    expect(find.byType(PlaceMap), findsNothing);
 
+    await tester.tap(find.text('About'));
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ActionChip, 'Jeroboam'));
     // The relative's page waits on its own reply, so it never settles.
     await tester.pump();
@@ -227,6 +237,98 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Google Maps'), findsOneWidget);
     expect(find.text('Google Earth'), findsOneWidget);
+  });
+
+  testWidgets('a timeline tab draws and lists the events they are in', (
+    tester,
+  ) async {
+    final requests = <GetNameEntity>[];
+    final timelineRequests = <GetBibleEvents>[];
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NameDetailsPage(
+          id: 5,
+          useEnglishBookNames: true,
+          sendRequest: requests.add,
+          sendTimelineRequest: timelineRequests.add,
+        ),
+      ),
+    );
+    BibleEventEntry event(int id, String title, int year, {int years = 0}) =>
+        BibleEventEntry(
+          id: id,
+          title: title,
+          year: year,
+          duration: years,
+          unit: years > 0 ? 'years' : '',
+          passages: [
+            ThematicTarget(
+              book: 2,
+              chapter: 2,
+              verse: 2,
+              lastChapter: 2,
+              lastVerse: 10,
+            ),
+          ],
+          people: const [],
+          places: const [],
+          note: '',
+        );
+    _deliverEntity(
+      requests.single,
+      _summary(5, 'Moses'),
+      events: [
+        event(121, 'Birth of Moses', -1571),
+        event(122, 'Lifetime of Moses', -1571, years: 120),
+        event(126, 'Exodus from Egypt', -1491),
+      ],
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Verses (2)'), findsNothing);
+    await tester.tap(find.text('Timeline (3)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('3 events · 1571 BC – 1451 BC'), findsOneWidget);
+    expect(find.byKey(const ValueKey('name-timeline-chart')), findsOneWidget);
+    final exodus = find.byKey(const ValueKey('name-event-126'));
+    expect(
+      find.descendant(
+        of: exodus,
+        matching: find.text('1491 BC · Exodus 2:2–10'),
+      ),
+      findsOneWidget,
+    );
+
+    // An event opens on the Bible timeline, its details shown.
+    await tester.tap(exodus);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    final timeline = tester.widget<BibleTimelinePage>(
+      find.byType(BibleTimelinePage),
+    );
+    expect(timeline.initialEventId, '126');
+    assignRustSignal['BibleEvents']!(
+      BibleEvents(
+        requestId: timelineRequests.single.requestId,
+        events: [
+          event(1, 'Creation of all things', -4004),
+          event(126, 'Exodus from Egypt', -1491),
+        ],
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text('Exodus from Egypt'),
+      ),
+      findsOneWidget,
+    );
   });
 
   test('the Google links land on the position', () {

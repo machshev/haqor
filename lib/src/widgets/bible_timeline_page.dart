@@ -77,8 +77,12 @@ class BibleTimelinePage extends StatefulWidget {
     this.useEnglishBookNames = false,
     this.onNavigateToPassage,
     this.bookmarks,
+    this.initialEventId,
     this.sendRequest,
   });
+
+  /// The event to open on, its details shown.
+  final String? initialEventId;
 
   final bool useEnglishBookNames;
   final void Function(int bookIndex, int chapter, int verse)?
@@ -90,15 +94,19 @@ class BibleTimelinePage extends StatefulWidget {
 
   static Future<void> open(
     BuildContext context, {
+    String? initialEventId,
     bool useEnglishBookNames = false,
     void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
     NameBookmarks? bookmarks,
+    void Function(GetBibleEvents)? sendRequest,
   }) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => BibleTimelinePage(
+        initialEventId: initialEventId,
         useEnglishBookNames: useEnglishBookNames,
         onNavigateToPassage: onNavigateToPassage,
         bookmarks: bookmarks,
+        sendRequest: sendRequest,
       ),
     ),
   );
@@ -231,6 +239,8 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
     return TimelinePage(
       timeline: bibleTimeline,
       entries: _entries,
+      initialSelectedId: widget.initialEventId,
+      showInitialSelected: widget.initialEventId != null,
       useEnglishBookNames: widget.useEnglishBookNames,
       onOpenPassage: (passage) =>
           navigate?.call(passage.bookIndex, passage.chapter, passage.verse),

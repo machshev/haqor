@@ -870,6 +870,8 @@ pub struct NameEntityInfo {
     pub locations: Vec<PlaceLocationEntry>,
     /// The verses naming it, in canonical order.
     pub verses: Vec<NameVerse>,
+    /// The events of the Bible it takes part in, in time order.
+    pub events: Vec<BibleEventEntry>,
 }
 
 /// A verse naming a person, place or other named thing, and the words in it

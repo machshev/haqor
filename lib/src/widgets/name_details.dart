@@ -9,7 +9,9 @@ import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../external_link.dart';
 import '../study_workspace.dart';
+import 'bible_timeline_page.dart';
 import 'place_map.dart';
+import 'timeline_chart.dart';
 import 'verse_text_cache.dart';
 import 'word_info_sheet.dart'
     show
@@ -123,6 +125,7 @@ class NameDetailsPage extends StatefulWidget {
     this.onNavigateToPassage,
     this.sendRequest,
     this.sendVerseTextsRequest,
+    this.sendTimelineRequest,
     this.basemap,
     this.bookmarks,
   });
@@ -142,6 +145,7 @@ class NameDetailsPage extends StatefulWidget {
   /// Stand in for the signals to Rust, for tests.
   final void Function(GetNameEntity)? sendRequest;
   final void Function(GetVerseTexts)? sendVerseTextsRequest;
+  final void Function(GetBibleEvents)? sendTimelineRequest;
   final Basemap? basemap;
 
   /// Bookmarking in the active study; without it the page has no bookmark.
@@ -234,6 +238,7 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
         onNavigateToPassage: widget.onNavigateToPassage,
         sendRequest: widget.sendRequest,
         sendVerseTextsRequest: widget.sendVerseTextsRequest,
+        sendTimelineRequest: widget.sendTimelineRequest,
         basemap: widget.basemap,
         bookmarks: widget.bookmarks,
       ),
@@ -333,38 +338,90 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
   @override
   Widget build(BuildContext context) {
     final info = _info;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(info?.summary.name ?? widget.title ?? ''),
-        actions: [
-          if (widget.bookmarks case final bookmarks?)
-            if (info != null && info.found)
-              bookmarks.isBookmarked(info.summary.id)
-                  ? IconButton(
-                      tooltip: 'Remove from the study',
-                      icon: const Icon(Icons.bookmark),
-                      onPressed: () => _toggleBookmark(bookmarks, info.summary),
-                    )
-                  : IconButton(
-                      tooltip: 'Bookmark in the study',
-                      icon: const Icon(Icons.bookmark_border),
-                      onPressed: () => _toggleBookmark(bookmarks, info.summary),
-                    ),
-        ],
+    if (info == null || !info.found) {
+      return Scaffold(
+        appBar: _appBar(info),
+        body: info == null
+            ? const Center(child: CircularProgressIndicator())
+            : const Center(child: Text('Nothing is known of this name.')),
+      );
+    }
+    final tabs = [
+      const Tab(text: 'About'),
+      if (info.verses.isNotEmpty) Tab(text: 'Verses (${info.verses.length})'),
+      if (info.events.isNotEmpty) Tab(text: 'Timeline (${info.events.length})'),
+    ];
+    final views = [
+      _about(context, info),
+      if (info.verses.isNotEmpty) _verses(context, info),
+      if (info.events.isNotEmpty) _timeline(context, info),
+    ];
+    if (tabs.length == 1) {
+      return Scaffold(appBar: _appBar(info), body: views.single);
+    }
+    return DefaultTabController(
+      length: tabs.length,
+      child: Scaffold(
+        appBar: _appBar(info, bottom: TabBar(tabs: tabs, isScrollable: true)),
+        body: TabBarView(children: views),
       ),
-      body: info == null
-          ? const Center(child: CircularProgressIndicator())
-          : !info.found
-          ? const Center(child: Text('Nothing is known of this name.'))
-          : _body(context, info),
     );
   }
 
-  Widget _body(BuildContext context, NameEntityInfo info) {
+  PreferredSizeWidget _appBar(
+    NameEntityInfo? info, {
+    PreferredSizeWidget? bottom,
+  }) => AppBar(
+    title: Text(info?.summary.name ?? widget.title ?? ''),
+    bottom: bottom,
+    actions: [
+      if (widget.bookmarks case final bookmarks?)
+        if (info != null && info.found)
+          bookmarks.isBookmarked(info.summary.id)
+              ? IconButton(
+                  tooltip: 'Remove from the study',
+                  icon: const Icon(Icons.bookmark),
+                  onPressed: () => _toggleBookmark(bookmarks, info.summary),
+                )
+              : IconButton(
+                  tooltip: 'Bookmark in the study',
+                  icon: const Icon(Icons.bookmark_border),
+                  onPressed: () => _toggleBookmark(bookmarks, info.summary),
+                ),
+    ],
+  );
+
+  /// The side margin keeping a readable measure on a wide window.
+  double _side(BuildContext context) =>
+      20 + math.max(0.0, (MediaQuery.sizeOf(context).width - 760) / 2);
+
+  TextStyle? _heading(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.textTheme.titleSmall?.copyWith(
+      color: theme.colorScheme.primary,
+    );
+  }
+
+  Widget _footnote(BuildContext context, String text) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Text(
+        text,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  /// Who or what it is: where a place was, what the text says, its family
+  /// and other links, and the forms of its name.
+  Widget _about(BuildContext context, NameEntityInfo info) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final summary = info.summary;
-    final heading = theme.textTheme.titleSmall?.copyWith(color: scheme.primary);
+    final heading = _heading(context);
     Widget section(String title, List<Widget> children) => Padding(
       padding: const EdgeInsets.only(top: 20),
       child: Column(
@@ -385,23 +442,8 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
     for (final link in info.links) {
       linkGroups.putIfAbsent(link.relation, () => []).add(link);
     }
-    // How often each book names it, for the book filter, and the verses in
-    // the books chosen.
-    final countsByBook = <int, int>{};
-    for (final verse in info.verses) {
-      countsByBook[verse.book] =
-          (countsByBook[verse.book] ?? 0) + verse.positions.length;
-    }
-    final verses = _books.isEmpty
-        ? info.verses
-        : [
-            for (final verse in info.verses)
-              if (_books.contains(verse.book)) verse,
-          ];
     final bottom = MediaQuery.viewPaddingOf(context).bottom;
-    // A readable measure on a wide window.
-    final double side =
-        20 + math.max(0.0, (MediaQuery.sizeOf(context).width - 760) / 2);
+    final side = _side(context);
 
     final head = <Widget>[
       Row(
@@ -482,48 +524,6 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
           for (final form in info.forms)
             _FormRow(form: form, onOpen: () => _openForm(form)),
         ]),
-      if (info.verses.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.only(top: 20),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  [
-                    mentionsLabel(summary.occurrences),
-                    if (_books.isNotEmpty)
-                      '${verses.length} of ${info.verses.length} verses'
-                    else if (info.verses.length != summary.occurrences)
-                      '${info.verses.length} verses',
-                  ].join(' · '),
-                  style: heading,
-                ),
-              ),
-              IconButton(
-                tooltip: _englishOnly
-                    ? 'Show Hebrew verse text'
-                    : 'Show English-only verse text',
-                icon: VerseModeIcon(englishOnly: _englishOnly),
-                onPressed: _toggleEnglishOnly,
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
-          ),
-        ),
-      if (info.verses.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: CanonDistribution(
-            countsByBook: countsByBook,
-            selectedBooks: _books,
-            useEnglishBookNames: widget.useEnglishBookNames,
-            onSelect: (books) => setState(() {
-              _books
-                ..clear()
-                ..addAll(books);
-            }),
-          ),
-        ),
     ];
     final foot = Padding(
       padding: const EdgeInsets.only(top: 24),
@@ -544,6 +544,73 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
       ),
     );
 
+    return ListView(
+      padding: EdgeInsets.fromLTRB(side, 8, side, 24 + bottom),
+      children: [...head, foot],
+    );
+  }
+
+  /// The verses naming it, narrowed by book.
+  Widget _verses(BuildContext context, NameEntityInfo info) {
+    final summary = info.summary;
+    // How often each book names it, for the book filter, and the verses in
+    // the books chosen.
+    final countsByBook = <int, int>{};
+    for (final verse in info.verses) {
+      countsByBook[verse.book] =
+          (countsByBook[verse.book] ?? 0) + verse.positions.length;
+    }
+    final verses = _books.isEmpty
+        ? info.verses
+        : [
+            for (final verse in info.verses)
+              if (_books.contains(verse.book)) verse,
+          ];
+    final bottom = MediaQuery.viewPaddingOf(context).bottom;
+    final side = _side(context);
+    final head = <Widget>[
+      Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                [
+                  mentionsLabel(summary.occurrences),
+                  if (_books.isNotEmpty)
+                    '${verses.length} of ${info.verses.length} verses'
+                  else if (info.verses.length != summary.occurrences)
+                    '${info.verses.length} verses',
+                ].join(' · '),
+                style: _heading(context),
+              ),
+            ),
+            IconButton(
+              tooltip: _englishOnly
+                  ? 'Show Hebrew verse text'
+                  : 'Show English-only verse text',
+              icon: VerseModeIcon(englishOnly: _englishOnly),
+              onPressed: _toggleEnglishOnly,
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: CanonDistribution(
+          countsByBook: countsByBook,
+          selectedBooks: _books,
+          useEnglishBookNames: widget.useEnglishBookNames,
+          onSelect: (books) => setState(() {
+            _books
+              ..clear()
+              ..addAll(books);
+          }),
+        ),
+      ),
+    ];
+
     // The verses are built as they scroll into view, so a name in a thousand
     // verses costs no more to open than one in three.
     return CustomScrollView(
@@ -553,15 +620,119 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
           sliver: SliverList.list(children: head),
         ),
         SliverPadding(
-          padding: EdgeInsets.symmetric(horizontal: side - 4),
+          padding: EdgeInsets.fromLTRB(side - 4, 0, side - 4, 24 + bottom),
           sliver: SliverList.builder(
             itemCount: verses.length,
             itemBuilder: (context, i) => _verseRow(verses[i]),
           ),
         ),
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(side, 0, side, 24 + bottom),
-          sliver: SliverToBoxAdapter(child: foot),
+      ],
+    );
+  }
+
+  /// Opens the Bible timeline, at [eventId]'s event if one is given.
+  void _openTimeline({String? eventId}) => BibleTimelinePage.open(
+    context,
+    initialEventId: eventId,
+    useEnglishBookNames: widget.useEnglishBookNames,
+    bookmarks: widget.bookmarks,
+    onNavigateToPassage: _navigate,
+    sendRequest: widget.sendTimelineRequest,
+  );
+
+  /// The events it takes part in: drawn to scale as a timeline of their
+  /// own, and listed, each opening on the Bible timeline.
+  Widget _timeline(BuildContext context, NameEntityInfo info) {
+    final theme = Theme.of(context);
+    final entries = bibleTimelineEntries(info.events);
+    final bottom = MediaQuery.viewPaddingOf(context).bottom;
+    final side = _side(context);
+    final first = entries.first.start;
+    final last = entries
+        .map((e) => e.last)
+        .reduce(
+          (a, b) => bibleTimeline.positionOf(a) >= bibleTimeline.positionOf(b)
+              ? a
+              : b,
+        );
+    final span = first == last
+        ? bibleTimeline.formatTime(first)
+        : '${bibleTimeline.formatTime(first)} – '
+              '${bibleTimeline.formatTime(last)}';
+    return ListView(
+      padding: EdgeInsets.fromLTRB(0, 8, 0, 24 + bottom),
+      children: [
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: side),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${info.events.length == 1 ? '1 event' : '${info.events.length} events'}'
+                  ' · $span',
+                  style: _heading(context),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _openTimeline,
+                icon: const Icon(Icons.timeline),
+                label: const Text('Bible timeline'),
+              ),
+            ],
+          ),
+        ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            final extent = timelineExtent(bibleTimeline, entries);
+            final label = math.min(width / 3, 140.0);
+            final ppu = math.max(
+              1e-6,
+              (width - TimelineChart.padding * 2 - label) /
+                  (extent.end - extent.start),
+            );
+            return SingleChildScrollView(
+              key: const ValueKey('name-timeline-chart'),
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(top: 8),
+              child: TimelineChart(
+                timeline: bibleTimeline,
+                entries: entries,
+                pixelsPerUnit: ppu,
+                onTapEntry: (entry) => _openTimeline(eventId: entry.id),
+              ),
+            );
+          },
+        ),
+        const Divider(height: 1),
+        for (final entry in entries)
+          ListTile(
+            key: ValueKey('name-event-${entry.id}'),
+            contentPadding: EdgeInsets.symmetric(horizontal: side),
+            leading: Icon(
+              timelineEntryIcon(entry),
+              color: entry.isSpan
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.tertiary,
+            ),
+            title: Text(entry.title),
+            subtitle: Text(
+              [
+                timelineEntryTime(bibleTimeline, entry),
+                for (final passage in entry.verses)
+                  '${bookDisplayName(passage.bookIndex, useEnglish: widget.useEnglishBookNames)} '
+                      '${passage.reference}',
+              ].join(' · '),
+            ),
+            onTap: () => _openTimeline(eventId: entry.id),
+          ),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: side),
+          child: _footnote(
+            context,
+            'Events from Theographic Bible Metadata (CC BY-SA 4.0), dated '
+            'from the creation in 4004 BC',
+          ),
         ),
       ],
     );

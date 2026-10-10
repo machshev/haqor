@@ -609,6 +609,7 @@ class TimelinePage extends StatefulWidget {
     required this.onOpenPassage,
     this.initialSelectedId,
     this.initialCalendar = false,
+    this.showInitialSelected = false,
     this.reload,
     this.onEditTimeline,
     this.onUpdateTimeline,
@@ -628,6 +629,9 @@ class TimelinePage extends StatefulWidget {
 
   /// Whether to open on the calendar, where the timeline has months.
   final bool initialCalendar;
+
+  /// Whether to open [initialSelectedId]'s details when the page opens.
+  final bool showInitialSelected;
 
   /// Reads the timeline again after an edit; null when it is gone, which
   /// closes the page.
@@ -673,6 +677,17 @@ class _TimelinePageState extends State<TimelinePage> {
     final year =
         timeline.weekYear ?? entries.firstOrNull?.start.value.roundToDouble();
     return year ?? (timeline.isCalendar ? -1 : 1);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.initialSelectedId;
+    if (!widget.showInitialSelected || id == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final entry = _entries.where((e) => e.id == id).firstOrNull;
+      if (mounted && entry != null) _show(entry);
+    });
   }
 
   @override

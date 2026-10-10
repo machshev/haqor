@@ -892,6 +892,30 @@ fn name_summary_entry(s: haqor_core::names::NameSummary) -> NameSummaryEntry {
     }
 }
 
+fn bible_event_entry(e: haqor_core::names::BibleEvent) -> BibleEventEntry {
+    BibleEventEntry {
+        id: e.id,
+        title: e.title,
+        year: e.year,
+        duration: e.duration,
+        unit: e.unit,
+        passages: e
+            .passages
+            .into_iter()
+            .map(|p| ThematicTarget {
+                book: p.first.book,
+                chapter: p.first.chapter,
+                verse: p.first.verse,
+                last_chapter: p.last.chapter,
+                last_verse: p.last.verse,
+            })
+            .collect(),
+        people: e.people.into_iter().map(name_summary_entry).collect(),
+        places: e.places.into_iter().map(name_summary_entry).collect(),
+        note: e.note,
+    }
+}
+
 fn place_location_entry(l: haqor_core::names::PlaceLocation) -> PlaceLocationEntry {
     use haqor_core::names::PlaceShape;
     let flat = |parts: &[Vec<[f64; 2]>]| -> Vec<Vec<f64>> {
@@ -2099,6 +2123,7 @@ pub async fn get_name_entity(bible: SharedBible) {
                 links: Vec::new(),
                 locations: Vec::new(),
                 verses: Vec::new(),
+                events: Vec::new(),
             }
             .send_signal_to_dart();
             continue;
@@ -2147,6 +2172,12 @@ pub async fn get_name_entity(bible: SharedBible) {
                 .map(place_location_entry)
                 .collect(),
             verses,
+            events: bible
+                .name_events(req.id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(bible_event_entry)
+                .collect(),
         }
         .send_signal_to_dart();
     }
@@ -2326,30 +2357,7 @@ pub async fn get_bible_events(bible: SharedBible) {
         });
         BibleEvents {
             request_id: req.request_id,
-            events: events
-                .into_iter()
-                .map(|e| BibleEventEntry {
-                    id: e.id,
-                    title: e.title,
-                    year: e.year,
-                    duration: e.duration,
-                    unit: e.unit,
-                    passages: e
-                        .passages
-                        .into_iter()
-                        .map(|p| ThematicTarget {
-                            book: p.first.book,
-                            chapter: p.first.chapter,
-                            verse: p.first.verse,
-                            last_chapter: p.last.chapter,
-                            last_verse: p.last.verse,
-                        })
-                        .collect(),
-                    people: e.people.into_iter().map(name_summary_entry).collect(),
-                    places: e.places.into_iter().map(name_summary_entry).collect(),
-                    note: e.note,
-                })
-                .collect(),
+            events: events.into_iter().map(bible_event_entry).collect(),
         }
         .send_signal_to_dart();
     }
