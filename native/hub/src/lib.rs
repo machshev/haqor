@@ -17,9 +17,9 @@ use tokio_with_wasm::alias as tokio;
 #[cfg(target_arch = "wasm32")]
 use functions::flush_progress;
 use functions::{
-    SharedBible, finish_calibration, get_build_info, get_calibration_probe, get_chapter_people,
-    get_chapter_places, get_chapter_text, get_chapter_translation, get_cross_references,
-    get_dictionary_entry, get_journeys, get_name_entity, get_next_study_item,
+    SharedBible, finish_calibration, get_bible_events, get_build_info, get_calibration_probe,
+    get_chapter_people, get_chapter_places, get_chapter_text, get_chapter_translation,
+    get_cross_references, get_dictionary_entry, get_journeys, get_name_entity, get_next_study_item,
     get_onboarding_status, get_places, get_quotations, get_seen_concepts, get_study_state,
     get_syntax_trees, get_thematic_overview, get_thematic_references,
     get_tutor_gloss_override_stats, get_tutor_settings, get_tutor_stats, get_verse_text,
@@ -232,6 +232,7 @@ async fn main() {
         get_chapter_places,
         get_places,
         get_journeys,
+        get_bible_events,
         get_chapter_people,
         get_chapter_translation,
         get_word_info,

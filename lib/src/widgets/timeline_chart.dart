@@ -615,6 +615,7 @@ class TimelinePage extends StatefulWidget {
     this.onAddEntry,
     this.onEditEntry,
     this.onRemoveEntry,
+    this.entryDetails,
   });
 
   final StudyTimeline timeline;
@@ -643,6 +644,10 @@ class TimelinePage extends StatefulWidget {
   onAddEntry;
   final Future<void> Function(StudyTimelineEntry entry)? onEditEntry;
   final Future<void> Function(StudyTimelineEntry entry)? onRemoveEntry;
+
+  /// More about an entry, shown in its details beneath its verses.
+  final Widget Function(BuildContext sheetContext, StudyTimelineEntry entry)?
+  entryDetails;
 
   @override
   State<TimelinePage> createState() => _TimelinePageState();
@@ -770,6 +775,8 @@ class _TimelinePageState extends State<TimelinePage> {
                     ],
                   ),
                 ],
+                if (widget.entryDetails case final details?)
+                  details(sheetContext, entry),
                 if (edit != null || remove != null) ...[
                   const SizedBox(height: 12),
                   Row(

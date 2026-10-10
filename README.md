@@ -345,6 +345,18 @@ data file published by [Just Verses](http://www.justverses.com/jv/app/downloadTS
 which describes its downloads as public domain biblical information. Its King
 James verse numbers are re-numbered onto the Hebrew text.
 
+**Bible timeline** — the events of
+[Theographic Bible Metadata](https://github.com/robertrouse/theographic-bible-metadata),
+licensed CC BY-SA 4.0: each event's year, how long it lasted, the verses
+telling it and the people and places taking part. Its Old Testament dates are
+Floyd Nolen Jones's (*The Chronology of the Old Testament*), from the creation
+in 4004 BC, and those of Acts Todd Atwood's. Haqor corrects a few dates and
+titles, re-numbers the verses onto the Hebrew text, finds the people and
+places among STEP Bible's TIPNR records, and leaves Jesus out of the events
+before his birth; haqor-core's `data/event_overrides.json` lists the changes.
+The adapted events in `haqor.db` are shared under the same licence, CC BY-SA
+4.0.
+
 **Syntax trees** — MACULA Hebrew Linguistic Datasets, available at
 https://github.com/Clear-Bible/macula-hebrew/, (C) 2022-2024 Biblica, Inc,
 licensed CC BY 4.0: each verse's clauses, phrases and their roles (from the

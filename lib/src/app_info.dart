@@ -96,6 +96,18 @@ const dataSourceCredits = <DataSourceCredit>[
     url: 'http://www.justverses.com/jv/app/downloadTSK.vm',
   ),
   DataSourceCredit(
+    title: 'Theographic Bible Metadata',
+    description:
+        'The events of the Bible timeline, each with its year, how long it '
+        'lasted, its verses and the people and places taking part, dated from '
+        'the creation in 4004 BC after Floyd Nolen Jones\'s Chronology of the '
+        'Old Testament (Acts after Todd Atwood). Haqor corrects a few dates and '
+        'titles, renumbers the verses onto the Hebrew text, and finds the '
+        'people and places among STEP Bible\'s records.',
+    licence: 'CC BY-SA 4.0',
+    url: 'https://github.com/robertrouse/theographic-bible-metadata',
+  ),
+  DataSourceCredit(
     title: 'MACULA Hebrew',
     description:
         'Syntax trees for every verse of the Hebrew Bible: its clauses, '

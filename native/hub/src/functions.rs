@@ -18,11 +18,11 @@ use crate::signals::{
     WordOccurrences,
 };
 use crate::signals::{
-    ChapterPeople, ChapterPersonEntry, ChapterPlaceEntry, ChapterPlaces, ChapterRelationEntry,
-    GetChapterPeople, GetChapterPlaces, GetJourneys, GetNameEntity, GetPlaces, JourneyEntry,
-    JourneyStopEntry, Journeys, NameEntityInfo, NameFormEntry, NameLinkEntry, NameSummaryEntry,
-    NameVerse, PlaceListEntry, PlaceLocationEntry, PlaceRegionEntry, Places, SenseChoice,
-    WordSenseEntry,
+    BibleEventEntry, BibleEvents, ChapterPeople, ChapterPersonEntry, ChapterPlaceEntry,
+    ChapterPlaces, ChapterRelationEntry, GetBibleEvents, GetChapterPeople, GetChapterPlaces,
+    GetJourneys, GetNameEntity, GetPlaces, JourneyEntry, JourneyStopEntry, Journeys,
+    NameEntityInfo, NameFormEntry, NameLinkEntry, NameSummaryEntry, NameVerse, PlaceListEntry,
+    PlaceLocationEntry, PlaceRegionEntry, Places, SenseChoice, WordSenseEntry,
 };
 #[cfg(target_arch = "wasm32")]
 use crate::signals::{FlushProgress, ProgressSnapshot};
@@ -2308,6 +2308,46 @@ pub async fn get_journeys(bible: SharedBible) {
                             note: s.note,
                         })
                         .collect(),
+                })
+                .collect(),
+        }
+        .send_signal_to_dart();
+    }
+}
+
+pub async fn get_bible_events(bible: SharedBible) {
+    let receiver = GetBibleEvents::get_dart_signal_receiver();
+    while let Some(signal_pack) = receiver.recv().await {
+        let req = signal_pack.message;
+        debug_print!("{:?}", req);
+        let events = lock(&bible).bible_events().unwrap_or_else(|e| {
+            debug_print!("get_bible_events error: {:?}", e);
+            Vec::new()
+        });
+        BibleEvents {
+            request_id: req.request_id,
+            events: events
+                .into_iter()
+                .map(|e| BibleEventEntry {
+                    id: e.id,
+                    title: e.title,
+                    year: e.year,
+                    duration: e.duration,
+                    unit: e.unit,
+                    passages: e
+                        .passages
+                        .into_iter()
+                        .map(|p| ThematicTarget {
+                            book: p.first.book,
+                            chapter: p.first.chapter,
+                            verse: p.first.verse,
+                            last_chapter: p.last.chapter,
+                            last_verse: p.last.verse,
+                        })
+                        .collect(),
+                    people: e.people.into_iter().map(name_summary_entry).collect(),
+                    places: e.places.into_iter().map(name_summary_entry).collect(),
+                    note: e.note,
                 })
                 .collect(),
         }

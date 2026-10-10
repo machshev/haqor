@@ -992,6 +992,40 @@ pub struct Journeys {
     pub journeys: Vec<JourneyEntry>,
 }
 
+/// Ask for the events of the Bible, to show on a timeline.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetBibleEvents {
+    pub request_id: u32,
+}
+
+/// An event of the Bible, as Theographic Bible Metadata dates it.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct BibleEventEntry {
+    pub id: u32,
+    pub title: String,
+    /// The year it began: BC negative, with no year 0.
+    pub year: i32,
+    /// How long it lasted, in `unit`s: `years`, `months`, `weeks` or
+    /// `days`; 0 and empty where it is not given.
+    pub duration: u32,
+    pub unit: String,
+    /// The verses telling it.
+    pub passages: Vec<ThematicTarget>,
+    /// The people and places taking part.
+    pub people: Vec<NameSummaryEntry>,
+    pub places: Vec<NameSummaryEntry>,
+    /// A line about its date; may be empty.
+    pub note: String,
+}
+
+/// Reply to [`GetBibleEvents`], in time order from the creation. Empty for a
+/// database built before events were.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct BibleEvents {
+    pub request_id: u32,
+    pub events: Vec<BibleEventEntry>,
+}
+
 /// Ask for the people a chapter names, for a list of who is who in it.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetChapterPeople {

@@ -25,6 +25,7 @@ import 'widgets/chapter_selector.dart';
 import 'widgets/cross_references_sheet.dart';
 import 'widgets/markdown_note.dart';
 import 'widgets/name_details.dart';
+import 'widgets/bible_timeline_page.dart';
 import 'widgets/places_page.dart';
 import 'widgets/study_workspace_panel.dart';
 import 'widgets/study_passage_editor.dart';
@@ -202,6 +203,7 @@ enum _ReaderMenuAction {
   crossReferences,
   readingPlan,
   places,
+  timeline,
   tutor,
   memorise,
   reportIssue,
@@ -1112,6 +1114,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _ReaderMenuAction.studyWorkspace,
     _ReaderMenuAction.readingPlan,
     _ReaderMenuAction.places,
+    _ReaderMenuAction.timeline,
     _ReaderMenuAction.tutor,
     _ReaderMenuAction.memorise,
     if (_activeReader?._adminMode ?? false) _ReaderMenuAction.reportIssue,
@@ -1131,6 +1134,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           'Reading plan',
         ),
         _ReaderMenuAction.places => (Icons.travel_explore, 'Bible places'),
+        _ReaderMenuAction.timeline => (Icons.timeline, 'Bible timeline'),
         _ReaderMenuAction.tutor => (Icons.school_outlined, 'Tutor'),
         _ReaderMenuAction.memorise => (Icons.psychology_outlined, 'Memorise'),
         _ReaderMenuAction.reportIssue => (
@@ -4949,6 +4953,14 @@ class _ReaderSessionState extends State<_ReaderSession>
         _showReadingPlan();
       case _ReaderMenuAction.places:
         PlacesPage.open(
+          context,
+          useEnglishBookNames: _englishBookNames,
+          bookmarks: _nameBookmarks,
+          onNavigateToPassage: (book, chapter, verse) =>
+              _navigateTo(book, chapter, verse: verse),
+        );
+      case _ReaderMenuAction.timeline:
+        BibleTimelinePage.open(
           context,
           useEnglishBookNames: _englishBookNames,
           bookmarks: _nameBookmarks,
