@@ -156,6 +156,7 @@ void main() {
   syntaxTests();
   translationTests();
   greekTests();
+  greekToggleTests();
   compactViewMenuTests();
   readerViewTests();
 
@@ -3015,5 +3016,48 @@ void greekTests() {
       tester.widget<VerseRow>(_verse(1, 1, 1)).sourceDirection,
       TextDirection.rtl,
     );
+  });
+}
+
+void greekToggleTests() {
+  testWidgets('the bar names the source text and switches Aramaic and Greek', (
+    tester,
+  ) async {
+    final rust = await _pumpWorkspace(
+      tester,
+      const Size(1366, 744),
+      prefs: {'book': 39, 'chapter': 1, 'nt_greek': true},
+    );
+    expect(find.byTooltip('Greek · switch to English'), findsOneWidget);
+    expect(find.byTooltip('Greek · switch to Aramaic'), findsOneWidget);
+
+    rust.chapterRequests.clear();
+    await tester.tap(find.byKey(const ValueKey('reader-nt-text-toggle')));
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    expect(
+      rust.chapterRequests.where((r) => r.book == 40).every((r) => !r.greek),
+      isTrue,
+    );
+    expect(find.byTooltip('Aramaic · switch to English'), findsOneWidget);
+    expect(find.byTooltip('Aramaic · switch to Greek'), findsOneWidget);
+    expect(
+      tester.widget<VerseRow>(_verse(40, 1, 1)).sourceDirection,
+      TextDirection.rtl,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('nt_greek'), isFalse);
+  });
+
+  testWidgets('in the Old Testament the toggle says Hebrew and Greek is off', (
+    tester,
+  ) async {
+    await _pumpWorkspace(tester, const Size(1366, 744));
+    expect(find.byTooltip('Hebrew · switch to English'), findsOneWidget);
+    final toggle = tester.widget<IconButton>(
+      find.byKey(const ValueKey('reader-nt-text-toggle')),
+    );
+    expect(toggle.onPressed, isNull);
   });
 }

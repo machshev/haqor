@@ -2445,9 +2445,17 @@ class _FormScopeToggle extends StatelessWidget {
 
 /// The Hebrew / English verse-text switch icon, shared by the verse lists.
 class VerseModeIcon extends StatelessWidget {
-  const VerseModeIcon({super.key, required this.englishOnly});
+  const VerseModeIcon({
+    super.key,
+    required this.englishOnly,
+    this.sourceLetter = 'א',
+  });
 
   final bool englishOnly;
+
+  /// The letter standing for the source text: aleph for the Hebrew, alpha
+  /// for the Greek.
+  final String sourceLetter;
 
   @override
   Widget build(BuildContext context) {
@@ -2483,7 +2491,7 @@ class VerseModeIcon extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          segment('א', !englishOnly, 'Cardo'),
+          segment(sourceLetter, !englishOnly, 'Cardo'),
           const SizedBox(width: 1),
           segment('EN', englishOnly, 'Cardo'),
         ],

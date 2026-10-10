@@ -198,6 +198,7 @@ enum _ReaderBarAction {
   places,
   people,
   text,
+  ntText,
   interlinear,
   rapidReading,
   back,
@@ -1960,6 +1961,23 @@ class _ReaderSessionState extends State<_ReaderSession>
     );
   }
 
+  /// The source text's name: the Hebrew of the Old Testament, and the
+  /// New's Aramaic (the Peshitta) or Greek.
+  String get _sourceLabel => _isOldTestament
+      ? 'Hebrew'
+      : _ntGreek
+      ? 'Greek'
+      : 'Aramaic';
+
+  /// How the text toggle names [text], the source text by its language.
+  String _readerTextLabel(ReaderText text) =>
+      text == ReaderText.source ? _sourceLabel : text.label;
+
+  /// Switches the New Testament between the Peshitta and the Greek, as the
+  /// setting does.
+  void _toggleNtGreek() =>
+      _applyReadingSettings(_readingSettings.copyWith(ntGreek: !_ntGreek));
+
   void _cycleReaderText() => _setReaderText(_readerText.next);
 
   void _setReaderText(ReaderText text) {
@@ -2012,6 +2030,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   static const _barPriority = [
     _ReaderBarAction.interlinear,
     _ReaderBarAction.text,
+    _ReaderBarAction.ntText,
     _ReaderBarAction.back,
     _ReaderBarAction.forward,
     _ReaderBarAction.crossReferences,
@@ -2028,6 +2047,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     _ReaderBarAction.places => _showChapterPlaces(),
     _ReaderBarAction.people => _showChapterPeople(),
     _ReaderBarAction.text => _cycleReaderText(),
+    _ReaderBarAction.ntText => _toggleNtGreek(),
     _ReaderBarAction.interlinear => _toggleInterlinear(),
     _ReaderBarAction.rapidReading => _toggleRapidReading(),
     _ReaderBarAction.back => _canGoBack ? _goBack() : null,
@@ -2061,7 +2081,35 @@ class _ReaderSessionState extends State<_ReaderSession>
         ReaderText.parallel => Icons.vertical_split_outlined,
       }),
       onPressed: _cycleReaderText,
-      tooltip: '${_readerText.label} · switch to ${_readerText.next.label}',
+      tooltip:
+          '${_readerTextLabel(_readerText)} · '
+          'switch to ${_readerTextLabel(_readerText.next)}',
+    ),
+    _ReaderBarAction.ntText => IconButton(
+      key: const ValueKey('reader-nt-text-toggle'),
+      // The letter of the text shown: alaph for the Peshitta, alpha for the
+      // Greek.
+      icon: SizedBox.square(
+        dimension: 24,
+        child: Center(
+          child: Text(
+            _ntGreek ? 'α' : (_ntSyriac ? 'ܐ' : 'א'),
+            style: const TextStyle(
+              fontFamily: 'Cardo',
+              fontFamilyFallback: ['Noto Serif Hebrew'],
+              fontSize: 20,
+              height: 1.0,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+      onPressed: _isOldTestament ? null : _toggleNtGreek,
+      tooltip: _isOldTestament
+          ? 'The New Testament in Aramaic or Greek'
+          : _ntGreek
+          ? 'Greek · switch to Aramaic'
+          : 'Aramaic · switch to Greek',
     ),
     _ReaderBarAction.interlinear => IconButton(
       key: const ValueKey('reader-interlinear-toggle'),
@@ -2113,9 +2161,17 @@ class _ReaderSessionState extends State<_ReaderSession>
           CheckedPopupMenuItem(
             value: text,
             checked: text == _readerText,
-            child: Text(text.label),
+            child: Text(_readerTextLabel(text)),
           ),
         const PopupMenuDivider(),
+      ],
+      _ReaderBarAction.ntText => [
+        CheckedPopupMenuItem(
+          value: action,
+          enabled: !_isOldTestament,
+          checked: _ntGreek,
+          child: const Text('Greek New Testament'),
+        ),
       ],
       _ReaderBarAction.interlinear => [
         CheckedPopupMenuItem(

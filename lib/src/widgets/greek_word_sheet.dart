@@ -256,7 +256,10 @@ class _GreekWordSheetState extends State<GreekWordSheet> {
                     IconButton(
                       tooltip: _englishOnly ? 'Show the Greek' : 'Show English',
                       onPressed: _toggleEnglishOnly,
-                      icon: VerseModeIcon(englishOnly: _englishOnly),
+                      icon: VerseModeIcon(
+                        englishOnly: _englishOnly,
+                        sourceLetter: 'α',
+                      ),
                     ),
                   ],
                 ),
