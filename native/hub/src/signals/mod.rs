@@ -882,7 +882,8 @@ pub struct NameVerse {
     pub chapter: u8,
     pub verse: u8,
     /// Lexical indexes of the naming words within the verse, as
-    /// [`Occurrence::position`].
+    /// [`Occurrence::position`]. Empty in the New Testament, which names it
+    /// by verse alone.
     pub positions: Vec<u32>,
 }
 

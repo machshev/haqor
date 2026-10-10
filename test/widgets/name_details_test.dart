@@ -181,6 +181,74 @@ void main() {
     expect(requests.last.requestId, isNot(requests.first.requestId));
   });
 
+  testWidgets('the New Testament names by verse, counted apart', (
+    tester,
+  ) async {
+    final requests = <GetNameEntity>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NameDetailsPage(
+          id: 3,
+          title: 'Jerusalem',
+          ntSyriac: true,
+          sendRequest: requests.add,
+          sendVerseTextsRequest: (_) {},
+        ),
+      ),
+    );
+    _deliverEntity(
+      requests.single,
+      _summary(3, 'Jerusalem', kind: 'place', occurrences: 2),
+      verses: [
+        NameVerse(book: 6, chapter: 10, verse: 1, positions: [4, 12]),
+        NameVerse(book: 40, chapter: 2, verse: 1, positions: const []),
+        NameVerse(book: 40, chapter: 2, verse: 3, positions: const []),
+      ],
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Verses (3)'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Named 2 times in the Hebrew Bible · in 2 New Testament verses',
+      ),
+      findsOneWidget,
+    );
+    // Each New Testament verse counts once, and is shown as the reader
+    // shows the New Testament.
+    final books = tester.widget<CanonDistribution>(
+      find.byType(CanonDistribution),
+    );
+    expect(books.countsByBook, {6: 2, 40: 2});
+    final rows = tester
+        .widgetList<OccurrenceVerseRow>(find.byType(OccurrenceVerseRow))
+        .toList();
+    expect([for (final r in rows) r.syriac], [false, true, true]);
+  });
+
+  testWidgets('one named only in the New Testament says so', (tester) async {
+    final requests = <GetNameEntity>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NameDetailsPage(
+          id: 4,
+          title: 'Peter',
+          sendRequest: requests.add,
+          sendVerseTextsRequest: (_) {},
+        ),
+      ),
+    );
+    _deliverEntity(
+      requests.single,
+      _summary(4, 'Peter', occurrences: 0),
+      verses: [NameVerse(book: 40, chapter: 4, verse: 18, positions: const [])],
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Verses (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Named in 1 New Testament verse'), findsOneWidget);
+  });
+
   testWidgets('a place page maps its likeliest location and the others', (
     tester,
   ) async {

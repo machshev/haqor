@@ -2992,6 +2992,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     id: name.id,
     title: name.name,
     useEnglishBookNames: _englishBookNames,
+    ntSyriac: _ntSyriac,
     bookmarks: _nameBookmarks,
     onNavigateToPassage: (book, chapter, verse) =>
         _navigateTo(book, chapter, verse: verse),
@@ -4955,6 +4956,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         PlacesPage.open(
           context,
           useEnglishBookNames: _englishBookNames,
+          ntSyriac: _ntSyriac,
           bookmarks: _nameBookmarks,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
@@ -4963,6 +4965,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         BibleTimelinePage.open(
           context,
           useEnglishBookNames: _englishBookNames,
+          ntSyriac: _ntSyriac,
           bookmarks: _nameBookmarks,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),

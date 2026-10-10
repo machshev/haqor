@@ -78,6 +78,7 @@ class PlacesPage extends StatefulWidget {
   const PlacesPage({
     super.key,
     this.useEnglishBookNames = false,
+    this.ntSyriac = false,
     this.onNavigateToPassage,
     this.bookmarks,
     this.sendRequest,
@@ -86,6 +87,9 @@ class PlacesPage extends StatefulWidget {
   });
 
   final bool useEnglishBookNames;
+
+  /// Show New Testament verses in Syriac script, as the reader is set to.
+  final bool ntSyriac;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
   final NameBookmarks? bookmarks;
@@ -98,12 +102,14 @@ class PlacesPage extends StatefulWidget {
   static Future<void> open(
     BuildContext context, {
     bool useEnglishBookNames = false,
+    bool ntSyriac = false,
     void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
     NameBookmarks? bookmarks,
   }) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => PlacesPage(
         useEnglishBookNames: useEnglishBookNames,
+        ntSyriac: ntSyriac,
         onNavigateToPassage: onNavigateToPassage,
         bookmarks: bookmarks,
       ),
@@ -238,6 +244,7 @@ class _PlacesPageState extends State<PlacesPage> {
     id: place.id,
     title: place.name,
     useEnglishBookNames: widget.useEnglishBookNames,
+    ntSyriac: widget.ntSyriac,
     bookmarks: widget.bookmarks,
     onNavigateToPassage: widget.onNavigateToPassage == null
         ? null

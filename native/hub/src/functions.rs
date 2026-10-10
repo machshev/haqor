@@ -2142,6 +2142,19 @@ pub async fn get_name_entity(bible: SharedBible) {
                 }),
             }
         }
+        // The New Testament's, which name it by verse alone.
+        verses.extend(
+            bible
+                .name_verses(req.id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|v| NameVerse {
+                    book: v.book,
+                    chapter: v.chapter,
+                    verse: v.verse,
+                    positions: Vec::new(),
+                }),
+        );
         NameEntityInfo {
             request_id: req.request_id,
             found: true,

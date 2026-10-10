@@ -1377,6 +1377,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     id: name.id,
     title: name.name,
     useEnglishBookNames: widget.useEnglishBookNames,
+    ntSyriac: widget.ntSyriac,
     onNavigateToPassage: widget.onNavigateToPassage,
     bookmarks: widget.nameBookmarks,
   );

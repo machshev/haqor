@@ -67,6 +67,12 @@ class NameCard extends StatelessWidget {
 String mentionsLabel(int occurrences) =>
     'Named $occurrences time${occurrences == 1 ? '' : 's'} in the Hebrew Bible';
 
+/// How many New Testament verses name it, following [mentionsLabel] or
+/// [alone]: its words are not tagged, so it is counted by verse.
+String newTestamentLabel(int verses, {bool alone = false}) =>
+    '${alone ? 'Named in' : 'in'} $verses New Testament '
+    'verse${verses == 1 ? '' : 's'}';
+
 /// A position in Google Maps, as a search for it, so the pin lands on it.
 Uri googleMapsUri(double latitude, double longitude) => Uri.https(
   'www.google.com',
@@ -122,6 +128,7 @@ class NameDetailsPage extends StatefulWidget {
     required this.id,
     this.title,
     this.useEnglishBookNames = false,
+    this.ntSyriac = false,
     this.onNavigateToPassage,
     this.sendRequest,
     this.sendVerseTextsRequest,
@@ -139,6 +146,9 @@ class NameDetailsPage extends StatefulWidget {
   /// Shown until the record arrives.
   final String? title;
   final bool useEnglishBookNames;
+
+  /// Show New Testament verses in Syriac script, as the reader is set to.
+  final bool ntSyriac;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
 
@@ -157,6 +167,7 @@ class NameDetailsPage extends StatefulWidget {
     required int id,
     String? title,
     bool useEnglishBookNames = false,
+    bool ntSyriac = false,
     void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
     NameBookmarks? bookmarks,
   }) => Navigator.of(context).push(
@@ -166,6 +177,7 @@ class NameDetailsPage extends StatefulWidget {
         id: id,
         title: title,
         useEnglishBookNames: useEnglishBookNames,
+        ntSyriac: ntSyriac,
         onNavigateToPassage: onNavigateToPassage,
         bookmarks: bookmarks,
       ),
@@ -235,6 +247,7 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
         id: other.id,
         title: other.name,
         useEnglishBookNames: widget.useEnglishBookNames,
+        ntSyriac: widget.ntSyriac,
         onNavigateToPassage: widget.onNavigateToPassage,
         sendRequest: widget.sendRequest,
         sendVerseTextsRequest: widget.sendVerseTextsRequest,
@@ -331,6 +344,7 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
     highlightWords: const [],
     positions: verse.positions,
     englishOnly: _englishOnly,
+    syriac: widget.ntSyriac && verse.book >= 40,
     useEnglishBookNames: widget.useEnglishBookNames,
     onTap: () => _openVerse(verse),
   );
@@ -555,10 +569,13 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
     final summary = info.summary;
     // How often each book names it, for the book filter, and the verses in
     // the books chosen.
+    // A New Testament verse names it by verse alone, and counts once.
     final countsByBook = <int, int>{};
+    var newTestament = 0;
     for (final verse in info.verses) {
       countsByBook[verse.book] =
-          (countsByBook[verse.book] ?? 0) + verse.positions.length;
+          (countsByBook[verse.book] ?? 0) + math.max(verse.positions.length, 1);
+      if (verse.book >= 40) newTestament++;
     }
     final verses = _books.isEmpty
         ? info.verses
@@ -576,10 +593,17 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
             Expanded(
               child: Text(
                 [
-                  mentionsLabel(summary.occurrences),
+                  if (summary.occurrences > 0 || newTestament == 0)
+                    mentionsLabel(summary.occurrences),
+                  if (newTestament > 0)
+                    newTestamentLabel(
+                      newTestament,
+                      alone: summary.occurrences == 0,
+                    ),
                   if (_books.isNotEmpty)
                     '${verses.length} of ${info.verses.length} verses'
-                  else if (info.verses.length != summary.occurrences)
+                  else if (newTestament == 0 &&
+                      info.verses.length != summary.occurrences)
                     '${info.verses.length} verses',
                 ].join(' · '),
                 style: _heading(context),
@@ -635,6 +659,7 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
     context,
     initialEventId: eventId,
     useEnglishBookNames: widget.useEnglishBookNames,
+    ntSyriac: widget.ntSyriac,
     bookmarks: widget.bookmarks,
     onNavigateToPassage: _navigate,
     sendRequest: widget.sendTimelineRequest,

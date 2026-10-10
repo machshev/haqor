@@ -75,6 +75,7 @@ class BibleTimelinePage extends StatefulWidget {
   const BibleTimelinePage({
     super.key,
     this.useEnglishBookNames = false,
+    this.ntSyriac = false,
     this.onNavigateToPassage,
     this.bookmarks,
     this.initialEventId,
@@ -85,6 +86,9 @@ class BibleTimelinePage extends StatefulWidget {
   final String? initialEventId;
 
   final bool useEnglishBookNames;
+
+  /// Show New Testament verses in Syriac script, as the reader is set to.
+  final bool ntSyriac;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
   final NameBookmarks? bookmarks;
@@ -96,6 +100,7 @@ class BibleTimelinePage extends StatefulWidget {
     BuildContext context, {
     String? initialEventId,
     bool useEnglishBookNames = false,
+    bool ntSyriac = false,
     void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
     NameBookmarks? bookmarks,
     void Function(GetBibleEvents)? sendRequest,
@@ -104,6 +109,7 @@ class BibleTimelinePage extends StatefulWidget {
       builder: (_) => BibleTimelinePage(
         initialEventId: initialEventId,
         useEnglishBookNames: useEnglishBookNames,
+        ntSyriac: ntSyriac,
         onNavigateToPassage: onNavigateToPassage,
         bookmarks: bookmarks,
         sendRequest: sendRequest,
@@ -162,6 +168,7 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
       id: name.id,
       title: name.name,
       useEnglishBookNames: widget.useEnglishBookNames,
+      ntSyriac: widget.ntSyriac,
       bookmarks: widget.bookmarks,
       onNavigateToPassage: navigate == null
           ? null
