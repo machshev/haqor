@@ -169,6 +169,8 @@ class VerseRow extends StatefulWidget {
     this.highlightProperNames = false,
     this.studyHighlighted = false,
     this.studyNote = false,
+    this.studyTimeline,
+    this.onStudyTimeline,
     this.studyWordHighlightColors = const {},
     this.studyFormHighlightColors = const {},
     this.studyPhraseHighlightColors = const {},
@@ -227,6 +229,11 @@ class VerseRow extends StatefulWidget {
   final bool highlightProperNames;
   final bool studyHighlighted;
   final bool studyNote;
+
+  /// The titles of the timeline events and spans linked to this verse, shown
+  /// as a marker that [onStudyTimeline] opens; null for none.
+  final String? studyTimeline;
+  final VoidCallback? onStudyTimeline;
   final Map<String, Color> studyWordHighlightColors;
   final Map<String, Color> studyFormHighlightColors;
 
@@ -666,6 +673,25 @@ class _VerseRowState extends State<VerseRow> {
                   Icons.sticky_note_2_outlined,
                   size: 12,
                   color: theme.colorScheme.secondary,
+                ),
+              ),
+            if (widget.studyTimeline != null)
+              Padding(
+                padding: stacked
+                    ? const EdgeInsets.only(bottom: 4)
+                    : const EdgeInsets.only(right: 2),
+                child: Tooltip(
+                  message: widget.studyTimeline!,
+                  child: InkWell(
+                    key: ValueKey('verse-timeline-${widget.entry.verse}'),
+                    onTap: widget.onStudyTimeline,
+                    customBorder: const CircleBorder(),
+                    child: Icon(
+                      Icons.timeline,
+                      size: 14,
+                      color: theme.colorScheme.tertiary,
+                    ),
+                  ),
                 ),
               ),
             if (_crossReferenceCount > 0 && widget.onCrossReferences != null)

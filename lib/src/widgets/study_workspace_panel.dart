@@ -5,6 +5,7 @@ import '../study_workspace.dart';
 import 'cross_references_sheet.dart' show crossReferenceStrength;
 import 'markdown_note.dart';
 import 'name_details.dart' show nameKindIcon;
+import 'timeline_chart.dart' show TimelineStrip, timelineEntryTime;
 
 class StudyWorkspacePanel extends StatelessWidget {
   const StudyWorkspacePanel({
@@ -50,6 +51,14 @@ class StudyWorkspacePanel extends StatelessWidget {
     this.onUpdateSection,
     this.onDeleteSection,
     this.onOpenSection,
+    this.onToggleTimelineMarkers,
+    this.onCreateTimeline,
+    this.onEditTimeline,
+    this.onDeleteTimeline,
+    this.onOpenTimeline,
+    this.onCreateTimelineEntry,
+    this.onEditTimelineEntry,
+    this.onRemoveTimelineEntry,
   });
 
   final List<StudyWorkspace> workspaces;
@@ -103,6 +112,19 @@ class StudyWorkspacePanel extends StatelessWidget {
   final ValueChanged<StudySection>? onUpdateSection;
   final ValueChanged<StudySection>? onDeleteSection;
   final ValueChanged<StudySection>? onOpenSection;
+
+  /// Timelines and their events and spans: show linked verses' markers in
+  /// the reader, add a timeline (to a container or the top), edit, delete
+  /// or open one's full view; add an event or span (`span` true) to one,
+  /// edit or remove it. Their linked verses open through [onOpenPassage].
+  final ValueChanged<bool>? onToggleTimelineMarkers;
+  final ValueChanged<String?>? onCreateTimeline;
+  final ValueChanged<StudyTimeline>? onEditTimeline;
+  final ValueChanged<StudyTimeline>? onDeleteTimeline;
+  final ValueChanged<StudyTimeline>? onOpenTimeline;
+  final void Function(String timelineId, bool span)? onCreateTimelineEntry;
+  final ValueChanged<StudyTimelineEntry>? onEditTimelineEntry;
+  final ValueChanged<StudyTimelineEntry>? onRemoveTimelineEntry;
 
   String _reference(StudyPassage passage) =>
       '${bookDisplayName(passage.bookIndex, useEnglish: useEnglishBookNames)} '
@@ -203,6 +225,15 @@ class StudyWorkspacePanel extends StatelessWidget {
                 child: ListTile(
                   leading: Icon(_sectionIcon(section)),
                   title: Text(_containerPath(workspace, section.id)),
+                ),
+              ),
+          for (final timeline in workspace.timelines)
+            if (workspace.canMoveItem(item, timeline.id))
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialogContext, timeline.id),
+                child: ListTile(
+                  leading: const Icon(Icons.timeline),
+                  title: Text(_containerPath(workspace, timeline.id)),
                 ),
               ),
         ],
@@ -310,6 +341,8 @@ class StudyWorkspacePanel extends StatelessWidget {
     StudyItemType.name => (item.value as StudyName).name,
     StudyItemType.group => (item.value as StudyGroup).name,
     StudyItemType.section => (item.value as StudySection).title,
+    StudyItemType.timeline => (item.value as StudyTimeline).title,
+    StudyItemType.timelineEntry => (item.value as StudyTimelineEntry).title,
   };
 
   List<Widget> _itemsAt(
@@ -323,10 +356,7 @@ class StudyWorkspacePanel extends StatelessWidget {
     final items = workspace.itemsIn(groupId);
     for (var index = 0; index < items.length; index++) {
       final item = items[index];
-      final containerId = switch (item.value) {
-        StudyGroup(:final id) || StudySection(:final id) => id,
-        _ => null,
-      };
+      final containerId = _containerIdOf(item);
       if (containerId != null && ancestors.contains(containerId)) continue;
       children.add(_dropGap(workspace, groupId, index: index, depth: depth));
       final handle = _OutlineDragHandle(item: item, label: _itemLabel(item));
@@ -353,6 +383,20 @@ class StudyWorkspacePanel extends StatelessWidget {
             section,
             depth: depth,
             ancestors: {...ancestors, section.id},
+            handle: handle,
+            item: item,
+            index: index,
+          ),
+        );
+      } else if (item.type == StudyItemType.timeline) {
+        final timeline = item.value as StudyTimeline;
+        children.add(
+          _timelineTile(
+            context,
+            workspace,
+            timeline,
+            depth: depth,
+            ancestors: {...ancestors, timeline.id},
             handle: handle,
             item: item,
             index: index,
@@ -390,8 +434,15 @@ class StudyWorkspacePanel extends StatelessWidget {
             item.value as StudyName,
             depth: depth,
           ),
+          StudyItemType.timelineEntry => _timelineEntryTile(
+            context,
+            workspace,
+            item.value as StudyTimelineEntry,
+            depth: depth,
+          ),
           StudyItemType.group ||
-          StudyItemType.section => throw StateError('Rendered above'),
+          StudyItemType.section ||
+          StudyItemType.timeline => throw StateError('Rendered above'),
         };
         children.add(
           _rowDropTarget(
@@ -478,6 +529,8 @@ class StudyWorkspacePanel extends StatelessWidget {
                       onCreateGroup(group.id);
                     case _GroupAction.addSummary:
                       onCreateSection?.call(group.id);
+                    case _GroupAction.addTimeline:
+                      onCreateTimeline?.call(group.id);
                     case _GroupAction.edit:
                       onEditGroup(group);
                     case _GroupAction.delete:
@@ -512,6 +565,14 @@ class StudyWorkspacePanel extends StatelessWidget {
                       child: ListTile(
                         leading: Icon(Icons.toc),
                         title: Text('Add passage summary'),
+                      ),
+                    ),
+                  if (onCreateTimeline != null)
+                    const PopupMenuItem(
+                      value: _GroupAction.addTimeline,
+                      child: ListTile(
+                        leading: Icon(Icons.timeline),
+                        title: Text('Add timeline'),
                       ),
                     ),
                   const PopupMenuItem(
@@ -736,6 +797,277 @@ class StudyWorkspacePanel extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _timelineTile(
+    BuildContext context,
+    StudyWorkspace workspace,
+    StudyTimeline timeline, {
+    required int depth,
+    required Set<String> ancestors,
+    required Widget handle,
+    required StudyItem item,
+    required int index,
+  }) {
+    final theme = Theme.of(context);
+    final open = onOpenTimeline;
+    final entries = workspace.entriesOf(timeline.id);
+    return Padding(
+      key: ValueKey(item.key),
+      padding: EdgeInsetsDirectional.only(start: depth * 12.0),
+      child: _OutlineExpansion.tile(
+        (workspace.id, timeline.id),
+        (key, expanded) => ExpansionTile(
+          key: key,
+          initiallyExpanded: expanded,
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          tilePadding: const EdgeInsetsDirectional.only(end: 0),
+          childrenPadding: EdgeInsets.zero,
+          shape: _expandedTileShape(context),
+          controlAffinity: ListTileControlAffinity.leading,
+          title: _dropTarget(
+            workspace,
+            timeline.id,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.timeline, size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          timeline.title,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  TimelineStrip(
+                    timeline: timeline,
+                    entries: entries,
+                    onTap: open == null ? null : () => open(timeline),
+                  ),
+                  if (timeline.note.isNotEmpty)
+                    MarkdownNote(
+                      timeline.note,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          trailing: _rowDropTarget(
+            workspace,
+            item,
+            index,
+            depth: depth,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                PopupMenuButton<_TimelineAction>(
+                  tooltip: 'Timeline options',
+                  onSelected: (action) {
+                    switch (action) {
+                      case _TimelineAction.open:
+                        open?.call(timeline);
+                      case _TimelineAction.addEvent:
+                        onCreateTimelineEntry?.call(timeline.id, false);
+                      case _TimelineAction.addSpan:
+                        onCreateTimelineEntry?.call(timeline.id, true);
+                      case _TimelineAction.addNote:
+                        onCreateNote(timeline.id);
+                      case _TimelineAction.addPassage:
+                        onBookmarkCurrent(timeline.id);
+                      case _TimelineAction.edit:
+                        onEditTimeline?.call(timeline);
+                      case _TimelineAction.delete:
+                        onDeleteTimeline?.call(timeline);
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: _TimelineAction.open,
+                      child: ListTile(
+                        leading: Icon(Icons.open_in_full),
+                        title: Text('Open timeline'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _TimelineAction.addEvent,
+                      child: ListTile(
+                        leading: Icon(Icons.radio_button_checked),
+                        title: Text('Add event'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _TimelineAction.addSpan,
+                      child: ListTile(
+                        leading: Icon(Icons.linear_scale),
+                        title: Text('Add span'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _TimelineAction.addNote,
+                      child: ListTile(
+                        leading: Icon(Icons.note_add_outlined),
+                        title: Text('Add note'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _TimelineAction.addPassage,
+                      child: ListTile(
+                        leading: Icon(Icons.bookmark_add_outlined),
+                        title: Text('Add current passage'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _TimelineAction.edit,
+                      child: ListTile(
+                        leading: Icon(Icons.edit_note),
+                        title: Text('Edit timeline'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _TimelineAction.delete,
+                      child: ListTile(
+                        leading: Icon(Icons.delete_outline),
+                        title: Text('Delete timeline'),
+                      ),
+                    ),
+                  ],
+                ),
+                handle,
+              ],
+            ),
+          ),
+          children: [
+            ..._itemsAt(
+              context,
+              workspace,
+              timeline.id,
+              depth: depth + 1,
+              ancestors: ancestors,
+            ),
+            if (workspace.itemsIn(timeline.id).isEmpty)
+              const _SectionEmpty(
+                text: 'Add events and spans from this menu, or from a verse.',
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _timelineEntryTile(
+    BuildContext context,
+    StudyWorkspace workspace,
+    StudyTimelineEntry entry, {
+    required int depth,
+  }) {
+    final theme = Theme.of(context);
+    final timeline = workspace.timelineById(entry.timelineId);
+    return ListTile(
+      key: ValueKey(entry.key),
+      dense: true,
+      titleAlignment: ListTileTitleAlignment.top,
+      minTileHeight: 32,
+      minVerticalPadding: 0,
+      contentPadding: EdgeInsetsDirectional.only(
+        start: 16 + depth * 12.0,
+        end: 0,
+      ),
+      leading: Tooltip(
+        message: entry.isSpan ? 'Span' : 'Event',
+        child: Icon(
+          entry.isSpan ? Icons.linear_scale : Icons.radio_button_checked,
+          size: 18,
+          color: entry.isSpan
+              ? theme.colorScheme.primary
+              : theme.colorScheme.tertiary,
+        ),
+      ),
+      title: Text(
+        entry.title,
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (timeline != null) Text(timelineEntryTime(timeline, entry)),
+          if (entry.verses.isNotEmpty)
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final passage in entry.verses)
+                  InkWell(
+                    onTap: () => onOpenPassage(passage),
+                    child: Text(
+                      _reference(passage),
+                      style: TextStyle(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          if (entry.note.isNotEmpty) MarkdownNote(entry.note),
+        ],
+      ),
+      onTap: onEditTimelineEntry == null
+          ? null
+          : () => onEditTimelineEntry!(entry),
+      trailing: PopupMenuButton<_TimelineEntryAction>(
+        tooltip: entry.isSpan ? 'Span options' : 'Event options',
+        iconSize: 18,
+        padding: const EdgeInsets.all(6),
+        style: const ButtonStyle(
+          minimumSize: WidgetStatePropertyAll(Size(32, 32)),
+          maximumSize: WidgetStatePropertyAll(Size(32, 32)),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onSelected: (action) async {
+          switch (action) {
+            case _TimelineEntryAction.edit:
+              onEditTimelineEntry?.call(entry);
+            case _TimelineEntryAction.move:
+              await _moveTo(context, workspace, entry);
+            case _TimelineEntryAction.remove:
+              onRemoveTimelineEntry?.call(entry);
+          }
+        },
+        itemBuilder: (_) => [
+          PopupMenuItem(
+            value: _TimelineEntryAction.edit,
+            child: ListTile(
+              leading: const Icon(Icons.edit_note),
+              title: Text(entry.isSpan ? 'Edit span' : 'Edit event'),
+            ),
+          ),
+          if (workspace.timelines.length > 1)
+            const PopupMenuItem(
+              value: _TimelineEntryAction.move,
+              child: ListTile(
+                leading: Icon(Icons.drive_file_move_outline),
+                title: Text('Move to timeline'),
+              ),
+            ),
+          const PopupMenuItem(
+            value: _TimelineEntryAction.remove,
+            child: ListTile(
+              leading: Icon(Icons.delete_outline),
+              title: Text('Remove'),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1299,6 +1631,10 @@ class StudyWorkspacePanel extends StatelessWidget {
                             onRename();
                           case _WorkspaceAction.delete:
                             onDelete();
+                          case _WorkspaceAction.toggleTimelineMarkers:
+                            onToggleTimelineMarkers?.call(
+                              !workspace!.timelineMarkersEnabled,
+                            );
                         }
                       },
                       itemBuilder: (_) => [
@@ -1320,6 +1656,13 @@ class StudyWorkspacePanel extends StatelessWidget {
                             value: _WorkspaceAction.toggleHeadings,
                             checked: workspace.headingsEnabled,
                             child: const Text('Show study headings'),
+                          ),
+                        if (workspace != null &&
+                            onToggleTimelineMarkers != null)
+                          CheckedPopupMenuItem(
+                            value: _WorkspaceAction.toggleTimelineMarkers,
+                            checked: workspace.timelineMarkersEnabled,
+                            child: const Text('Show timeline markers'),
                           ),
                         const PopupMenuDivider(),
                         const PopupMenuItem(
@@ -1366,6 +1709,9 @@ class StudyWorkspacePanel extends StatelessWidget {
                                 onCreateSummary: onCreateSection == null
                                     ? null
                                     : () => onCreateSection!(null),
+                                onCreateTimeline: onCreateTimeline == null
+                                    ? null
+                                    : () => onCreateTimeline!(null),
                               ),
                             ),
                             ..._itemsAt(
@@ -1379,7 +1725,8 @@ class StudyWorkspacePanel extends StatelessWidget {
                                 workspace.words.isEmpty &&
                                 workspace.notes.isEmpty &&
                                 workspace.links.isEmpty &&
-                                workspace.sections.isEmpty)
+                                workspace.sections.isEmpty &&
+                                workspace.timelines.isEmpty)
                               const _SectionEmpty(
                                 text:
                                     'Bookmark a passage or word, or create a group '
@@ -1505,7 +1852,9 @@ const _outlinePadding = 8.0;
 const _levelBand = 28.0;
 
 String? _containerIdOf(StudyItem item) => switch (item.value) {
-  StudyGroup(:final id) || StudySection(:final id) => id,
+  StudyGroup(:final id) ||
+  StudySection(:final id) ||
+  StudyTimeline(:final id) => id,
   _ => null,
 };
 
@@ -1975,12 +2324,14 @@ class _OutlineHeader extends StatelessWidget {
     required this.onCreateGroup,
     required this.onCreateNote,
     this.onCreateSummary,
+    this.onCreateTimeline,
   });
 
   final VoidCallback onBookmarkCurrent;
   final VoidCallback onCreateGroup;
   final VoidCallback onCreateNote;
   final VoidCallback? onCreateSummary;
+  final VoidCallback? onCreateTimeline;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -2020,6 +2371,8 @@ class _OutlineHeader extends StatelessWidget {
                 onCreateNote();
               case _OutlineAction.createSummary:
                 onCreateSummary?.call();
+              case _OutlineAction.createTimeline:
+                onCreateTimeline?.call();
             }
           },
           itemBuilder: (_) => [
@@ -2050,6 +2403,14 @@ class _OutlineHeader extends StatelessWidget {
                 child: ListTile(
                   leading: Icon(Icons.toc),
                   title: Text('New passage summary'),
+                ),
+              ),
+            if (onCreateTimeline != null)
+              const PopupMenuItem(
+                value: _OutlineAction.createTimeline,
+                child: ListTile(
+                  leading: Icon(Icons.timeline),
+                  title: Text('New timeline'),
                 ),
               ),
           ],
@@ -2136,13 +2497,40 @@ enum _WorkspaceAction {
   create,
   toggleHighlights,
   toggleHeadings,
+  toggleTimelineMarkers,
   rename,
   delete,
 }
 
-enum _OutlineAction { bookmarkPassage, createNote, createGroup, createSummary }
+enum _OutlineAction {
+  bookmarkPassage,
+  createNote,
+  createGroup,
+  createSummary,
+  createTimeline,
+}
 
-enum _GroupAction { addPassage, addNote, addGroup, addSummary, edit, delete }
+enum _GroupAction {
+  addPassage,
+  addNote,
+  addGroup,
+  addSummary,
+  addTimeline,
+  edit,
+  delete,
+}
+
+enum _TimelineAction {
+  open,
+  addEvent,
+  addSpan,
+  addNote,
+  addPassage,
+  edit,
+  delete,
+}
+
+enum _TimelineEntryAction { edit, move, remove }
 
 enum _SectionAction {
   showInReader,

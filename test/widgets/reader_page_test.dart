@@ -15,6 +15,7 @@ import 'package:haqor/src/widgets/cross_references_sheet.dart';
 import 'package:haqor/src/widgets/syntax_sheet.dart';
 import 'package:haqor/src/widgets/verse_row.dart';
 import 'package:haqor/src/widgets/study_workspace_panel.dart';
+import 'package:haqor/src/widgets/timeline_chart.dart' show TimelinePage;
 import 'package:haqor/src/widgets/word_info_sheet.dart';
 
 import '../syntax_tree_test.dart' show node;
@@ -405,6 +406,93 @@ void main() {
     await tester.tap(find.text('Edit heading'));
     await tester.pumpAndSettle();
     expect(find.text('Edit section heading'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('timeline events are added from a verse and marked there', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'book': 0,
+      'chapter': 1,
+      study.studyWorkspacesKey: study.encodeStudyWorkspaces([
+        const study.StudyWorkspace(id: 'study', name: 'Study'),
+      ]),
+      study.activeStudyWorkspaceKey: 'study',
+    });
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+          sendWordInfoRequest: rust.onWordInfo,
+          sendWordOccurrencesRequest: rust.onOccurrences,
+          sendVerseTextsRequest: rust.onVerseTexts,
+        ),
+      ),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('verse-timeline-3')), findsNothing);
+
+    await tester.longPress(find.byKey(const ValueKey('verse-number-3')).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add timeline event here'));
+    await tester.pumpAndSettle();
+    // Without a timeline, one is made first.
+    expect(find.text('New timeline'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('timeline-title')),
+      'Creation',
+    );
+    await tester.tap(find.byKey(const ValueKey('timeline-era')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('timeline-unit')), 'Day');
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('New timeline event'), findsOneWidget);
+    expect(find.text('Bereshit 1:3'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('timeline-entry-title')),
+      'Light',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('timeline-entry-start')),
+      '1',
+    );
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+
+    final saved = study
+        .decodeStudyWorkspaces(
+          (await SharedPreferences.getInstance()).getString(
+            study.studyWorkspacesKey,
+          ),
+        )
+        .single;
+    final timeline = saved.timelines.single;
+    expect(timeline.formatTime(1), 'Day 1');
+    final entry = saved.timelineEntries.single;
+    expect(
+      (entry.title, entry.start, entry.timelineId),
+      ('Light', 1.0, timeline.id),
+    );
+    expect(entry.verses.single.locationKey, '0:1:3');
+
+    final marker = find.byKey(const ValueKey('verse-timeline-3'));
+    expect(marker, findsOneWidget);
+    await tester.tap(marker);
+    await tester.pumpAndSettle();
+    expect(find.text('Creation · Day 1'), findsOneWidget);
+    await tester.tap(find.text('Light'));
+    await tester.pumpAndSettle();
+    // Its timeline opens, drawn with the event picked out.
+    expect(find.byType(TimelinePage), findsOneWidget);
+    expect(find.byKey(ValueKey('timeline-mark-${entry.id}')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

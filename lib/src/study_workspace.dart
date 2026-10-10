@@ -780,7 +780,292 @@ class StudyName {
   }
 }
 
-enum StudyItemType { passage, word, note, link, name, group, section }
+/// A number on a timeline's scale as written: whole numbers without a
+/// decimal point, others with at most two places.
+String formatTimelineNumber(double value) {
+  if (value == value.roundToDouble()) return value.round().toString();
+  return value
+      .toStringAsFixed(2)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
+}
+
+/// A custom timeline: an outline container, like a passage summary, whose
+/// events and spans are placed on a numbered scale of its own. The scale is
+/// counted in [unit]s ("Year", "Day", "Year of Solomon"); with [era], years
+/// count BC (negative) and AD (positive). Any other item may sit in it too.
+@immutable
+class StudyTimeline {
+  const StudyTimeline({
+    required this.id,
+    required this.title,
+    this.unit = 'Year',
+    this.era = false,
+    this.note = '',
+    this.parentId,
+    this.order = 0,
+    this.extra = const {},
+  });
+
+  /// Keys this version does not know, kept so that saving does not erase
+  /// fields a newer version wrote.
+  final Map<String, Object?> extra;
+
+  final String id;
+  final String title;
+  final String unit;
+  final bool era;
+  final String note;
+  final String? parentId;
+  final int order;
+
+  bool get isValid => id.isNotEmpty && title.isNotEmpty;
+
+  /// A point on the scale as written: "1446 BC" or "AD 30" counting by era,
+  /// else the unit and number, as "Day 3".
+  String formatTime(double value) {
+    final number = formatTimelineNumber(value.abs());
+    if (era) {
+      if (value < 0) return '$number BC';
+      if (value > 0) return 'AD $number';
+    }
+    final signed = formatTimelineNumber(value);
+    return unit.isEmpty ? signed : '$unit $signed';
+  }
+
+  StudyTimeline copyWith({
+    String? title,
+    String? unit,
+    bool? era,
+    String? note,
+    String? Function()? parentId,
+    int? order,
+  }) => StudyTimeline(
+    extra: extra,
+    id: id,
+    title: title ?? this.title,
+    unit: unit ?? this.unit,
+    era: era ?? this.era,
+    note: note ?? this.note,
+    parentId: parentId == null ? this.parentId : parentId(),
+    order: order ?? this.order,
+  );
+
+  Map<String, Object?> toJson() => {
+    ...extra,
+    'id': id,
+    'title': title,
+    'unit': unit,
+    if (era) 'era': true,
+    if (note.isNotEmpty) 'note': note,
+    if (parentId != null) 'parent': parentId,
+    'order': order,
+  };
+
+  static StudyTimeline? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final id = value['id'];
+    final title = value['title'];
+    if (id is! String || title is! String) return null;
+    final timeline = StudyTimeline(
+      extra: _extraKeys(value, const {
+        'id',
+        'title',
+        'unit',
+        'era',
+        'note',
+        'parent',
+        'order',
+      }),
+      id: id,
+      title: title,
+      unit: value['unit'] is String ? value['unit'] as String : 'Year',
+      era: value['era'] == true,
+      note: value['note'] is String ? value['note'] as String : '',
+      parentId: value['parent'] is String ? value['parent'] as String : null,
+      order: value['order'] is int ? value['order'] as int : 0,
+    );
+    return timeline.isValid ? timeline : null;
+  }
+}
+
+/// An event (a point in time) or a span (from [start] to [end]) on a
+/// timeline, which it lives directly in, with the verses it is linked to.
+/// [date] is how the time is written where the number alone would not say
+/// it ("c.", "Nisan 14"), shown beside it.
+@immutable
+class StudyTimelineEntry {
+  const StudyTimelineEntry({
+    required this.id,
+    required this.title,
+    required this.timelineId,
+    required this.start,
+    this.end,
+    this.date = '',
+    this.verses = const [],
+    this.note = '',
+    this.order = 0,
+    this.extra = const {},
+  });
+
+  /// Keys this version does not know, kept so that saving does not erase
+  /// fields a newer version wrote.
+  final Map<String, Object?> extra;
+
+  final String id;
+  final String title;
+  final String timelineId;
+  final double start;
+
+  /// Present only for a span.
+  final double? end;
+  final String date;
+
+  /// The verse ranges it is linked to; only their references are used.
+  final List<StudyPassage> verses;
+  final String note;
+  final int order;
+
+  bool get isSpan => end != null;
+  double get last => end ?? start;
+  String get key => 'timeline-entry-$id';
+
+  bool get isValid =>
+      id.isNotEmpty &&
+      title.isNotEmpty &&
+      start.isFinite &&
+      (end == null || (end!.isFinite && end! >= start));
+
+  bool linksVerse(int book, int chapter, int verse) =>
+      verses.any((passage) => passage.containsVerse(book, chapter, verse));
+
+  /// Change only the time and verses; retain the outline place and notes.
+  StudyTimelineEntry withTime({required double start, required double? end}) =>
+      StudyTimelineEntry(
+        extra: extra,
+        id: id,
+        title: title,
+        timelineId: timelineId,
+        start: start,
+        end: end,
+        date: date,
+        verses: verses,
+        note: note,
+        order: order,
+      );
+
+  StudyTimelineEntry copyWith({
+    String? title,
+    String? timelineId,
+    String? date,
+    List<StudyPassage>? verses,
+    String? note,
+    int? order,
+  }) => StudyTimelineEntry(
+    extra: extra,
+    id: id,
+    title: title ?? this.title,
+    timelineId: timelineId ?? this.timelineId,
+    start: start,
+    end: end,
+    date: date ?? this.date,
+    verses: verses ?? this.verses,
+    note: note ?? this.note,
+    order: order ?? this.order,
+  );
+
+  static Object _number(double value) =>
+      value == value.roundToDouble() && value.abs() < 1e15
+      ? value.round()
+      : value;
+
+  Map<String, Object?> toJson() => {
+    ...extra,
+    'id': id,
+    'title': title,
+    'timeline': timelineId,
+    'start': _number(start),
+    if (end != null) 'end': _number(end!),
+    if (date.isNotEmpty) 'date': date,
+    if (verses.isNotEmpty)
+      'verses': [
+        for (final passage in verses)
+          {
+            'book': passage.bookIndex,
+            'chapter': passage.chapter,
+            'verse': passage.verse,
+            if (passage.wholeChapter) 'wholeChapter': true,
+            if (passage.endChapter != null) 'endChapter': passage.endChapter,
+            if (passage.endVerse != null) 'endVerse': passage.endVerse,
+          },
+      ],
+    if (note.isNotEmpty) 'note': note,
+    'order': order,
+  };
+
+  static StudyTimelineEntry? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final id = value['id'];
+    final title = value['title'];
+    final timelineId = value['timeline'];
+    final start = value['start'];
+    final end = value['end'];
+    if (id is! String ||
+        title is! String ||
+        timelineId is! String ||
+        start is! num ||
+        (end != null && end is! num)) {
+      return null;
+    }
+    final entry = StudyTimelineEntry(
+      extra: _extraKeys(value, const {
+        'id',
+        'title',
+        'timeline',
+        'start',
+        'end',
+        'date',
+        'verses',
+        'note',
+        'order',
+      }),
+      id: id,
+      title: title,
+      timelineId: timelineId,
+      start: start.toDouble(),
+      end: (end as num?)?.toDouble(),
+      date: value['date'] is String ? value['date'] as String : '',
+      verses: [
+        if (value['verses'] is List)
+          for (final raw in value['verses'] as List)
+            ?StudyPassage.fromJson(raw),
+      ],
+      note: value['note'] is String ? value['note'] as String : '',
+      order: value['order'] is int ? value['order'] as int : 0,
+    );
+    return entry.isValid ? entry : null;
+  }
+}
+
+/// Orders a timeline's entries by when they start, then end.
+int compareTimelineEntries(StudyTimelineEntry a, StudyTimelineEntry b) {
+  final start = a.start.compareTo(b.start);
+  if (start != 0) return start;
+  final last = a.last.compareTo(b.last);
+  return last != 0 ? last : a.order.compareTo(b.order);
+}
+
+enum StudyItemType {
+  passage,
+  word,
+  note,
+  link,
+  name,
+  group,
+  section,
+  timeline,
+  timelineEntry,
+}
 
 @immutable
 class StudyItem {
@@ -790,13 +1075,18 @@ class StudyItem {
   final Object value;
   final int order;
 
-  /// The item for a passage, word, note, link or name.
+  /// The item for a passage, word, note, link, name or timeline entry.
   factory StudyItem.of(Object value) => switch (value) {
     StudyPassage() => StudyItem._(StudyItemType.passage, value, value.order),
     StudyWord() => StudyItem._(StudyItemType.word, value, value.order),
     StudyNote() => StudyItem._(StudyItemType.note, value, value.order),
     StudyLink() => StudyItem._(StudyItemType.link, value, value.order),
     StudyName() => StudyItem._(StudyItemType.name, value, value.order),
+    StudyTimelineEntry() => StudyItem._(
+      StudyItemType.timelineEntry,
+      value,
+      value.order,
+    ),
     _ => throw ArgumentError.value(value, 'value', 'not a movable item'),
   };
 
@@ -808,6 +1098,8 @@ class StudyItem {
     StudyItemType.name => (value as StudyName).key,
     StudyItemType.group => 'group-${(value as StudyGroup).id}',
     StudyItemType.section => 'section-${(value as StudySection).id}',
+    StudyItemType.timeline => 'timeline-${(value as StudyTimeline).id}',
+    StudyItemType.timelineEntry => (value as StudyTimelineEntry).key,
   };
 
   String? get groupId => switch (type) {
@@ -818,11 +1110,21 @@ class StudyItem {
     StudyItemType.name => (value as StudyName).groupId,
     StudyItemType.group => (value as StudyGroup).parentId,
     StudyItemType.section => (value as StudySection).parentId,
+    StudyItemType.timeline => (value as StudyTimeline).parentId,
+    StudyItemType.timelineEntry => (value as StudyTimelineEntry).timelineId,
   };
 
   /// A section heading, as opposed to a summary or any other item.
   bool get isHeading =>
       type == StudyItemType.section && !(value as StudySection).isSummary;
+
+  /// Where an item sorts among its siblings before its own order: other
+  /// items first, then headings by verse, then timeline entries by time.
+  int get _placement => isHeading
+      ? 1
+      : type == StudyItemType.timelineEntry
+      ? 2
+      : 0;
 }
 
 @immutable
@@ -895,12 +1197,20 @@ class StudyWorkspace {
     this.links = const [],
     this.names = const [],
     this.sections = const [],
+    this.timelineMarkersEnabled = true,
+    this.timelines = const [],
+    this.timelineEntries = const [],
     this.extra = const {},
   });
 
   final String id;
   final String name;
   final bool highlightsEnabled;
+
+  /// Whether verses linked to timeline entries show a marker in the reader.
+  final bool timelineMarkersEnabled;
+  final List<StudyTimeline> timelines;
+  final List<StudyTimelineEntry> timelineEntries;
 
   /// Whether summaries' section headings show in the reader.
   final bool headingsEnabled;
@@ -927,6 +1237,9 @@ class StudyWorkspace {
     List<StudyLink>? links,
     List<StudyName>? names,
     List<StudySection>? sections,
+    bool? timelineMarkersEnabled,
+    List<StudyTimeline>? timelines,
+    List<StudyTimelineEntry>? timelineEntries,
   }) => StudyWorkspace(
     id: id,
     name: name ?? this.name,
@@ -939,6 +1252,10 @@ class StudyWorkspace {
     links: links ?? this.links,
     names: names ?? this.names,
     sections: sections ?? this.sections,
+    timelineMarkersEnabled:
+        timelineMarkersEnabled ?? this.timelineMarkersEnabled,
+    timelines: timelines ?? this.timelines,
+    timelineEntries: timelineEntries ?? this.timelineEntries,
     extra: extra,
   );
 
@@ -1063,16 +1380,46 @@ class StudyWorkspace {
     return null;
   }
 
-  /// Whether [id] names a group or a section, the outline's containers.
-  bool hasContainer(String id) =>
-      groupById(id) != null || sectionById(id) != null;
+  StudyTimeline? timelineById(String? id) {
+    if (id == null) return null;
+    for (final timeline in timelines) {
+      if (timeline.id == id) return timeline;
+    }
+    return null;
+  }
 
-  /// The container holding the group or section [id].
+  /// A timeline's events and spans, in time order.
+  List<StudyTimelineEntry> entriesOf(String timelineId) =>
+      timelineEntries.where((e) => e.timelineId == timelineId).toList()
+        ..sort(compareTimelineEntries);
+
+  /// The timeline entries linked to a verse: each timeline's in time order,
+  /// the timelines in their stored order.
+  List<StudyTimelineEntry> timelineEntriesAt(
+    int book,
+    int chapter,
+    int verse,
+  ) => [
+    for (final timeline in timelines)
+      for (final entry in entriesOf(timeline.id))
+        if (entry.linksVerse(book, chapter, verse)) entry,
+  ];
+
+  /// Whether [id] names a group, a section or a timeline, the outline's
+  /// containers.
+  bool hasContainer(String id) =>
+      groupById(id) != null ||
+      sectionById(id) != null ||
+      timelineById(id) != null;
+
+  /// The container holding the group, section or timeline [id].
   String? containerParent(String id) =>
-      groupById(id)?.parentId ?? sectionById(id)?.parentId;
+      groupById(id)?.parentId ??
+      sectionById(id)?.parentId ??
+      timelineById(id)?.parentId;
 
   String? containerName(String id) =>
-      groupById(id)?.name ?? sectionById(id)?.title;
+      groupById(id)?.name ?? sectionById(id)?.title ?? timelineById(id)?.title;
 
   /// The summary a section belongs to: itself, or its nearest summary above.
   StudySection? summaryOf(StudySection section) {
@@ -1284,19 +1631,35 @@ class StudyWorkspace {
       for (final section in sections)
         if (section.parentId == groupId)
           StudyItem._(StudyItemType.section, section, section.order),
+      for (final timeline in timelines)
+        if (timeline.parentId == groupId)
+          StudyItem._(StudyItemType.timeline, timeline, timeline.order),
+      for (final entry in timelineEntries)
+        if (entry.timelineId == groupId)
+          StudyItem._(StudyItemType.timelineEntry, entry, entry.order),
     ];
     // Retain the original list order for legacy items with tied order values.
     final positions = {for (var i = 0; i < items.length; i++) items[i]: i};
     items.sort((a, b) {
       // A section's own items come before its headings, as the text before
-      // its first heading; the headings follow in verse order.
-      if (a.isHeading != b.isHeading) return a.isHeading ? 1 : -1;
+      // its first heading; the headings follow in verse order. A timeline's
+      // own items likewise come before its events and spans, in time order.
+      if (a._placement != b._placement) {
+        return a._placement.compareTo(b._placement);
+      }
       if (a.isHeading) {
         final start = _compareStarts(
           (a.value as StudySection).start,
           (b.value as StudySection).start,
         );
         if (start != 0) return start;
+      }
+      if (a.type == StudyItemType.timelineEntry) {
+        final time = compareTimelineEntries(
+          a.value as StudyTimelineEntry,
+          b.value as StudyTimelineEntry,
+        );
+        if (time != 0) return time;
       }
       final order = a.order.compareTo(b.order);
       return order != 0 ? order : positions[a]!.compareTo(positions[b]!);
@@ -1332,6 +1695,12 @@ class StudyWorkspace {
     }
     for (final section in sections) {
       if (section.parentId == groupId) consider(section.order);
+    }
+    for (final timeline in timelines) {
+      if (timeline.parentId == groupId) consider(timeline.order);
+    }
+    for (final entry in timelineEntries) {
+      if (entry.timelineId == groupId) consider(entry.order);
     }
     return highest == null ? 0 : highest! + 1;
   }
@@ -1441,8 +1810,14 @@ class StudyWorkspace {
     if (!itemsIn(item.groupId).any((candidate) => candidate.key == item.key)) {
       return false;
     }
+    // An event or span lives only directly in a timeline.
+    if (item.type == StudyItemType.timelineEntry) {
+      return timelineById(groupId) != null;
+    }
     final containerId = switch (item.value) {
-      StudyGroup(:final id) || StudySection(:final id) => id,
+      StudyGroup(:final id) ||
+      StudySection(:final id) ||
+      StudyTimeline(:final id) => id,
       _ => null,
     };
     if (containerId != null) {
@@ -1544,6 +1919,22 @@ class StudyWorkspace {
                   : section,
           ],
         ),
+        StudyItemType.timeline => copyWith(
+          timelines: [
+            for (final timeline in timelines)
+              timeline.id == (item.value as StudyTimeline).id
+                  ? timeline.copyWith(parentId: () => groupId, order: order)
+                  : timeline,
+          ],
+        ),
+        StudyItemType.timelineEntry => copyWith(
+          timelineEntries: [
+            for (final entry in timelineEntries)
+              entry.id == (item.value as StudyTimelineEntry).id
+                  ? entry.copyWith(timelineId: groupId, order: order)
+                  : entry,
+          ],
+        ),
       };
 
   StudyWorkspace putGroup(StudyGroup group) {
@@ -1607,6 +1998,12 @@ class StudyWorkspace {
               ? section.copyWith(parentId: () => parentId)
               : section,
       ],
+      timelines: [
+        for (final timeline in timelines)
+          timeline.parentId == group.id
+              ? timeline.copyWith(parentId: () => parentId)
+              : timeline,
+      ],
     );
   }
 
@@ -1664,8 +2061,91 @@ class StudyWorkspace {
         for (final name in names)
           name.copyWith(groupId: () => reparent(name.groupId)),
       ],
+      timelines: [
+        for (final timeline in timelines)
+          timeline.copyWith(parentId: () => reparent(timeline.parentId)),
+      ],
     );
   }
+
+  StudyWorkspace putTimeline(StudyTimeline timeline) {
+    final updated = List<StudyTimeline>.of(timelines);
+    final index = updated.indexWhere((t) => t.id == timeline.id);
+    if (index < 0) {
+      updated.add(timeline.copyWith(order: nextOrder(timeline.parentId)));
+    } else {
+      updated[index] = updated[index].parentId == timeline.parentId
+          ? timeline
+          : timeline.copyWith(order: nextOrder(timeline.parentId));
+    }
+    return copyWith(timelines: updated);
+  }
+
+  /// Delete a timeline with its events and spans, which mean nothing outside
+  /// it. Any other items it held move up to its parent.
+  StudyWorkspace removeTimeline(StudyTimeline timeline) {
+    final parentId = timeline.parentId;
+    String? reparent(String? id) => id == timeline.id ? parentId : id;
+    return copyWith(
+      timelines: [
+        for (final candidate in timelines)
+          if (candidate.id != timeline.id)
+            candidate.copyWith(parentId: () => reparent(candidate.parentId)),
+      ],
+      timelineEntries: [
+        for (final entry in timelineEntries)
+          if (entry.timelineId != timeline.id) entry,
+      ],
+      sections: [
+        for (final section in sections)
+          section.copyWith(parentId: () => reparent(section.parentId)),
+      ],
+      groups: [
+        for (final group in groups)
+          group.copyWith(parentId: () => reparent(group.parentId)),
+      ],
+      passages: [
+        for (final passage in passages)
+          passage.copyWith(groupId: () => reparent(passage.groupId)),
+      ],
+      words: [
+        for (final word in words)
+          word.copyWith(groupId: () => reparent(word.groupId)),
+      ],
+      notes: [
+        for (final note in notes)
+          note.copyWith(groupId: () => reparent(note.groupId)),
+      ],
+      links: [
+        for (final link in links)
+          link.copyWith(groupId: () => reparent(link.groupId)),
+      ],
+      names: [
+        for (final name in names)
+          name.copyWith(groupId: () => reparent(name.groupId)),
+      ],
+    );
+  }
+
+  /// Adds or replaces an entry. It must be valid and in a timeline; one
+  /// moved to another timeline lands last there.
+  StudyWorkspace putTimelineEntry(StudyTimelineEntry entry) {
+    if (timelineById(entry.timelineId) == null || !entry.isValid) return this;
+    final updated = List<StudyTimelineEntry>.of(timelineEntries);
+    final index = updated.indexWhere((e) => e.id == entry.id);
+    if (index < 0) {
+      updated.add(entry.copyWith(order: nextOrder(entry.timelineId)));
+    } else {
+      updated[index] = updated[index].timelineId == entry.timelineId
+          ? entry
+          : entry.copyWith(order: nextOrder(entry.timelineId));
+    }
+    return copyWith(timelineEntries: updated);
+  }
+
+  StudyWorkspace removeTimelineEntry(StudyTimelineEntry entry) => copyWith(
+    timelineEntries: timelineEntries.where((e) => e.id != entry.id).toList(),
+  );
 
   Map<String, Object?> toJson() => {
     ...extra,
@@ -1682,6 +2162,13 @@ class StudyWorkspace {
     if (names.isNotEmpty) 'names': names.map((name) => name.toJson()).toList(),
     if (sections.isNotEmpty)
       'sections': sections.map((section) => section.toJson()).toList(),
+    if (!timelineMarkersEnabled) 'timelineMarkers': false,
+    if (timelines.isNotEmpty)
+      'timelines': timelines.map((timeline) => timeline.toJson()).toList(),
+    if (timelineEntries.isNotEmpty)
+      'timelineEntries': timelineEntries
+          .map((entry) => entry.toJson())
+          .toList(),
   };
 
   static StudyWorkspace? fromJson(Object? value) {
@@ -1822,9 +2309,34 @@ class StudyWorkspace {
         if (anchored.summaryOf(section) != null) section,
     ];
 
+    // Timelines came after mixed ordering too. An event or span lives only
+    // in its timeline, so one whose timeline is gone is dropped.
+    final timelineIds = <String>{};
+    var timelines = [
+      for (final timeline
+          in (value['timelines'] is List
+                  ? value['timelines'] as List
+                  : const [])
+              .map(StudyTimeline.fromJson)
+              .whereType<StudyTimeline>())
+        if (timelineIds.add(timeline.id)) timeline,
+    ];
+    final entryIds = <String>{};
+    final timelineEntries = [
+      for (final entry
+          in (value['timelineEntries'] is List
+                  ? value['timelineEntries'] as List
+                  : const [])
+              .map(StudyTimelineEntry.fromJson)
+              .whereType<StudyTimelineEntry>())
+        if (timelineIds.contains(entry.timelineId) && entryIds.add(entry.id))
+          entry,
+    ];
+
     final groupIds = {
       ...groups.map((group) => group.id),
       ...sections.map((section) => section.id),
+      ...timelineIds,
     };
     groups = [
       for (final group in groups)
@@ -1840,11 +2352,18 @@ class StudyWorkspace {
             ? section
             : section.copyWith(parentId: () => null),
     ];
+    timelines = [
+      for (final timeline in timelines)
+        timeline.parentId == null || groupIds.contains(timeline.parentId)
+            ? timeline
+            : timeline.copyWith(parentId: () => null),
+    ];
     // A cycle among the containers would hang them from nothing, out of reach
     // of the top level. Cut each where a walk up from it first re-enters it.
     final parentOf = <String, String?>{
       for (final group in groups) group.id: group.parentId,
       for (final section in sections) section.id: section.parentId,
+      for (final timeline in timelines) timeline.id: timeline.parentId,
     };
     for (final start in parentOf.keys.toList()) {
       final seen = <String>{};
@@ -1868,6 +2387,12 @@ class StudyWorkspace {
         section.parentId == parentOf[section.id]
             ? section
             : section.copyWith(parentId: () => parentOf[section.id]),
+    ];
+    timelines = [
+      for (final timeline in timelines)
+        timeline.parentId == parentOf[timeline.id]
+            ? timeline
+            : timeline.copyWith(parentId: () => parentOf[timeline.id]),
     ];
     passages = [
       for (final passage in passages)
@@ -1988,6 +2513,9 @@ class StudyWorkspace {
     for (final section in sections) {
       accountFor(section.parentId, section.order);
     }
+    for (final timeline in timelines) {
+      accountFor(timeline.parentId, timeline.order);
+    }
     for (final group in groups) {
       final order = storedGroupOrders[group.id];
       if (order != null) accountFor(group.parentId, order);
@@ -2011,6 +2539,10 @@ class StudyWorkspace {
       links: links,
       names: names,
       sections: sections,
+      timelineMarkersEnabled:
+          value['timelineMarkers'] is! bool || value['timelineMarkers'] as bool,
+      timelines: timelines,
+      timelineEntries: timelineEntries,
       extra: _extraKeys(value, const {
         'id',
         'name',
@@ -2024,6 +2556,9 @@ class StudyWorkspace {
         'links',
         'names',
         'sections',
+        'timelineMarkers',
+        'timelines',
+        'timelineEntries',
         // Older shapes, migrated on load.
         'themes',
         'central',
