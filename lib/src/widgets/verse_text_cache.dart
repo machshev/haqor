@@ -32,8 +32,9 @@ class VerseTextData {
   final List<String> sourceWords;
 
   /// English-only mode: the verse in the English translation, where it has
-  /// one, each span naming the Hebrew words it renders. Empty in Hebrew mode
-  /// and for a verse without one (the NT), which falls back to [glossWords].
+  /// one, each span naming the Hebrew words it renders (in the NT,
+  /// Murdock's Peshitta, none). Empty in Hebrew mode and for a verse without
+  /// one, which falls back to [glossWords].
   final List<TranslationSpanEntry> translation;
 }
 

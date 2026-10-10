@@ -2647,7 +2647,7 @@ class OccurrenceVerseRow extends StatelessWidget {
     }
 
     // Hebrew mode matches the displayed words themselves. English-only without
-    // a translation (the NT) shows glosses, which never match a Hebrew
+    // a translation shows glosses, which never match a Hebrew
     // surface, so match on the word each gloss was made from and highlight the
     // English standing in for it.
     final useGlosses =

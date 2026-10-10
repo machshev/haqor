@@ -1864,13 +1864,14 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   /// A verse's English while the reader shows it, and whether it is still on
   /// its way, which the first row to ask for its chapter sends for. Null and
-  /// not pending for a verse without English, the New Testament's included.
+  /// not pending for a verse without English. The New Testament's is
+  /// Murdock's translation of the Peshitta, which names no words.
   ({List<TranslationSpanEntry>? spans, bool pending}) _translationFor(
     int bookIndex,
     int chapter,
     int verse,
   ) {
-    if (_readerText == ReaderText.source || bookIndex >= 39) {
+    if (_readerText == ReaderText.source) {
       return (spans: null, pending: false);
     }
     final verses = _translations[(bookIndex, chapter)];
