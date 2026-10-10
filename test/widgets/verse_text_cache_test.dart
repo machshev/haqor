@@ -21,6 +21,7 @@ void _reply(GetVerseTexts request, {Set<int> omit = const {}}) {
               text: 'verse ${ref.book}:${ref.chapter}:${ref.verse}',
               glossWords: const [],
               sourceWords: const [],
+              translation: const [],
             ),
       ],
     ).bincodeSerialize(),

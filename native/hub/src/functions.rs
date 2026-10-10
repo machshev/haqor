@@ -670,10 +670,32 @@ pub async fn get_verse_texts(bible: SharedBible) {
         let req = signal_pack.message;
         debug_print!("{:?}", req);
         let bible = lock(&bible);
+        // The translation is stored and parsed a chapter at a time, so read
+        // each chapter the batch touches once.
+        let mut chapters: std::collections::HashMap<
+            (u8, u8),
+            std::collections::HashMap<u8, Vec<TranslationSpanEntry>>,
+        > = std::collections::HashMap::new();
         let verses = req
             .refs
             .iter()
             .filter_map(|r| {
+                let translation = if req.english_only {
+                    chapters
+                        .entry((r.book, r.chapter))
+                        .or_insert_with(|| {
+                            bible
+                                .chapter_translation(r.book, r.chapter)
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|(verse, spans)| (verse, translation_spans(spans)))
+                                .collect()
+                        })
+                        .remove(&r.verse)
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
                 let (text, gloss_words, source_words) = if req.english_only {
                     let pairs = bible.verse_gloss_words(r.book, r.chapter, r.verse).ok()?;
                     let (source_words, gloss_words): (Vec<String>, Vec<String>) =
@@ -699,6 +721,7 @@ pub async fn get_verse_texts(bible: SharedBible) {
                     text,
                     gloss_words,
                     source_words,
+                    translation,
                 })
             })
             .collect();

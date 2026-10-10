@@ -84,6 +84,7 @@ class _FakeRust {
                   'אֵת',
                   'הַשָּׁמַיִם',
                 ],
+                translation: const [],
               ),
           ],
         ).bincodeSerialize(),

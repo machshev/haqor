@@ -14,6 +14,7 @@ class VerseTextData {
     required this.text,
     this.glossWords = const [],
     this.sourceWords = const [],
+    this.translation = const [],
   });
 
   /// A verse the core could not read. Rows render nothing for it rather than
@@ -29,6 +30,11 @@ class VerseTextData {
   /// The source-language word each entry of [glossWords] renders, so a
   /// gloss-only verse can still be highlighted on the Hebrew behind it.
   final List<String> sourceWords;
+
+  /// English-only mode: the verse in the English translation, where it has
+  /// one, each span naming the Hebrew words it renders. Empty in Hebrew mode
+  /// and for a verse without one (the NT), which falls back to [glossWords].
+  final List<TranslationSpanEntry> translation;
 }
 
 /// One cached verse. A subclass of the notifier only to know whether any row is
@@ -351,6 +357,7 @@ class VerseTextCache {
         text: verse.text,
         glossWords: verse.glossWords,
         sourceWords: verse.sourceWords,
+        translation: verse.translation,
       );
     }
     // Anything asked for and not returned is unreadable; settle it so the row

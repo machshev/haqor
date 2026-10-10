@@ -105,6 +105,7 @@ class _FakeRust {
                 text: '${ref.book}:${ref.chapter}:${ref.verse} אֱלִיעֶזֶר',
                 glossWords: const [],
                 sourceWords: const [],
+                translation: const [],
               ),
           ],
         ).bincodeSerialize(),

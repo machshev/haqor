@@ -222,6 +222,11 @@ pub struct VerseTextEntry {
     /// The source-language word each entry of `gloss_words` renders. Aligned
     /// with `gloss_words`.
     pub source_words: Vec<String>,
+    /// English-only mode: the verse in the English translation, where it has
+    /// one (the OT), which reads better in a list than its glosses run
+    /// together. Each span names the Hebrew words it renders, so the looked-up
+    /// word can still be highlighted. Empty otherwise.
+    pub translation: Vec<TranslationSpanEntry>,
 }
 
 #[derive(Debug, Deserialize, DartSignal)]

@@ -88,6 +88,7 @@ class _FakeRust {
                 text: 'אא בב גג דד הה',
                 glossWords: const [],
                 sourceWords: const [],
+                translation: const [],
               ),
           ],
         ).bincodeSerialize(),

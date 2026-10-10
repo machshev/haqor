@@ -2602,9 +2602,53 @@ class OccurrenceVerseRow extends StatelessWidget {
     );
     final strippedTargets = highlightWords.map(_stripTrope).toSet();
     final keyTargets = highlightWords.map(hebrewSurfaceKey).toSet();
-    // Hebrew mode matches the displayed words themselves. English-only shows
-    // glosses, which never match a Hebrew surface, so match on the word each
-    // gloss was made from and highlight the English standing in for it.
+    bool matchesTarget(String word) =>
+        word.isNotEmpty &&
+        (strippedTargets.contains(_stripTrope(word)) ||
+            keyTargets.contains(hebrewSurfaceKey(word)));
+    final highlightStyle = baseStyle.copyWith(
+      backgroundColor: theme.colorScheme.primaryContainer,
+      color: theme.colorScheme.onPrimaryContainer,
+    );
+    final refSpan = TextSpan(text: '${_compactRef()}  ', style: refStyle);
+
+    // English-only prefers the translation, which reads as English where the
+    // glosses run together do not. Each span names the Hebrew words it
+    // renders, so the one standing in for the looked-up word is highlighted.
+    if (englishOnly && data.translation.isNotEmpty) {
+      final targetPositions = positions.toSet();
+      bool isTarget(TranslationSpanEntry span) => span.words.any((word) {
+        // A span may render a word of the verse beside it, where the English
+        // and Hebrew divide verses differently; that word is not this row's.
+        if (word.chapter != chapter || word.verse != verse) return false;
+        if (targetPositions.isNotEmpty) {
+          return targetPositions.contains(word.position);
+        }
+        return word.position < data.sourceWords.length &&
+            matchesTarget(data.sourceWords[word.position]);
+      });
+      return SelectableText.rich(
+        TextSpan(
+          children: [
+            refSpan,
+            for (final span in data.translation)
+              TextSpan(
+                text: span.text,
+                style: (isTarget(span) ? highlightStyle : baseStyle).copyWith(
+                  fontStyle: span.supplied ? FontStyle.italic : null,
+                ),
+              ),
+          ],
+        ),
+        textDirection: TextDirection.ltr,
+        onTap: onTap,
+      );
+    }
+
+    // Hebrew mode matches the displayed words themselves. English-only without
+    // a translation (the NT) shows glosses, which never match a Hebrew
+    // surface, so match on the word each gloss was made from and highlight the
+    // English standing in for it.
     final useGlosses =
         englishOnly &&
         data.glossWords.isNotEmpty &&
@@ -2624,31 +2668,18 @@ class OccurrenceVerseRow extends StatelessWidget {
       }
       // No positions known (an occurrence list that predates them, or a bare
       // surface lookup) — fall back to matching the text.
-      final word = useGlosses ? data.sourceWords[i] : tokens[i];
-      if (word.isEmpty) return false;
-      return strippedTargets.contains(_stripTrope(word)) ||
-          keyTargets.contains(hebrewSurfaceKey(word));
+      return matchesTarget(useGlosses ? data.sourceWords[i] : tokens[i]);
     }
 
     final spans = <InlineSpan>[];
     for (var i = 0; i < tokens.length; i++) {
       if (i > 0) spans.add(const TextSpan(text: ' '));
       final token = tokens[i];
-      if (isTarget(i)) {
-        spans.add(
-          TextSpan(
-            text: token,
-            style: baseStyle.copyWith(
-              backgroundColor: theme.colorScheme.primaryContainer,
-              color: theme.colorScheme.onPrimaryContainer,
-            ),
-          ),
-        );
-      } else {
-        spans.add(TextSpan(text: token, style: baseStyle));
-      }
+      spans.add(
+        TextSpan(text: token, style: isTarget(i) ? highlightStyle : baseStyle),
+      );
     }
-    spans.insert(0, TextSpan(text: '${_compactRef()}  ', style: refStyle));
+    spans.insert(0, refSpan);
     return SelectableText.rich(
       TextSpan(children: spans),
       textDirection: englishOnly ? TextDirection.ltr : TextDirection.rtl,

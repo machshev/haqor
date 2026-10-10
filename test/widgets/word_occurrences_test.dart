@@ -96,6 +96,7 @@ class _FakeRust {
                     '${_words.join(' ')}',
                 glossWords: const [],
                 sourceWords: const [],
+                translation: const [],
               ),
           ],
         ).bincodeSerialize(),
