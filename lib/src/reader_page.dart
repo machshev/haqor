@@ -3284,6 +3284,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   void _openStudyTimeline(
     StudyTimeline timeline, {
     String? selectedId,
+    bool calendar = false,
     VoidCallback? onOpenReader,
   }) {
     final workspace = _activeStudyWorkspace;
@@ -3295,6 +3296,7 @@ class _ReaderSessionState extends State<_ReaderSession>
           entries: workspace.entriesOf(timeline.id),
           useEnglishBookNames: _englishBookNames,
           initialSelectedId: selectedId,
+          initialCalendar: calendar,
           onOpenPassage: (passage) {
             _navigateTo(
               passage.bookIndex,
@@ -3316,9 +3318,14 @@ class _ReaderSessionState extends State<_ReaderSession>
             final current = _activeStudyWorkspace?.timelineById(timeline.id);
             if (current != null) await _editStudyTimeline(current);
           },
+          onUpdateTimeline: (changed) async => _updateStudyTimeline(changed),
           // The verse being read is no clue to an entry added here.
-          onAddEntry: (span) =>
-              _createStudyTimelineEntry(timeline.id, span, linkVerse: false),
+          onAddEntry: (span, at) => _createStudyTimelineEntry(
+            timeline.id,
+            span,
+            linkVerse: false,
+            at: at,
+          ),
           onEditEntry: _editStudyTimelineEntry,
           onRemoveEntry: (entry) async => _removeStudyTimelineEntry(entry),
         ),
@@ -3351,12 +3358,13 @@ class _ReaderSessionState extends State<_ReaderSession>
     String timelineId, {
     required bool span,
     StudyPassage? verse,
+    TimelineTime? at,
   }) => StudyTimelineEntry(
     id: DateTime.now().microsecondsSinceEpoch.toString(),
     title: '',
     timelineId: timelineId,
-    start: const TimelineTime(0),
-    end: span ? const TimelineTime(0) : null,
+    start: at ?? const TimelineTime(0),
+    end: span ? at ?? const TimelineTime(0) : null,
     verses: [
       if (verse != null)
         StudyPassage(
@@ -3368,19 +3376,28 @@ class _ReaderSessionState extends State<_ReaderSession>
   );
 
   /// Adds an event or span to a timeline, linked to the verse being read
-  /// unless [linkVerse] is false.
+  /// unless [linkVerse] is false, starting [at] a day where one is chosen.
   Future<void> _createStudyTimelineEntry(
     String timelineId,
     bool span, {
     bool linkVerse = true,
+    TimelineTime? at,
   }) => _askForStudyTimelineEntry(
     _newStudyTimelineEntry(
       timelineId,
       span: span,
       verse: linkVerse ? _currentStudyPassage : null,
+      at: at,
     ),
     creating: true,
   );
+
+  void _updateStudyTimeline(StudyTimeline timeline) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace != null) {
+      _replaceStudyWorkspace(workspace.putTimeline(timeline));
+    }
+  }
 
   /// Adds, from the reader, an event or span linked to a verse: to the
   /// timeline last given an entry in its book, else the newest timeline,
@@ -3780,6 +3797,13 @@ class _ReaderSessionState extends State<_ReaderSession>
             },
             onOpenTimeline: (timeline) => _openStudyTimeline(
               timeline,
+              onOpenReader: () {
+                if (sheetContext.mounted) Navigator.pop(sheetContext);
+              },
+            ),
+            onOpenTimelineCalendar: (timeline) => _openStudyTimeline(
+              timeline,
+              calendar: true,
               onOpenReader: () {
                 if (sheetContext.mounted) Navigator.pop(sheetContext);
               },
@@ -4865,6 +4889,11 @@ class _ReaderSessionState extends State<_ReaderSession>
         onDeleteTimeline: _deleteStudyTimeline,
         onOpenTimeline: (timeline) =>
             _openStudyTimeline(timeline, onOpenReader: onOpenReader),
+        onOpenTimelineCalendar: (timeline) => _openStudyTimeline(
+          timeline,
+          calendar: true,
+          onOpenReader: onOpenReader,
+        ),
         onCreateTimelineEntry: _createStudyTimelineEntry,
         onEditTimelineEntry: _editStudyTimelineEntry,
         onRemoveTimelineEntry: _removeStudyTimelineEntry,

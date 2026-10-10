@@ -56,6 +56,7 @@ class StudyWorkspacePanel extends StatelessWidget {
     this.onEditTimeline,
     this.onDeleteTimeline,
     this.onOpenTimeline,
+    this.onOpenTimelineCalendar,
     this.onCreateTimelineEntry,
     this.onEditTimelineEntry,
     this.onRemoveTimelineEntry,
@@ -122,6 +123,9 @@ class StudyWorkspacePanel extends StatelessWidget {
   final ValueChanged<StudyTimeline>? onEditTimeline;
   final ValueChanged<StudyTimeline>? onDeleteTimeline;
   final ValueChanged<StudyTimeline>? onOpenTimeline;
+
+  /// Opens a timeline with months as a calendar of its year.
+  final ValueChanged<StudyTimeline>? onOpenTimelineCalendar;
   final void Function(String timelineId, bool span)? onCreateTimelineEntry;
   final ValueChanged<StudyTimelineEntry>? onEditTimelineEntry;
   final ValueChanged<StudyTimelineEntry>? onRemoveTimelineEntry;
@@ -878,6 +882,8 @@ class StudyWorkspacePanel extends StatelessWidget {
                     switch (action) {
                       case _TimelineAction.open:
                         open?.call(timeline);
+                      case _TimelineAction.calendar:
+                        onOpenTimelineCalendar?.call(timeline);
                       case _TimelineAction.addEvent:
                         onCreateTimelineEntry?.call(timeline.id, false);
                       case _TimelineAction.addSpan:
@@ -892,14 +898,22 @@ class StudyWorkspacePanel extends StatelessWidget {
                         onDeleteTimeline?.call(timeline);
                     }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
                       value: _TimelineAction.open,
                       child: ListTile(
                         leading: Icon(Icons.open_in_full),
                         title: Text('Open timeline'),
                       ),
                     ),
+                    if (timeline.hasMonths && onOpenTimelineCalendar != null)
+                      const PopupMenuItem(
+                        value: _TimelineAction.calendar,
+                        child: ListTile(
+                          leading: Icon(Icons.calendar_month_outlined),
+                          title: Text('Open calendar'),
+                        ),
+                      ),
                     PopupMenuItem(
                       value: _TimelineAction.addEvent,
                       child: ListTile(
@@ -2521,6 +2535,7 @@ enum _GroupAction {
 }
 
 enum _TimelineAction {
+  calendar,
   open,
   addEvent,
   addSpan,

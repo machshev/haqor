@@ -5,6 +5,7 @@ import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/study_timeline_editor.dart';
 import 'package:haqor/src/widgets/study_workspace_panel.dart';
+import 'package:haqor/src/widgets/timeline_calendar.dart';
 import 'package:haqor/src/widgets/timeline_chart.dart';
 
 const _timeline = StudyTimeline(
@@ -592,7 +593,7 @@ void main() {
                     calls.add('timeline');
                     timeline = timeline.copyWith(title: 'Kings of Israel');
                   },
-                  onAddEntry: (span) async {
+                  onAddEntry: (span, _) async {
                     calls.add('add ${span ? 'span' : 'event'}');
                     entries = [...entries, _reign];
                   },
@@ -641,5 +642,97 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('timeline-row-temple')), findsNothing);
     expect(calls, ['timeline', 'add span', 'edit temple', 'remove temple']);
+  });
+
+  testWidgets('the calendar shows Sabbaths and keeps high Sabbaths', (
+    tester,
+  ) async {
+    var timeline = const StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+    );
+    const entries = [
+      StudyTimelineEntry(
+        id: 'passover',
+        title: 'Passover',
+        timelineId: 'feasts',
+        start: TimelineTime(0, month: 1, day: 14),
+      ),
+    ];
+    final added = <TimelineTime?>[];
+    tester.view.physicalSize = const Size(1000, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TimelinePage(
+          timeline: timeline,
+          entries: entries,
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+          initialCalendar: true,
+          reload: () => (timeline: timeline, entries: entries),
+          onUpdateTimeline: (changed) async => timeline = changed,
+          onAddEntry: (span, at) async => added.add(at),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('calendar-month-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('calendar-month-12')), findsOneWidget);
+    // No years on a year's calendar.
+    expect(find.byKey(const ValueKey('calendar-year')), findsNothing);
+    // Nisan starts on the first day, so its 7th is a Sabbath.
+    BoxDecoration? decoration(int month, int day) =>
+        tester
+                .widget<Container>(
+                  find
+                      .descendant(
+                        of: find.byKey(ValueKey('calendar-day-$month-$day')),
+                        matching: find.byType(Container),
+                      )
+                      .first,
+                )
+                .decoration
+            as BoxDecoration?;
+    final scheme = Theme.of(
+      tester.element(find.byType(TimelineCalendar)),
+    ).colorScheme;
+    expect(decoration(1, 7)?.color, scheme.secondaryContainer);
+    expect(decoration(1, 15)?.color, isNull);
+
+    // Move the week: 1 Nisan on the Sabbath.
+    await tester.tap(find.text('Day 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sabbath').last);
+    await tester.pumpAndSettle();
+    expect(timeline.nisanWeekday, 7);
+    expect(timeline.weekYear, isNull);
+    expect(decoration(1, 1)?.color, scheme.secondaryContainer);
+
+    // Keep 15 Nisan as a high Sabbath.
+    await tester.tap(find.byKey(const ValueKey('calendar-day-1-15')));
+    await tester.pumpAndSettle();
+    expect(find.text('15 Nisan'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('calendar-high-sabbath')));
+    await tester.pumpAndSettle();
+    expect(timeline.sabbaths, {const TimelineTime(0, month: 1, day: 15)});
+    expect(decoration(1, 15)?.color, scheme.tertiaryContainer);
+
+    // Add an event on a day.
+    await tester.tap(find.byKey(const ValueKey('calendar-day-7-10')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add event on this day'));
+    await tester.pumpAndSettle();
+    expect(added, [const TimelineTime(0, month: 7, day: 10)]);
+
+    // And back to the timeline.
+    await tester.tap(find.byTooltip('Show timeline'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('timeline-mark-passover')),
+      findsOneWidget,
+    );
   });
 }

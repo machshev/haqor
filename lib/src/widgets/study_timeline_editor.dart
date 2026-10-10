@@ -403,7 +403,11 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     _title = TextEditingController(text: e.title);
     _span = e.isSpan;
     // A new entry starts empty, BC by default counting by era.
-    _start = _TimeDraft(widget.creating ? null : e.start, calendar: calendar);
+    // A day already chosen (from the calendar) is kept.
+    _start = _TimeDraft(
+      widget.creating && e.start.month == null ? null : e.start,
+      calendar: calendar,
+    );
     _end = _TimeDraft(widget.creating ? null : e.end, calendar: calendar);
     final duration = e.duration;
     _byDuration = duration != null;

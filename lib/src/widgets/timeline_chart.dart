@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../bible_data.dart';
 import '../study_workspace.dart';
 import 'markdown_note.dart';
+import 'timeline_calendar.dart';
 
 /// The stretch of a timeline's axis its entries cover (as positions, see
 /// [StudyTimeline.positionOf]), with a margin either side; a single point
@@ -568,10 +569,16 @@ typedef TimelineContents = ({
 /// What an entry's details sheet was closed to do.
 enum _EntryChoice { edit, remove }
 
+/// What a day's sheet in the calendar was closed to do, besides editing
+/// one of its entries.
+enum _DayChoice { add, keepSabbath, dropSabbath }
+
 /// The full view of a timeline: drawn to scale, zoomable and scrollable,
 /// with its entries listed beneath. An entry opens its details, from which
-/// its linked verses open in the reader through [onOpenPassage]. Given the
-/// callbacks, the timeline and its entries are edited here too.
+/// its linked verses open in the reader through [onOpenPassage]. A timeline
+/// with months may be shown instead as a calendar of one year at a time
+/// (see [TimelineCalendar]). Given the callbacks, the timeline and its
+/// entries are edited here too.
 class TimelinePage extends StatefulWidget {
   const TimelinePage({
     super.key,
@@ -580,8 +587,10 @@ class TimelinePage extends StatefulWidget {
     required this.useEnglishBookNames,
     required this.onOpenPassage,
     this.initialSelectedId,
+    this.initialCalendar = false,
     this.reload,
     this.onEditTimeline,
+    this.onUpdateTimeline,
     this.onAddEntry,
     this.onEditEntry,
     this.onRemoveEntry,
@@ -595,15 +604,21 @@ class TimelinePage extends StatefulWidget {
   /// The entry to show picked out when the page opens.
   final String? initialSelectedId;
 
+  /// Whether to open on the calendar, where the timeline has months.
+  final bool initialCalendar;
+
   /// Reads the timeline again after an edit; null when it is gone, which
   /// closes the page.
   final TimelineContents? Function()? reload;
 
-  /// Edit the timeline, add an event or (`span` true) a span to it, edit
-  /// or remove an entry; the page reads the timeline again after each.
-  /// Without them the page only shows the timeline.
+  /// Edit the timeline in its editor, or save a change made here (its
+  /// weekdays, a high Sabbath); add an event or (`span` true) a span to it,
+  /// starting [at] a day where one is chosen; edit or remove an entry. The
+  /// page reads the timeline again after each. Without them the page only
+  /// shows the timeline.
   final Future<void> Function()? onEditTimeline;
-  final Future<void> Function(bool span)? onAddEntry;
+  final Future<void> Function(StudyTimeline timeline)? onUpdateTimeline;
+  final Future<void> Function(bool span, TimelineTime? at)? onAddEntry;
   final Future<void> Function(StudyTimelineEntry entry)? onEditEntry;
   final Future<void> Function(StudyTimelineEntry entry)? onRemoveEntry;
 
@@ -617,7 +632,21 @@ class _TimelinePageState extends State<TimelinePage> {
   late String? _selectedId = widget.initialSelectedId;
   late StudyTimeline _timeline = widget.timeline;
   late List<StudyTimelineEntry> _entries = widget.entries;
+  late bool _calendar = widget.initialCalendar && widget.timeline.hasMonths;
+  late double _year = _firstYear();
+  TimelineTime? _selectedDay;
   final _horizontal = ScrollController();
+
+  /// The year the calendar opens on: the one its weeks are counted from,
+  /// else the first entry's; none on one year's calendar.
+  double _firstYear() {
+    final timeline = widget.timeline;
+    if (timeline.isAnnual) return 0;
+    final entries = List.of(widget.entries)..sort(compareTimelineEntries);
+    final year =
+        timeline.weekYear ?? entries.firstOrNull?.start.value.roundToDouble();
+    return year ?? (timeline.isCalendar ? -1 : 1);
+  }
 
   @override
   void dispose() {
@@ -760,6 +789,178 @@ class _TimelinePageState extends State<TimelinePage> {
     }
   }
 
+  /// A day of the calendar: its entries, and, given the callbacks, a switch
+  /// to keep it as a high Sabbath and a way to add an event on it.
+  Future<void> _showDay(TimelineTime day) async {
+    setState(() => _selectedDay = day);
+    final timeline = _timeline;
+    final position = timeline.positionOf(day);
+    final entries = [
+      for (final entry in List.of(_entries)..sort(compareTimelineEntries))
+        if (timelineEntryDays(timeline, entry) case final days
+            when position >= days.first - 1e-9 && position <= days.last + 1e-9)
+          entry,
+    ];
+    final update = widget.onUpdateTimeline;
+    final add = widget.onAddEntry;
+    final high = timeline.isHighSabbath(day);
+    final weekday = timeline.weekdayOf(day);
+    final choice = await showModalBottomSheet<Object>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  timeline.formatTime(day),
+                  style: theme.textTheme.titleLarge,
+                ),
+                Text(
+                  high
+                      ? 'High Sabbath · ${timelineWeekdayName(weekday)}'
+                      : timelineWeekdayName(weekday),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                for (final entry in entries)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      entry.isSpan
+                          ? Icons.linear_scale
+                          : Icons.radio_button_checked,
+                    ),
+                    title: Text(entry.title),
+                    subtitle: Text(timelineEntryTime(timeline, entry)),
+                    onTap: () => Navigator.pop(sheetContext, entry),
+                  ),
+                if (update != null)
+                  SwitchListTile(
+                    key: const ValueKey('calendar-high-sabbath'),
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('High Sabbath'),
+                    subtitle: const Text('A feast day kept as a Sabbath.'),
+                    value: high,
+                    onChanged: (keep) => Navigator.pop(
+                      sheetContext,
+                      keep ? _DayChoice.keepSabbath : _DayChoice.dropSabbath,
+                    ),
+                  ),
+                if (add != null)
+                  TextButton.icon(
+                    onPressed: () =>
+                        Navigator.pop(sheetContext, _DayChoice.add),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add event on this day'),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case StudyTimelineEntry entry:
+        if (widget.onEditEntry case final edit?) {
+          await _edit(() => edit(entry));
+        } else {
+          await _show(entry);
+        }
+      case _DayChoice.add:
+        await _edit(() => add!(false, day));
+      case _DayChoice.keepSabbath || _DayChoice.dropSabbath:
+        await _edit(
+          () => update!(
+            timeline.withHighSabbath(day, choice == _DayChoice.keepSabbath),
+          ),
+        );
+    }
+  }
+
+  /// The bar above the calendar: the year shown, and which day of the week
+  /// 1 Nisan falls on that year.
+  Widget _calendarBar(ThemeData theme) {
+    final timeline = _timeline;
+    final update = widget.onUpdateTimeline;
+    final nisan1 = TimelineTime(_year, month: 1, day: 1);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 16, 0),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        children: [
+          if (timeline.countsYears)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Previous year',
+                  icon: const Icon(Icons.chevron_left),
+                  onPressed: () => setState(
+                    () => _year = timeline.nextYear(_year, step: -1),
+                  ),
+                ),
+                Text(
+                  timeline.formatValue(_year),
+                  key: const ValueKey('calendar-year'),
+                  style: theme.textTheme.titleMedium,
+                ),
+                IconButton(
+                  tooltip: 'Next year',
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: () =>
+                      setState(() => _year = timeline.nextYear(_year)),
+                ),
+              ],
+            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('1 Nisan falls on', style: theme.textTheme.bodyMedium),
+              const SizedBox(width: 8),
+              DropdownButton<int>(
+                key: ValueKey('calendar-nisan-weekday-$_year'),
+                value: timeline.weekdayOf(nisan1),
+                items: [
+                  for (var weekday = 1; weekday <= 7; weekday++)
+                    DropdownMenuItem(
+                      value: weekday,
+                      child: Text(timelineWeekdayName(weekday)),
+                    ),
+                ],
+                onChanged: update == null
+                    ? null
+                    : (weekday) {
+                        if (weekday == null) return;
+                        // Counting years, the weeks run on from this year.
+                        _edit(
+                          () => update(
+                            timeline.copyWith(
+                              nisanWeekday: weekday,
+                              weekYear: () =>
+                                  timeline.countsYears ? _year : null,
+                            ),
+                          ),
+                        );
+                      },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -775,30 +976,42 @@ class _TimelinePageState extends State<TimelinePage> {
           appBar: AppBar(
             title: Text(_timeline.title),
             actions: [
-              IconButton(
-                tooltip: 'Zoom out',
-                icon: const Icon(Icons.zoom_out),
-                onPressed: entries.isEmpty
-                    ? null
-                    : () => _zoom(1 / 1.5, viewport),
-              ),
-              IconButton(
-                tooltip: 'Fit to width',
-                icon: const Icon(Icons.fit_screen_outlined),
-                onPressed: entries.isEmpty
-                    ? null
-                    : () => setState(() => _pixelsPerUnit = null),
-              ),
-              IconButton(
-                tooltip: 'Zoom in',
-                icon: const Icon(Icons.zoom_in),
-                onPressed: entries.isEmpty ? null : () => _zoom(1.5, viewport),
-              ),
+              if (_timeline.hasMonths)
+                IconButton(
+                  tooltip: _calendar ? 'Show timeline' : 'Show calendar',
+                  icon: Icon(
+                    _calendar ? Icons.timeline : Icons.calendar_month_outlined,
+                  ),
+                  onPressed: () => setState(() => _calendar = !_calendar),
+                ),
+              if (!_calendar) ...[
+                IconButton(
+                  tooltip: 'Zoom out',
+                  icon: const Icon(Icons.zoom_out),
+                  onPressed: entries.isEmpty
+                      ? null
+                      : () => _zoom(1 / 1.5, viewport),
+                ),
+                IconButton(
+                  tooltip: 'Fit to width',
+                  icon: const Icon(Icons.fit_screen_outlined),
+                  onPressed: entries.isEmpty
+                      ? null
+                      : () => setState(() => _pixelsPerUnit = null),
+                ),
+                IconButton(
+                  tooltip: 'Zoom in',
+                  icon: const Icon(Icons.zoom_in),
+                  onPressed: entries.isEmpty
+                      ? null
+                      : () => _zoom(1.5, viewport),
+                ),
+              ],
               if (add != null)
                 PopupMenuButton<bool>(
                   tooltip: 'Add to timeline',
                   icon: const Icon(Icons.add),
-                  onSelected: (span) => _edit(() => add(span)),
+                  onSelected: (span) => _edit(() => add(span, null)),
                   itemBuilder: (_) => const [
                     PopupMenuItem(
                       value: false,
@@ -824,7 +1037,23 @@ class _TimelinePageState extends State<TimelinePage> {
                 ),
             ],
           ),
-          body: entries.isEmpty
+          body: _calendar && _timeline.hasMonths
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _calendarBar(theme),
+                    Expanded(
+                      child: TimelineCalendar(
+                        timeline: _timeline,
+                        entries: entries,
+                        year: _year,
+                        selected: _selectedDay,
+                        onTapDay: _showDay,
+                      ),
+                    ),
+                  ],
+                )
+              : entries.isEmpty
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),

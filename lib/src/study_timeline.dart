@@ -192,6 +192,9 @@ class StudyTimeline {
     this.unit = 'Year',
     this.leapMonths = TimelineLeapMonths.none,
     this.leapYears = const {},
+    this.nisanWeekday = 1,
+    this.weekYear,
+    this.sabbaths = const {},
     this.note = '',
     this.parentId,
     this.order = 0,
@@ -213,6 +216,16 @@ class StudyTimeline {
   /// [leapYears] lists them as written (BC negative).
   final TimelineLeapMonths leapMonths;
   final Set<int> leapYears;
+
+  /// The day of the week 1 Nisan falls on, 1 to 6 or 7 for the Sabbath: in
+  /// [weekYear], from which the weeks run on through the years; or, without
+  /// one (and always on one year's calendar), in every year.
+  final int nisanWeekday;
+  final double? weekYear;
+
+  /// The days kept as Sabbaths besides the seventh: the high Sabbaths of
+  /// the feasts. On one year's calendar their year is 0.
+  final Set<TimelineTime> sabbaths;
   final String note;
   final String? parentId;
   final int order;
@@ -262,6 +275,50 @@ class StudyTimeline {
         };
 
   int monthsIn(double value) => isLeapYear(value) ? 13 : 12;
+
+  /// The day of the week [time] (with its month and day) falls on: 1 to 6,
+  /// or 7 for the Sabbath. Weeks run on unbroken from 1 Nisan of
+  /// [weekYear], through years of 354 or 384 days.
+  int weekdayOf(TimelineTime time) {
+    final month = time.month ?? 1;
+    var days = _daysBefore(month) + (time.day ?? 1) - 1;
+    final anchor = weekYear;
+    if (countsYears && anchor != null) {
+      final from = _astronomical(anchor);
+      final to = _astronomical(time.value);
+      for (var year = math.min(from, to); year < math.max(from, to); year++) {
+        final length = daysInYear(_written(year));
+        days += from < to ? length : -length;
+      }
+    }
+    return (nisanWeekday - 1 + days) % 7 + 1;
+  }
+
+  /// Whether [time] is a Sabbath: the seventh day of its week, or one of
+  /// [sabbaths].
+  bool isSabbath(TimelineTime time) =>
+      weekdayOf(time) == 7 || isHighSabbath(time);
+
+  bool isHighSabbath(TimelineTime time) => sabbaths.contains(
+    TimelineTime(isAnnual ? 0 : time.value, month: time.month, day: time.day),
+  );
+
+  /// This timeline with [day] kept as a high Sabbath, or no longer.
+  StudyTimeline withHighSabbath(TimelineTime day, bool kept) {
+    final key = TimelineTime(
+      isAnnual ? 0 : day.value,
+      month: day.month,
+      day: day.day,
+    );
+    return copyWith(
+      sabbaths: kept ? {...sabbaths, key} : ({...sabbaths}..remove(key)),
+    );
+  }
+
+  /// The year after (or, with [step] -1, before) [value]: by era there is
+  /// no year 0.
+  double nextYear(double value, {int step = 1}) =>
+      _written(_astronomical(value) + step);
 
   int daysInYear(double value) => isLeapYear(value) ? 384 : 354;
 
@@ -439,6 +496,9 @@ class StudyTimeline {
     String? unit,
     TimelineLeapMonths? leapMonths,
     Set<int>? leapYears,
+    int? nisanWeekday,
+    double? Function()? weekYear,
+    Set<TimelineTime>? sabbaths,
     String? note,
     String? Function()? parentId,
     int? order,
@@ -450,6 +510,9 @@ class StudyTimeline {
     unit: unit ?? this.unit,
     leapMonths: leapMonths ?? this.leapMonths,
     leapYears: leapYears ?? this.leapYears,
+    nisanWeekday: nisanWeekday ?? this.nisanWeekday,
+    weekYear: weekYear == null ? this.weekYear : weekYear(),
+    sabbaths: sabbaths ?? this.sabbaths,
     note: note ?? this.note,
     parentId: parentId == null ? this.parentId : parentId(),
     order: order ?? this.order,
@@ -463,6 +526,19 @@ class StudyTimeline {
     'unit': unit,
     if (leapMonths != TimelineLeapMonths.none) 'leapMonths': leapMonths.name,
     if (leapYears.isNotEmpty) 'leapYears': leapYears.toList()..sort(),
+    if (nisanWeekday != 1) 'nisanWeekday': nisanWeekday,
+    if (weekYear != null) 'weekYear': _jsonNumber(weekYear!),
+    if (sabbaths.isNotEmpty)
+      'sabbaths': [
+        for (final day
+            in sabbaths.toList()
+              ..sort((a, b) => a.position().compareTo(b.position())))
+          {
+            if (!isAnnual) 'year': _jsonNumber(day.value),
+            'month': day.month,
+            'day': day.day,
+          },
+      ],
     if (note.isNotEmpty) 'note': note,
     if (parentId != null) 'parent': parentId,
     'order': order,
@@ -488,6 +564,9 @@ class StudyTimeline {
         'unit',
         'leapMonths',
         'leapYears',
+        'nisanWeekday',
+        'weekYear',
+        'sabbaths',
         'note',
         'parent',
         'order',
@@ -504,6 +583,28 @@ class StudyTimeline {
       leapYears: {
         if (value['leapYears'] is List)
           ...(value['leapYears'] as List).whereType<int>(),
+      },
+      nisanWeekday:
+          value['nisanWeekday'] is int &&
+              (value['nisanWeekday'] as int) >= 1 &&
+              (value['nisanWeekday'] as int) <= 7
+          ? value['nisanWeekday'] as int
+          : 1,
+      weekYear: value['weekYear'] is num
+          ? (value['weekYear'] as num).toDouble()
+          : null,
+      sabbaths: {
+        if (value['sabbaths'] is List)
+          for (final day in value['sabbaths'] as List)
+            if (day is Map &&
+                day['month'] is int &&
+                day['day'] is int &&
+                (day['year'] == null || day['year'] is num))
+              TimelineTime(
+                (day['year'] as num?)?.toDouble() ?? 0,
+                month: day['month'] as int,
+                day: day['day'] as int,
+              ),
       },
       note: value['note'] is String ? value['note'] as String : '',
       parentId: value['parent'] is String ? value['parent'] as String : null,

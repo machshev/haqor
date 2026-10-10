@@ -528,6 +528,60 @@ void main() {
     expect(exodusNow.start, const TimelineTime(0, month: 1, day: 15));
   });
 
+  test('weeks run on from 1 Nisan, and high Sabbaths are kept by date', () {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+      nisanWeekday: 7,
+    );
+    const nisan = TimelineTime(0, month: 1, day: 1);
+    expect(feasts.weekdayOf(nisan), 7);
+    expect(feasts.isSabbath(nisan), isTrue);
+    expect(feasts.weekdayOf(const TimelineTime(0, month: 1, day: 8)), 7);
+    expect(feasts.weekdayOf(const TimelineTime(0, month: 1, day: 14)), 6);
+    // Iyyar begins 30 days on: two weeks and two days.
+    expect(feasts.weekdayOf(const TimelineTime(0, month: 2, day: 1)), 2);
+    const unleavened = TimelineTime(0, month: 1, day: 15);
+    expect(feasts.isHighSabbath(unleavened), isFalse);
+    final kept = feasts.withHighSabbath(unleavened, true);
+    expect(kept.isHighSabbath(unleavened), isTrue);
+    expect(kept.isSabbath(unleavened), isTrue);
+    final stored = StudyTimeline.fromJson(kept.toJson())!;
+    expect(stored.sabbaths, {unleavened});
+    expect(stored.nisanWeekday, 7);
+    expect(kept.withHighSabbath(unleavened, false).sabbaths, isEmpty);
+
+    // Counting years, the weeks run on through 354- and 384-day years.
+    final years = kings.copyWith(
+      nisanWeekday: 1,
+      weekYear: () => -1446,
+      leapMonths: TimelineLeapMonths.chosen,
+      leapYears: {-1446},
+    );
+    expect(years.weekdayOf(const TimelineTime(-1446, month: 1, day: 1)), 1);
+    // 384 days on is 54 weeks and 6 days.
+    expect(years.weekdayOf(const TimelineTime(-1445, month: 1, day: 1)), 7);
+    // And back: 1 Nisan 1447 BC is 354 days (50 weeks and 4 days) before.
+    expect(years.weekdayOf(const TimelineTime(-1447, month: 1, day: 1)), 4);
+    // High Sabbaths on a timeline of years are kept in their year.
+    final high = years.withHighSabbath(
+      const TimelineTime(-1446, month: 1, day: 15),
+      true,
+    );
+    expect(
+      high.isHighSabbath(const TimelineTime(-1446, month: 1, day: 15)),
+      isTrue,
+    );
+    expect(
+      high.isHighSabbath(const TimelineTime(-1445, month: 1, day: 15)),
+      isFalse,
+    );
+    expect(StudyTimeline.fromJson(high.toJson())!.sabbaths, high.sabbaths);
+    expect(kings.nextYear(-1), 1);
+    expect(kings.nextYear(1, step: -1), -1);
+  });
+
   test('a study without timelines stores none', () {
     final json = const StudyWorkspace(id: 's', name: 'Study').toJson();
     expect(json.containsKey('timelines'), isFalse);
