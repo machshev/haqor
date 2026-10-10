@@ -105,10 +105,15 @@ void main() {
       1000,
     );
     expect(days15.map((t) => t.label), [for (var d = 15; d < 25; d++) '$d']);
-    expect(days15.first.position, feasts.centreOf(nisan15));
+    // A day is the gap between two marks, its label in the middle.
+    expect(days15.first.position, feasts.positionOf(nisan15));
+    expect(days15.first.labelAt, feasts.centreOf(nisan15));
     final daysAcross = timelineTicks(feasts, 25 / 354, 40 / 354, 300);
     expect(
-      daysAcross.map((t) => t.label),
+      [
+        for (final t in daysAcross)
+          if (t.label.isNotEmpty) t.label,
+      ],
       ['1 Iyyar', '5', '10'],
       reason: 'Nisan 30 is too near 1 Iyyar to be marked',
     );

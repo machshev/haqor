@@ -87,8 +87,11 @@ List<TimelineSlot> packTimelineLanes(
   return slots;
 }
 
-/// A marked time on an axis: where it falls, and how it reads.
-typedef TimelineTick = ({double position, String label});
+/// A marked time on an axis: where it falls, how it reads, and where the
+/// label stands: under the mark, or for a day in the gap after it, as a
+/// day is the stretch between two marks. One without a label is a minor
+/// mark, a boundary between days.
+typedef TimelineTick = ({double position, double labelAt, String label});
 
 /// Round times between the axis positions [start] and [end] of [timeline]
 /// to mark on an axis [pixels] wide, about [spacing] pixels apart: steps of
@@ -108,10 +111,11 @@ List<TimelineTick> timelineTicks(
   // An axis position as written: a BC year sits one below its position.
   double written(double position) =>
       calendar && position <= 0 ? position - 1 : position;
-  // Zoomed in to within ten days a mark, days are marked, each in its
-  // middle, as a day is a stretch of the axis: the first of a month by
-  // its name, and the others by number, every day or every 5th or 10th
-  // (5, 10, 15...), leaving off any too near the next month's first.
+  // Zoomed in to within ten days a label, each day's start is marked, as
+  // a day is a stretch of the axis, and its label stands in the gap: the
+  // first of a month by its name, and the others by number, every day or
+  // every 5th or 10th (5, 10, 15...), leaving off any too near the next
+  // month's first.
   if (timeline.hasMonths && rough <= 10 / 354) {
     final step = [1, 5, 10].firstWhere((d) => d / 354 >= rough);
     return [
@@ -129,22 +133,23 @@ List<TimelineTick> timelineTicks(
             day <= timeline.daysInMonth(written(year.toDouble()), month);
             day++
           )
-            if (day == 1 ||
-                (day % step == 0 &&
-                    day + step / 2 <=
-                        timeline.daysInMonth(written(year.toDouble()), month)))
-              if (TimelineTime(written(year.toDouble()), month: month, day: day)
-                  case final time
-                  when timeline.centreOf(time) >= start &&
-                      timeline.centreOf(time) <= end)
-                (
-                  position: timeline.centreOf(time),
-                  label: day > 1
-                      ? '$day'
-                      : month == 1
-                      ? timeline.formatTime(time)
-                      : '1 ${timeline.monthName(time.value, month)}',
-                ),
+            if (TimelineTime(written(year.toDouble()), month: month, day: day)
+                case final time
+                when timeline.endOf(time) > start &&
+                    timeline.positionOf(time) < end)
+              (
+                position: timeline.positionOf(time),
+                labelAt: timeline.centreOf(time),
+                label: day == 1
+                    ? month == 1
+                          ? timeline.formatTime(time)
+                          : '1 ${timeline.monthName(time.value, month)}'
+                    : day % step == 0 &&
+                          day + step / 2 <=
+                              timeline.daysInMonth(time.value, month)
+                    ? '$day'
+                    : '',
+              ),
     ];
   }
   // Months are marked only where at least two fit in a year; one year's
@@ -172,6 +177,7 @@ List<TimelineTick> timelineTicks(
                   timeline.positionOf(time) <= end)
             (
               position: timeline.positionOf(time),
+              labelAt: timeline.positionOf(time),
               label: month == 1
                   ? timeline.formatTime(time)
                   : timeline.monthName(time.value, month),
@@ -193,6 +199,7 @@ List<TimelineTick> timelineTicks(
       if (!calendar || value != 0)
         (
           position: timeline.positionOf(TimelineTime(value)),
+          labelAt: timeline.positionOf(TimelineTime(value)),
           label: timeline.formatValue(value),
         ),
   ];
@@ -488,13 +495,19 @@ class _AxisPainter extends CustomPainter {
       width - TimelineChart.padding * 2,
     )) {
       final tx = x(tick.position);
-      canvas.drawLine(Offset(tx, axisY), Offset(tx, axisY + 5), line);
+      canvas.drawLine(
+        Offset(tx, axisY),
+        Offset(tx, axisY + (tick.label.isEmpty ? 3 : 5)),
+        line,
+      );
+      if (tick.label.isEmpty) continue;
+      final lx = x(tick.labelAt);
       final painter = TextPainter(
         text: TextSpan(text: tick.label, style: labelStyle),
         maxLines: 1,
         textDirection: TextDirection.ltr,
       )..layout();
-      final left = (tx - painter.width / 2).clamp(0.0, width - painter.width);
+      final left = (lx - painter.width / 2).clamp(0.0, width - painter.width);
       if (left < lastRight + 6) continue;
       painter.paint(canvas, Offset(left, axisY + 8));
       lastRight = left + painter.width;
