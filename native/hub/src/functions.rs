@@ -1255,7 +1255,10 @@ pub async fn get_word_info(bible: SharedBible) {
             // NT lexicon now comes from the full SEDRA database (roots,
             // lexemes, words, english) keyed directly on the displayed Hebrew
             // word, which is the same bijective transliteration SEDRA stores.
-            let words = bible.sedra_word_info(&lookup).unwrap_or_default();
+            // A word shown in Syriac script is read back into it first.
+            let words = bible
+                .sedra_word_info(&haqor_core::transliterate::syriac_to_hebrew(&lookup))
+                .unwrap_or_default();
             match words.first() {
                 Some(first) => {
                     // The whole SEDRA root tree, the looked-up word's own lexeme
@@ -1491,7 +1494,9 @@ pub async fn get_word_occurrences(bible: SharedBible) {
             let bible = lock(&bible);
             if req.syriac {
                 let words = bible
-                    .sedra_word_info(&strip_trope(&req.word))
+                    .sedra_word_info(&haqor_core::transliterate::syriac_to_hebrew(
+                        &strip_trope(&req.word),
+                    ))
                     .unwrap_or_default();
                 match words.first() {
                     Some(first) => (
@@ -2642,6 +2647,51 @@ fn greek_lexicon_summary(e: haqor_core::greek::GreekLexiconEntry) -> BdbSummary 
 
 /// A word of the Greek New Testament: its tags, the person or place it
 /// names, the root it is read under with the dictionary forms built on it and
+/// A word of the Greek text found by its dictionary form, for one asked for
+/// by no place in it (a bookmarked word): the first spelled as [`word`] is,
+/// or with no spelling given, or none so spelled, the first of all.
+fn greek_word_by_lemma(
+    bible: &Bible,
+    lemma: &str,
+    word: &str,
+) -> Option<haqor_core::greek::GreekWord> {
+    // Letters alone: the text carries the punctuation after a word.
+    let letters = |s: &str| -> String {
+        s.chars()
+            .filter(|c| c.is_alphabetic())
+            .flat_map(char::to_lowercase)
+            .collect()
+    };
+    let wanted = letters(word);
+    let occurrences = bible.greek_lemma_occurrences(lemma).ok()?;
+    let first = occurrences.first().copied()?;
+    let at = |o: haqor_core::greek::GreekOccurrence| {
+        bible
+            .greek_word_at(o.book, o.chapter, o.verse, o.position)
+            .ok()
+            .flatten()
+    };
+    if !wanted.is_empty() {
+        let mut chapter: Option<((u8, u8), Vec<haqor_core::greek::GreekVerse>)> = None;
+        for o in &occurrences {
+            if chapter.as_ref().map(|(key, _)| *key) != Some((o.book, o.chapter)) {
+                let verses = bible.greek_chapter(o.book, o.chapter).ok()?;
+                chapter = Some(((o.book, o.chapter), verses));
+            }
+            let found = chapter.as_ref().and_then(|(_, verses)| {
+                verses
+                    .iter()
+                    .find(|v| v.verse == o.verse)
+                    .and_then(|v| v.words.iter().find(|w| w.position == o.position))
+            });
+            if let Some(w) = found.filter(|w| letters(&w.text) == wanted) {
+                return Some(w.clone());
+            }
+        }
+    }
+    at(first)
+}
+
 /// their lexicon entries, and every word of the TR built on that root.
 pub async fn get_greek_word(bible: SharedBible) {
     let receiver = GetGreekWord::get_dart_signal_receiver();
@@ -2654,7 +2704,8 @@ pub async fn get_greek_word(bible: SharedBible) {
             .unwrap_or_else(|e| {
                 debug_print!("get_greek_word error: {:?}", e);
                 None
-            });
+            })
+            .or_else(|| greek_word_by_lemma(&bible, &req.lemma, &req.word));
         let Some(word) = word else {
             GreekWordInfo {
                 request_id: req.request_id,

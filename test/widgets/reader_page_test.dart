@@ -3083,6 +3083,70 @@ void greekTests() {
     expect(rust.verseTextRequests.any((r) => r.greek), isTrue);
   });
 
+  testWidgets('a bookmarked word opens in its own text, the NT switched to it', (
+    tester,
+  ) async {
+    final rust = await _pumpWorkspace(
+      tester,
+      const Size(1400, 900),
+      prefs: {
+        'book': 0,
+        'chapter': 1,
+        'reader_layout_mode': 'threePanel',
+        'study_workspace_visible': true,
+      },
+    );
+    assignRustSignal['StudyState']!(
+      StudyState(
+        found: true,
+        workspacesJson: study.encodeStudyWorkspaces([
+          const study.StudyWorkspace(
+            id: 'study',
+            name: 'Words',
+            words: [
+              study.StudyWord(
+                root: 'βίβλος',
+                surface: 'Βίβλος',
+                kind: study.StudyWordKind.form,
+                language: study.StudyWordLanguage.greek,
+              ),
+              study.StudyWord(
+                root: 'כתב',
+                surface: 'כּתָבָא',
+                language: study.StudyWordLanguage.aramaic,
+                order: 1,
+              ),
+            ],
+          ),
+        ]),
+        activeWorkspaceId: 'study',
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    final prefs = await SharedPreferences.getInstance();
+
+    // A Greek form, read in the Old Testament: the New Testament turns to
+    // the Greek, and the pane finds the word by its dictionary form.
+    await tester.tap(find.text('Βίβλος'));
+    await tester.pump();
+    expect(prefs.getBool('nt_greek'), isTrue);
+    expect(find.byType(GreekWordSheet), findsOneWidget);
+    final greek = rust.greekWordRequests.last;
+    expect((greek.book, greek.lemma, greek.word), (0, 'βίβλος', 'Βίβλος'));
+
+    // An Aramaic root turns it back to the Peshitta, and is read as Aramaic.
+    await tester.tap(find.text('כתב · כּתָבָא'));
+    await tester.pump();
+    expect(prefs.getBool('nt_greek'), isFalse);
+    final aramaic = rust.wordRequests.last;
+    expect((aramaic.word, aramaic.syriac, aramaic.book), (
+      'כּתָבָא',
+      true,
+      null,
+    ));
+  });
+
   testWidgets('a compound Greek word is read under either of its roots', (
     tester,
   ) async {

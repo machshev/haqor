@@ -362,8 +362,14 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     }
   }
 
-  StudyWord _studyWord(WordInfo info, StudyWordKind kind) =>
-      StudyWord(root: info.root, surface: widget.word, kind: kind);
+  StudyWord _studyWord(WordInfo info, StudyWordKind kind) => StudyWord(
+    root: info.root,
+    surface: widget.word,
+    kind: kind,
+    language: widget.syriac
+        ? StudyWordLanguage.aramaic
+        : StudyWordLanguage.hebrew,
+  );
 
   void _readStudyBookmarks(WordInfo info) {
     _studyBookmarks.clear();

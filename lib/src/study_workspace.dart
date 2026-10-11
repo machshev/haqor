@@ -231,11 +231,36 @@ class StudyPassage {
 
 enum StudyWordKind { root, form }
 
+/// The text a bookmarked word was read in, which it opens in again.
+enum StudyWordLanguage {
+  /// The Hebrew Bible's, its Aramaic chapters among it.
+  hebrew,
+
+  /// The Peshitta's Aramaic, in whichever script it was shown.
+  aramaic,
+
+  /// The Greek New Testament's.
+  greek;
+
+  /// The language a word's letters show, for a bookmark saved before it was
+  /// recorded: Syriac script is the Peshitta's, Greek the Greek New
+  /// Testament's, and Hebrew script is taken for the Hebrew Bible's.
+  static StudyWordLanguage of(String surface) => _syriacLetter.hasMatch(surface)
+      ? aramaic
+      : isGreekWord(surface)
+      ? greek
+      : hebrew;
+}
+
+final _syriacLetter = RegExp(r'[\u0710-\u072F\u074D-\u074F]');
+
 /// Pointed Hebrew forms ignore trope and combining-mark order. Syriac forms
-/// retain their letters and pointing while dropping punctuation.
-String studyFormKey(String surface) =>
-    RegExp(r'[\u0710-\u072F\u074D-\u074F]').hasMatch(surface)
+/// retain their letters and pointing while dropping punctuation. Greek forms
+/// keep their letters alone, as [greekSurfaceKey] says.
+String studyFormKey(String surface) => _syriacLetter.hasMatch(surface)
     ? surface.replaceAll(RegExp(r'[^\u0710-\u074A\u074D-\u074F]'), '')
+    : isGreekWord(surface)
+    ? greekSurfaceKey(surface)
     : hebrewSurfaceKey(surface);
 
 @immutable
@@ -244,6 +269,7 @@ class StudyWord {
     required this.root,
     required this.surface,
     this.kind = StudyWordKind.root,
+    this.language = StudyWordLanguage.hebrew,
     this.groupId,
     this.note = '',
     this.highlightEnabled = true,
@@ -261,6 +287,10 @@ class StudyWord {
   final String root;
   final String surface;
   final StudyWordKind kind;
+
+  /// The text the word was read in. Its root, or form, is that text's: a
+  /// Greek word's root is its dictionary form.
+  final StudyWordLanguage language;
 
   static String formKey(String root, String surface) =>
       jsonEncode([root, studyFormKey(surface)]);
@@ -292,6 +322,7 @@ class StudyWord {
     root: root,
     surface: surface ?? this.surface,
     kind: kind ?? this.kind,
+    language: language,
     groupId: groupId == null ? this.groupId : groupId(),
     note: note ?? this.note,
     highlightEnabled: highlightEnabled ?? this.highlightEnabled,
@@ -304,6 +335,8 @@ class StudyWord {
     'root': root,
     'surface': surface,
     if (kind != StudyWordKind.root) 'kind': kind.name,
+    // Stored only where the letters would not tell it.
+    if (language != StudyWordLanguage.of(surface)) 'language': language.name,
     if (groupId != null) 'group': groupId,
     if (note.isNotEmpty) 'note': note,
     if (!highlightEnabled) 'highlight': false,
@@ -327,6 +360,7 @@ class StudyWord {
         'root',
         'surface',
         'kind',
+        'language',
         'group',
         'note',
         'highlight',
@@ -336,6 +370,9 @@ class StudyWord {
       root: root is String ? root : '',
       surface: surface,
       kind: value['kind'] == 'form' ? StudyWordKind.form : StudyWordKind.root,
+      language:
+          StudyWordLanguage.values.asNameMap()[value['language']] ??
+          StudyWordLanguage.of(surface),
       groupId: value['group'] is String ? value['group'] as String : null,
       note: value['note'] is String ? value['note'] as String : '',
       highlightEnabled:

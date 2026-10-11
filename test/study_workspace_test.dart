@@ -160,6 +160,44 @@ void main() {
     },
   );
 
+  test('Greek forms keep their letters, whatever their case and accents', () {
+    expect(studyFormKey('λόγου'), isNotEmpty);
+    expect(studyFormKey('λόγου'), isNot(studyFormKey('λόγος')));
+    expect(studyFormKey('Λόγος,'), studyFormKey('λόγος'));
+    // A grave before the next word, and a final sigma, change nothing.
+    expect(studyFormKey('λόγὸν'), studyFormKey('λογον'));
+    expect(studyFormKey('ὁ'), studyFormKey('ο'));
+    expect(studyFormKey('ἡμῶν'), 'ημων');
+    expect(
+      StudyWord.formKey('λόγος', 'λόγου'),
+      isNot(StudyWord.formKey('λόγος', 'λόγος')),
+    );
+  });
+
+  test('a word keeps the text it was read in, and old ones are told apart', () {
+    for (final language in StudyWordLanguage.values) {
+      final word = StudyWord(
+        root: 'λόγος',
+        surface: 'λόγου',
+        kind: StudyWordKind.form,
+        language: language,
+      );
+      final stored = StudyWord.fromJson(word.toJson())!;
+      expect(stored.language, language);
+      expect(stored.copyWith(note: 'n').language, language);
+    }
+    StudyWordLanguage legacy(String surface) =>
+        StudyWord.fromJson({'root': '', 'surface': surface})!.language;
+    expect(legacy('בָּרָא'), StudyWordLanguage.hebrew);
+    expect(legacy('ܟܬܒܐ'), StudyWordLanguage.aramaic);
+    expect(legacy('λόγου'), StudyWordLanguage.greek);
+    // The Hebrew Bible's words store nothing more than they did.
+    expect(
+      const StudyWord(root: 'ברא', surface: 'בָּרָא').toJson(),
+      isNot(contains('language')),
+    );
+  });
+
   test('study outline round-trips nested groups and per-item settings', () {
     final workspace = StudyWorkspace(
       id: 'promise-study',

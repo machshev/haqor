@@ -1914,6 +1914,11 @@ pub struct GetGreekWord {
     /// The root to read the word under, one of those it is built on; empty
     /// for its first.
     pub root: String,
+    /// For a word asked for by no place in the text (a bookmarked one, its
+    /// `book` 0): its dictionary form, and its spelling for a form, empty for
+    /// any. The first word of the text so spelled is shown.
+    pub lemma: String,
+    pub word: String,
 }
 
 /// Where a word of the Greek text stands, and its dictionary form.

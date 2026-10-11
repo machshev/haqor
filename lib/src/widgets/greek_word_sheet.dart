@@ -22,10 +22,12 @@ class GreekWordSheet extends StatefulWidget {
   const GreekWordSheet({
     super.key,
     required this.word,
-    required this.book,
-    required this.chapter,
-    required this.verse,
-    required this.position,
+    this.book,
+    this.chapter,
+    this.verse,
+    this.position,
+    this.lemma = '',
+    this.matchSpelling = false,
     this.useEnglishBookNames = false,
     this.ntSyriac = false,
     this.onNavigateToPassage,
@@ -39,11 +41,22 @@ class GreekWordSheet extends StatefulWidget {
   final String word;
 
   /// Where the word stands: its book (40 Matthew … 66 Revelation), chapter,
-  /// verse and its position in the verse, from 0.
-  final int book;
-  final int chapter;
-  final int verse;
-  final int position;
+  /// verse and its position in the verse, from 0. Null for a word with no
+  /// place given, a bookmarked one, found by [lemma] instead.
+  final int? book;
+  final int? chapter;
+  final int? verse;
+  final int? position;
+
+  /// A placeless word's dictionary form, and whether the first word of the
+  /// text spelled as [word] is wanted (a bookmarked form) rather than the
+  /// first of all.
+  final String lemma;
+  final bool matchSpelling;
+
+  /// Whether the word was given its place in the text.
+  bool get _placed =>
+      book != null && chapter != null && verse != null && position != null;
   final bool useEnglishBookNames;
 
   /// The Peshitta's script, for the pages of a person or place it opens.
@@ -72,10 +85,7 @@ class _GreekWordSheetState extends State<GreekWordSheet>
   static int _nextRequestId = 1;
 
   late final int _requestId = _nextRequestId++;
-  late final TabController _tabController = TabController(
-    length: 2,
-    vsync: this,
-  );
+  late final TabController _tabController;
   StreamSubscription<RustSignalPack<GreekWordInfo>>? _sub;
   GreekWordInfo? _info;
   bool _englishOnly = false;
@@ -101,6 +111,8 @@ class _GreekWordSheetState extends State<GreekWordSheet>
   @override
   void initState() {
     super.initState();
+    // Made at once: a pane replaced before its word arrives disposes it.
+    _tabController = TabController(length: 2, vsync: this);
     _sub = GreekWordInfo.rustSignalStream.listen((pack) {
       if (pack.message.requestId != _requestId || !mounted) return;
       setState(() => _info = pack.message);
@@ -114,13 +126,16 @@ class _GreekWordSheetState extends State<GreekWordSheet>
   }
 
   void _request() {
+    final placed = widget._placed;
     final request = GetGreekWord(
       requestId: _requestId,
-      book: widget.book,
-      chapter: widget.chapter,
-      verse: widget.verse,
-      position: widget.position,
+      book: placed ? widget.book! : 0,
+      chapter: placed ? widget.chapter! : 0,
+      verse: placed ? widget.verse! : 0,
+      position: placed ? widget.position! : 0,
       root: _root,
+      lemma: placed ? '' : widget.lemma,
+      word: !placed && widget.matchSpelling ? widget.word : '',
     );
     final send = widget.sendRequest;
     if (send != null) {

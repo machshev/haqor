@@ -177,6 +177,8 @@ class _SelectedWord {
     this.readerGloss,
     this.bdbId,
     this.greek = false,
+    this.syriac,
+    this.bookmarkedForm = false,
   });
 
   final String word;
@@ -191,6 +193,15 @@ class _SelectedWord {
   /// Whether the word is the Greek New Testament's, which its own pane
   /// shows.
   final bool greek;
+
+  /// Whether the word is the Peshitta's: by default, whether it stands in the
+  /// New Testament and is not Greek. A bookmarked word says for itself.
+  final bool? syriac;
+  bool get isSyriac => !greek && (syriac ?? bookIndex >= 39);
+
+  /// Whether a placeless word is a bookmarked form, to be found spelled as
+  /// it is, rather than a root.
+  final bool bookmarkedForm;
 }
 
 /// The reader top bar's own actions, in the order the bar shows them.
@@ -1000,19 +1011,24 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   Widget _wordInfoSheet(_WordPane pane) {
     final selected = pane.word;
-    if (selected.greek && selected.chapter != null) {
+    if (selected.greek) {
+      // A word with no position in its verse is found by its dictionary form.
+      final placed = selected.chapter != null && selected.position != null;
       return GreekWordSheet(
         key: ValueKey(
           'greek:${selected.bookIndex}:${selected.chapter}:'
-          '${selected.verse}:${selected.position}',
+          '${selected.verse}:${selected.position}:${selected.word}:'
+          '${selected.root}',
         ),
         sendRequest: widget.sendGreekWordRequest,
         sendVerseTextsRequest: widget.sendVerseTextsRequest,
         word: selected.word,
-        book: selected.bookIndex + 1,
-        chapter: selected.chapter!,
-        verse: selected.verse ?? 1,
-        position: selected.position ?? 0,
+        book: placed ? selected.bookIndex + 1 : null,
+        chapter: placed ? selected.chapter : null,
+        verse: placed ? selected.verse : null,
+        position: placed ? selected.position : null,
+        lemma: selected.root,
+        matchSpelling: selected.bookmarkedForm,
         useEnglishBookNames: _activeReader?._englishBookNames ?? false,
         ntSyriac: _activeReader?._ntSyriac ?? false,
         nameBookmarks: _activeReader?._nameBookmarks,
@@ -1037,7 +1053,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       bdbId: selected.bdbId,
       onOpenWord: _openInspectorWord,
       initialRoot: selected.root.isEmpty ? null : selected.root,
-      syriac: selected.bookIndex >= 39,
+      syriac: selected.isSyriac,
       ntSyriac: _activeReader?._ntSyriac ?? false,
       ntGreek: _activeReader?._ntGreek ?? false,
       onNtGreekChanged: _setActiveNtGreek,
@@ -3653,14 +3669,42 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
   }
 
+  /// Opens a bookmarked word in the text it was read in, switching the New
+  /// Testament to the Greek or the Peshitta first for a word of either.
   void _openStudyWord(StudyWord word) {
+    final language = word.language;
+    switch (language) {
+      case StudyWordLanguage.greek:
+        _setNtGreek(true);
+      case StudyWordLanguage.aramaic:
+        _setNtGreek(false);
+      case StudyWordLanguage.hebrew:
+        break;
+    }
     final passage = _currentStudyPassage;
-    _showWordInfo(
-      word.surface,
-      passage.bookIndex,
-      passage.chapter,
-      passage.verse,
-      root: word.root,
+    final greek = language == StudyWordLanguage.greek;
+    // The word is read where the reader stands when that is in its own
+    // text. A Greek word never is, having no position in the verse, and is
+    // found by its dictionary form.
+    final here =
+        !greek &&
+        (language == StudyWordLanguage.hebrew) == (passage.bookIndex < 39);
+    widget.onWordInfoRequested(
+      _SelectedWord(
+        word: word.surface,
+        bookIndex: here
+            ? passage.bookIndex
+            : language == StudyWordLanguage.hebrew
+            ? 0
+            : 39,
+        chapter: here ? passage.chapter : null,
+        verse: here ? passage.verse : null,
+        position: null,
+        root: word.root,
+        greek: greek,
+        syriac: language == StudyWordLanguage.aramaic,
+        bookmarkedForm: word.kind == StudyWordKind.form,
+      ),
     );
   }
 
@@ -4810,8 +4854,13 @@ class _ReaderSessionState extends State<_ReaderSession>
     String root = '',
   }) async {
     final workspace = _activeStudyWorkspace;
+    final language = bookIndex < 39
+        ? StudyWordLanguage.hebrew
+        : _isGreek(bookIndex)
+        ? StudyWordLanguage.greek
+        : StudyWordLanguage.aramaic;
     StudyWord bookmark(StudyWordKind kind) =>
-        StudyWord(root: root, surface: word, kind: kind);
+        StudyWord(root: root, surface: word, kind: kind, language: language);
     bool bookmarked(StudyWordKind kind) =>
         workspace?.wordForBookmark(bookmark(kind)) != null;
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
