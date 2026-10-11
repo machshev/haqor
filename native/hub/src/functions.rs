@@ -27,7 +27,8 @@ use crate::signals::{
 #[cfg(target_arch = "wasm32")]
 use crate::signals::{FlushProgress, ProgressSnapshot};
 use crate::signals::{
-    GetGreekWord, GreekLexemeEntry, GreekOccurrenceEntry, GreekParseEntry, GreekWordInfo,
+    GetGreekWord, GreekEquivalentEntry, GreekLexemeEntry, GreekOccurrenceEntry, GreekParseEntry,
+    GreekWordInfo, SyriacEquivalentEntry,
 };
 
 use std::fs;
@@ -1221,6 +1222,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         roots: Vec::new(),
                         sense: None,
                         name: None,
+                        greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -1246,6 +1248,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         roots: Vec::new(),
                         sense: None,
                         name: None,
+                        greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -1303,6 +1306,16 @@ pub async fn get_word_info(bible: SharedBible) {
                         roots: Vec::new(),
                         sense: None,
                         name: None,
+                        greek_equivalents: bible
+                            .greek_equivalents(first.key_lexeme)
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|e| GreekEquivalentEntry {
+                                lemma: e.lemma,
+                                gloss: e.gloss,
+                                links: e.links,
+                            })
+                            .collect(),
                     }
                     .send_signal_to_dart();
                 }
@@ -1328,6 +1341,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         roots: Vec::new(),
                         sense: None,
                         name: None,
+                        greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -1417,6 +1431,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         roots,
                         sense,
                         name,
+                        greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -1442,6 +1457,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         roots: Vec::new(),
                         sense: None,
                         name: None,
+                        greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
                 }
@@ -2724,6 +2740,7 @@ pub async fn get_greek_word(bible: SharedBible) {
                 lexemes: Vec::new(),
                 occurrences: Vec::new(),
                 parses: Vec::new(),
+                syriac_equivalents: Vec::new(),
             }
             .send_signal_to_dart();
             continue;
@@ -2817,6 +2834,18 @@ pub async fn get_greek_word(bible: SharedBible) {
                 }
             })
             .collect();
+        let syriac_equivalents = bible
+            .syriac_equivalents(&word.lemma)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|e| SyriacEquivalentEntry {
+                lexeme_syriac: haqor_core::transliterate::hebrew_to_syriac(&e.lexeme),
+                lexeme: e.lexeme,
+                meaning: e.meaning,
+                word: e.word,
+                links: e.links,
+            })
+            .collect();
         GreekWordInfo {
             request_id: req.request_id,
             found: true,
@@ -2832,6 +2861,7 @@ pub async fn get_greek_word(bible: SharedBible) {
             lexemes,
             occurrences,
             parses,
+            syriac_equivalents,
         }
         .send_signal_to_dart();
     }

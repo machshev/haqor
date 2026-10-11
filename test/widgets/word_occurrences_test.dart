@@ -58,6 +58,7 @@ class _FakeRust {
         tense: 'Perfect',
         form: 'Qal',
         roots: [RootChoice(root: root, gloss: 'create', isPrimary: true)],
+        greekEquivalents: const [],
       ).bincodeSerialize(),
       Uint8List(0),
     );

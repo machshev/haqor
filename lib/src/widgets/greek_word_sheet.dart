@@ -10,6 +10,7 @@ import '../bindings/bindings.dart';
 import '../issue_reporting.dart';
 import '../study_workspace.dart';
 import '../word_proximity.dart';
+import 'equivalents.dart';
 import 'lexicon_source.dart';
 import 'name_details.dart';
 import 'verse_text_cache.dart';
@@ -664,6 +665,26 @@ class _GreekWordSheetState extends State<GreekWordSheet>
           NameCard(name: name, onOpen: () => _openName(name)),
           const SizedBox(height: 16),
         ],
+        // The Peshitta words its dictionary form is rendered by.
+        if (info.syriacEquivalents.isNotEmpty)
+          EquivalentsSection(
+            title: 'Peshitta equivalents',
+            equivalents: [
+              for (final e in info.syriacEquivalents)
+                (
+                  text: widget.ntSyriac ? e.lexemeSyriac : e.lexeme,
+                  gloss: e.meaning,
+                  links: e.links,
+                  onOpen: () => openSyriacWordSheet(
+                    context,
+                    word: e.word,
+                    useEnglishBookNames: widget.useEnglishBookNames,
+                    ntSyriac: widget.ntSyriac,
+                    onNavigateToPassage: widget.onNavigateToPassage,
+                  ),
+                ),
+            ],
+          ),
         if (lexemes.length > 1 && info.root.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 4),

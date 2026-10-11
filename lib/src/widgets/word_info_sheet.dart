@@ -15,6 +15,7 @@ import '../surface.dart';
 import '../study_workspace.dart';
 import '../tutor/progress_sync.dart';
 import '../word_proximity.dart';
+import 'equivalents.dart';
 import 'lexicon_source.dart';
 import 'name_details.dart';
 import 'verse_row.dart' show verseGlossPositions;
@@ -1395,6 +1396,26 @@ class _WordInfoSheetState extends State<WordInfoSheet>
           NameCard(name: name, onOpen: () => _openName(name)),
           const SizedBox(height: 16),
         ],
+        // A Peshitta word's Greek: the words of the TR its lexeme renders.
+        if (info.greekEquivalents.isNotEmpty)
+          EquivalentsSection(
+            title: 'Greek equivalents',
+            equivalents: [
+              for (final e in info.greekEquivalents)
+                (
+                  text: e.lemma,
+                  gloss: e.gloss,
+                  links: e.links,
+                  onOpen: () => openGreekLemmaSheet(
+                    context,
+                    lemma: e.lemma,
+                    useEnglishBookNames: widget.useEnglishBookNames,
+                    ntSyriac: widget.ntSyriac,
+                    onNavigateToPassage: widget.onNavigateToPassage,
+                  ),
+                ),
+            ],
+          ),
         ...rows,
       ],
     );

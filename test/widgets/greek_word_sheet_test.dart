@@ -54,6 +54,7 @@ void _deliver(
           ),
       ],
       parses: const [],
+      syriacEquivalents: const [],
     ).bincodeSerialize(),
     Uint8List(0),
   );

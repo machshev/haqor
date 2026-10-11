@@ -61,6 +61,7 @@ Future<void> _pumpSheet(
   WidgetTester tester, {
   required bool syriac,
   List<LexemeSummary>? lexemes,
+  List<GreekEquivalentEntry> greekEquivalents = const [],
   void Function(GetDictionaryEntry)? onDictionaryRequest,
 }) async {
   SharedPreferences.setMockInitialValues({
@@ -120,6 +121,7 @@ Future<void> _pumpSheet(
       tense: null,
       form: null,
       roots: const [],
+      greekEquivalents: greekEquivalents,
     ).bincodeSerialize(),
     Uint8List(0),
   );
@@ -152,6 +154,26 @@ void tapLink(WidgetTester tester, String text) {
 }
 
 void main() {
+  testWidgets('a Peshitta word lists the Greek words it renders', (
+    tester,
+  ) async {
+    await _pumpSheet(
+      tester,
+      syriac: true,
+      greekEquivalents: const [
+        GreekEquivalentEntry(lemma: 'εἰρήνη', gloss: 'peace', links: 85),
+      ],
+    );
+    expect(find.text('Greek equivalents'), findsOneWidget);
+    expect(find.textContaining('εἰρήνη', findRichText: true), findsOneWidget);
+    expect(find.textContaining('85×', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('a Hebrew word has no Greek equivalents', (tester) async {
+    await _pumpSheet(tester, syriac: false);
+    expect(find.text('Greek equivalents'), findsNothing);
+  });
+
   _groupedLexemeTests();
 
   testWidgets('each entry is badged with the lexicon it comes from', (

@@ -918,6 +918,7 @@ void main() {
       vavCon: false,
       lexemes: const [],
       roots: const [],
+      greekEquivalents: const [],
     );
     assignRustSignal['WordInfo']!(info.bincodeSerialize(), Uint8List(0));
     await tester.pump();
@@ -3074,6 +3075,15 @@ void greekTests() {
               gender: gender,
             ),
         ],
+        syriacEquivalents: const [
+          SyriacEquivalentEntry(
+            lexeme: 'כתבא',
+            lexemeSyriac: 'ܟܬܒܐ',
+            meaning: 'book',
+            word: 'כּתָֿבָֿא',
+            links: 9,
+          ),
+        ],
       ).bincodeSerialize(),
       Uint8List(0),
     );
@@ -3092,6 +3102,9 @@ void greekTests() {
       findsOneWidget,
     );
     expect(find.text('βιβλίον'), findsOneWidget);
+    // And the Peshitta words its dictionary form is rendered by.
+    expect(find.text('Peshitta equivalents'), findsOneWidget);
+    expect(find.textContaining('כתבא', findRichText: true), findsOneWidget);
     // The Occurrences tab lists the word's own, or every word of its root.
     await tester.tap(find.text('Occurrences'));
     await tester.pumpAndSettle();
@@ -3232,6 +3245,7 @@ void greekTests() {
       ],
       occurrences: const [],
       parses: const [],
+      syriacEquivalents: const [],
     );
     assignRustSignal['GreekWordInfo']!(
       reply('ποιέω').bincodeSerialize(),

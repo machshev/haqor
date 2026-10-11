@@ -71,6 +71,7 @@ class _FakeRust {
             isPrimary: selected == 'עזר',
           ),
         ],
+        greekEquivalents: const [],
       ).bincodeSerialize(),
       Uint8List(0),
     );

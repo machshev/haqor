@@ -898,6 +898,31 @@ pub struct WordInfo {
     /// The person, place or other named thing the word names there, in brief;
     /// [`GetNameEntity`] has the rest. OT lookups at a place in the text only.
     pub name: Option<NameSummaryEntry>,
+    /// The Greek words a Peshitta word's lexeme renders, the most linked
+    /// first; empty for the Hebrew.
+    pub greek_equivalents: Vec<GreekEquivalentEntry>,
+}
+
+/// A Greek word a Peshitta lexeme renders, found by aligning the two texts:
+/// its dictionary form and gloss, and how many of their words are linked.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct GreekEquivalentEntry {
+    pub lemma: String,
+    pub gloss: String,
+    pub links: u32,
+}
+
+/// A Peshitta lexeme a Greek dictionary form is rendered by: the lexeme and
+/// its first meaning, the commonest word of it in the text (as the reader
+/// shows it, to open), and how many words are linked.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SyriacEquivalentEntry {
+    pub lexeme: String,
+    /// The lexeme in Syriac script, for a reader set to it.
+    pub lexeme_syriac: String,
+    pub meaning: String,
+    pub word: String,
+    pub links: u32,
 }
 
 /// The sense a word has where it stands (STEP Bible's TBESH, which splits a
@@ -2020,4 +2045,7 @@ pub struct GreekWordInfo {
     /// The parts of every grammar code among the occurrences and the word's
     /// own, once each.
     pub parses: Vec<GreekParseEntry>,
+    /// The Peshitta lexemes the word's dictionary form is rendered by, the
+    /// most linked first.
+    pub syriac_equivalents: Vec<SyriacEquivalentEntry>,
 }
