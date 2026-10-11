@@ -1,3 +1,5 @@
+import 'dart:ui' show TextDirection;
+
 int _hebCombiningClass(int cp) {
   switch (cp) {
     case 0x05B0:
@@ -146,3 +148,8 @@ const _greekExtended = [
   (0x1FF8, 0x1FF9, 'ο'),
   (0x1FFA, 0x1FFC, 'ω'),
 ];
+
+/// The direction [word] reads in: left to right for Greek, right to left for
+/// Hebrew and Syriac.
+TextDirection wordDirection(String word) =>
+    isGreekWord(word) ? TextDirection.ltr : TextDirection.rtl;

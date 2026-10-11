@@ -1941,7 +1941,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               label: Text(
                 source.label(),
                 style: hebrew,
-                textDirection: TextDirection.rtl,
+                textDirection: wordDirection(source.label()),
               ),
               selected:
                   source.id == widget.proximityId ||
@@ -4492,7 +4492,8 @@ class _BibleRefPreviewDialogState extends State<BibleRefPreviewDialog> {
               children: [
                 Text(widget.displayRef, style: theme.textTheme.titleMedium),
                 Text(
-                  '${book.transliteration} ${widget.chapter}:${widget.verse}',
+                  '${_showsGreek ? kGreekBookNames[widget.bookIndex - 39] : book.transliteration} '
+                  '${widget.chapter}:${widget.verse}',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

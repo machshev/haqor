@@ -551,9 +551,61 @@ const List<String> kEnglishBookAbbreviations = [
   'Rev',
 ];
 
+/// The New Testament's books by their Greek names, transliterated, for a
+/// reader reading it in Greek: Matthew to Revelation.
+const kGreekBookNames = [
+  'Matthaios',
+  'Markos',
+  'Loukas',
+  'Iōannēs',
+  'Praxeis',
+  'Rhōmaioi',
+  'Korinthioi I',
+  'Korinthioi II',
+  'Galatai',
+  'Ephesioi',
+  'Philippēsioi',
+  'Kolossaeis',
+  'Thessalonikeis I',
+  'Thessalonikeis II',
+  'Timotheos I',
+  'Timotheos II',
+  'Titos',
+  'Philēmōn',
+  'Hebraioi',
+  'Iakōbos',
+  'Petros I',
+  'Petros II',
+  'Iōannēs I',
+  'Iōannēs II',
+  'Iōannēs III',
+  'Ioudas',
+  'Apokalypsis',
+];
+
+/// Three-letter forms of [kGreekBookNames], as [BookInfo.short] is of the
+/// Peshitta's.
+const kGreekBookAbbreviations = [
+  'Mat', 'Mar', 'Lou', 'Ioa', 'Pra', 'Rho', 'Ko1', 'Ko2', 'Gal', //
+  'Eph', 'Phi', 'Kol', 'Th1', 'Th2', 'Ti1', 'Ti2', 'Tit', 'Phm', //
+  'Heb', 'Iak', 'Pe1', 'Pe2', 'Io1', 'Io2', 'Io3', 'Iou', 'Apo',
+];
+
+/// Whether the New Testament's books are named from the Greek rather than the
+/// Peshitta, where English names are not used: the reader sets it as it reads
+/// the New Testament in one or the other. Held here, as the app's theme is,
+/// for the many lists that name a book.
+bool greekBookNames = false;
+
 String bookDisplayName(int bookIndex, {required bool useEnglish}) => useEnglish
     ? kEnglishBookNames[bookIndex]
+    : greekBookNames && bookIndex >= 39
+    ? kGreekBookNames[bookIndex - 39]
     : kBooks[bookIndex].transliteration;
 
 String bookSelectorLabel(int bookIndex, {required bool useEnglish}) =>
-    useEnglish ? kEnglishBookAbbreviations[bookIndex] : kBooks[bookIndex].short;
+    useEnglish
+    ? kEnglishBookAbbreviations[bookIndex]
+    : greekBookNames && bookIndex >= 39
+    ? kGreekBookAbbreviations[bookIndex - 39]
+    : kBooks[bookIndex].short;

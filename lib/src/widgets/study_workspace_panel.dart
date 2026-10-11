@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../bible_data.dart';
 import '../study_workspace.dart';
+import '../surface.dart';
 import 'cross_references_sheet.dart' show crossReferenceStrength;
 import 'markdown_note.dart';
 import 'name_details.dart' show nameKindIcon;
@@ -1224,7 +1225,7 @@ class StudyWorkspacePanel extends StatelessWidget {
           word.kind == StudyWordKind.form || word.root.isEmpty
               ? word.surface
               : '${word.root} · ${word.surface}',
-          textDirection: TextDirection.rtl,
+          textDirection: wordDirection(word.surface),
           style: TextStyle(
             color: Theme.of(context).colorScheme.primary,
             fontFamily: 'Cardo',

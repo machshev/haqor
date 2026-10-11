@@ -108,17 +108,17 @@ enum ReaderLayoutMode {
 /// Which text the reader shows: the source text, the English translation,
 /// or both side by side.
 enum ReaderText {
-  /// The Hebrew (or Syriac) alone.
-  source('Hebrew', 'The Hebrew text alone.'),
+  /// The text the Bible was written in, or the Peshitta's Aramaic, alone.
+  source('Original', 'The Hebrew, the Aramaic or the Greek alone.'),
 
   /// The English translation alone, where there is one.
   english('English', 'The English translation alone.'),
 
-  /// Each verse's Hebrew and English side by side, their verse numbers
+  /// Each verse's original and English side by side, their verse numbers
   /// shared between them.
   parallel(
     'Side by side',
-    'The Hebrew with the English beside it, verse by verse.',
+    'The original with the English beside it, verse by verse.',
   );
 
   const ReaderText(this.label, this.description);

@@ -16,7 +16,10 @@ void main() {
   testWidgets('a fresh install is asked about its Hebrew', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await pumpGate(tester);
-    expect(find.text('How familiar are you with Hebrew?'), findsOneWidget);
+    expect(
+      find.text('How familiar are you with Hebrew and Greek?'),
+      findsOneWidget,
+    );
     expect(find.text('reader'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('welcome-newcomer')));
@@ -66,6 +69,15 @@ void main() {
     expect(applied.showCantillation, isFalse);
   });
 
+  test('each preset says which New Testament text to read', () {
+    final greek = kDefaultReadingSettings.copyWith(ntGreek: true);
+    final peshitta = kDefaultReadingSettings.copyWith(ntGreek: false);
+    expect(ReadingPreset.greek.applyTo(peshitta).ntGreek, isTrue);
+    expect(ReadingPreset.newcomer.applyTo(peshitta).ntGreek, isTrue);
+    expect(ReadingPreset.learner.applyTo(greek).ntGreek, isFalse);
+    expect(ReadingPreset.reader.applyTo(greek).ntGreek, isFalse);
+  });
+
   testWidgets('settings apply a preset once, on confirmation', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final applied = <AppReadingSettings>[];
@@ -106,7 +118,7 @@ void main() {
     // The settings stay free to refine afterwards.
     await tester.tap(find.byKey(const ValueKey('settings-tab-text')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Hebrew').first);
+    await tester.tap(find.text('Original').first);
     await tester.pumpAndSettle();
     expect(applied.last.readerText, ReaderText.source);
     expect(applied.last.englishBookNames, isTrue);

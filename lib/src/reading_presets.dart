@@ -3,18 +3,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_settings.dart';
 
-/// A set of settings to suit how much Hebrew the reader brings.
+/// A set of settings to suit how much Hebrew, or Greek, the reader brings.
 ///
 /// Applied once and forgotten: a preset is a quick way to set many settings
 /// at once, each of which the reader can then refine on its own. Nothing
 /// remembers which was chosen, so nothing overrides the refinements later. It
 /// leaves the display alone: font, size, theme and layout are about the
-/// screen and the eyes, not about Hebrew.
+/// screen and the eyes, not about the languages.
 enum ReadingPreset {
   newcomer(
     'New to Hebrew',
-    'Read in English, with English book names. Tap an English word to see '
-        'the Hebrew it translates.',
+    'Read in English, with English book names, the New Testament\'s from '
+        'the Greek. Tap an English word to see the Hebrew or Greek it '
+        'translates.',
     Icons.translate,
   ),
   learner(
@@ -26,8 +27,14 @@ enum ReadingPreset {
   reader(
     'Reading Hebrew',
     'The Hebrew text as a printed edition sets it, with Hebrew book names '
-        'and numerals.',
+        'and numerals, and the New Testament in the Peshitta\'s Aramaic.',
     Icons.menu_book_outlined,
+  ),
+  greek(
+    'Reading Greek',
+    'The New Testament in Greek, and the Old in Hebrew with an English '
+        'gloss under each word, with English book names.',
+    Icons.auto_stories_outlined,
   );
 
   const ReadingPreset(this.label, this.description, this.icon);
@@ -43,6 +50,9 @@ enum ReadingPreset {
       rapidReading: false,
       showInterlinear: true,
       ntSyriac: false,
+      // The ULT's English beside the Greek reads more easily than Murdock's
+      // beside the Peshitta.
+      ntGreek: true,
       englishBookNames: true,
       hebrewNumerals: false,
       showCantillation: false,
@@ -59,6 +69,7 @@ enum ReadingPreset {
       rapidReading: false,
       showInterlinear: true,
       ntSyriac: false,
+      ntGreek: false,
       englishBookNames: true,
       hebrewNumerals: false,
       showCantillation: false,
@@ -76,6 +87,7 @@ enum ReadingPreset {
       rapidReading: false,
       showInterlinear: true,
       ntSyriac: false,
+      ntGreek: false,
       englishBookNames: false,
       hebrewNumerals: true,
       showCantillation: true,
@@ -85,6 +97,23 @@ enum ReadingPreset {
       syntaxRoles: false,
       syntaxView: SyntaxView.outline,
       rapidReveal: RapidReveal.verse,
+      ketivDisplay: KetivDisplay.superscript,
+    ),
+    greek => base.copyWith(
+      readerText: ReaderText.source,
+      rapidReading: false,
+      showInterlinear: true,
+      ntSyriac: false,
+      ntGreek: true,
+      englishBookNames: true,
+      hebrewNumerals: false,
+      showCantillation: false,
+      glossInterlinear: true,
+      morphologyInterlinear: false,
+      highlightProperNames: true,
+      syntaxRoles: false,
+      syntaxView: SyntaxView.outline,
+      rapidReveal: RapidReveal.word,
       ketivDisplay: KetivDisplay.superscript,
     ),
   };
@@ -108,8 +137,8 @@ enum ReadingPreset {
 /// a reader who has used it already has the settings they chose.
 bool isFirstRun(SharedPreferences prefs) => prefs.getKeys().isEmpty;
 
-/// Asks a new reader how familiar they are with Hebrew before showing [child],
-/// so the reader opens on text they can read.
+/// Asks a new reader how familiar they are with Hebrew and Greek before
+/// showing [child], so the reader opens on text they can read.
 class WelcomeGate extends StatefulWidget {
   const WelcomeGate({required this.child, super.key});
 
@@ -144,7 +173,7 @@ class _WelcomeGateState extends State<WelcomeGate> {
   };
 }
 
-/// The first screen a new reader sees: one question, three answers.
+/// The first screen a new reader sees: one question, an answer per preset.
 class WelcomePage extends StatelessWidget {
   const WelcomePage({required this.onChosen, super.key});
 
@@ -179,7 +208,7 @@ class WelcomePage extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    'How familiar are you with Hebrew?',
+                    'How familiar are you with Hebrew and Greek?',
                     style: theme.textTheme.titleMedium,
                     textAlign: TextAlign.center,
                   ),

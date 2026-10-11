@@ -2085,7 +2085,7 @@ void main() {
     expect(find.text('Study notes'), findsNothing);
     expect(find.text('Word study'), findsNothing);
     expect(
-      find.textContaining('Select a Hebrew or Syriac word'),
+      find.textContaining('Select a Hebrew, Aramaic or Greek word'),
       findsOneWidget,
     );
     await tester.tap(find.byTooltip('Study workspace'));
@@ -3275,6 +3275,8 @@ void greekToggleTests() {
     );
     expect(find.byTooltip('Greek · switch to English'), findsOneWidget);
     expect(find.byTooltip('Greek · switch to Aramaic'), findsOneWidget);
+    // The books are named from the Greek, and from the Peshitta after.
+    expect(find.textContaining('Matthaios'), findsWidgets);
 
     rust.chapterRequests.clear();
     await tester.tap(find.byKey(const ValueKey('reader-nt-text-toggle')));
@@ -3287,6 +3289,8 @@ void greekToggleTests() {
     );
     expect(find.byTooltip('Aramaic · switch to English'), findsOneWidget);
     expect(find.byTooltip('Aramaic · switch to Greek'), findsOneWidget);
+    expect(find.textContaining('Matthaios'), findsNothing);
+    expect(find.textContaining('Mattai'), findsWidgets);
     expect(
       tester.widget<VerseRow>(_verse(40, 1, 1)).sourceDirection,
       TextDirection.rtl,

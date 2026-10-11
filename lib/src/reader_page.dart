@@ -16,6 +16,7 @@ import 'bindings/bindings.dart' hide StudyItem;
 import 'issue_reporting.dart';
 import 'prefs_read.dart';
 import 'memorise/memorise_page.dart';
+import 'surface.dart';
 import 'study_workspace.dart';
 import 'study_workspace_store.dart';
 import 'syntax_tree.dart';
@@ -923,7 +924,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                     child: Text(
                       pane.word.word,
                       overflow: TextOverflow.ellipsis,
-                      textDirection: TextDirection.rtl,
+                      textDirection: wordDirection(pane.word.word),
                       style: const TextStyle(
                         fontFamily: 'Cardo',
                         fontFamilyFallback: ['Noto Serif Hebrew'],
@@ -964,8 +965,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
-                      'Select a Hebrew or Syriac word to keep its lexicon '
-                      'and occurrences beside the passage.',
+                      'Select a Hebrew, Aramaic or Greek word to keep its '
+                      'lexicon and occurrences beside the passage.',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
@@ -2535,11 +2536,14 @@ class _ReaderSessionState extends State<_ReaderSession>
     } else {
       _savePrefs();
     }
+    // The page names this reader's book in its tab, and docks its panels.
+    widget.onPassageChanged();
   }
 
   void _adoptReadingSettings(AppReadingSettings settings) {
     _ntSyriac = settings.ntSyriac;
     _ntGreek = settings.ntGreek;
+    greekBookNames = settings.ntGreek;
     _englishBookNames = settings.englishBookNames;
     _hebrewNumerals = settings.hebrewNumerals;
     _showCantillation = settings.showCantillation;

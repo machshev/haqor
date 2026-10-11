@@ -2647,8 +2647,6 @@ fn greek_lexicon_summary(e: haqor_core::greek::GreekLexiconEntry) -> BdbSummary 
     }
 }
 
-/// A word of the Greek New Testament: its tags, the person or place it
-/// names, the root it is read under with the dictionary forms built on it and
 /// A word of the Greek text found by its dictionary form, for one asked for
 /// by no place in it (a bookmarked word): the first spelled as [`word`] is,
 /// or with no spelling given, or none so spelled, the first of all.
@@ -2694,6 +2692,8 @@ fn greek_word_by_lemma(
     at(first)
 }
 
+/// A word of the Greek New Testament: its tags, the person or place it
+/// names, the root it is read under with the dictionary forms built on it and
 /// their lexicon entries, and every word of the TR built on that root.
 pub async fn get_greek_word(bible: SharedBible) {
     let receiver = GetGreekWord::get_dart_signal_receiver();

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../study_workspace.dart';
+import '../surface.dart';
 import 'markdown_note.dart';
 import 'verse_row.dart';
 
@@ -228,11 +229,13 @@ class _StudyPassageEditorState extends State<StudyPassageEditor> {
           Wrap(
             spacing: 6,
             runSpacing: 4,
-            textDirection: TextDirection.rtl,
+            textDirection: words.isEmpty
+                ? TextDirection.rtl
+                : wordDirection(words.first),
             children: [
               for (var i = 0; i < words.length; i++)
                 ChoiceChip(
-                  label: Text(words[i], textDirection: TextDirection.rtl),
+                  label: Text(words[i], textDirection: wordDirection(words[i])),
                   tooltip: 'Word ${i + 1}',
                   selected: (end ? _endWord : _startWord) == i,
                   onSelected: (_) => setState(() {

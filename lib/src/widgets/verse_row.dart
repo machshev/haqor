@@ -135,7 +135,7 @@ double verseRowScrollExtent({
       text: 'אבגדהוזחט',
       style: TextStyle(
         fontFamily: fontFamily,
-        fontFamilyFallback: const ['Noto Serif Hebrew'],
+        fontFamilyFallback: const ['Noto Serif Hebrew', 'Cardo'],
         fontSize: fontSize,
         fontWeight: FontWeight.w500,
         height: 1.6,
@@ -545,7 +545,8 @@ class _VerseRowState extends State<VerseRow> {
         : _words.map(stripCantillation).toList();
     final wordStyle = TextStyle(
       fontFamily: widget.fontFamily,
-      fontFamilyFallback: const ['Noto Serif Hebrew'],
+      // Cardo carries the Greek the Hebrew fonts lack.
+      fontFamilyFallback: const ['Noto Serif Hebrew', 'Cardo'],
       fontSize: widget.fontSize,
       fontWeight: FontWeight.w500,
       height: 1.6,
