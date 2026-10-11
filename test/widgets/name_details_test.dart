@@ -229,6 +229,48 @@ void main() {
     expect([for (final r in rows) r.syriac], [false, true, true]);
   });
 
+  testWidgets('set to the Greek, its NT verses are, and the switch flips them', (
+    tester,
+  ) async {
+    final requests = <GetNameEntity>[];
+    final switched = <bool>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NameDetailsPage(
+          id: 3,
+          title: 'Jerusalem',
+          ntGreek: true,
+          onNtGreekChanged: switched.add,
+          sendRequest: requests.add,
+          sendVerseTextsRequest: (_) {},
+        ),
+      ),
+    );
+    _deliverEntity(
+      requests.single,
+      _summary(3, 'Jerusalem', kind: 'place', occurrences: 2),
+      verses: [
+        NameVerse(book: 6, chapter: 10, verse: 1, positions: [4, 12]),
+        NameVerse(book: 40, chapter: 2, verse: 1, positions: const []),
+      ],
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Verses (2)'));
+    await tester.pumpAndSettle();
+    List<bool> greek() => [
+      for (final r in tester.widgetList<OccurrenceVerseRow>(
+        find.byType(OccurrenceVerseRow),
+      ))
+        r.greek,
+    ];
+    expect(greek(), [false, true]);
+
+    await tester.tap(find.byKey(const ValueKey('nt-text-toggle')));
+    await tester.pump();
+    expect(switched, [false]);
+    expect(greek(), [false, false]);
+  });
+
   testWidgets('one named only in the New Testament says so', (tester) async {
     final requests = <GetNameEntity>[];
     await tester.pumpWidget(

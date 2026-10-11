@@ -729,6 +729,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 targetRequest: _crossReferenceRequest,
                 useEnglishBookNames: reader._englishBookNames,
                 ntSyriac: reader._ntSyriac,
+                ntGreek: reader._ntGreek,
+                onNtGreekChanged: _setActiveNtGreek,
                 isLinkBookmarked: reader._isStudyLinkBookmarked,
                 onToggleLinkBookmark: reader._toggleStudyLinkBookmark,
                 minScore: reader._crossReferenceMinScore,
@@ -987,6 +989,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     );
   }
 
+  /// Sets the active reader's New Testament to the Greek or the Peshitta, as
+  /// a page a pane opened asks.
+  void _setActiveNtGreek(bool greek) {
+    _activeReader?._setNtGreek(greek);
+    setState(() {});
+  }
+
   Widget _wordInfoSheet(_WordPane pane) {
     final selected = pane.word;
     if (selected.greek && selected.chapter != null) {
@@ -1028,6 +1037,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       initialRoot: selected.root.isEmpty ? null : selected.root,
       syriac: selected.bookIndex >= 39,
       ntSyriac: _activeReader?._ntSyriac ?? false,
+      ntGreek: _activeReader?._ntGreek ?? false,
+      onNtGreekChanged: _setActiveNtGreek,
       book: selected.chapter == null ? null : selected.bookIndex + 1,
       chapter: selected.chapter,
       verse: selected.verse,
@@ -1984,6 +1995,12 @@ class _ReaderSessionState extends State<_ReaderSession>
   void _toggleNtGreek() =>
       _applyReadingSettings(_readingSettings.copyWith(ntGreek: !_ntGreek));
 
+  /// Sets the New Testament to the Greek or the Peshitta, as a verse list's
+  /// own switch asks.
+  void _setNtGreek(bool greek) {
+    if (greek != _ntGreek) _toggleNtGreek();
+  }
+
   void _cycleReaderText() => _setReaderText(_readerText.next);
 
   void _setReaderText(ReaderText text) {
@@ -2156,12 +2173,8 @@ class _ReaderSessionState extends State<_ReaderSession>
       _ReaderBarAction.crossReferences => [
         item(Icons.link, 'Cross references'),
       ],
-      _ReaderBarAction.places => [
-        item(Icons.map_outlined, 'Places'),
-      ],
-      _ReaderBarAction.people => [
-        item(Icons.people_outline, 'People'),
-      ],
+      _ReaderBarAction.places => [item(Icons.map_outlined, 'Places')],
+      _ReaderBarAction.people => [item(Icons.people_outline, 'People')],
       _ReaderBarAction.text => [
         for (final text in ReaderText.values)
           CheckedPopupMenuItem(
@@ -3105,6 +3118,8 @@ class _ReaderSessionState extends State<_ReaderSession>
     title: name.name,
     useEnglishBookNames: _englishBookNames,
     ntSyriac: _ntSyriac,
+    ntGreek: _ntGreek,
+    onNtGreekChanged: _setNtGreek,
     bookmarks: _nameBookmarks,
     onNavigateToPassage: (book, chapter, verse) =>
         _navigateTo(book, chapter, verse: verse),
@@ -3697,6 +3712,9 @@ class _ReaderSessionState extends State<_ReaderSession>
           bookIndex: _bookIndex,
           chapter: _chapter,
           useEnglishBookNames: _englishBookNames,
+          ntSyriac: _ntSyriac,
+          ntGreek: _ntGreek,
+          onNtGreekChanged: _setNtGreek,
           bookmarks: _nameBookmarks,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
@@ -3718,6 +3736,9 @@ class _ReaderSessionState extends State<_ReaderSession>
           bookIndex: _bookIndex,
           chapter: _chapter,
           useEnglishBookNames: _englishBookNames,
+          ntSyriac: _ntSyriac,
+          ntGreek: _ntGreek,
+          onNtGreekChanged: _setNtGreek,
           bookmarks: _nameBookmarks,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
@@ -5078,6 +5099,8 @@ class _ReaderSessionState extends State<_ReaderSession>
           context,
           useEnglishBookNames: _englishBookNames,
           ntSyriac: _ntSyriac,
+          ntGreek: _ntGreek,
+          onNtGreekChanged: _setNtGreek,
           bookmarks: _nameBookmarks,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
@@ -5087,6 +5110,8 @@ class _ReaderSessionState extends State<_ReaderSession>
           context,
           useEnglishBookNames: _englishBookNames,
           ntSyriac: _ntSyriac,
+          ntGreek: _ntGreek,
+          onNtGreekChanged: _setNtGreek,
           bookmarks: _nameBookmarks,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),

@@ -76,6 +76,8 @@ class BibleTimelinePage extends StatefulWidget {
     super.key,
     this.useEnglishBookNames = false,
     this.ntSyriac = false,
+    this.ntGreek = false,
+    this.onNtGreekChanged,
     this.onNavigateToPassage,
     this.bookmarks,
     this.initialEventId,
@@ -89,6 +91,11 @@ class BibleTimelinePage extends StatefulWidget {
 
   /// Show New Testament verses in Syriac script, as the reader is set to.
   final bool ntSyriac;
+
+  /// Show New Testament verses in Greek, as the reader is set to, and where
+  /// a name page's switch between the Greek and the Peshitta is reported.
+  final bool ntGreek;
+  final ValueChanged<bool>? onNtGreekChanged;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
   final NameBookmarks? bookmarks;
@@ -101,6 +108,8 @@ class BibleTimelinePage extends StatefulWidget {
     String? initialEventId,
     bool useEnglishBookNames = false,
     bool ntSyriac = false,
+    bool ntGreek = false,
+    ValueChanged<bool>? onNtGreekChanged,
     void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
     NameBookmarks? bookmarks,
     void Function(GetBibleEvents)? sendRequest,
@@ -110,6 +119,8 @@ class BibleTimelinePage extends StatefulWidget {
         initialEventId: initialEventId,
         useEnglishBookNames: useEnglishBookNames,
         ntSyriac: ntSyriac,
+        ntGreek: ntGreek,
+        onNtGreekChanged: onNtGreekChanged,
         onNavigateToPassage: onNavigateToPassage,
         bookmarks: bookmarks,
         sendRequest: sendRequest,
@@ -122,6 +133,14 @@ class BibleTimelinePage extends StatefulWidget {
 }
 
 class _BibleTimelinePageState extends State<BibleTimelinePage> {
+  /// The NT text a name page was last switched to, for the next one opened.
+  late bool _ntGreek = widget.ntGreek;
+
+  void _ntGreekChanged(bool greek) {
+    _ntGreek = greek;
+    widget.onNtGreekChanged?.call(greek);
+  }
+
   static int _nextRequestId = 1;
   StreamSubscription<RustSignalPack<BibleEvents>>? _sub;
   int? _requestId;
@@ -169,6 +188,8 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
       title: name.name,
       useEnglishBookNames: widget.useEnglishBookNames,
       ntSyriac: widget.ntSyriac,
+      ntGreek: _ntGreek,
+      onNtGreekChanged: _ntGreekChanged,
       bookmarks: widget.bookmarks,
       onNavigateToPassage: navigate == null
           ? null

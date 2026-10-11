@@ -59,6 +59,7 @@ void main() {
         chapter: 1,
         verse: 1,
         englishOnly: false,
+        greek: false,
         text: 'בראשית',
         translit: '',
         glossWords: [],
@@ -68,6 +69,51 @@ void main() {
     );
     await tester.pump();
     expect(find.text('בראשית'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a New Testament verse is asked for as the reader shows it', (
+    tester,
+  ) async {
+    final sent = <GetVerseText>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleRefPreviewDialog(
+          displayRef: 'Matthew 1:1',
+          bookIndex: 39,
+          chapter: 1,
+          verse: 1,
+          ntSyriac: false,
+          ntGreek: true,
+          sendVerseText: sent.add,
+        ),
+      ),
+    );
+    expect(sent.single.greek, isTrue);
+    assignRustSignal['VerseText']!(
+      const VerseText(
+        book: 40,
+        chapter: 1,
+        verse: 1,
+        englishOnly: false,
+        greek: true,
+        text: 'Βίβλος γενέσεως',
+        translit: '',
+        glossWords: [],
+        sourceWords: [],
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    final text = tester.widget<SelectableText>(find.byType(SelectableText));
+    expect(text.data, 'Βίβλος γενέσεως');
+    expect(text.textDirection, TextDirection.ltr);
+
+    // The switch asks for the Peshitta in its place.
+    await tester.tap(find.byKey(const ValueKey('nt-text-toggle')));
+    await tester.pump();
+    expect(sent.last.greek, isFalse);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

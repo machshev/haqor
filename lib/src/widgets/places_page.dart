@@ -79,6 +79,8 @@ class PlacesPage extends StatefulWidget {
     super.key,
     this.useEnglishBookNames = false,
     this.ntSyriac = false,
+    this.ntGreek = false,
+    this.onNtGreekChanged,
     this.onNavigateToPassage,
     this.bookmarks,
     this.sendRequest,
@@ -90,6 +92,11 @@ class PlacesPage extends StatefulWidget {
 
   /// Show New Testament verses in Syriac script, as the reader is set to.
   final bool ntSyriac;
+
+  /// Show New Testament verses in Greek, as the reader is set to, and where
+  /// a name page's switch between the Greek and the Peshitta is reported.
+  final bool ntGreek;
+  final ValueChanged<bool>? onNtGreekChanged;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
   final NameBookmarks? bookmarks;
@@ -103,6 +110,8 @@ class PlacesPage extends StatefulWidget {
     BuildContext context, {
     bool useEnglishBookNames = false,
     bool ntSyriac = false,
+    bool ntGreek = false,
+    ValueChanged<bool>? onNtGreekChanged,
     void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
     NameBookmarks? bookmarks,
   }) => Navigator.of(context).push(
@@ -110,6 +119,8 @@ class PlacesPage extends StatefulWidget {
       builder: (_) => PlacesPage(
         useEnglishBookNames: useEnglishBookNames,
         ntSyriac: ntSyriac,
+        ntGreek: ntGreek,
+        onNtGreekChanged: onNtGreekChanged,
         onNavigateToPassage: onNavigateToPassage,
         bookmarks: bookmarks,
       ),
@@ -121,6 +132,14 @@ class PlacesPage extends StatefulWidget {
 }
 
 class _PlacesPageState extends State<PlacesPage> {
+  /// The NT text a name page was last switched to, for the next one opened.
+  late bool _ntGreek = widget.ntGreek;
+
+  void _ntGreekChanged(bool greek) {
+    _ntGreek = greek;
+    widget.onNtGreekChanged?.call(greek);
+  }
+
   static int _nextRequestId = 1;
   StreamSubscription<RustSignalPack<Places>>? _sub;
   int? _requestId;
@@ -245,6 +264,8 @@ class _PlacesPageState extends State<PlacesPage> {
     title: place.name,
     useEnglishBookNames: widget.useEnglishBookNames,
     ntSyriac: widget.ntSyriac,
+    ntGreek: _ntGreek,
+    onNtGreekChanged: _ntGreekChanged,
     bookmarks: widget.bookmarks,
     onNavigateToPassage: widget.onNavigateToPassage == null
         ? null

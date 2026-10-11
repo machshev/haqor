@@ -2262,6 +2262,8 @@ class _ReadVerseViewState extends State<_ReadVerseView> {
         chapter: chapter,
         verse: verse,
         englishOnly: false,
+        syriac: false,
+        greek: false,
       ),
     );
   }

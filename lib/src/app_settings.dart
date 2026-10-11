@@ -30,6 +30,13 @@ Future<void> setOccurrenceVerseEnglishOnlyEnabled(bool enabled) async =>
       enabled,
     );
 
+/// The New Testament text the reader was last set to, for a verse shown away
+/// from it: whether in Greek, and whether the Peshitta is in Syriac script.
+Future<({bool greek, bool syriac})> savedNtText() async {
+  final settings = readReadingSettings(await SharedPreferences.getInstance());
+  return (greek: settings.ntGreek, syriac: settings.ntSyriac);
+}
+
 const _themeModeKey = 'theme_mode';
 
 /// The app's light/dark choice, which [Haqor] listens to.
@@ -172,8 +179,9 @@ class AppReadingSettings {
   final bool ntSyriac;
 
   /// Whether the reader shows the New Testament in Greek, the Textus
-  /// Receptus, in place of the Peshitta. Lists of verses elsewhere keep the
-  /// Peshitta, in the script [ntSyriac] says.
+  /// Receptus, in place of the Peshitta, as do the lists of verses it opens
+  /// (cross references, a name's verses). An Aramaic word's occurrences keep
+  /// the Peshitta, whose words they are.
   final bool ntGreek;
   final bool englishBookNames;
   final bool hebrewNumerals;

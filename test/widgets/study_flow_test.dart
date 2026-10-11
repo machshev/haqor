@@ -155,6 +155,7 @@ void main() {
         chapter: 1,
         verse: 1,
         englishOnly: false,
+        greek: false,
         text: 'בראשית',
         translit: '',
         glossWords: [],

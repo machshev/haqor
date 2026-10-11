@@ -634,10 +634,23 @@ pub async fn get_verse_text(bible: SharedBible) {
         let verse_ref = signal_pack.message;
         debug_print!("{:?}", verse_ref);
         let bible = lock(&bible);
+        let greek = verse_ref.greek && verse_ref.book >= 40 && !verse_ref.english_only;
+        let syriac = verse_ref.syriac && verse_ref.book >= 40 && !verse_ref.english_only;
         // English-only keeps the per-word split alongside the joined text: the
         // caller needs to know which Hebrew word each piece of English came
         // from to highlight it.
-        let result = if verse_ref.english_only {
+        let result = if greek {
+            bible
+                .greek_chapter(verse_ref.book, verse_ref.chapter)
+                .map_err(|e| e.to_string())
+                .and_then(|verses| {
+                    verses
+                        .into_iter()
+                        .find(|v| v.verse == verse_ref.verse)
+                        .map(|v| (v.text(), Vec::new(), Vec::new()))
+                        .ok_or_else(|| "no such verse in the Greek".to_string())
+                })
+        } else if verse_ref.english_only {
             bible
                 .verse_gloss_words(verse_ref.book, verse_ref.chapter, verse_ref.verse)
                 .map(|pairs| {
@@ -645,10 +658,17 @@ pub async fn get_verse_text(bible: SharedBible) {
                         pairs.into_iter().unzip();
                     (gloss_words.join(" "), gloss_words, source_words)
                 })
+                .map_err(|e| e.to_string())
+        } else if syriac {
+            bible
+                .get_syriac(verse_ref.book, verse_ref.chapter, verse_ref.verse)
+                .map(|text| (text, Vec::new(), Vec::new()))
+                .map_err(|e| e.to_string())
         } else {
             bible
                 .get(verse_ref.book, verse_ref.chapter, verse_ref.verse)
                 .map(|text| (text, Vec::new(), Vec::new()))
+                .map_err(|e| e.to_string())
         };
         match result {
             Ok((text, gloss_words, source_words)) => VerseText {
@@ -656,7 +676,9 @@ pub async fn get_verse_text(bible: SharedBible) {
                 chapter: verse_ref.chapter,
                 verse: verse_ref.verse,
                 english_only: verse_ref.english_only,
-                translit: if verse_ref.english_only {
+                greek,
+                // Romanisation reads the Hebrew script alone.
+                translit: if verse_ref.english_only || greek || syriac {
                     String::new()
                 } else {
                     haqor_core::romanize::romanize(&text)

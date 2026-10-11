@@ -152,6 +152,8 @@ Future<_FakeRust> _pump(
   ValueChanged<double>? onMinScoreChanged,
   void Function(int, int, int)? onNavigate,
   bool ntSyriac = false,
+  bool ntGreek = false,
+  ValueChanged<bool>? onNtGreekChanged,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final rust = _FakeRust();
@@ -166,6 +168,8 @@ Future<_FakeRust> _pump(
             target: verse == null ? null : (book: 40, chapter: 1, verse: verse),
             useEnglishBookNames: true,
             ntSyriac: ntSyriac,
+            ntGreek: ntGreek,
+            onNtGreekChanged: onNtGreekChanged,
             minScore: minScore,
             onMinScoreChanged: onMinScoreChanged,
             onNavigateToPassage: onNavigate,
@@ -910,6 +914,38 @@ void dockedTests() {
         for (final ref in request.refs) (ref.book, request.syriac),
     };
     expect(asked, containsAll(<(int, bool)>[(12, false), (41, true)]));
+  });
+
+  testWidgets('set to the Greek, NT rows ask for it, and the switch flips it', (
+    tester,
+  ) async {
+    final switched = <bool>[];
+    final rust = await _pump(
+      tester,
+      verse: null,
+      ntGreek: true,
+      onNtGreekChanged: switched.add,
+    );
+    rust.deliverQuotations(2, [
+      _quote(verse: 23, otherBook: 12, otherChapter: 7, otherVerse: 14),
+      _quote(verse: 24, otherBook: 41, otherChapter: 1, otherVerse: 2),
+    ]);
+    await tester.pump();
+    Set<(int, bool)> asked() => {
+      for (final request in rust.verseRequests)
+        for (final ref in request.refs) (ref.book, request.greek),
+    };
+    expect(asked(), containsAll(<(int, bool)>[(12, false), (41, true)]));
+    rust.deliverVerseTexts();
+    await tester.pump();
+    // The matched words are the Peshitta's, and mark nothing in the Greek.
+    expect(_highlighted(tester)['Mark 1:2'], isEmpty);
+    expect(_highlighted(tester)['Isaiah 7:14'], isNotEmpty);
+
+    await tester.tap(find.byKey(const ValueKey('nt-text-toggle')));
+    await tester.pump();
+    expect(switched, [false]);
+    expect(asked(), contains((41, false)));
   });
 
   testWidgets('the verse text switch asks for English and remembers it', (

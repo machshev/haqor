@@ -19,6 +19,7 @@ import 'word_info_sheet.dart'
         BibleRefPreviewDialog,
         CanonDistribution,
         OccurrenceVerseRow,
+        NtTextButton,
         VerseModeIcon,
         WordInfoSheet;
 
@@ -130,6 +131,8 @@ class NameDetailsPage extends StatefulWidget {
     this.title,
     this.useEnglishBookNames = false,
     this.ntSyriac = false,
+    this.ntGreek = false,
+    this.onNtGreekChanged,
     this.onNavigateToPassage,
     this.sendRequest,
     this.sendVerseTextsRequest,
@@ -150,6 +153,12 @@ class NameDetailsPage extends StatefulWidget {
 
   /// Show New Testament verses in Syriac script, as the reader is set to.
   final bool ntSyriac;
+
+  /// Show New Testament verses in Greek, as the reader is set to. The page's
+  /// switch between the Greek and the Peshitta is reported to
+  /// [onNtGreekChanged], so the reader can follow it.
+  final bool ntGreek;
+  final ValueChanged<bool>? onNtGreekChanged;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
 
@@ -169,6 +178,8 @@ class NameDetailsPage extends StatefulWidget {
     String? title,
     bool useEnglishBookNames = false,
     bool ntSyriac = false,
+    bool ntGreek = false,
+    ValueChanged<bool>? onNtGreekChanged,
     void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
     NameBookmarks? bookmarks,
   }) => Navigator.of(context).push(
@@ -179,6 +190,8 @@ class NameDetailsPage extends StatefulWidget {
         title: title,
         useEnglishBookNames: useEnglishBookNames,
         ntSyriac: ntSyriac,
+        ntGreek: ntGreek,
+        onNtGreekChanged: onNtGreekChanged,
         onNavigateToPassage: onNavigateToPassage,
         bookmarks: bookmarks,
       ),
@@ -202,6 +215,9 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
 
   /// Show the verses in English, as the word sheet's Occurrences tab does.
   bool _englishOnly = false;
+
+  /// Whether New Testament verses are shown in Greek.
+  late bool _ntGreek = widget.ntGreek;
 
   /// The books the verse list is narrowed to (1-based); empty for all.
   final Set<int> _books = {};
@@ -241,6 +257,11 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
     setOccurrenceVerseEnglishOnlyEnabled(_englishOnly);
   }
 
+  void _setNtGreek(bool greek) {
+    setState(() => _ntGreek = greek);
+    widget.onNtGreekChanged?.call(greek);
+  }
+
   void _openOther(NameSummaryEntry other) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       settings: const RouteSettings(name: NameDetailsPage.routeName),
@@ -249,6 +270,8 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
         title: other.name,
         useEnglishBookNames: widget.useEnglishBookNames,
         ntSyriac: widget.ntSyriac,
+        ntGreek: _ntGreek,
+        onNtGreekChanged: widget.onNtGreekChanged,
         onNavigateToPassage: widget.onNavigateToPassage,
         sendRequest: widget.sendRequest,
         sendVerseTextsRequest: widget.sendVerseTextsRequest,
@@ -302,6 +325,8 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
         bookIndex: bookIndex,
         chapter: verse.chapter,
         verse: verse.verse,
+        ntSyriac: widget.ntSyriac,
+        ntGreek: _ntGreek,
       ),
     );
   }
@@ -343,9 +368,10 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
     chapter: verse.chapter,
     verse: verse.verse,
     highlightWords: const [],
-    positions: verse.positions,
+    positions: _ntGreek && verse.book >= 40 ? const [] : verse.positions,
     englishOnly: _englishOnly,
     syriac: widget.ntSyriac && verse.book >= 40,
+    greek: _ntGreek && verse.book >= 40,
     useEnglishBookNames: widget.useEnglishBookNames,
     onTap: () => _openVerse(verse),
   );
@@ -632,6 +658,12 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
                 style: _heading(context),
               ),
             ),
+            if (newTestament > 0)
+              NtTextButton(
+                greek: _ntGreek,
+                syriacScript: widget.ntSyriac,
+                onChanged: _setNtGreek,
+              ),
             IconButton(
               tooltip: _englishOnly
                   ? 'Show Hebrew verse text'
@@ -683,6 +715,8 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
     initialEventId: eventId,
     useEnglishBookNames: widget.useEnglishBookNames,
     ntSyriac: widget.ntSyriac,
+    ntGreek: _ntGreek,
+    onNtGreekChanged: _setNtGreek,
     bookmarks: widget.bookmarks,
     onNavigateToPassage: _navigate,
     sendRequest: widget.sendTimelineRequest,
@@ -949,6 +983,9 @@ class ChapterPlacesSheet extends StatefulWidget {
     required this.bookIndex,
     required this.chapter,
     this.useEnglishBookNames = false,
+    this.ntSyriac = false,
+    this.ntGreek = false,
+    this.onNtGreekChanged,
     this.onNavigateToPassage,
     this.sendRequest,
     this.basemap,
@@ -959,6 +996,12 @@ class ChapterPlacesSheet extends StatefulWidget {
   final int bookIndex;
   final int chapter;
   final bool useEnglishBookNames;
+
+  /// How the reader shows the New Testament, for the pages these open, and
+  /// where a page's switch between the Greek and the Peshitta is reported.
+  final bool ntSyriac;
+  final bool ntGreek;
+  final ValueChanged<bool>? onNtGreekChanged;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
   final void Function(GetChapterPlaces)? sendRequest;
@@ -970,6 +1013,14 @@ class ChapterPlacesSheet extends StatefulWidget {
 }
 
 class _ChapterPlacesSheetState extends State<ChapterPlacesSheet> {
+  /// The NT text a name page was last switched to, for the next one opened.
+  late bool _ntGreek = widget.ntGreek;
+
+  void _ntGreekChanged(bool greek) {
+    _ntGreek = greek;
+    widget.onNtGreekChanged?.call(greek);
+  }
+
   static int _nextRequestId = 1;
   StreamSubscription<RustSignalPack<ChapterPlaces>>? _sub;
   int? _requestId;
@@ -1007,6 +1058,9 @@ class _ChapterPlacesSheetState extends State<ChapterPlacesSheet> {
     id: place.id,
     title: place.name,
     useEnglishBookNames: widget.useEnglishBookNames,
+    ntSyriac: widget.ntSyriac,
+    ntGreek: _ntGreek,
+    onNtGreekChanged: _ntGreekChanged,
     bookmarks: widget.bookmarks,
     onNavigateToPassage: widget.onNavigateToPassage == null
         ? null
@@ -1103,6 +1157,9 @@ class ChapterPeopleSheet extends StatefulWidget {
     required this.bookIndex,
     required this.chapter,
     this.useEnglishBookNames = false,
+    this.ntSyriac = false,
+    this.ntGreek = false,
+    this.onNtGreekChanged,
     this.onNavigateToPassage,
     this.sendRequest,
     this.bookmarks,
@@ -1112,6 +1169,12 @@ class ChapterPeopleSheet extends StatefulWidget {
   final int bookIndex;
   final int chapter;
   final bool useEnglishBookNames;
+
+  /// How the reader shows the New Testament, for the pages these open, and
+  /// where a page's switch between the Greek and the Peshitta is reported.
+  final bool ntSyriac;
+  final bool ntGreek;
+  final ValueChanged<bool>? onNtGreekChanged;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
   final void Function(GetChapterPeople)? sendRequest;
@@ -1122,6 +1185,14 @@ class ChapterPeopleSheet extends StatefulWidget {
 }
 
 class _ChapterPeopleSheetState extends State<ChapterPeopleSheet> {
+  /// The NT text a name page was last switched to, for the next one opened.
+  late bool _ntGreek = widget.ntGreek;
+
+  void _ntGreekChanged(bool greek) {
+    _ntGreek = greek;
+    widget.onNtGreekChanged?.call(greek);
+  }
+
   static int _nextRequestId = 1;
   StreamSubscription<RustSignalPack<ChapterPeople>>? _sub;
   int? _requestId;
@@ -1159,6 +1230,9 @@ class _ChapterPeopleSheetState extends State<ChapterPeopleSheet> {
     id: person.id,
     title: person.name,
     useEnglishBookNames: widget.useEnglishBookNames,
+    ntSyriac: widget.ntSyriac,
+    ntGreek: _ntGreek,
+    onNtGreekChanged: _ntGreekChanged,
     bookmarks: widget.bookmarks,
     onNavigateToPassage: widget.onNavigateToPassage == null
         ? null

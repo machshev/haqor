@@ -119,6 +119,8 @@ class WordInfoSheet extends StatefulWidget {
     this.bdbId,
     this.initialRoot,
     this.ntSyriac = false,
+    this.ntGreek = false,
+    this.onNtGreekChanged,
     this.readerGloss,
     this.book,
     this.chapter,
@@ -147,6 +149,13 @@ class WordInfoSheet extends StatefulWidget {
   /// show their NT verses in it too. Distinct from [syriac], which says the
   /// word being looked up is an NT one, whatever script it is displayed in.
   final bool ntSyriac;
+
+  /// The reader shows the NT in Greek: the pages of people and places the
+  /// sheet opens show their NT verses so, and report a switch to
+  /// [onNtGreekChanged]. The occurrence rows keep the Peshitta, whose words
+  /// they are.
+  final bool ntGreek;
+  final ValueChanged<bool>? onNtGreekChanged;
   final String? initialRoot;
 
   /// Lets the reader replace a docked inspector and retain its word history.
@@ -746,6 +755,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         word: word,
         syriac: bdbId == null ? widget.syriac : false,
         ntSyriac: widget.ntSyriac,
+        ntGreek: widget.ntGreek,
+        onNtGreekChanged: widget.onNtGreekChanged,
         bdbId: bdbId,
         sendInfoRequest: widget.sendInfoRequest,
         sendOccurrencesRequest: widget.sendOccurrencesRequest,
@@ -1384,6 +1395,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     title: name.name,
     useEnglishBookNames: widget.useEnglishBookNames,
     ntSyriac: widget.ntSyriac,
+    ntGreek: widget.ntGreek,
+    onNtGreekChanged: widget.onNtGreekChanged,
     onNavigateToPassage: widget.onNavigateToPassage,
     bookmarks: widget.nameBookmarks,
   );
@@ -2464,10 +2477,67 @@ class VerseModeIcon extends StatelessWidget {
   final String sourceLetter;
 
   @override
+  Widget build(BuildContext context) => _SegmentedIcon(
+    segments: [(sourceLetter, !englishOnly), ('EN', englishOnly)],
+  );
+}
+
+/// The New Testament text switch icon: the Peshitta, by the first letter of
+/// the script it is set in, or the Greek. Shaped as [VerseModeIcon], beside
+/// which it sits in the verse lists.
+class NtTextIcon extends StatelessWidget {
+  const NtTextIcon({super.key, required this.greek, this.syriacScript = false});
+
+  final bool greek;
+  final bool syriacScript;
+
+  @override
+  Widget build(BuildContext context) => _SegmentedIcon(
+    segments: [(syriacScript ? 'ܐ' : 'א', !greek), ('α', greek)],
+  );
+}
+
+/// The button a verse list switches its New Testament verses with, between
+/// the Peshitta and the Greek, as the reader's own switch does.
+class NtTextButton extends StatelessWidget {
+  const NtTextButton({
+    super.key,
+    required this.greek,
+    required this.onChanged,
+    this.syriacScript = false,
+  });
+
+  final bool greek;
+  final bool syriacScript;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    key: const ValueKey('nt-text-toggle'),
+    tooltip: greek
+        ? 'Greek New Testament · show the Aramaic'
+        : 'Aramaic New Testament · show the Greek',
+    icon: NtTextIcon(greek: greek, syriacScript: syriacScript),
+    onPressed: () => onChanged(!greek),
+    visualDensity: VisualDensity.compact,
+    padding: EdgeInsets.zero,
+    constraints: const BoxConstraints(minHeight: 40),
+  );
+}
+
+/// Two or more labels in a rounded outline, the lit one filled: the verse
+/// lists' text switches.
+class _SegmentedIcon extends StatelessWidget {
+  const _SegmentedIcon({required this.segments});
+
+  /// Each segment's label, and whether it is lit.
+  final List<(String, bool)> segments;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    Widget segment(String label, bool active, String fontFamily) => Container(
+    Widget segment(String label, bool active) => Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
       decoration: BoxDecoration(
         color: active ? theme.colorScheme.primary : Colors.transparent,
@@ -2479,7 +2549,7 @@ class VerseModeIcon extends StatelessWidget {
           fontSize: 11,
           height: 1.0,
           fontWeight: FontWeight.w600,
-          fontFamily: fontFamily,
+          fontFamily: 'Cardo',
           fontFamilyFallback: const ['Noto Serif Hebrew'],
           color: active
               ? theme.colorScheme.onPrimary
@@ -2497,9 +2567,10 @@ class VerseModeIcon extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          segment(sourceLetter, !englishOnly, 'Cardo'),
-          const SizedBox(width: 1),
-          segment('EN', englishOnly, 'Cardo'),
+          for (final (i, (label, active)) in segments.indexed) ...[
+            if (i > 0) const SizedBox(width: 1),
+            segment(label, active),
+          ],
         ],
       ),
     );
@@ -4269,7 +4340,9 @@ class _DictionaryEntryPreviewDialogState
   }
 }
 
-/// A Bible reference's verse, previewed over the word sheet.
+/// A Bible reference's verse, previewed over the word sheet. A New Testament
+/// verse is shown in the Peshitta or the Greek, as the reader is set to, with
+/// a switch between them.
 class BibleRefPreviewDialog extends StatefulWidget {
   const BibleRefPreviewDialog({
     super.key,
@@ -4278,6 +4351,8 @@ class BibleRefPreviewDialog extends StatefulWidget {
     required this.chapter,
     required this.verse,
     this.onNavigate,
+    this.ntSyriac,
+    this.ntGreek,
     this.sendVerseText,
   });
 
@@ -4286,6 +4361,11 @@ class BibleRefPreviewDialog extends StatefulWidget {
   final int chapter;
   final int verse;
   final VoidCallback? onNavigate;
+
+  /// How the reader shows the New Testament: the Peshitta in Syriac script,
+  /// or the Greek. Read from the saved settings when not given.
+  final bool? ntSyriac;
+  final bool? ntGreek;
 
   /// Stands in for the signal to Rust so a test can capture the request.
   final void Function(GetVerseText)? sendVerseText;
@@ -4301,10 +4381,39 @@ class _BibleRefPreviewDialogState extends State<BibleRefPreviewDialog> {
   String? _verseText;
   // Set when the verse could not be fetched; shown in place of the spinner.
   String? _error;
+  late bool _syriac = widget.ntSyriac ?? false;
+  late bool _greek = widget.ntGreek ?? false;
+
+  bool get _newTestament => widget.bookIndex >= 39;
+
+  /// Whether the verse is asked for, and shown, in Greek.
+  bool get _showsGreek => _newTestament && _greek;
 
   @override
   void initState() {
     super.initState();
+    if (!_newTestament || (widget.ntSyriac != null && widget.ntGreek != null)) {
+      _request();
+      return;
+    }
+    unawaited(
+      savedNtText()
+          .then((saved) {
+            _syriac = widget.ntSyriac ?? saved.syriac;
+            _greek = widget.ntGreek ?? saved.greek;
+          })
+          .catchError((Object _) {})
+          .whenComplete(() {
+            if (mounted) _request();
+          }),
+    );
+  }
+
+  void _setGreek(bool greek) {
+    setState(() {
+      _greek = greek;
+      _verseText = null;
+    });
     _request();
   }
 
@@ -4313,13 +4422,15 @@ class _BibleRefPreviewDialogState extends State<BibleRefPreviewDialog> {
     _failureSub?.cancel();
     if (_error != null) setState(() => _error = null);
     final targetBook = widget.bookIndex + 1;
+    final greek = _showsGreek;
     _sub = VerseText.rustSignalStream.listen((pack) {
       final msg = pack.message;
       if (mounted &&
           msg.book == targetBook &&
           msg.chapter == widget.chapter &&
           msg.verse == widget.verse &&
-          !msg.englishOnly) {
+          !msg.englishOnly &&
+          msg.greek == greek) {
         _timer.stop();
         setState(() => _verseText = msg.text);
         _sub?.cancel();
@@ -4337,6 +4448,8 @@ class _BibleRefPreviewDialogState extends State<BibleRefPreviewDialog> {
       chapter: widget.chapter,
       verse: widget.verse,
       englishOnly: false,
+      syriac: _syriac,
+      greek: greek,
     );
     final send = widget.sendVerseText;
     if (send != null) {
@@ -4364,17 +4477,29 @@ class _BibleRefPreviewDialogState extends State<BibleRefPreviewDialog> {
     final theme = Theme.of(context);
     final book = kBooks[widget.bookIndex];
     return AlertDialog(
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      title: Row(
         children: [
-          Text(widget.displayRef, style: theme.textTheme.titleMedium),
-          Text(
-            '${book.transliteration} ${widget.chapter}:${widget.verse}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(widget.displayRef, style: theme.textTheme.titleMedium),
+                Text(
+                  '${book.transliteration} ${widget.chapter}:${widget.verse}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
+          if (_newTestament)
+            NtTextButton(
+              greek: _greek,
+              syriacScript: _syriac,
+              onChanged: _setGreek,
+            ),
         ],
       ),
       content: _error != null
@@ -4415,7 +4540,7 @@ class _BibleRefPreviewDialogState extends State<BibleRefPreviewDialog> {
         height: 1.6,
         color: Theme.of(context).colorScheme.onSurface,
       ),
-      textDirection: TextDirection.rtl,
+      textDirection: _showsGreek ? TextDirection.ltr : TextDirection.rtl,
     );
   }
 }

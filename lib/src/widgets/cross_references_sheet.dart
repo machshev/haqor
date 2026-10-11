@@ -9,7 +9,8 @@ import '../bindings/bindings.dart';
 import '../study_workspace.dart';
 import 'prophecy_card.dart';
 import 'verse_text_cache.dart';
-import 'word_info_sheet.dart' show OccurrenceVerseRow, VerseModeIcon;
+import 'word_info_sheet.dart'
+    show NtTextButton, OccurrenceVerseRow, VerseModeIcon;
 
 /// The strength filter's settings: the minimum score each keeps, and its name.
 /// The database holds a deliberately loose set, echoes and allusions
@@ -46,8 +47,16 @@ String _parallel(int book, int otherBook) =>
 List<Widget> _headerActions({
   required bool englishOnly,
   required VoidCallback onToggleEnglishOnly,
+  required bool ntGreek,
+  required bool ntSyriac,
+  required ValueChanged<bool> onNtGreekChanged,
   VoidCallback? onClose,
 }) => [
+  NtTextButton(
+    greek: ntGreek,
+    syriacScript: ntSyriac,
+    onChanged: onNtGreekChanged,
+  ),
   IconButton(
     tooltip: englishOnly
         ? 'Show Hebrew verse text'
@@ -95,6 +104,8 @@ class CrossReferencesPanel extends StatefulWidget {
     this.targetRequest = 0,
     required this.useEnglishBookNames,
     this.ntSyriac = false,
+    this.ntGreek = false,
+    this.onNtGreekChanged,
     this.onClose,
     this.isLinkBookmarked,
     this.onToggleLinkBookmark,
@@ -155,6 +166,12 @@ class CrossReferencesPanel extends StatefulWidget {
   /// The reader shows the NT in Syriac script, so NT verse rows do too.
   final bool ntSyriac;
 
+  /// The reader shows the NT in Greek, so NT verse rows do too, without the
+  /// matched words: those are the Peshitta's. The panel's switch between
+  /// the two is reported to [onNtGreekChanged], so the reader follows it.
+  final bool ntGreek;
+  final ValueChanged<bool>? onNtGreekChanged;
+
   @override
   State<CrossReferencesPanel> createState() => _CrossReferencesPanelState();
 }
@@ -205,6 +222,10 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   /// Verse text as Hebrew, or as the English reader glosses: the same setting
   /// as the word sheet's occurrence lists.
   bool _englishOnly = false;
+
+  /// Whether NT verses are shown in Greek: the reader's setting, which the
+  /// panel's own switch changes.
+  late bool _ntGreek = widget.ntGreek;
 
   /// Request ids are handed out app-wide, not per panel: the reply stream is a
   /// broadcast, so a late reply to a closed panel would otherwise carry the id
@@ -277,6 +298,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   @override
   void didUpdateWidget(CrossReferencesPanel old) {
     super.didUpdateWidget(old);
+    if (widget.ntGreek != old.ntGreek) _ntGreek = widget.ntGreek;
     if (widget.targetRequest != old.targetRequest) _openTarget();
     // Docked, the panel follows the reader: a new book resets the chapter
     // range to the whole of it, and the overview is asked for again with the
@@ -408,6 +430,15 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
     setOccurrenceVerseEnglishOnlyEnabled(_englishOnly);
   }
 
+  /// Shows the NT verses in Greek or the Peshitta, and has the reader follow.
+  void _setNtGreek(bool greek) {
+    setState(() => _ntGreek = greek);
+    widget.onNtGreekChanged?.call(greek);
+  }
+
+  /// Whether a verse of [book] (1-based) is shown in Greek.
+  bool _greekRow(int book) => _ntGreek && book >= 40;
+
   String _ref(int book, int chapter, int verse) =>
       '${bookDisplayName(book - 1, useEnglish: widget.useEnglishBookNames)} '
       '$chapter:$verse';
@@ -426,6 +457,8 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
         minScore: _minScore,
         useEnglishBookNames: widget.useEnglishBookNames,
         ntSyriac: widget.ntSyriac,
+        ntGreek: _ntGreek,
+        onNtGreekChanged: _setNtGreek,
         englishOnly: _englishOnly,
         onToggleEnglishOnly: _toggleEnglishOnly,
         chosenSection: _section,
@@ -517,6 +550,9 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
               ..._headerActions(
                 englishOnly: _englishOnly,
                 onToggleEnglishOnly: _toggleEnglishOnly,
+                ntGreek: _ntGreek,
+                ntSyriac: widget.ntSyriac,
+                onNtGreekChanged: _setNtGreek,
                 onClose: widget.onClose,
               ),
             ],
@@ -795,6 +831,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
             useEnglishBookNames: widget.useEnglishBookNames,
             englishOnly: _englishOnly,
             ntSyriac: widget.ntSyriac,
+            ntGreek: _ntGreek,
             onNavigateToPassage: widget.onNavigateToPassage,
           );
         },
@@ -971,9 +1008,12 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
               chapter: entry.otherChapter,
               verse: entry.otherVerse,
               highlightWords: const [],
-              positions: entry.otherPositions,
+              positions: _greekRow(entry.otherBook)
+                  ? const []
+                  : entry.otherPositions,
               englishOnly: _englishOnly,
               syriac: widget.ntSyriac && entry.otherBook >= 40,
+              greek: _greekRow(entry.otherBook),
               useEnglishBookNames: widget.useEnglishBookNames,
               onTap: () => _openVerse(entry),
             ),
@@ -1101,6 +1141,8 @@ class _VerseLinks extends StatefulWidget {
     required this.useEnglishBookNames,
     required this.englishOnly,
     required this.ntSyriac,
+    required this.ntGreek,
+    required this.onNtGreekChanged,
     required this.onToggleEnglishOnly,
     required this.onBack,
     this.chosenSection,
@@ -1126,6 +1168,8 @@ class _VerseLinks extends StatefulWidget {
   final bool useEnglishBookNames;
   final bool englishOnly;
   final bool ntSyriac;
+  final bool ntGreek;
+  final ValueChanged<bool> onNtGreekChanged;
   final VoidCallback onToggleEnglishOnly;
   final VoidCallback onBack;
 
@@ -1148,6 +1192,9 @@ class _VerseLinks extends StatefulWidget {
 }
 
 class _VerseLinksState extends State<_VerseLinks> {
+  /// Whether a verse of [book] (1-based) is shown in Greek.
+  bool _greekRow(int book) => widget.ntGreek && book >= 40;
+
   StreamSubscription<RustSignalPack<CrossReferences>>? _sub;
   StreamSubscription<RustSignalPack<ThematicReferences>>? _thematicSub;
   StreamSubscription<RustSignalPack<VerseProphecies>>? _prophecySub;
@@ -1323,6 +1370,9 @@ class _VerseLinksState extends State<_VerseLinks> {
               ..._headerActions(
                 englishOnly: widget.englishOnly,
                 onToggleEnglishOnly: widget.onToggleEnglishOnly,
+                ntGreek: widget.ntGreek,
+                ntSyriac: widget.ntSyriac,
+                onNtGreekChanged: widget.onNtGreekChanged,
                 onClose: widget.onClose,
               ),
             ],
@@ -1357,13 +1407,14 @@ class _VerseLinksState extends State<_VerseLinks> {
                 chapter: widget.chapter,
                 verse: widget.verse,
                 highlightWords: const [],
-                positions: entries.isEmpty
+                positions: entries.isEmpty || _greekRow(widget.book)
                     ? const []
                     : entries[_focused.clamp(0, entries.length - 1)]
                           .sourcePositions,
                 isCurrent: true,
                 englishOnly: widget.englishOnly,
                 syriac: widget.ntSyriac && widget.book >= 40,
+                greek: _greekRow(widget.book),
                 useEnglishBookNames: widget.useEnglishBookNames,
               ),
             ),
@@ -1411,6 +1462,7 @@ class _VerseLinksState extends State<_VerseLinks> {
                           useEnglishBookNames: widget.useEnglishBookNames,
                           englishOnly: widget.englishOnly,
                           ntSyriac: widget.ntSyriac,
+                          ntGreek: widget.ntGreek,
                           onNavigateToPassage: widget.onNavigateToPassage,
                         ),
                       ),
@@ -1482,6 +1534,7 @@ class _VerseLinksState extends State<_VerseLinks> {
             highlightWords: const [],
             englishOnly: widget.englishOnly,
             syriac: widget.ntSyriac && target.book >= 40,
+            greek: _greekRow(target.book),
             useEnglishBookNames: widget.useEnglishBookNames,
             onTap: navigate == null
                 ? null
@@ -1609,9 +1662,10 @@ class _VerseLinksState extends State<_VerseLinks> {
           chapter: entry.chapter,
           verse: entry.verse,
           highlightWords: const [],
-          positions: entry.positions,
+          positions: _greekRow(entry.book) ? const [] : entry.positions,
           englishOnly: widget.englishOnly,
           syriac: widget.ntSyriac && entry.book >= 40,
+          greek: _greekRow(entry.book),
           useEnglishBookNames: widget.useEnglishBookNames,
           onTap: navigate == null
               ? null

@@ -67,6 +67,7 @@ class ProphecyCard extends StatelessWidget {
     required this.useEnglishBookNames,
     required this.englishOnly,
     this.ntSyriac = false,
+    this.ntGreek = false,
     this.onNavigateToPassage,
   });
 
@@ -77,6 +78,9 @@ class ProphecyCard extends StatelessWidget {
 
   /// The reader shows the NT in Syriac script, so NT verse rows do too.
   final bool ntSyriac;
+
+  /// The reader shows the NT in Greek, so NT verse rows do too.
+  final bool ntGreek;
 
   /// Opens a passage: 0-based book index, chapter, verse.
   final void Function(int bookIndex, int chapter, int verse)?
@@ -116,6 +120,7 @@ class ProphecyCard extends StatelessWidget {
     highlightWords: const [],
     englishOnly: englishOnly,
     syriac: ntSyriac && s.book >= 40,
+    greek: ntGreek && s.book >= 40,
     useEnglishBookNames: useEnglishBookNames,
     onTap: _open(s),
   );

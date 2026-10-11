@@ -160,6 +160,12 @@ pub struct GetVerseText {
     pub verse: u8,
     /// When true, return the reader gloss text instead of the Hebrew verse.
     pub english_only: bool,
+    /// When true, return a New Testament verse in Syriac script rather than
+    /// Hebrew. Ignored with `english_only` or `greek`.
+    pub syriac: bool,
+    /// When true, return a New Testament verse in Greek (the TR) rather than
+    /// the Peshitta. Ignored with `english_only`.
+    pub greek: bool,
 }
 
 #[derive(Debug, Serialize, RustSignal)]
@@ -169,6 +175,9 @@ pub struct VerseText {
     pub verse: u8,
     /// Mirrors the request mode so broadcast listeners can ignore mismatches.
     pub english_only: bool,
+    /// Mirrors the request's `greek`, where it applied: true for a New
+    /// Testament verse returned in Greek.
+    pub greek: bool,
     pub text: String,
     /// The verse's voiced reading (learner romanization, cantillation ignored).
     pub translit: String,
