@@ -29,6 +29,7 @@ import 'widgets/markdown_note.dart';
 import 'widgets/name_details.dart';
 import 'widgets/bible_timeline_page.dart';
 import 'widgets/places_page.dart';
+import 'widgets/archaeology_page.dart';
 import 'widgets/prophecy_page.dart';
 import 'widgets/study_workspace_panel.dart';
 import 'widgets/study_passage_editor.dart';
@@ -210,6 +211,7 @@ enum _ReaderBarAction {
   crossReferences,
   places,
   people,
+  archaeology,
   text,
   ntText,
   interlinear,
@@ -225,6 +227,7 @@ enum _ReaderMenuAction {
   places,
   timeline,
   prophecy,
+  archaeology,
   tutor,
   memorise,
   reportIssue,
@@ -1218,6 +1221,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _ReaderMenuAction.places,
     _ReaderMenuAction.timeline,
     _ReaderMenuAction.prophecy,
+    _ReaderMenuAction.archaeology,
     _ReaderMenuAction.tutor,
     _ReaderMenuAction.memorise,
     if (_activeReader?._adminMode ?? false) _ReaderMenuAction.reportIssue,
@@ -1241,6 +1245,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         _ReaderMenuAction.prophecy => (
           Icons.history_edu_outlined,
           'Bible prophecy',
+        ),
+        _ReaderMenuAction.archaeology => (
+          Icons.account_balance_outlined,
+          'Bible archaeology',
         ),
         _ReaderMenuAction.tutor => (Icons.school_outlined, 'Tutor'),
         _ReaderMenuAction.memorise => (Icons.psychology_outlined, 'Memorise'),
@@ -2116,6 +2124,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     _ReaderBarAction.crossReferences,
     _ReaderBarAction.places,
     _ReaderBarAction.people,
+    _ReaderBarAction.archaeology,
   ];
 
   void _runBarAction(_ReaderBarAction action) => switch (action) {
@@ -2126,6 +2135,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     ),
     _ReaderBarAction.places => _showChapterPlaces(),
     _ReaderBarAction.people => _showChapterPeople(),
+    _ReaderBarAction.archaeology => _showChapterArtifacts(),
     _ReaderBarAction.text => _cycleReaderText(),
     _ReaderBarAction.ntText => _toggleNtGreek(),
     _ReaderBarAction.interlinear => _toggleInterlinear(),
@@ -2152,6 +2162,12 @@ class _ReaderSessionState extends State<_ReaderSession>
       icon: const Icon(Icons.people_outline),
       onPressed: () => _runBarAction(action),
       tooltip: 'People in this chapter',
+    ),
+    _ReaderBarAction.archaeology => IconButton(
+      key: const ValueKey('reader-archaeology'),
+      icon: const Icon(Icons.account_balance_outlined),
+      onPressed: () => _runBarAction(action),
+      tooltip: 'Archaeology in this chapter',
     ),
     _ReaderBarAction.text => IconButton(
       key: const ValueKey('reader-text-toggle'),
@@ -2232,6 +2248,9 @@ class _ReaderSessionState extends State<_ReaderSession>
       ],
       _ReaderBarAction.places => [item(Icons.map_outlined, 'Places')],
       _ReaderBarAction.people => [item(Icons.people_outline, 'People')],
+      _ReaderBarAction.archaeology => [
+        item(Icons.account_balance_outlined, 'Archaeology'),
+      ],
       _ReaderBarAction.text => [
         for (final text in ReaderText.values)
           CheckedPopupMenuItem(
@@ -3835,6 +3854,30 @@ class _ReaderSessionState extends State<_ReaderSession>
     );
   }
 
+  /// The archaeological finds bearing on the chapter at the top of the
+  /// reader.
+  Future<void> _showChapterArtifacts() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.sizeOf(sheetContext).height * 0.82,
+        child: ChapterArtifactsSheet(
+          bookIndex: _bookIndex,
+          chapter: _chapter,
+          useEnglishBookNames: _englishBookNames,
+          ntSyriac: _ntSyriac,
+          ntGreek: _ntGreek,
+          onNtGreekChanged: _setNtGreek,
+          bookmarks: _nameBookmarks,
+          onNavigateToPassage: (book, chapter, verse) =>
+              _navigateTo(book, chapter, verse: verse),
+        ),
+      ),
+    );
+  }
+
   Future<void> _showStudyWorkspaceSheet() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -5215,6 +5258,17 @@ class _ReaderSessionState extends State<_ReaderSession>
           useEnglishBookNames: _englishBookNames,
           ntSyriac: _ntSyriac,
           ntGreek: _ntGreek,
+          onNavigateToPassage: (book, chapter, verse) =>
+              _navigateTo(book, chapter, verse: verse),
+        );
+      case _ReaderMenuAction.archaeology:
+        ArchaeologyPage.open(
+          context,
+          useEnglishBookNames: _englishBookNames,
+          ntSyriac: _ntSyriac,
+          ntGreek: _ntGreek,
+          onNtGreekChanged: _setNtGreek,
+          bookmarks: _nameBookmarks,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
         );

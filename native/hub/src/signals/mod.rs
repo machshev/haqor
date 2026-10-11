@@ -2049,3 +2049,106 @@ pub struct GreekWordInfo {
     /// most linked first.
     pub syriac_equivalents: Vec<SyriacEquivalentEntry>,
 }
+
+/// Ask for every archaeological find (see `haqor_core::archaeology`).
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetArtifacts {
+    pub request_id: u32,
+}
+
+/// Reply to [`GetArtifacts`]: every find, oldest first, and the works their
+/// links cite.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct Artifacts {
+    pub request_id: u32,
+    pub entries: Vec<ArtifactEntry>,
+    pub sources: Vec<ArtifactSourceEntry>,
+}
+
+/// Ask for the finds bearing on a chapter.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetChapterArtifacts {
+    pub request_id: u32,
+    pub book: u8,
+    pub chapter: u8,
+}
+
+/// Reply to [`GetChapterArtifacts`]: those with a passage in the chapter
+/// first, by verse, then those naming someone it names.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct ChapterArtifacts {
+    pub request_id: u32,
+    pub book: u8,
+    pub chapter: u8,
+    pub entries: Vec<ChapterArtifactEntry>,
+    pub sources: Vec<ArtifactSourceEntry>,
+}
+
+/// A find bearing on a chapter.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ChapterArtifactEntry {
+    pub artifact: ArtifactEntry,
+    /// The chapter's verses its passages cover; empty if it is here only for
+    /// the people it names.
+    pub verses: Vec<u8>,
+    /// The people it names whom the chapter names.
+    pub people: Vec<NameSummaryEntry>,
+}
+
+/// An archaeological find.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ArtifactEntry {
+    pub id: u32,
+    /// The curation's id (`mesha-stele`).
+    pub key: String,
+    pub name: String,
+    pub other_names: Vec<String>,
+    /// stele, inscription, relief, prism, cylinder, tablet, seal, bulla,
+    /// ostracon, papyrus, amulet, ossuary, manuscript, temple or site.
+    pub kind: String,
+    /// "c. 840 BC", and the year to sort by (negative for BC).
+    pub date: String,
+    pub year: i32,
+    pub script: String,
+    /// Where and when it was found; `found_year` 0 where unknown, and
+    /// `found_place` the site's TIPNR place, with id 0 where there is none.
+    pub found_site: String,
+    pub found_year: i32,
+    pub found_place: NameSummaryEntry,
+    /// Where it is now; empty where not confirmed.
+    pub museum: String,
+    /// Its Wikipedia article's title and Wikidata id; empty where none.
+    pub wikipedia: String,
+    pub wikidata: String,
+    pub summary: String,
+    pub attestations: Vec<ArtifactAttestationEntry>,
+    pub passages: Vec<ArtifactPassageEntry>,
+}
+
+/// A person a find names: `strength` is `strong`, `reasonable` or
+/// `possible`, `how` a sentence on how it matches, `source` an
+/// [`ArtifactSourceEntry::id`].
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ArtifactAttestationEntry {
+    pub person: NameSummaryEntry,
+    pub strength: String,
+    pub how: String,
+    pub source: String,
+}
+
+/// A passage a find bears on.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ArtifactPassageEntry {
+    pub passage: PassageSpan,
+    pub strength: String,
+    pub how: String,
+    pub source: String,
+}
+
+/// A work a find's links cite.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ArtifactSourceEntry {
+    pub id: String,
+    pub citation: String,
+    pub url: String,
+}

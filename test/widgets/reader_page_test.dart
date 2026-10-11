@@ -1172,7 +1172,7 @@ void main() {
   testWidgets('shows only the reader tiles that fit their minimum width', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);

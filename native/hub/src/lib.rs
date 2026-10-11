@@ -3,6 +3,7 @@
 
 mod functions;
 mod memorise;
+mod archaeology;
 mod prophecy;
 mod signals;
 
@@ -230,6 +231,8 @@ async fn main() {
         get_thematic_overview,
         prophecy::get_verse_prophecies,
         prophecy::get_prophecies,
+        archaeology::get_artifacts,
+        archaeology::get_chapter_artifacts,
         get_syntax_trees,
         get_name_entity,
         get_chapter_places,
