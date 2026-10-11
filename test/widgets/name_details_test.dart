@@ -547,7 +547,9 @@ void main() {
     expect(find.text('A royal seal impression.'), findsNothing);
   });
 
-  testWidgets('a place lists the finds found there', (tester) async {
+  testWidgets('a place lists the finds found there or naming it', (
+    tester,
+  ) async {
     final requests = <GetNameEntity>[];
     await tester.pumpWidget(
       MaterialApp(home: NameDetailsPage(id: 6, sendRequest: requests.add)),
@@ -572,15 +574,21 @@ void main() {
           wikipedia: '',
           wikidata: '',
           summary: 'Mesha of Moab.',
-          attestations: const [],
+          attestations: [
+            ArtifactAttestationEntry(
+              person: _summary(6, 'Dibon', kind: 'place'),
+              strength: 'strong',
+              how: "Named as Mesha's city.",
+              source: 's',
+            ),
+          ],
           passages: const [],
         ),
       ],
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Finds from here'), 200);
-    expect(find.text('Attested by'), findsNothing);
-    expect(find.text('c. 840 BC'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Attested by'), 200);
+    expect(find.text("c. 840 BC · Named as Mesha's city."), findsOneWidget);
   });
 
   testWidgets('a timeline tab draws and lists the events they are in', (

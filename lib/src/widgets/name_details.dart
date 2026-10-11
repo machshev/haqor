@@ -605,11 +605,11 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
           ),
         ]),
       if (info.artifacts.isNotEmpty)
-        section(summary.kind == 'place' ? 'Finds from here' : 'Attested by', [
+        section('Attested by', [
           for (final artifact in info.artifacts)
             _ArtifactRow(
               artifact: artifact,
-              person: summary.kind == 'place' ? null : summary.id,
+              entity: summary.id,
               onOpen: () => _openArtifact(info, artifact),
             ),
         ]),
@@ -955,22 +955,22 @@ String _viewLabel(PlaceImageEntry view) =>
 class _ArtifactRow extends StatelessWidget {
   const _ArtifactRow({
     required this.artifact,
-    this.person,
+    required this.entity,
     required this.onOpen,
   });
 
   final ArtifactEntry artifact;
 
-  /// The person whose page it is on, for the link naming them; null on a
-  /// place's page.
-  final int? person;
+  /// The person or place whose page it is on, for the link naming them; a
+  /// find from a place need not name it.
+  final int entity;
   final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
-    final link = person == null
-        ? null
-        : artifact.attestations.where((t) => t.person.id == person).firstOrNull;
+    final link = artifact.attestations
+        .where((t) => t.person.id == entity)
+        .firstOrNull;
     return ListTile(
       contentPadding: EdgeInsets.zero,
       dense: true,
