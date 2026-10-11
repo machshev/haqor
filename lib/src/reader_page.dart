@@ -251,6 +251,7 @@ enum _VerseMenuAction {
 enum _WordMenuAction {
   open,
   openNewPane,
+  searchNear,
   bookmarkRoot,
   bookmarkForm,
   addHeading,
@@ -630,6 +631,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       setState(() => _activeTabId = tab.id);
       _requestCrossReferences(bookIndex, chapter, verse);
     },
+    proximity: _proximity,
     onWordInfoRequested: (selected, {newPane = false}) {
       setState(() => _activeTabId = tab.id);
       _selectInspectorWord(selected, newPane: newPane);
@@ -1687,6 +1689,7 @@ class _ReaderSession extends StatefulWidget {
     required this.onWordInfoRequested,
     required this.onCrossReferencesRequested,
     required this.studyStore,
+    required this.proximity,
     this.sendChapterRequest,
     this.sendSyntaxTreesRequest,
     this.sendTranslationRequest,
@@ -1705,6 +1708,10 @@ class _ReaderSession extends StatefulWidget {
   /// Shows a word in the active word pane, or in a new one beside it.
   final void Function(_SelectedWord selected, {bool newPane})
   onWordInfoRequested;
+
+  /// The open word panes' proximity search, which the word menu can open a
+  /// word into.
+  final WordProximity proximity;
 
   /// A verse's cross references (0-based book), or with no verse the overview
   /// of a chapter: docked beside the reader where there is room.
@@ -4992,6 +4999,15 @@ class _ReaderSessionState extends State<_ReaderSession>
             title: Text('Open in new word pane'),
           ),
         ),
+        // Only words of one kind, Greek or not, are searched together.
+        if (widget.proximity.sourcesOf(greek: _isGreek(bookIndex)).isNotEmpty)
+          const PopupMenuItem(
+            value: _WordMenuAction.searchNear,
+            child: ListTile(
+              leading: Icon(Icons.join_inner),
+              title: Text(kProximityMenuLabel),
+            ),
+          ),
         const PopupMenuDivider(),
         if (root.isNotEmpty)
           PopupMenuItem(
@@ -5056,6 +5072,10 @@ class _ReaderSessionState extends State<_ReaderSession>
         await _addStudyTimelineEntryAt(bookIndex, chapter, verse, span: false);
       case _WordMenuAction.open:
       case _WordMenuAction.openNewPane:
+      case _WordMenuAction.searchNear:
+        if (action == _WordMenuAction.searchNear) {
+          widget.proximity.enabled = true;
+        }
         _showWordInfo(
           word,
           bookIndex,
@@ -5064,7 +5084,7 @@ class _ReaderSessionState extends State<_ReaderSession>
           readerGloss: readerGloss,
           position: position,
           root: root,
-          newPane: action == _WordMenuAction.openNewPane,
+          newPane: action != _WordMenuAction.open,
         );
       case _WordMenuAction.bookmarkRoot:
       case _WordMenuAction.bookmarkForm:

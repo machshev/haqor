@@ -1,5 +1,18 @@
 import 'package:flutter/widgets.dart';
 
+/// The word menu's entry that opens a word into a proximity search.
+const kProximityMenuLabel = 'Search near open words';
+
+/// The occurrence header's proximity toggle, while it is off.
+const kProximityToggleTooltip =
+    'Find passages where this word stands near other words';
+
+/// Shown by a proximity search with no other word open to combine with.
+const kProximityAddWordHint =
+    'Right-click or long-press another word in the reader and choose '
+    '\u201c$kProximityMenuLabel\u201d to find passages where they stand '
+    'together.';
+
 /// One verse in which a word matched, with what matched there so a result
 /// row can highlight it. Books are 1-based, as in the occurrence signals.
 class ProximityHit {

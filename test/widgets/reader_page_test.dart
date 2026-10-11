@@ -19,6 +19,7 @@ import 'package:haqor/src/widgets/verse_row.dart';
 import 'package:haqor/src/widgets/study_workspace_panel.dart';
 import 'package:haqor/src/widgets/timeline_chart.dart' show TimelinePage;
 import 'package:haqor/src/widgets/word_info_sheet.dart';
+import 'package:haqor/src/word_proximity.dart';
 
 import '../syntax_tree_test.dart' show node;
 
@@ -2415,6 +2416,59 @@ void main() {
     expect(find.text('Remove root bookmark'), findsOneWidget);
     expect(find.text('Bookmark this form'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('word menu opens a word into a proximity search', (tester) async {
+    tester.view.physicalSize = const Size(1000, 744);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({'book': 0, 'chapter': 1});
+    final rust = _FakeRust();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleReaderPage(
+          sendChapterRequest: rust.onRequest,
+          sendStudyStateRequest: rust.onStudyRequest,
+          saveStudyState: rust.onStudySave,
+          sendWordInfoRequest: rust.onWordInfo,
+          sendWordOccurrencesRequest: rust.onOccurrences,
+          sendVerseTextsRequest: rust.onVerseTexts,
+        ),
+      ),
+    );
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+
+    Future<void> settle() async {
+      await tester.pump();
+      for (var i = 0; i < 20; i++) {
+        rust.deliverAll();
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    VerseRow row() => tester.widget<VerseRow>(find.byType(VerseRow).first);
+    WordInfoSheet current() =>
+        tester.widget<WordInfoSheet>(find.byType(WordInfoSheet));
+
+    // With no word open there is nothing to search near.
+    row().onWordMenu!('דבר', null, 4, 'דבר', const Offset(300, 200));
+    await settle();
+    expect(find.text(kProximityMenuLabel), findsNothing);
+    await tester.tapAt(const Offset(5, 5));
+    await settle();
+
+    row().onWordTap('מלה', null, 3, 'מלל');
+    await settle();
+    row().onWordMenu!('דבר', null, 4, 'דבר', const Offset(300, 200));
+    await settle();
+    await tester.tap(find.text(kProximityMenuLabel));
+    await settle();
+    expect(current().word, 'דבר');
+    expect(find.byType(WordInfoSheet, skipOffstage: false), findsNWidgets(2));
+    expect(current().proximity!.enabled, isTrue);
   });
 }
 

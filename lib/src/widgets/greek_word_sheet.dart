@@ -156,7 +156,13 @@ class _GreekWordSheetState extends State<GreekWordSheet>
   void initState() {
     super.initState();
     // Made at once: a pane replaced before its word arrives disposes it.
-    _tabController = TabController(length: 2, vsync: this);
+    // A running proximity search is read in the Occurrences tab, so a word
+    // opened during one goes straight there.
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.proximity?.enabled ?? false ? 1 : 0,
+    );
     _sub = GreekWordInfo.rustSignalStream.listen((pack) {
       if (pack.message.requestId != _requestId || !mounted) return;
       setState(() {
@@ -956,6 +962,8 @@ class _GreekWordSheetState extends State<GreekWordSheet>
               Row(
                 children: [
                   Flexible(
+                    // The filter is worth more room than the count.
+                    flex: 2,
                     child: ActionChip(
                       avatar: const Icon(Icons.filter_list, size: 18),
                       label: Text(
@@ -1031,7 +1039,9 @@ class _GreekWordSheetState extends State<GreekWordSheet>
                       proximity.loading
                           ? 'Gathering the other words\u2019 occurrences…'
                           : proximity.noPartners
-                          ? 'Include another Greek word to search with.'
+                          ? _partners.isEmpty
+                                ? kProximityAddWordHint
+                                : 'Include another Greek word to search with.'
                           : 'No passages hold all these words.',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(
@@ -1250,9 +1260,10 @@ class _GreekWordSheetState extends State<GreekWordSheet>
       if (source.id != widget.proximityId) source,
   ];
 
-  /// A proximity search can only be offered with another Greek pane open.
+  /// A docked pane always offers a proximity search, so it can be found
+  /// before a second Greek word is open; with none, it says how to add one.
   bool get _proximityAvailable =>
-      widget.proximityId != null && _partners.isNotEmpty;
+      widget.proximity != null && widget.proximityId != null;
 
   /// The combined results when the proximity search is on: this word's list
   /// against every other Greek pane included. Null when it is off.
@@ -1292,9 +1303,7 @@ class _GreekWordSheetState extends State<GreekWordSheet>
   Widget _proximityToggle() {
     final enabled = widget.proximity!.enabled;
     return IconButton(
-      tooltip: enabled
-          ? 'Show only this word'
-          : 'Find passages with the other open words',
+      tooltip: enabled ? 'Show only this word' : kProximityToggleTooltip,
       isSelected: enabled,
       icon: const Icon(Icons.join_inner, size: 20),
       onPressed: () => widget.proximity!.enabled = !enabled,

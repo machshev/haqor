@@ -818,7 +818,7 @@ void main() {
     ], proximity: proximity);
     expect(_visibleRefs(tester), ['Genesis 1:1', 'Genesis 1:5', 'Genesis 2:3']);
 
-    await tester.tap(find.byTooltip('Find passages with the other open words'));
+    await tester.tap(find.byTooltip(kProximityToggleTooltip));
     await tester.pumpAndSettle();
     rust.deliverVerseTexts();
     await tester.pumpAndSettle();
@@ -868,7 +868,7 @@ void main() {
     expect(_visibleRefs(tester), ['Genesis 1:1', 'Genesis 1:5', 'Genesis 2:3']);
   });
 
-  testWidgets('proximity is only offered with another word open', (
+  testWidgets('proximity says how to add a word when none other is open', (
     tester,
   ) async {
     final proximity = WordProximity();
@@ -876,12 +876,12 @@ void main() {
     await _pumpOccurrences(tester, [
       _occurrence(book: 1, chapter: 1, verse: 1),
     ], proximity: proximity);
-
-    expect(
-      find.byTooltip('Find passages with the other open words'),
-      findsNothing,
-    );
     expect(proximity.sources.single.id, 'self');
+
+    await tester.tap(find.byTooltip(kProximityToggleTooltip));
+    await tester.pumpAndSettle();
+    expect(proximity.enabled, isTrue);
+    expect(find.text(kProximityAddWordHint), findsOneWidget);
   });
 
   testWidgets('an NT word lists its root across the canon, as an OT word does', (

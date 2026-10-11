@@ -243,7 +243,7 @@ void main() {
     await tester.tap(
       find.descendant(
         of: first,
-        matching: find.byTooltip('Find passages with the other open words'),
+        matching: find.byTooltip(kProximityToggleTooltip),
       ),
     );
     await tester.pumpAndSettle();

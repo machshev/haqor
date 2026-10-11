@@ -272,7 +272,13 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    // A running proximity search is read in the Occurrences tab, so a word
+    // opened during one goes straight there.
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.proximity?.enabled ?? false ? 1 : 0,
+    );
     _tabController.animation?.addListener(_onTabAnimation);
     _selectedRoot = widget.initialRoot;
     _sub = WordInfo.rustSignalStream.listen(_onWordInfo);
@@ -1599,6 +1605,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
               Row(
                 children: [
                   Flexible(
+                    // The filter is worth more room than the count.
+                    flex: 2,
                     child: ActionChip(
                       avatar: const Icon(Icons.filter_list, size: 18),
                       label: Text(
@@ -1856,14 +1864,15 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         ];
       });
 
-  /// A proximity search can only be offered with another word pane open.
-  bool get _proximityAvailable {
-    final proximity = widget.proximity;
-    final id = widget.proximityId;
-    return proximity != null &&
-        id != null &&
-        proximity.sourcesOf(greek: false).any((source) => source.id != id);
-  }
+  /// A docked pane always offers a proximity search, so it can be found
+  /// before a second word is open; with none, it says how to add one.
+  bool get _proximityAvailable =>
+      widget.proximity != null && widget.proximityId != null;
+
+  /// Whether another Hebrew or Aramaic word pane is open to search with.
+  bool get _hasProximityPartners => widget.proximity!
+      .sourcesOf(greek: false)
+      .any((source) => source.id != widget.proximityId);
 
   /// The combined results when the proximity search is on: this word's list
   /// against every other included pane. Null when it is off.
@@ -1933,9 +1942,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   Widget _proximityToggle() {
     final enabled = widget.proximity!.enabled;
     return IconButton(
-      tooltip: enabled
-          ? 'Show only this word'
-          : 'Find passages with the other open words',
+      tooltip: enabled ? 'Show only this word' : kProximityToggleTooltip,
       isSelected: enabled,
       icon: const Icon(Icons.join_inner, size: 20),
       onPressed: () => widget.proximity!.enabled = !enabled,
@@ -2011,7 +2018,9 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         padding: const EdgeInsets.all(24),
         child: Text(
           result.noPartners
-              ? 'Include another open word to find passages with it'
+              ? _hasProximityPartners
+                    ? 'Include another open word to find passages with it'
+                    : kProximityAddWordHint
               : 'These words never stand this close together',
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyMedium?.copyWith(
