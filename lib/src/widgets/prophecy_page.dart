@@ -5,8 +5,8 @@ import 'package:rinf/rinf.dart';
 
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
+import 'multi_select_chip.dart';
 import 'prophecy_card.dart';
-import 'side_scroll.dart';
 import 'verse_text_cache.dart';
 
 /// The prophecies of the whole Bible, grouped by theme: the promises
@@ -81,8 +81,11 @@ class _ProphecyPageState extends State<ProphecyPage> {
 
   String _query = '';
 
-  /// A theme, empty for all, or a pattern as `pattern:<id>`.
-  String _theme = '';
+  /// The themes shown, none for all.
+  Set<String> _themes = {};
+
+  /// The pattern shown in place of the themes, if one is.
+  int? _patternId;
   ProphecyKinds _kinds = ProphecyKinds.all;
 
   /// A stage, empty for any.
@@ -135,9 +138,7 @@ class _ProphecyPageState extends State<ProphecyPage> {
 
   /// The pattern chosen in place of a theme, if one is.
   ProphecyPatternEntry? get _pattern {
-    if (!_theme.startsWith('pattern:')) return null;
-    final id = int.tryParse(_theme.substring('pattern:'.length));
-    return _patterns.where((p) => p.id == id).firstOrNull;
+    return _patterns.where((p) => p.id == _patternId).firstOrNull;
   }
 
   /// Every pattern any prophecy is part of, in order.
@@ -153,7 +154,7 @@ class _ProphecyPageState extends State<ProphecyPage> {
     final pattern = _pattern;
     if (pattern != null) {
       if (!pattern.members.any((m) => m.prophecyId == p.id)) return false;
-    } else if (_theme.isNotEmpty && p.theme != _theme) {
+    } else if (_themes.isNotEmpty && !_themes.contains(p.theme)) {
       return false;
     }
     if (_stage.isNotEmpty && !p.stages.contains(_stage)) return false;
@@ -296,6 +297,47 @@ class _ProphecyPageState extends State<ProphecyPage> {
     );
   }
 
+  /// The pattern filter: none, or one pattern, whose steps the list shows
+  /// in place of the themes.
+  Widget _patternButton() {
+    final pattern = _pattern;
+    final theme = Theme.of(context);
+    return PopupMenuButton<int>(
+      key: const ValueKey('prophecy-pattern'),
+      tooltip: 'Patterns',
+      onSelected: (id) => setState(() {
+        _patternId = id < 0 ? null : id;
+        _themes = {};
+      }),
+      itemBuilder: (_) => [
+        CheckedPopupMenuItem(
+          value: -1,
+          checked: pattern == null,
+          child: const Text('No pattern'),
+        ),
+        const PopupMenuDivider(),
+        for (final p in _patterns)
+          CheckedPopupMenuItem(
+            value: p.id,
+            checked: pattern?.id == p.id,
+            child: Text(p.title),
+          ),
+      ],
+      // The menu opens on a tap; the chip only shows the choice.
+      child: Chip(
+        avatar: const Icon(Icons.repeat, size: 18),
+        label: Text(pattern?.title ?? 'Patterns'),
+        backgroundColor: pattern == null
+            ? null
+            : theme.colorScheme.secondaryContainer,
+        onDeleted: pattern == null
+            ? null
+            : () => setState(() => _patternId = null),
+        deleteButtonTooltipMessage: 'No pattern',
+      ),
+    );
+  }
+
   Widget _controls(BuildContext context, int count) {
     final theme = Theme.of(context);
     return Column(
@@ -314,31 +356,28 @@ class _ProphecyPageState extends State<ProphecyPage> {
             onChanged: (query) => setState(() => _query = query),
           ),
         ),
-        SideScroll(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-          child: Row(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
             children: [
-              for (final (value, label) in [
-                ('', 'All themes'),
-                for (final t in prophecyThemes) (t, prophecyThemeLabel(t)),
-              ]) ...[
-                ChoiceChip(
-                  label: Text(label),
-                  selected: _theme == value,
-                  onSelected: (_) => setState(() => _theme = value),
-                ),
-                const SizedBox(width: 6),
-              ],
-              for (final pattern in _patterns) ...[
-                ChoiceChip(
-                  avatar: const Icon(Icons.repeat, size: 16),
-                  label: Text(pattern.title),
-                  selected: _theme == 'pattern:${pattern.id}',
-                  onSelected: (_) =>
-                      setState(() => _theme = 'pattern:${pattern.id}'),
-                ),
-                const SizedBox(width: 6),
-              ],
+              MultiSelectChip<String>(
+                key: const ValueKey('prophecy-themes'),
+                icon: Icons.category_outlined,
+                options: [
+                  for (final t in prophecyThemes)
+                    MultiSelectOption(t, prophecyThemeLabel(t)),
+                ],
+                selected: _themes,
+                onChanged: (themes) => setState(() {
+                  _themes = themes;
+                  _patternId = null;
+                }),
+                allLabel: 'All themes',
+                plural: (n) => '$n themes',
+              ),
+              if (_patterns.isNotEmpty) _patternButton(),
             ],
           ),
         ),

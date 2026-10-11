@@ -216,16 +216,20 @@ void main() {
     final map = tester.widget<PlaceMap>(find.byType(PlaceMap));
     expect(map.pins.map((p) => p.label), ['Galilee', 'Capernaum', 'Jordan']);
 
-    await tester.ensureVisible(find.text('Water'));
-    await tester.tap(find.text('Water'));
+    await tester.tap(find.byKey(const ValueKey('places-kinds')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(CheckboxMenuButton, 'Water'));
     await tester.pumpAndSettle();
     expect(_listed(tester), ['Jordan']);
   });
 
   testWidgets('the most named come first when asked', (tester) async {
     await _pumpPlaces(tester);
-    await tester.ensureVisible(find.text('Settlements'));
-    await tester.tap(find.text('Settlements'));
+    await tester.tap(find.byKey(const ValueKey('places-kinds')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(CheckboxMenuButton, 'Settlements'));
+    await tester.pumpAndSettle();
+    await tester.tapAt(Offset.zero);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('places-order')));
     await tester.pumpAndSettle();

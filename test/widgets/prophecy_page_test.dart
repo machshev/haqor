@@ -195,16 +195,20 @@ void main() {
     _deliver(requests.single, _prophecies);
     await tester.pumpAndSettle();
 
-    // The theme chips scroll sideways.
-    await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'The kingdom'));
+    // The themes menu ticks any number of themes, and stays open.
+    await tester.tap(find.byKey(const ValueKey('prophecy-themes')));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'The kingdom'));
+    await tester.tap(find.widgetWithText(CheckboxMenuButton, 'The kingdom'));
     await tester.pumpAndSettle();
     expect(find.text('1 prophecy'), findsOneWidget);
     expect(find.text('The stone cut out without hands'), findsOneWidget);
-    await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'All themes'));
+    await tester.tap(find.widgetWithText(CheckboxMenuButton, 'The nations'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'All themes'));
+    expect(find.text('4 prophecies'), findsOneWidget);
+    expect(find.text('2 themes'), findsOneWidget);
+    await tester.tap(find.widgetWithText(CheckboxMenuButton, 'All themes'));
+    await tester.pumpAndSettle();
+    await tester.tapAt(Offset.zero);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('General'));
@@ -298,10 +302,14 @@ void main() {
     _deliver(requests.single, _prophecies);
     await tester.pumpAndSettle();
 
-    final chip = find.widgetWithText(ChoiceChip, 'Invasions from the north');
-    await tester.ensureVisible(chip);
+    await tester.tap(find.byKey(const ValueKey('prophecy-pattern')));
     await tester.pumpAndSettle();
-    await tester.tap(chip);
+    await tester.tap(
+      find.widgetWithText(
+        CheckedPopupMenuItem<int>,
+        'Invasions from the north',
+      ),
+    );
     await tester.pumpAndSettle();
     // Gog is two steps: at the return and after the thousand years.
     expect(find.text('2 prophecies'), findsOneWidget);

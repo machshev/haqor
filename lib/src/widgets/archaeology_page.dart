@@ -6,8 +6,8 @@ import 'package:rinf/rinf.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../external_link.dart';
+import 'multi_select_chip.dart';
 import 'name_details.dart';
-import 'side_scroll.dart';
 
 /// The eras the index groups finds by, each the years it starts at (the
 /// first from the beginning), in order.
@@ -315,8 +315,8 @@ class _ArchaeologyPageState extends State<ArchaeologyPage> {
 
   String _query = '';
 
-  /// A kind of find, empty for all.
-  String _kind = '';
+  /// The kinds of find shown, none for all.
+  Set<String> _kindsShown = {};
 
   /// Only finds with a strong link.
   bool _strongOnly = false;
@@ -357,7 +357,7 @@ class _ArchaeologyPageState extends State<ArchaeologyPage> {
   }
 
   bool _matches(ArtifactEntry a) {
-    if (_kind.isNotEmpty && a.kind != _kind) return false;
+    if (_kindsShown.isNotEmpty && !_kindsShown.contains(a.kind)) return false;
     if (_strongOnly && strongestOf(a) != 'strong') return false;
     final query = _query.trim().toLowerCase();
     if (query.isEmpty) return true;
@@ -501,9 +501,11 @@ class _ArchaeologyPageState extends State<ArchaeologyPage> {
             onChanged: (query) => setState(() => _query = query),
           ),
         ),
-        SideScroll(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-          child: Row(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
             children: [
               FilterChip(
                 key: const ValueKey('artifact-strong-only'),
@@ -511,18 +513,18 @@ class _ArchaeologyPageState extends State<ArchaeologyPage> {
                 selected: _strongOnly,
                 onSelected: (on) => setState(() => _strongOnly = on),
               ),
-              const SizedBox(width: 12),
-              for (final (value, label) in [
-                ('', 'All kinds'),
-                for (final k in _kinds(all)) (k, kindLabel(k)),
-              ]) ...[
-                ChoiceChip(
-                  label: Text(label),
-                  selected: _kind == value,
-                  onSelected: (_) => setState(() => _kind = value),
-                ),
-                const SizedBox(width: 6),
-              ],
+              MultiSelectChip<String>(
+                key: const ValueKey('artifact-kinds'),
+                icon: Icons.category_outlined,
+                options: [
+                  for (final k in _kinds(all))
+                    MultiSelectOption(k, kindLabel(k)),
+                ],
+                selected: _kindsShown,
+                onChanged: (kinds) => setState(() => _kindsShown = kinds),
+                allLabel: 'All kinds',
+                plural: (n) => '$n kinds',
+              ),
             ],
           ),
         ),

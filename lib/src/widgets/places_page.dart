@@ -5,14 +5,13 @@ import 'package:rinf/rinf.dart';
 
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
+import 'multi_select_chip.dart';
 import 'name_details.dart';
 import 'place_map.dart';
-import 'side_scroll.dart';
 
 /// The kinds of place the gazetteer narrows to, each gathering OpenBible.info's
 /// finer kinds.
 enum PlaceKindFilter {
-  all('All'),
   settlements('Settlements'),
   regions('Regions'),
   water('Water'),
@@ -57,8 +56,6 @@ enum PlaceKindFilter {
     'valley' => valleys,
     _ => other,
   };
-
-  bool matches(String kind) => this == all || of(kind) == this;
 }
 
 /// How the gazetteer orders its places.
@@ -159,7 +156,9 @@ class _PlacesPageState extends State<PlacesPage> {
   final _search = TextEditingController();
   String _query = '';
   int? _region;
-  PlaceKindFilter _kind = PlaceKindFilter.all;
+
+  /// The kinds of place shown, none for all.
+  Set<PlaceKindFilter> _kinds = {};
   PlaceOrder _order = PlaceOrder.name;
 
   /// The journey shown in place of the list of places, if any.
@@ -232,7 +231,8 @@ class _PlacesPageState extends State<PlacesPage> {
     final query = placeSearchKey(_query);
     final shown = [
       for (final p in places.places)
-        if (_kind.matches(p.location.kind) &&
+        if ((_kinds.isEmpty ||
+                _kinds.contains(PlaceKindFilter.of(p.location.kind))) &&
             (_region == null || p.regions.contains(_region)) &&
             (query.isEmpty || _keys[p.place.id]!.any((k) => k.contains(query))))
           p,
@@ -281,16 +281,16 @@ class _PlacesPageState extends State<PlacesPage> {
   List<MapPin> _pins(Places places, List<PlaceListEntry> shown) {
     final region = _region;
     return [
-      if (region != null && _kind != PlaceKindFilter.regions)
+      if (region != null && !_kinds.contains(PlaceKindFilter.regions))
         for (final p in places.places)
           if (p.place.id == region)
             placePin(p.location, label: p.place.name, id: p.place.id),
       for (final p in shown)
-        if (_kind == PlaceKindFilter.regions ||
+        if (_kinds.contains(PlaceKindFilter.regions) ||
             PlaceKindFilter.of(p.location.kind) != PlaceKindFilter.regions)
           // Among all kinds, the seas' outlines would cover the map: a
           // place's ground is drawn once its kind is chosen.
-          _kind == PlaceKindFilter.all
+          _kinds.isEmpty
               ? placePin(
                   PlaceLocationEntry(
                     latitude: p.location.latitude,
@@ -598,24 +598,28 @@ class _PlacesPageState extends State<PlacesPage> {
             onChanged: (text) => setState(() => _query = text),
           ),
         ),
-        SideScroll(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-          child: Row(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
             children: [
               _journeyButton(),
               // A journey's stops are its own; the filters are for places.
               if (journey == null) ...[
-                const SizedBox(width: 8),
                 _regionButton(places),
-                const SizedBox(width: 8),
-                for (final kind in PlaceKindFilter.values) ...[
-                  ChoiceChip(
-                    label: Text(kind.label),
-                    selected: _kind == kind,
-                    onSelected: (_) => setState(() => _kind = kind),
-                  ),
-                  const SizedBox(width: 6),
-                ],
+                MultiSelectChip<PlaceKindFilter>(
+                  key: const ValueKey('places-kinds'),
+                  icon: Icons.category_outlined,
+                  options: [
+                    for (final kind in PlaceKindFilter.values)
+                      MultiSelectOption(kind, kind.label),
+                  ],
+                  selected: _kinds,
+                  onChanged: (kinds) => setState(() => _kinds = kinds),
+                  allLabel: 'All kinds',
+                  plural: (n) => '$n kinds',
+                ),
               ],
             ],
           ),
