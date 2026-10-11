@@ -28,6 +28,7 @@ import 'widgets/markdown_note.dart';
 import 'widgets/name_details.dart';
 import 'widgets/bible_timeline_page.dart';
 import 'widgets/places_page.dart';
+import 'widgets/prophecy_page.dart';
 import 'widgets/study_workspace_panel.dart';
 import 'widgets/study_passage_editor.dart';
 import 'widgets/study_section_editor.dart';
@@ -211,6 +212,7 @@ enum _ReaderMenuAction {
   readingPlan,
   places,
   timeline,
+  prophecy,
   tutor,
   memorise,
   reportIssue,
@@ -1165,6 +1167,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _ReaderMenuAction.readingPlan,
     _ReaderMenuAction.places,
     _ReaderMenuAction.timeline,
+    _ReaderMenuAction.prophecy,
     _ReaderMenuAction.tutor,
     _ReaderMenuAction.memorise,
     if (_activeReader?._adminMode ?? false) _ReaderMenuAction.reportIssue,
@@ -1185,6 +1188,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         ),
         _ReaderMenuAction.places => (Icons.travel_explore, 'Bible places'),
         _ReaderMenuAction.timeline => (Icons.timeline, 'Bible timeline'),
+        _ReaderMenuAction.prophecy => (
+          Icons.history_edu_outlined,
+          'Bible prophecy',
+        ),
         _ReaderMenuAction.tutor => (Icons.school_outlined, 'Tutor'),
         _ReaderMenuAction.memorise => (Icons.psychology_outlined, 'Memorise'),
         _ReaderMenuAction.reportIssue => (
@@ -5113,6 +5120,15 @@ class _ReaderSessionState extends State<_ReaderSession>
           ntGreek: _ntGreek,
           onNtGreekChanged: _setNtGreek,
           bookmarks: _nameBookmarks,
+          onNavigateToPassage: (book, chapter, verse) =>
+              _navigateTo(book, chapter, verse: verse),
+        );
+      case _ReaderMenuAction.prophecy:
+        ProphecyPage.open(
+          context,
+          useEnglishBookNames: _englishBookNames,
+          ntSyriac: _ntSyriac,
+          ntGreek: _ntGreek,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
         );
