@@ -2343,10 +2343,18 @@ pub async fn get_chapter_people(bible: SharedBible) {
 /// the verses naming them and their links to the others.
 fn chapter_people(bible: &Bible, book: u8, chapter: u8) -> Result<Vec<ChapterPersonEntry>, String> {
     let mut people: Vec<(haqor_core::names::NameEntity, Vec<u8>)> = Vec::new();
-    let names = bible
+    // The Old Testament's naming words, or the New Testament's verses.
+    let words = bible
         .chapter_names(book, chapter)
         .map_err(|e| format!("{e:?}"))?;
-    for (verse, _, id) in names {
+    let verses = bible
+        .chapter_name_verses(book, chapter)
+        .map_err(|e| format!("{e:?}"))?;
+    let names = words
+        .into_iter()
+        .map(|(verse, _, id)| (verse, id))
+        .chain(verses);
+    for (verse, id) in names {
         if let Some((_, verses)) = people.iter_mut().find(|(p, _)| p.summary.id == id) {
             if verses.last() != Some(&verse) {
                 verses.push(verse);

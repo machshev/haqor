@@ -2064,13 +2064,13 @@ class _ReaderSessionState extends State<_ReaderSession>
     _ReaderBarAction.places => IconButton(
       key: const ValueKey('reader-places'),
       icon: const Icon(Icons.map_outlined),
-      onPressed: _isOldTestament ? () => _runBarAction(action) : null,
+      onPressed: () => _runBarAction(action),
       tooltip: 'Places in this chapter',
     ),
     _ReaderBarAction.people => IconButton(
       key: const ValueKey('reader-people'),
       icon: const Icon(Icons.people_outline),
-      onPressed: _isOldTestament ? () => _runBarAction(action) : null,
+      onPressed: () => _runBarAction(action),
       tooltip: 'People in this chapter',
     ),
     _ReaderBarAction.text => IconButton(
@@ -2151,10 +2151,10 @@ class _ReaderSessionState extends State<_ReaderSession>
         item(Icons.link, 'Cross references'),
       ],
       _ReaderBarAction.places => [
-        item(Icons.map_outlined, 'Places', enabled: _isOldTestament),
+        item(Icons.map_outlined, 'Places'),
       ],
       _ReaderBarAction.people => [
-        item(Icons.people_outline, 'People', enabled: _isOldTestament),
+        item(Icons.people_outline, 'People'),
       ],
       _ReaderBarAction.text => [
         for (final text in ReaderText.values)
@@ -3676,13 +3676,11 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
   }
 
-  /// Whether the chapter at the top of the reader is in the Hebrew Bible,
-  /// whose words alone are linked to the people and places they name.
+  /// Whether the chapter at the top of the reader is in the Hebrew Bible.
   bool get _isOldTestament => _bookIndex < 39;
 
   /// The places the chapter at the top of the reader names, on a map.
   Future<void> _showChapterPlaces() async {
-    if (!_isOldTestament) return;
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
@@ -3704,7 +3702,6 @@ class _ReaderSessionState extends State<_ReaderSession>
   /// The people the chapter at the top of the reader names, and how they are
   /// related.
   Future<void> _showChapterPeople() async {
-    if (!_isOldTestament) return;
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
