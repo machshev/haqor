@@ -16,6 +16,37 @@ class _FakeRust {
 
   final List<GetThematicReferences> thematicRequests = [];
   final List<GetThematicOverview> thematicOverviewRequests = [];
+  final List<GetVerseProphecies> prophecyRequests = [];
+  final List<GetProphecies> prophecyOverviewRequests = [];
+
+  void deliverProphecies(
+    int book,
+    int chapter,
+    int verse,
+    List<ProphecyEntry> entries,
+  ) {
+    assignRustSignal['VerseProphecies']!(
+      VerseProphecies(
+        book: book,
+        chapter: chapter,
+        verse: verse,
+        entries: entries,
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+  }
+
+  void deliverProphecyOverview(int total, List<ProphecyEntry> entries) {
+    assignRustSignal['Prophecies']!(
+      Prophecies(
+        requestId: prophecyOverviewRequests.last.requestId,
+        book: prophecyOverviewRequests.last.book,
+        total: total,
+        entries: entries,
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+  }
 
   void deliverThematicOverview(int total, List<ThematicVerseEntry> verses) {
     assignRustSignal['ThematicOverview']!(
@@ -142,6 +173,8 @@ Future<_FakeRust> _pump(
             sendQuotationsRequest: rust.quotationRequests.add,
             sendThematicReferencesRequest: rust.thematicRequests.add,
             sendThematicOverviewRequest: rust.thematicOverviewRequests.add,
+            sendVerseProphecyRequest: rust.prophecyRequests.add,
+            sendProphecyOverviewRequest: rust.prophecyOverviewRequests.add,
             sendVerseTextsRequest: rust.verseRequests.add,
           ),
         ),
@@ -168,6 +201,7 @@ Map<String, List<String>> _highlighted(WidgetTester tester) {
 
 void main() {
   overviewTests();
+  prophecyTests();
   strengthTests();
   dockedTests();
   bookmarkTests();
@@ -244,6 +278,10 @@ void main() {
     rust.deliver(40, 1, 23, const []);
     rust.deliverThematic(40, 1, 23, const []);
     await tester.pump();
+    // Whether there is nothing at all waits for the prophecies too.
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    rust.deliverProphecies(40, 1, 23, const []);
+    await tester.pump();
     expect(
       find.text('No cross references found for this verse.'),
       findsOneWidget,
@@ -264,6 +302,7 @@ void main() {
     // Whether there is anything to show waits for the thematic reply.
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
+    rust.deliverProphecies(40, 1, 23, const []);
     rust.deliverThematic(40, 1, 23, [
       ThematicReferenceEntry(
         phrase: 'a virgin',
@@ -361,6 +400,167 @@ QuotationEntry _quote({
   otherVerse: otherVerse,
   otherPositions: const [0, 2],
 );
+
+PassageSpan _span(int book, int chapter, int verse, [int? lastVerse]) =>
+    PassageSpan(
+      book: book,
+      chapter: chapter,
+      verse: verse,
+      lastChapter: chapter,
+      lastVerse: lastVerse ?? verse,
+    );
+
+/// Isaiah 7:13-14, quoted at Matthew 1:22-23.
+ProphecyEntry _immanuel() => ProphecyEntry(
+  id: 1,
+  passage: _span(12, 7, 13, 14),
+  title: 'A virgin shall conceive and bear a son, Immanuel',
+  theme: 'davidic',
+  messianic: true,
+  horizon: 'first-advent',
+  note: 'A sign given to the house of David.',
+  fulfilments: [
+    ProphecyFulfilmentEntry(
+      passage: _span(40, 1, 22, 23),
+      prophecyVerses: _span(12, 7, 14),
+      kind: 'quotation',
+      formula: 'fulfilled+spoken',
+      reviewed: true,
+      note: '',
+    ),
+  ],
+);
+
+/// Daniel 2:44-45, with no fulfilment yet.
+ProphecyEntry _stone() => ProphecyEntry(
+  id: 2,
+  passage: _span(35, 2, 44, 45),
+  title: 'The stone cut out without hands',
+  theme: 'kingdom',
+  messianic: true,
+  horizon: 'second-advent',
+  note: '',
+  fulfilments: const [],
+);
+
+void prophecyTests() {
+  testWidgets('a verse in a prophecy lists it with its fulfilments', (
+    tester,
+  ) async {
+    final opened = <(int, int, int)>[];
+    final rust = await _pump(
+      tester,
+      onNavigate: (b, c, v) => opened.add((b, c, v)),
+    );
+    expect(rust.prophecyRequests.single.verse, 23);
+    rust.deliver(40, 1, 23, const []);
+    rust.deliverThematic(40, 1, 23, const []);
+    rust.deliverProphecies(40, 1, 23, [_immanuel()]);
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+
+    // Without quotations, the verse opens on its prophecies.
+    expect(find.text('Prophecy (1)'), findsOneWidget);
+    expect(
+      find.text('A virgin shall conceive and bear a son, Immanuel'),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        "Messianic · Promises to David · Fulfilled in Christ's first coming",
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Isaiah 7:13–14'), findsOneWidget);
+    expect(
+      find.text('Quotation · Matthew 1:22–23 · of Isaiah 7:14'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Isaiah 7:13–14'));
+    expect(opened, [(11, 7, 13)]);
+  });
+
+  testWidgets('a prophecy without a fulfilment says so', (tester) async {
+    final rust = await _pump(tester);
+    rust.deliver(40, 1, 23, [_entry(book: 12, chapter: 7, verse: 14)]);
+    rust.deliverThematic(40, 1, 23, const []);
+    rust.deliverProphecies(40, 1, 23, [_stone()]);
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    // Quotations come first when there are any.
+    expect(find.text('Strong match · 2 words'), findsOneWidget);
+
+    await tester.tap(find.text('Prophecy (1)'));
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    expect(find.text('No fulfilment recorded in the Bible.'), findsOneWidget);
+    expect(find.textContaining("Awaits Christ's return"), findsOneWidget);
+  });
+
+  testWidgets('the prophecy overview filters by scope, theme and kind', (
+    tester,
+  ) async {
+    final rust = await _pump(tester, verse: null);
+    rust.deliverQuotations(0, const []);
+    await tester.pumpAndSettle();
+    // Only prophecies are listed across the Bible.
+    expect(find.text('Bible'), findsNothing);
+
+    await tester.tap(find.text('Prophecy'));
+    await tester.pump();
+    var request = rust.prophecyOverviewRequests.single;
+    expect(request.book, 40);
+    expect((request.firstChapter, request.lastChapter), (1, 1));
+    expect((request.theme, request.messianic), ('', 0));
+    expect(find.byKey(const ValueKey('strength')), findsNothing);
+
+    rust.deliverProphecyOverview(1, [_immanuel()]);
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    expect(find.text('Prophecies in Matthew'), findsOneWidget);
+    expect(find.text('1 prophecy'), findsOneWidget);
+
+    await tester.tap(find.text('Bible'));
+    await tester.pump();
+    request = rust.prophecyOverviewRequests.last;
+    expect(
+      (request.book, request.firstChapter, request.lastChapter),
+      (0, 0, 0),
+    );
+    rust.deliverProphecyOverview(2, [_immanuel(), _stone()]);
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+    expect(find.text('Prophecies in the Bible'), findsOneWidget);
+    expect(find.text('2 prophecies'), findsOneWidget);
+
+    await tester.tap(find.text('Messianic'));
+    await tester.pump();
+    expect(rust.prophecyOverviewRequests.last.messianic, 1);
+    rust.deliverProphecyOverview(2, [_immanuel(), _stone()]);
+    await tester.pump();
+    rust.deliverVerseTexts();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('prophecy-theme')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('The kingdom').last);
+    await tester.pump();
+    request = rust.prophecyOverviewRequests.last;
+    expect((request.theme, request.messianic, request.book), ('kingdom', 1, 0));
+
+    // Back on quotations, the Bible-wide scope falls back to the book.
+    await tester.tap(find.text('Quotations'));
+    await tester.pump();
+    expect(rust.quotationRequests.last.book, 40);
+    expect(find.text('Bible'), findsNothing);
+  });
+}
 
 void overviewTests() {
   testWidgets('the overview switches to the chapter\'s thematic references', (
@@ -750,6 +950,8 @@ void dockedTests() {
             sendQuotationsRequest: rust.quotationRequests.add,
             sendThematicReferencesRequest: rust.thematicRequests.add,
             sendThematicOverviewRequest: rust.thematicOverviewRequests.add,
+            sendVerseProphecyRequest: rust.prophecyRequests.add,
+            sendProphecyOverviewRequest: rust.prophecyOverviewRequests.add,
             sendVerseTextsRequest: rust.verseRequests.add,
           ),
         ),
@@ -805,6 +1007,8 @@ void bookmarkTests() {
               sendQuotationsRequest: rust.quotationRequests.add,
               sendThematicReferencesRequest: rust.thematicRequests.add,
               sendThematicOverviewRequest: rust.thematicOverviewRequests.add,
+              sendVerseProphecyRequest: rust.prophecyRequests.add,
+              sendProphecyOverviewRequest: rust.prophecyOverviewRequests.add,
               sendVerseTextsRequest: rust.verseRequests.add,
             ),
           ),
@@ -855,6 +1059,8 @@ void bookmarkTests() {
               sendQuotationsRequest: rust.quotationRequests.add,
               sendThematicReferencesRequest: rust.thematicRequests.add,
               sendThematicOverviewRequest: rust.thematicOverviewRequests.add,
+              sendVerseProphecyRequest: rust.prophecyRequests.add,
+              sendProphecyOverviewRequest: rust.prophecyOverviewRequests.add,
               sendVerseTextsRequest: rust.verseRequests.add,
             ),
           ),

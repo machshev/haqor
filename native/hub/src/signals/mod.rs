@@ -460,6 +460,96 @@ pub struct ThematicOverview {
     pub verses: Vec<ThematicVerseEntry>,
 }
 
+/// A passage: one verse, or a run of verses ending at
+/// `last_chapter:last_verse` of the same book.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct PassageSpan {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub last_chapter: u8,
+    pub last_verse: u8,
+}
+
+/// A passage fulfilling a [`ProphecyEntry`].
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ProphecyFulfilmentEntry {
+    pub passage: PassageSpan,
+    /// The verses of the prophecy it takes up.
+    pub prophecy_verses: PassageSpan,
+    /// `quotation`, `allusion`, `type` or `event`.
+    pub kind: String,
+    /// The citation formula found introducing it (`fulfilled+spoken`), or
+    /// empty.
+    pub formula: String,
+    /// Curated, rather than found and not yet reviewed.
+    pub reviewed: bool,
+    pub note: String,
+}
+
+/// A prophecy of the Old Testament and its fulfilments, if any.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ProphecyEntry {
+    pub id: u32,
+    pub passage: PassageSpan,
+    /// Empty for one found from a citation formula alone.
+    pub title: String,
+    /// One of the core's `PROPHECY_THEMES`, or empty.
+    pub theme: String,
+    pub messianic: bool,
+    /// `first-advent`, `second-advent`, `both`, `history`, or empty.
+    pub horizon: String,
+    pub note: String,
+    pub fulfilments: Vec<ProphecyFulfilmentEntry>,
+}
+
+/// Ask for the prophecies one verse belongs to: as part of a prophecy, or of a
+/// passage fulfilling one.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetVerseProphecies {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+}
+
+/// Reply to [`GetVerseProphecies`], echoing the verse.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct VerseProphecies {
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub entries: Vec<ProphecyEntry>,
+}
+
+/// Ask for a page of prophecies: those of a book (or, with `book` zero, the
+/// whole Bible) whose passage or a fulfilment lies within its chapter range.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetProphecies {
+    /// Echoed back so a caller can ignore replies to a superseded filter.
+    pub request_id: u32,
+    /// Zero for every book.
+    pub book: u8,
+    /// Inclusive chapter bounds; zero leaves that end open.
+    pub first_chapter: u8,
+    pub last_chapter: u8,
+    /// A theme, or empty for any.
+    pub theme: String,
+    /// 0 for every prophecy, 1 for the messianic, 2 for the general.
+    pub messianic: u8,
+    /// Prophecies per page, and how many to skip.
+    pub limit: u32,
+    pub offset: u32,
+}
+
+#[derive(Debug, Serialize, RustSignal)]
+pub struct Prophecies {
+    pub request_id: u32,
+    pub book: u8,
+    /// How many prophecies the filter matches in all, beyond this page.
+    pub total: u32,
+    pub entries: Vec<ProphecyEntry>,
+}
+
 /// Ask for the syntax trees (MACULA Hebrew's) of the OT verses
 /// `first_verse..=last_verse` of a chapter: one verse for its Syntax view, or
 /// the whole chapter, with both zero, for the reader's role colouring.

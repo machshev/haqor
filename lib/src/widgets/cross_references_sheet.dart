@@ -7,6 +7,7 @@ import '../app_settings.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../study_workspace.dart';
+import 'prophecy_card.dart';
 import 'verse_text_cache.dart';
 import 'word_info_sheet.dart' show OccurrenceVerseRow, VerseModeIcon;
 
@@ -62,8 +63,9 @@ List<Widget> _headerActions({
     ),
 ];
 
-/// Which part of the book the overview lists.
-enum CrossReferenceScope { chapter, book }
+/// Which part of the book the overview lists. Only prophecies are listed
+/// across the whole [bible].
+enum CrossReferenceScope { chapter, book, bible }
 
 /// Which links the overview lists, by the testaments of their two verses. The
 /// index is the [GetQuotations.scope] code.
@@ -80,6 +82,10 @@ enum CrossReferenceLinks { all, otherTestament, sameTestament }
 /// thematic references: the passages the Treasury of Scripture Knowledge
 /// links to each of its key phrases. Its back button returns to the overview.
 /// Tapping a linked verse opens it in the reader.
+///
+/// Both views also list prophecies: those of the OT passage, or fulfilled in
+/// the NT one, with their fulfilments. The overview can list them for the
+/// whole Bible, by theme.
 class CrossReferencesPanel extends StatefulWidget {
   const CrossReferencesPanel({
     super.key,
@@ -99,6 +105,8 @@ class CrossReferencesPanel extends StatefulWidget {
     this.sendQuotationsRequest,
     this.sendThematicReferencesRequest,
     this.sendThematicOverviewRequest,
+    this.sendVerseProphecyRequest,
+    this.sendProphecyOverviewRequest,
     this.sendVerseTextsRequest,
   });
 
@@ -140,6 +148,8 @@ class CrossReferencesPanel extends StatefulWidget {
   final void Function(GetQuotations)? sendQuotationsRequest;
   final void Function(GetThematicReferences)? sendThematicReferencesRequest;
   final void Function(GetThematicOverview)? sendThematicOverviewRequest;
+  final void Function(GetVerseProphecies)? sendVerseProphecyRequest;
+  final void Function(GetProphecies)? sendProphecyOverviewRequest;
   final void Function(GetVerseTexts)? sendVerseTextsRequest;
 
   /// The reader shows the NT in Syriac script, so NT verse rows do too.
@@ -164,11 +174,15 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   /// average.
   static const _thematicPageSize = 40;
 
+  /// Prophecies per page of the prophecy overview.
+  static const _prophecyPageSize = 30;
+
   late final VerseTextCache _verseTexts = VerseTextCache(
     send: widget.sendVerseTextsRequest,
   );
   StreamSubscription<RustSignalPack<Quotations>>? _sub;
   StreamSubscription<RustSignalPack<ThematicOverview>>? _thematicSub;
+  StreamSubscription<RustSignalPack<Prophecies>>? _prophecySub;
 
   _VerseView? _view;
 
@@ -204,6 +218,13 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   /// The thematic overview's verses so far, and how many there are in all.
   final List<ThematicVerseEntry> _thematicVerses = [];
   int _thematicTotal = 0;
+
+  /// The prophecy overview's prophecies so far, how many there are in all,
+  /// and its filters: a theme (empty for any) and which prophecies.
+  final List<ProphecyEntry> _prophecies = [];
+  int _prophecyTotal = 0;
+  String _prophecyTheme = '';
+  ProphecyKinds _prophecyKinds = ProphecyKinds.all;
   double _overviewOffset = 0;
 
   int get _chapterCount => kBooks[widget.book - 1].chapters;
@@ -239,6 +260,15 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
         _loading = false;
         _thematicTotal = reply.total;
         _thematicVerses.addAll(reply.verses);
+      });
+    });
+    _prophecySub = Prophecies.rustSignalStream.listen((pack) {
+      final reply = pack.message;
+      if (reply.requestId != _requestId || !mounted) return;
+      setState(() {
+        _loading = false;
+        _prophecyTotal = reply.total;
+        _prophecies.addAll(reply.entries);
       });
     });
     _requestOverview();
@@ -283,6 +313,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   void dispose() {
     _sub?.cancel();
     _thematicSub?.cancel();
+    _prophecySub?.cancel();
     _verseTexts.dispose();
     super.dispose();
   }
@@ -294,10 +325,40 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
       _total = 0;
       _thematicVerses.clear();
       _thematicTotal = 0;
+      _prophecies.clear();
+      _prophecyTotal = 0;
     }
     _loading = true;
     _overviewLoaded = _overviewSection;
     final chapterScope = _scope == CrossReferenceScope.chapter;
+    if (_overviewSection == _Section.prophecy) {
+      final everywhere = _scope == CrossReferenceScope.bible;
+      final request = GetProphecies(
+        requestId: _requestId = _nextRequestId++,
+        book: everywhere ? 0 : widget.book,
+        firstChapter: everywhere
+            ? 0
+            : chapterScope
+            ? widget.chapter
+            : _firstChapter,
+        lastChapter: everywhere
+            ? 0
+            : chapterScope
+            ? widget.chapter
+            : _lastChapter,
+        theme: _prophecyTheme,
+        messianic: _prophecyKinds.index,
+        limit: _prophecyPageSize,
+        offset: _prophecies.length,
+      );
+      final send = widget.sendProphecyOverviewRequest;
+      if (send != null) {
+        send(request);
+      } else {
+        request.sendSignalToRust();
+      }
+      return;
+    }
     if (_overviewSection == _Section.thematic) {
       final request = GetThematicOverview(
         requestId: _requestId = _nextRequestId++,
@@ -383,6 +444,7 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
         onNavigateToPassage: widget.onNavigateToPassage,
         sendRequest: widget.sendRequest,
         sendThematicRequest: widget.sendThematicReferencesRequest,
+        sendProphecyRequest: widget.sendVerseProphecyRequest,
       );
     }
     return _overview(context);
@@ -397,11 +459,22 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
       useEnglish: widget.useEnglishBookNames,
     );
     final chapters = [for (var c = 1; c <= _chapterCount; c++) c];
-    final thematic = _overviewSection == _Section.thematic;
-    final count = thematic
-        ? (_thematicTotal == 1 ? '1 verse' : '$_thematicTotal verses')
-        : (_total == 1 ? '1 link' : '$_total links');
-    final loaded = thematic ? _thematicVerses.isNotEmpty : _entries.isNotEmpty;
+    final section = _overviewSection;
+    final thematic = section == _Section.thematic;
+    final prophecy = section == _Section.prophecy;
+    final count = switch (section) {
+      _Section.thematic =>
+        _thematicTotal == 1 ? '1 verse' : '$_thematicTotal verses',
+      _Section.prophecy =>
+        _prophecyTotal == 1 ? '1 prophecy' : '$_prophecyTotal prophecies',
+      _Section.links => _total == 1 ? '1 link' : '$_total links',
+    };
+    final loaded = switch (section) {
+      _Section.thematic => _thematicVerses.isNotEmpty,
+      _Section.prophecy => _prophecies.isNotEmpty,
+      _Section.links => _entries.isNotEmpty,
+    };
+    final everywhere = prophecy && _scope == CrossReferenceScope.bible;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -418,7 +491,11 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
                       style: theme.textTheme.titleMedium,
                     ),
                     Text(
-                      thematic
+                      prophecy
+                          ? (everywhere
+                                ? 'Prophecies in the Bible'
+                                : 'Prophecies in $bookName')
+                          : thematic
                           ? 'Thematic references in $bookName'
                           : switch (_links) {
                               CrossReferenceLinks.all =>
@@ -449,7 +526,14 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
           child: _sectionSwitch(
             selected: _overviewSection,
-            onSelected: (section) => _update(() => _section = section),
+            onSelected: (section) => _update(() {
+              _section = section;
+              // Only prophecies are listed across the Bible.
+              if (section != _Section.prophecy &&
+                  _scope == CrossReferenceScope.bible) {
+                _scope = CrossReferenceScope.book;
+              }
+            }),
           ),
         ),
         Padding(
@@ -470,6 +554,11 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
                     value: CrossReferenceScope.book,
                     label: Text('Book'),
                   ),
+                  if (prophecy)
+                    const ButtonSegment(
+                      value: CrossReferenceScope.bible,
+                      label: Text('Bible'),
+                    ),
                 ],
                 selected: {_scope},
                 onSelectionChanged: (s) => _update(() => _scope = s.single),
@@ -506,9 +595,45 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
                     ),
                   ],
                 ),
+              if (prophecy) ...[
+                DropdownButton<String>(
+                  key: const ValueKey('prophecy-theme'),
+                  value: _prophecyTheme,
+                  items: [
+                    const DropdownMenuItem(
+                      value: '',
+                      child: Text('All themes'),
+                    ),
+                    for (final theme in prophecyThemes)
+                      DropdownMenuItem(
+                        value: theme,
+                        child: Text(prophecyThemeLabel(theme)),
+                      ),
+                  ],
+                  onChanged: (theme) => _update(() => _prophecyTheme = theme!),
+                ),
+                SegmentedButton<ProphecyKinds>(
+                  key: const ValueKey('prophecy-kinds'),
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: ProphecyKinds.all, label: Text('All')),
+                    ButtonSegment(
+                      value: ProphecyKinds.messianic,
+                      label: Text('Messianic'),
+                    ),
+                    ButtonSegment(
+                      value: ProphecyKinds.general,
+                      label: Text('General'),
+                    ),
+                  ],
+                  selected: {_prophecyKinds},
+                  onSelectionChanged: (s) =>
+                      _update(() => _prophecyKinds = s.single),
+                ),
+              ],
               // How links are found, ordered and filtered: nothing a
-              // thematic reference has.
-              if (!thematic) ...[
+              // thematic reference or prophecy has.
+              if (!thematic && !prophecy) ...[
                 SegmentedButton<CrossReferenceLinks>(
                   key: const ValueKey('links'),
                   showSelectedIcon: false,
@@ -568,9 +693,11 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
           ),
         const Divider(height: 13),
         Expanded(
-          child: thematic
-              ? _thematicOverviewList(context)
-              : _overviewList(context),
+          child: switch (section) {
+            _Section.thematic => _thematicOverviewList(context),
+            _Section.prophecy => _prophecyOverviewList(context),
+            _Section.links => _overviewList(context),
+          },
         ),
       ],
     );
@@ -631,6 +758,44 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
                   onOpen: widget.onNavigateToPassage,
                 ),
             ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// The prophecies of the chapter, book or Bible, each with its
+  /// fulfilments, in the order of their OT passages.
+  Widget _prophecyOverviewList(BuildContext context) {
+    if (_prophecies.isEmpty) {
+      return Center(
+        child: _loading
+            ? const CircularProgressIndicator()
+            : const Text('No prophecies here.'),
+      );
+    }
+    final hasMore = _prophecies.length < _prophecyTotal;
+    final controller = ScrollController(initialScrollOffset: _overviewOffset);
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        _overviewOffset = n.metrics.pixels;
+        return false;
+      },
+      child: ListView.separated(
+        key: const ValueKey('prophecy-overview'),
+        controller: controller,
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+        itemCount: _prophecies.length + (hasMore ? 1 : 0),
+        separatorBuilder: (_, _) => const Divider(height: 24),
+        itemBuilder: (context, i) {
+          if (i == _prophecies.length) return _showMore();
+          return ProphecyCard(
+            prophecy: _prophecies[i],
+            cache: _verseTexts,
+            useEnglishBookNames: widget.useEnglishBookNames,
+            englishOnly: _englishOnly,
+            ntSyriac: widget.ntSyriac,
+            onNavigateToPassage: widget.onNavigateToPassage,
           );
         },
       ),
@@ -819,22 +984,26 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   }
 }
 
-/// The two lists the panel shows, for a verse or a chapter.
+/// The lists the panel shows, for a verse or a chapter.
 enum _Section {
   /// Quotations and parallels found by aligning roots.
   links,
 
   /// The Treasury of Scripture Knowledge's references for its key phrases.
   thematic,
+
+  /// Prophecies and their fulfilments.
+  prophecy,
 }
 
-/// The Quotations | Thematic switch, for the overview and a verse alike; a
-/// verse's view gives its counts.
+/// The Quotations | Thematic | Prophecy switch, for the overview and a verse
+/// alike; a verse's view gives its counts.
 Widget _sectionSwitch({
   required _Section selected,
   required ValueChanged<_Section> onSelected,
   int? links,
   int? thematic,
+  int? prophecy,
 }) => SegmentedButton<_Section>(
   key: const ValueKey('section'),
   showSelectedIcon: false,
@@ -846,6 +1015,10 @@ Widget _sectionSwitch({
     ButtonSegment(
       value: _Section.thematic,
       label: Text(thematic == null ? 'Thematic' : 'Thematic ($thematic)'),
+    ),
+    ButtonSegment(
+      value: _Section.prophecy,
+      label: Text(prophecy == null ? 'Prophecy' : 'Prophecy ($prophecy)'),
     ),
   ],
   selected: {selected},
@@ -915,7 +1088,7 @@ class _ThematicMarginEntry extends StatelessWidget {
 /// One verse's links, strongest first, with the matched words highlighted on
 /// both sides. Choosing a link shows its words on the verse itself; tapping
 /// the linked verse opens it in the reader. Beside them, its thematic
-/// references.
+/// references and the prophecies it belongs to.
 class _VerseLinks extends StatefulWidget {
   const _VerseLinks({
     super.key,
@@ -938,6 +1111,7 @@ class _VerseLinks extends StatefulWidget {
     this.onNavigateToPassage,
     this.sendRequest,
     this.sendThematicRequest,
+    this.sendProphecyRequest,
   });
 
   final VerseTextCache cache;
@@ -967,6 +1141,7 @@ class _VerseLinks extends StatefulWidget {
   onNavigateToPassage;
   final void Function(GetCrossReferences)? sendRequest;
   final void Function(GetThematicReferences)? sendThematicRequest;
+  final void Function(GetVerseProphecies)? sendProphecyRequest;
 
   @override
   State<_VerseLinks> createState() => _VerseLinksState();
@@ -975,9 +1150,13 @@ class _VerseLinks extends StatefulWidget {
 class _VerseLinksState extends State<_VerseLinks> {
   StreamSubscription<RustSignalPack<CrossReferences>>? _sub;
   StreamSubscription<RustSignalPack<ThematicReferences>>? _thematicSub;
+  StreamSubscription<RustSignalPack<VerseProphecies>>? _prophecySub;
 
   /// Null until the reply arrives.
   List<CrossReferenceEntry>? _entries;
+
+  /// The prophecies the verse belongs to, null until their reply arrives.
+  List<ProphecyEntry>? _prophecies;
 
   /// The verse's thematic references (the Treasury of Scripture Knowledge's),
   /// null until their reply arrives.
@@ -987,13 +1166,15 @@ class _VerseLinksState extends State<_VerseLinks> {
   late _Section? _chosenSection = widget.chosenSection;
 
   /// Which list shows: the one picked, else the quotations and parallels —
-  /// unless the verse has none and does have thematic references.
+  /// unless the verse has none, when it is its prophecies, then its thematic
+  /// references.
   _Section get _section {
     final chosen = _chosenSection;
     if (chosen != null) return chosen;
-    final noLinks = _entries?.isEmpty ?? false;
-    final thematic = _thematic?.isNotEmpty ?? false;
-    return noLinks && thematic ? _Section.thematic : _Section.links;
+    if (!(_entries?.isEmpty ?? false)) return _Section.links;
+    if (_prophecies?.isNotEmpty ?? false) return _Section.prophecy;
+    if (_thematic?.isNotEmpty ?? false) return _Section.thematic;
+    return _Section.links;
   }
 
   /// The linked verse whose matched words are shown on the source verse.
@@ -1066,12 +1247,35 @@ class _VerseLinksState extends State<_VerseLinks> {
     } else {
       thematicRequest.sendSignalToRust();
     }
+
+    _prophecySub = VerseProphecies.rustSignalStream.listen((pack) {
+      final reply = pack.message;
+      if (reply.book != widget.book ||
+          reply.chapter != widget.chapter ||
+          reply.verse != widget.verse ||
+          !mounted) {
+        return;
+      }
+      setState(() => _prophecies = reply.entries);
+    });
+    final prophecyRequest = GetVerseProphecies(
+      book: widget.book,
+      chapter: widget.chapter,
+      verse: widget.verse,
+    );
+    final sendProphecy = widget.sendProphecyRequest;
+    if (sendProphecy != null) {
+      sendProphecy(prophecyRequest);
+    } else {
+      prophecyRequest.sendSignalToRust();
+    }
   }
 
   @override
   void dispose() {
     _sub?.cancel();
     _thematicSub?.cancel();
+    _prophecySub?.cancel();
     super.dispose();
   }
 
@@ -1084,6 +1288,7 @@ class _VerseLinksState extends State<_VerseLinks> {
     final theme = Theme.of(context);
     final entries = _entries;
     final thematic = _thematic;
+    final prophecies = _prophecies;
     final section = _section;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1124,10 +1329,14 @@ class _VerseLinksState extends State<_VerseLinks> {
           ),
         ),
         // The quotations show as soon as they arrive; only whether the verse
-        // has nothing at all waits for the thematic references too.
-        if (entries == null || (entries.isEmpty && thematic == null))
+        // has nothing at all waits for the thematic references and the
+        // prophecies too.
+        if (entries == null ||
+            (entries.isEmpty && (thematic == null || prophecies == null)))
           const Expanded(child: Center(child: CircularProgressIndicator()))
-        else if (entries.isEmpty && (thematic?.isEmpty ?? false))
+        else if (entries.isEmpty &&
+            (thematic?.isEmpty ?? false) &&
+            (prophecies?.isEmpty ?? false))
           const Expanded(
             child: Center(
               child: Text('No cross references found for this verse.'),
@@ -1164,6 +1373,7 @@ class _VerseLinksState extends State<_VerseLinks> {
               selected: section,
               links: entries.length,
               thematic: thematic == null ? null : _targetCount(thematic),
+              prophecy: prophecies?.length,
               onSelected: (s) {
                 setState(() => _chosenSection = s);
                 widget.onSectionChanged?.call(s);
@@ -1172,17 +1382,39 @@ class _VerseLinksState extends State<_VerseLinks> {
           ),
           const Divider(height: 17),
           Expanded(
-            child: section == _Section.links
-                ? entries.isEmpty
-                      ? const Center(
-                          child: Text('No quotations or parallels found.'),
-                        )
-                      : _entryList(context, entries)
-                : thematic == null
-                ? const Center(child: CircularProgressIndicator())
-                : thematic.isEmpty
-                ? const Center(child: Text('No thematic references.'))
-                : _thematicList(context, thematic),
+            child: switch (section) {
+              _Section.links =>
+                entries.isEmpty
+                    ? const Center(
+                        child: Text('No quotations or parallels found.'),
+                      )
+                    : _entryList(context, entries),
+              _Section.thematic =>
+                thematic == null
+                    ? const Center(child: CircularProgressIndicator())
+                    : thematic.isEmpty
+                    ? const Center(child: Text('No thematic references.'))
+                    : _thematicList(context, thematic),
+              _Section.prophecy =>
+                prophecies == null
+                    ? const Center(child: CircularProgressIndicator())
+                    : prophecies.isEmpty
+                    ? const Center(child: Text('No prophecies here.'))
+                    : ListView.separated(
+                        key: const ValueKey('prophecy-list'),
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                        itemCount: prophecies.length,
+                        separatorBuilder: (_, _) => const Divider(height: 24),
+                        itemBuilder: (context, i) => ProphecyCard(
+                          prophecy: prophecies[i],
+                          cache: widget.cache,
+                          useEnglishBookNames: widget.useEnglishBookNames,
+                          englishOnly: widget.englishOnly,
+                          ntSyriac: widget.ntSyriac,
+                          onNavigateToPassage: widget.onNavigateToPassage,
+                        ),
+                      ),
+            },
           ),
         ],
       ],

@@ -34,6 +34,7 @@ class _FakeRust {
   final List<GetCrossReferences> crossReferenceRequests = [];
   final List<GetQuotations> quotationRequests = [];
   final List<GetThematicReferences> thematicRequests = [];
+  final List<GetVerseProphecies> prophecyRequests = [];
   final List<GetSyntaxTrees> syntaxRequests = [];
   final List<GetChapterTranslation> translationRequests = [];
   final List<GetGreekWord> greekWordRequests = [];
@@ -2447,6 +2448,7 @@ Future<_FakeRust> _pumpWorkspace(
         sendCrossReferencesRequest: rust.crossReferenceRequests.add,
         sendQuotationsRequest: rust.quotationRequests.add,
         sendThematicReferencesRequest: rust.thematicRequests.add,
+        sendVerseProphecyRequest: rust.prophecyRequests.add,
         sendSyntaxTreesRequest: rust.syntaxRequests.add,
         sendTranslationRequest: rust.translationRequests.add,
         sendGreekWordRequest: rust.greekWordRequests.add,
@@ -2495,6 +2497,7 @@ void crossReferenceDockTests() {
     final request = rust.crossReferenceRequests.single;
     expect((request.book, request.chapter, request.verse), (1, 1, 2));
     expect(rust.thematicRequests.single.verse, 2);
+    expect(rust.prophecyRequests.single.verse, 2);
 
     // The reader's toolbar button brings the docked panel back to the
     // chapter's overview.

@@ -3,6 +3,7 @@
 
 mod functions;
 mod memorise;
+mod prophecy;
 mod signals;
 
 use std::future::Future;
@@ -227,6 +228,8 @@ async fn main() {
         get_quotations,
         get_thematic_references,
         get_thematic_overview,
+        prophecy::get_verse_prophecies,
+        prophecy::get_prophecies,
         get_syntax_trees,
         get_name_entity,
         get_chapter_places,

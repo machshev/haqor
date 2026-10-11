@@ -274,6 +274,8 @@ class BibleReaderPage extends StatefulWidget {
     this.sendQuotationsRequest,
     this.sendThematicReferencesRequest,
     this.sendThematicOverviewRequest,
+    this.sendVerseProphecyRequest,
+    this.sendProphecyOverviewRequest,
     this.sendSyntaxTreesRequest,
     this.sendTranslationRequest,
   });
@@ -292,6 +294,8 @@ class BibleReaderPage extends StatefulWidget {
   final void Function(GetThematicReferences request)?
   sendThematicReferencesRequest;
   final void Function(GetThematicOverview request)? sendThematicOverviewRequest;
+  final void Function(GetVerseProphecies request)? sendVerseProphecyRequest;
+  final void Function(GetProphecies request)? sendProphecyOverviewRequest;
   final void Function(GetSyntaxTrees request)? sendSyntaxTreesRequest;
   final void Function(GetChapterTranslation request)? sendTranslationRequest;
 
@@ -740,6 +744,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 sendThematicReferencesRequest:
                     widget.sendThematicReferencesRequest,
                 sendThematicOverviewRequest: widget.sendThematicOverviewRequest,
+                sendVerseProphecyRequest: widget.sendVerseProphecyRequest,
+                sendProphecyOverviewRequest: widget.sendProphecyOverviewRequest,
                 sendVerseTextsRequest: widget.sendVerseTextsRequest,
               ),
       ),
