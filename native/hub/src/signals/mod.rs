@@ -1921,7 +1921,8 @@ pub struct GetGreekWord {
     pub word: String,
 }
 
-/// Where a word of the Greek text stands, and its dictionary form.
+/// Where a word of the Greek text stands, its dictionary form, and its
+/// grammar code (see [`GreekWordInfo::parses`]); empty where it has none.
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct GreekOccurrenceEntry {
     pub book: u8,
@@ -1929,6 +1930,22 @@ pub struct GreekOccurrenceEntry {
     pub verse: u8,
     pub position: u32,
     pub lemma: String,
+    pub grammar: String,
+}
+
+/// A Greek grammar code in its parts, the dimensions the occurrence filter
+/// offers: each in words, empty where the code has none.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct GreekParseEntry {
+    pub code: String,
+    pub part_of_speech: String,
+    pub tense: String,
+    pub voice: String,
+    pub mood: String,
+    pub grammatical_case: String,
+    pub person: String,
+    pub number: String,
+    pub gender: String,
 }
 
 /// A dictionary form of the TR built on the root a Greek word is read
@@ -1977,4 +1994,7 @@ pub struct GreekWordInfo {
     /// Every word of the TR built on [`Self::root`] (failing a root, with
     /// the same dictionary form), in order, this one included.
     pub occurrences: Vec<GreekOccurrenceEntry>,
+    /// The parts of every grammar code among the occurrences and the word's
+    /// own, once each.
+    pub parses: Vec<GreekParseEntry>,
 }

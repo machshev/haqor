@@ -26,7 +26,9 @@ use crate::signals::{
 };
 #[cfg(target_arch = "wasm32")]
 use crate::signals::{FlushProgress, ProgressSnapshot};
-use crate::signals::{GetGreekWord, GreekLexemeEntry, GreekOccurrenceEntry, GreekWordInfo};
+use crate::signals::{
+    GetGreekWord, GreekLexemeEntry, GreekOccurrenceEntry, GreekParseEntry, GreekWordInfo,
+};
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -2721,6 +2723,7 @@ pub async fn get_greek_word(bible: SharedBible) {
                 roots: Vec::new(),
                 lexemes: Vec::new(),
                 occurrences: Vec::new(),
+                parses: Vec::new(),
             }
             .send_signal_to_dart();
             continue;
@@ -2756,15 +2759,17 @@ pub async fn get_greek_word(bible: SharedBible) {
                 occurrences: l.occurrences,
             })
             .collect();
-        let occurrence = |o: haqor_core::greek::GreekOccurrence, lemma: String| {
-            GreekOccurrenceEntry {
-                book: o.book,
-                chapter: o.chapter,
-                verse: o.verse,
-                position: o.position,
-                lemma,
-            }
-        };
+        let occurrence =
+            |o: haqor_core::greek::GreekOccurrence, lemma: String, grammar: String| {
+                GreekOccurrenceEntry {
+                    book: o.book,
+                    chapter: o.chapter,
+                    verse: o.verse,
+                    position: o.position,
+                    lemma,
+                    grammar,
+                }
+            };
         let occurrences: Vec<GreekOccurrenceEntry> = if lexemes.is_empty() {
             // A database without roots: the word's own dictionary form.
             let own = bible.greek_lemma_occurrences(&word.lemma).unwrap_or_default();
@@ -2776,16 +2781,42 @@ pub async fn get_greek_word(bible: SharedBible) {
                 entries: entries(&word.lemma),
             });
             own.into_iter()
-                .map(|o| occurrence(o, word.lemma.clone()))
+                .map(|o| occurrence(o, word.lemma.clone(), String::new()))
                 .collect()
         } else {
             bible
                 .greek_root_occurrences(&root)
                 .unwrap_or_default()
                 .into_iter()
-                .map(|(o, lemma)| occurrence(o, lemma))
+                .map(|o| occurrence(o.occurrence, o.lemma, o.grammar))
                 .collect()
         };
+        // Each grammar code in its parts, once, for the occurrence filter.
+        let mut codes: Vec<&str> = occurrences
+            .iter()
+            .map(|o| o.grammar.as_str())
+            .chain([word.grammar.as_str()])
+            .filter(|code| !code.is_empty())
+            .collect();
+        codes.sort_unstable();
+        codes.dedup();
+        let parses: Vec<GreekParseEntry> = codes
+            .into_iter()
+            .map(|code| {
+                let p = haqor_core::greek::parse_grammar(code);
+                GreekParseEntry {
+                    code: code.to_string(),
+                    part_of_speech: p.part_of_speech,
+                    tense: p.tense,
+                    voice: p.voice,
+                    mood: p.mood,
+                    grammatical_case: p.case,
+                    person: p.person,
+                    number: p.number,
+                    gender: p.gender,
+                }
+            })
+            .collect();
         GreekWordInfo {
             request_id: req.request_id,
             found: true,
@@ -2800,6 +2831,7 @@ pub async fn get_greek_word(bible: SharedBible) {
             roots,
             lexemes,
             occurrences,
+            parses,
         }
         .send_signal_to_dart();
     }

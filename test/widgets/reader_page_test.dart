@@ -3037,6 +3037,7 @@ void greekTests() {
             verse: 1,
             position: 0,
             lemma: 'βίβλος',
+            grammar: 'N-NSF',
           ),
           GreekOccurrenceEntry(
             book: 41,
@@ -3044,6 +3045,7 @@ void greekTests() {
             verse: 26,
             position: 18,
             lemma: 'βίβλος',
+            grammar: 'N-DSF',
           ),
           GreekOccurrenceEntry(
             book: 42,
@@ -3051,7 +3053,26 @@ void greekTests() {
             verse: 17,
             position: 3,
             lemma: 'βιβλίον',
+            grammar: 'N-ASN',
           ),
+        ],
+        parses: [
+          for (final (code, grammaticalCase, gender) in const [
+            ('N-NSF', 'nominative', 'feminine'),
+            ('N-DSF', 'dative', 'feminine'),
+            ('N-ASN', 'accusative', 'neuter'),
+          ])
+            GreekParseEntry(
+              code: code,
+              partOfSpeech: 'noun',
+              tense: '',
+              voice: '',
+              mood: '',
+              grammaticalCase: grammaticalCase,
+              person: '',
+              number: 'singular',
+              gender: gender,
+            ),
         ],
       ).bincodeSerialize(),
       Uint8List(0),
@@ -3075,77 +3096,97 @@ void greekTests() {
     await tester.tap(find.text('Occurrences'));
     await tester.pumpAndSettle();
     expect(find.text('2 verses'), findsOneWidget);
+    await tester.tap(find.text('This parse'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 verse'), findsOneWidget);
     await tester.tap(find.text('All of βίβλος'));
     await tester.pumpAndSettle();
     expect(find.text('3 verses'), findsOneWidget);
+    // The filter narrows by grammar, each value counted, and by word in the
+    // whole root.
+    await tester.tap(find.text('Filter'));
+    await tester.pumpAndSettle();
+    expect(find.text('Case'), findsOneWidget);
+    expect(find.text('Word'), findsOneWidget);
+    expect(find.text('feminine · 2'), findsOneWidget);
+    await tester.tap(find.text('dative · 1'));
+    await tester.pumpAndSettle();
+    // A dimension's counts follow the other dimensions' selections, not its
+    // own; one left with a single value is not offered.
+    expect(find.text('accusative · 1'), findsOneWidget);
+    expect(find.text('Gender'), findsNothing);
+    Navigator.of(tester.element(find.text('Filter occurrences'))).pop();
+    await tester.pumpAndSettle();
+    expect(find.text('1 verse'), findsOneWidget);
+    expect(find.text('dative'), findsOneWidget);
     // Their verses are asked for in Greek.
     await tester.pump(const Duration(milliseconds: 50));
     expect(rust.verseTextRequests.any((r) => r.greek), isTrue);
   });
 
-  testWidgets('a bookmarked word opens in its own text, the NT switched to it', (
-    tester,
-  ) async {
-    final rust = await _pumpWorkspace(
-      tester,
-      const Size(1400, 900),
-      prefs: {
-        'book': 0,
-        'chapter': 1,
-        'reader_layout_mode': 'threePanel',
-        'study_workspace_visible': true,
-      },
-    );
-    assignRustSignal['StudyState']!(
-      StudyState(
-        found: true,
-        workspacesJson: study.encodeStudyWorkspaces([
-          const study.StudyWorkspace(
-            id: 'study',
-            name: 'Words',
-            words: [
-              study.StudyWord(
-                root: 'βίβλος',
-                surface: 'Βίβλος',
-                kind: study.StudyWordKind.form,
-                language: study.StudyWordLanguage.greek,
-              ),
-              study.StudyWord(
-                root: 'כתב',
-                surface: 'כּתָבָא',
-                language: study.StudyWordLanguage.aramaic,
-                order: 1,
-              ),
-            ],
-          ),
-        ]),
-        activeWorkspaceId: 'study',
-      ).bincodeSerialize(),
-      Uint8List(0),
-    );
-    await tester.pumpAndSettle();
-    final prefs = await SharedPreferences.getInstance();
+  testWidgets(
+    'a bookmarked word opens in its own text, the NT switched to it',
+    (tester) async {
+      final rust = await _pumpWorkspace(
+        tester,
+        const Size(1400, 900),
+        prefs: {
+          'book': 0,
+          'chapter': 1,
+          'reader_layout_mode': 'threePanel',
+          'study_workspace_visible': true,
+        },
+      );
+      assignRustSignal['StudyState']!(
+        StudyState(
+          found: true,
+          workspacesJson: study.encodeStudyWorkspaces([
+            const study.StudyWorkspace(
+              id: 'study',
+              name: 'Words',
+              words: [
+                study.StudyWord(
+                  root: 'βίβλος',
+                  surface: 'Βίβλος',
+                  kind: study.StudyWordKind.form,
+                  language: study.StudyWordLanguage.greek,
+                ),
+                study.StudyWord(
+                  root: 'כתב',
+                  surface: 'כּתָבָא',
+                  language: study.StudyWordLanguage.aramaic,
+                  order: 1,
+                ),
+              ],
+            ),
+          ]),
+          activeWorkspaceId: 'study',
+        ).bincodeSerialize(),
+        Uint8List(0),
+      );
+      await tester.pumpAndSettle();
+      final prefs = await SharedPreferences.getInstance();
 
-    // A Greek form, read in the Old Testament: the New Testament turns to
-    // the Greek, and the pane finds the word by its dictionary form.
-    await tester.tap(find.text('Βίβλος'));
-    await tester.pump();
-    expect(prefs.getBool('nt_greek'), isTrue);
-    expect(find.byType(GreekWordSheet), findsOneWidget);
-    final greek = rust.greekWordRequests.last;
-    expect((greek.book, greek.lemma, greek.word), (0, 'βίβλος', 'Βίβλος'));
+      // A Greek form, read in the Old Testament: the New Testament turns to
+      // the Greek, and the pane finds the word by its dictionary form.
+      await tester.tap(find.text('Βίβλος'));
+      await tester.pump();
+      expect(prefs.getBool('nt_greek'), isTrue);
+      expect(find.byType(GreekWordSheet), findsOneWidget);
+      final greek = rust.greekWordRequests.last;
+      expect((greek.book, greek.lemma, greek.word), (0, 'βίβλος', 'Βίβλος'));
 
-    // An Aramaic root turns it back to the Peshitta, and is read as Aramaic.
-    await tester.tap(find.text('כתב · כּתָבָא'));
-    await tester.pump();
-    expect(prefs.getBool('nt_greek'), isFalse);
-    final aramaic = rust.wordRequests.last;
-    expect((aramaic.word, aramaic.syriac, aramaic.book), (
-      'כּתָבָא',
-      true,
-      null,
-    ));
-  });
+      // An Aramaic root turns it back to the Peshitta, and is read as Aramaic.
+      await tester.tap(find.text('כתב · כּתָבָא'));
+      await tester.pump();
+      expect(prefs.getBool('nt_greek'), isFalse);
+      final aramaic = rust.wordRequests.last;
+      expect(
+        (aramaic.word, aramaic.syriac, aramaic.book),
+        ('כּתָבָא', true, null),
+      );
+    },
+  );
 
   testWidgets('a compound Greek word is read under either of its roots', (
     tester,
@@ -3190,6 +3231,7 @@ void greekTests() {
         ),
       ],
       occurrences: const [],
+      parses: const [],
     );
     assignRustSignal['GreekWordInfo']!(
       reply('ποιέω').bincodeSerialize(),

@@ -93,9 +93,13 @@ class _GreekWordSheetState extends State<GreekWordSheet>
   /// The root the word is read under, empty for its first.
   String _root = '';
 
-  /// Whether the occurrence list holds every word built on the root, rather
-  /// than the word's own dictionary form alone.
-  bool _wholeRoot = false;
+  /// Which words the occurrence list holds: those parsed as this one is, its
+  /// dictionary form's, or every word built on its root.
+  _GreekScope _scope = _GreekScope.word;
+
+  /// The values each dimension of the occurrence filter keeps; a dimension
+  /// with none selected keeps every word.
+  final Map<_GreekDimension, Set<String>> _filters = {};
 
   /// The dictionary forms whose entries are shown or hidden against their
   /// default: the word's own shown, the rest hidden.
@@ -582,12 +586,30 @@ class _GreekWordSheetState extends State<GreekWordSheet>
     double bottomPad,
   ) {
     final theme = Theme.of(context);
+    final parses = <String, GreekParseEntry>{
+      for (final p in info.parses) p.code: p,
+    };
     final own = info.occurrences.where((o) => o.lemma == info.lemma).toList();
+    final sameParse = own
+        .where((o) => o.grammar.isNotEmpty && o.grammar == info.grammar)
+        .toList();
     // The root's other words: the choice of scope only where it has some.
     final rootWide = info.occurrences.length > own.length;
-    final scoped = _wholeRoot && rootWide ? info.occurrences : own;
+    final scopes = [
+      if (sameParse.isNotEmpty && sameParse.length < own.length)
+        _GreekScope.parse,
+      _GreekScope.word,
+      if (rootWide) _GreekScope.root,
+    ];
+    final scope = scopes.contains(_scope) ? _scope : _GreekScope.word;
+    final inScope = switch (scope) {
+      _GreekScope.parse => sameParse,
+      _GreekScope.word => own,
+      _GreekScope.root => info.occurrences,
+    };
+    final scoped = inScope.where((o) => _passes(o, parses)).toList();
     final all = _verses(scoped);
-    if (all.isEmpty && !rootWide) return const SizedBox.shrink();
+    if (inScope.isEmpty && !rootWide) return const SizedBox.shrink();
     final bookCounts = <int, int>{};
     for (final o in scoped) {
       bookCounts[o.book] = (bookCounts[o.book] ?? 0) + 1;
@@ -626,25 +648,33 @@ class _GreekWordSheetState extends State<GreekWordSheet>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (rootWide)
+              if (scopes.length > 1)
                 Padding(
                   padding: const EdgeInsets.only(top: 4, bottom: 2),
-                  child: SegmentedButton<bool>(
+                  child: SegmentedButton<_GreekScope>(
                     segments: [
-                      ButtonSegment(
-                        value: false,
-                        label: segment(info.lemma, own.length, greek: true),
-                      ),
-                      ButtonSegment(
-                        value: true,
-                        label: segment(
-                          'All of ${info.root}',
-                          info.occurrences.length,
-                          greek: true,
+                      for (final s in scopes)
+                        ButtonSegment(
+                          value: s,
+                          label: switch (s) {
+                            _GreekScope.parse => segment(
+                              'This parse',
+                              sameParse.length,
+                            ),
+                            _GreekScope.word => segment(
+                              info.lemma,
+                              own.length,
+                              greek: true,
+                            ),
+                            _GreekScope.root => segment(
+                              'All of ${info.root}',
+                              info.occurrences.length,
+                              greek: true,
+                            ),
+                          },
                         ),
-                      ),
                     ],
-                    selected: {_wholeRoot},
+                    selected: {scope},
                     showSelectedIcon: false,
                     style: const ButtonStyle(
                       visualDensity: VisualDensity.compact,
@@ -653,13 +683,30 @@ class _GreekWordSheetState extends State<GreekWordSheet>
                       ),
                     ),
                     onSelectionChanged: (selection) => setState(() {
-                      _wholeRoot = selection.first;
+                      _scope = selection.first;
                       _books.clear();
                     }),
                   ),
                 ),
               Row(
                 children: [
+                  Flexible(
+                    child: ActionChip(
+                      avatar: const Icon(Icons.filter_list, size: 18),
+                      label: Text(
+                        _filterSummary(),
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontFamily: 'Cardo'),
+                      ),
+                      onPressed: () => _openFilterSheet(
+                        context,
+                        occurrences: inScope,
+                        parses: parses,
+                        withLemma: scope == _GreekScope.root,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       hits == verses.length ? versePart : '$versePart · $hits×',
@@ -721,6 +768,54 @@ class _GreekWordSheetState extends State<GreekWordSheet>
               : _occurrenceVerseList(verses, bottomPad: bottomPad),
         ),
       ],
+    );
+  }
+
+  /// Whether a word passes every dimension of the filter.
+  bool _passes(GreekOccurrenceEntry o, Map<String, GreekParseEntry> parses) =>
+      _filters.entries.every(
+        (f) => f.value.isEmpty || f.value.contains(f.key.of(o, parses)),
+      );
+
+  /// The filter in brief, for its button: what it keeps, or "Filter".
+  String _filterSummary() {
+    final kept = [
+      for (final dimension in _GreekDimension.values)
+        ...?_filters[dimension]?.toList()?..sort(),
+    ];
+    if (kept.isEmpty) return 'Filter';
+    return kept.length <= 3
+        ? kept.join(' · ')
+        : '${kept.take(2).join(' · ')} +${kept.length - 2}';
+  }
+
+  /// The filter: every dimension the words in scope have, each value with
+  /// how many words selecting it would leave.
+  void _openFilterSheet(
+    BuildContext context, {
+    required List<GreekOccurrenceEntry> occurrences,
+    required Map<String, GreekParseEntry> parses,
+    required bool withLemma,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheet) => _GreekFilterSheet(
+        occurrences: occurrences,
+        parses: parses,
+        dimensions: [
+          for (final d in _GreekDimension.values)
+            if (withLemma || d != _GreekDimension.lemma) d,
+        ],
+        filters: _filters,
+        onChanged: (filters) => setState(() {
+          _filters
+            ..clear()
+            ..addAll(filters);
+          _books.clear();
+        }),
+      ),
     );
   }
 
@@ -795,6 +890,188 @@ class _GreekWordSheetState extends State<GreekWordSheet>
         value,
         style: theme.textTheme.labelSmall?.copyWith(
           color: theme.colorScheme.onSecondaryContainer,
+        ),
+      ),
+    );
+  }
+}
+
+/// Which words of a Greek word's root the occurrence list holds.
+enum _GreekScope { parse, word, root }
+
+/// One dimension of the Greek occurrence filter: a word's dictionary form,
+/// or a part of its grammar code.
+enum _GreekDimension {
+  lemma('Word'),
+  partOfSpeech('Part of speech'),
+  tense('Tense'),
+  voice('Voice'),
+  mood('Mood'),
+  case_('Case'),
+  person('Person'),
+  number('Number'),
+  gender('Gender');
+
+  const _GreekDimension(this.label);
+
+  /// Section heading in the filter sheet.
+  final String label;
+
+  /// This dimension's value for a word, empty where its code has none.
+  String of(GreekOccurrenceEntry o, Map<String, GreekParseEntry> parses) {
+    if (this == _GreekDimension.lemma) return o.lemma;
+    final p = parses[o.grammar];
+    if (p == null) return '';
+    return switch (this) {
+      _GreekDimension.lemma => o.lemma,
+      _GreekDimension.partOfSpeech => p.partOfSpeech,
+      _GreekDimension.tense => p.tense,
+      _GreekDimension.voice => p.voice,
+      _GreekDimension.mood => p.mood,
+      _GreekDimension.case_ => p.grammaticalCase,
+      _GreekDimension.person => p.person,
+      _GreekDimension.number => p.number,
+      _GreekDimension.gender => p.gender,
+    };
+  }
+}
+
+/// The Greek occurrence filter. Each value's count is of the words the
+/// other dimensions' selections admit, so it says what selecting it would
+/// leave; a dimension with fewer than two values among them is not offered
+/// unless something in it is selected.
+class _GreekFilterSheet extends StatefulWidget {
+  const _GreekFilterSheet({
+    required this.occurrences,
+    required this.parses,
+    required this.dimensions,
+    required this.filters,
+    required this.onChanged,
+  });
+
+  final List<GreekOccurrenceEntry> occurrences;
+  final Map<String, GreekParseEntry> parses;
+  final List<_GreekDimension> dimensions;
+  final Map<_GreekDimension, Set<String>> filters;
+  final ValueChanged<Map<_GreekDimension, Set<String>>> onChanged;
+
+  @override
+  State<_GreekFilterSheet> createState() => _GreekFilterSheetState();
+}
+
+class _GreekFilterSheetState extends State<_GreekFilterSheet> {
+  late final Map<_GreekDimension, Set<String>> _filters = {
+    for (final entry in widget.filters.entries) entry.key: {...entry.value},
+  };
+
+  void _changed() {
+    _filters.removeWhere((_, values) => values.isEmpty);
+    widget.onChanged(_filters);
+  }
+
+  /// Each value of `dimension` with how many words have it among those the
+  /// other dimensions admit, the most common first.
+  List<MapEntry<String, int>> _counts(_GreekDimension dimension) {
+    final counts = <String, int>{};
+    for (final o in widget.occurrences) {
+      final admitted = _filters.entries.every(
+        (f) =>
+            f.key == dimension ||
+            f.value.isEmpty ||
+            f.value.contains(f.key.of(o, widget.parses)),
+      );
+      if (!admitted) continue;
+      final value = dimension.of(o, widget.parses);
+      if (value.isEmpty) continue;
+      counts[value] = (counts[value] ?? 0) + 1;
+    }
+    return counts.entries.toList()..sort((a, b) => b.value - a.value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final sections = <Widget>[];
+    for (final dimension in widget.dimensions) {
+      final counts = _counts(dimension);
+      final selected = _filters[dimension] ?? const <String>{};
+      if (counts.length < 2 && selected.isEmpty) continue;
+      sections.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 4),
+          child: Text(
+            dimension.label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+      sections.add(
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            for (final MapEntry(key: value, value: count) in counts)
+              FilterChip(
+                label: Text(
+                  '$value · $count',
+                  style: dimension == _GreekDimension.lemma
+                      ? const TextStyle(fontFamily: 'Cardo')
+                      : null,
+                ),
+                selected: selected.contains(value),
+                visualDensity: VisualDensity.compact,
+                onSelected: (on) => setState(() {
+                  final values = _filters.putIfAbsent(dimension, () => {});
+                  on ? values.add(value) : values.remove(value);
+                  _changed();
+                }),
+              ),
+          ],
+        ),
+      );
+    }
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Filter occurrences',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                TextButton(
+                  onPressed: _filters.isEmpty
+                      ? null
+                      : () => setState(() {
+                          _filters.clear();
+                          _changed();
+                        }),
+                  child: const Text('Clear'),
+                ),
+              ],
+            ),
+            if (sections.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  'These words are all parsed alike.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ...sections,
+          ],
         ),
       ),
     );
