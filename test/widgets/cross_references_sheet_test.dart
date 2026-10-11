@@ -421,18 +421,20 @@ ProphecyEntry _immanuel() => ProphecyEntry(
   title: 'A virgin shall conceive and bear a son, Immanuel',
   theme: 'davidic',
   messianic: true,
-  horizon: 'first-advent',
+  stages: const ['first-advent'],
   note: 'A sign given to the house of David.',
   fulfilments: [
     ProphecyFulfilmentEntry(
       passage: _span(40, 1, 22, 23),
       prophecyVerses: _span(12, 7, 14),
       kind: 'quotation',
+      stage: 'first-advent',
       formula: 'fulfilled+spoken',
       reviewed: true,
       note: '',
     ),
   ],
+  patterns: const [],
 );
 
 /// Daniel 2:44-45, with no fulfilment yet.
@@ -442,9 +444,30 @@ ProphecyEntry _stone() => ProphecyEntry(
   title: 'The stone cut out without hands',
   theme: 'kingdom',
   messianic: true,
-  horizon: 'second-advent',
+  stages: const ['return'],
   note: '',
   fulfilments: const [],
+  patterns: [
+    ProphecyPatternEntry(
+      id: 1,
+      title: 'Invasions from the north',
+      note: '',
+      members: [
+        ProphecyPatternMemberEntry(
+          prophecyId: 7,
+          passage: _span(13, 1, 13, 15),
+          stage: 'history',
+          label: 'Babylon: the seething pot',
+        ),
+        ProphecyPatternMemberEntry(
+          prophecyId: 2,
+          passage: _span(35, 2, 44, 45),
+          stage: 'return',
+          label: 'The stone',
+        ),
+      ],
+    ),
+  ],
 );
 
 void prophecyTests() {
@@ -470,12 +493,10 @@ void prophecyTests() {
       find.text('A virgin shall conceive and bear a son, Immanuel'),
       findsOneWidget,
     );
-    expect(
-      find.text(
-        "Messianic · Promises to David · Fulfilled in Christ's first coming",
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Messianic · Promises to David'), findsOneWidget);
+    expect(find.text("Fulfilled: Christ's first coming"), findsOneWidget);
+    // Fulfilments are listed under their stage.
+    expect(find.text("Christ's first coming"), findsOneWidget);
     expect(find.text('Isaiah 7:13–14'), findsOneWidget);
     expect(
       find.text('Quotation · Matthew 1:22–23 · of Isaiah 7:14'),
@@ -487,7 +508,11 @@ void prophecyTests() {
   });
 
   testWidgets('a prophecy without a fulfilment says so', (tester) async {
-    final rust = await _pump(tester);
+    final opened = <(int, int, int)>[];
+    final rust = await _pump(
+      tester,
+      onNavigate: (b, c, v) => opened.add((b, c, v)),
+    );
     rust.deliver(40, 1, 23, [_entry(book: 12, chapter: 7, verse: 14)]);
     rust.deliverThematic(40, 1, 23, const []);
     rust.deliverProphecies(40, 1, 23, [_stone()]);
@@ -502,7 +527,16 @@ void prophecyTests() {
     rust.deliverVerseTexts();
     await tester.pumpAndSettle();
     expect(find.text('No fulfilment recorded in the Bible.'), findsOneWidget);
-    expect(find.textContaining("Awaits Christ's return"), findsOneWidget);
+    expect(find.text("Fulfilled: Christ's return"), findsOneWidget);
+
+    // Its pattern's other steps open their passages in the reader.
+    expect(find.text('Invasions from the north'), findsOneWidget);
+    await tester.ensureVisible(
+      find.text('Babylon: the seething pot · Jeremiah 1:13–15'),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Babylon: the seething pot · Jeremiah 1:13–15'));
+    expect(opened, [(12, 1, 13)]);
   });
 
   testWidgets('the prophecy overview filters by scope, theme and kind', (

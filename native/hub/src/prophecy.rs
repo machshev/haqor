@@ -7,7 +7,7 @@ use rinf::{DartSignal, RustSignal, debug_print};
 use crate::functions::{SharedBible, lock};
 use crate::signals::{
     GetProphecies, GetVerseProphecies, PassageSpan, Prophecies, ProphecyEntry,
-    ProphecyFulfilmentEntry, VerseProphecies,
+    ProphecyFulfilmentEntry, ProphecyPatternEntry, ProphecyPatternMemberEntry, VerseProphecies,
 };
 
 fn passage(span: VerseSpan) -> PassageSpan {
@@ -28,7 +28,7 @@ fn entry(p: Prophecy) -> ProphecyEntry {
         title: p.title,
         theme: p.theme.unwrap_or_default(),
         messianic: p.messianic,
-        horizon: p.horizon.unwrap_or_default(),
+        stages: p.stages,
         note: p.note,
         fulfilments: p
             .fulfilments
@@ -37,9 +37,29 @@ fn entry(p: Prophecy) -> ProphecyEntry {
                 passage: passage(f.passage),
                 prophecy_verses: passage(f.prophecy_verses),
                 kind: f.kind,
+                stage: f.stage,
                 formula: f.formula.unwrap_or_default(),
                 reviewed: f.reviewed,
                 note: f.note,
+            })
+            .collect(),
+        patterns: p
+            .patterns
+            .into_iter()
+            .map(|pattern| ProphecyPatternEntry {
+                id: pattern.id,
+                title: pattern.title,
+                note: pattern.note,
+                members: pattern
+                    .members
+                    .into_iter()
+                    .map(|m| ProphecyPatternMemberEntry {
+                        prophecy_id: m.prophecy_id,
+                        passage: passage(m.passage),
+                        stage: m.stage,
+                        label: m.label,
+                    })
+                    .collect(),
             })
             .collect(),
     }

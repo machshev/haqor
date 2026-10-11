@@ -8,20 +8,11 @@ import '../bindings/bindings.dart';
 import 'prophecy_card.dart';
 import 'verse_text_cache.dart';
 
-/// When prophecies are fulfilled, as the page filters them: the core's
-/// horizons, or any.
-const _horizons = <(String, String)>[
-  ('', 'Any time'),
-  ('first-advent', 'Christ\'s first coming'),
-  ('second-advent', 'Christ\'s return'),
-  ('both', 'Both comings'),
-  ('history', 'In history'),
-];
-
 /// The prophecies of the whole Bible, grouped by theme: the promises
 /// concerning Christ, then Israel, the nations and the empires of Daniel.
 /// Searched and filtered by theme, by messianic or general, and by when they
-/// are fulfilled. Choosing one shows its passage, note and fulfilments —
+/// are fulfilled; or one pattern's prophecies in its order, like the
+/// invasions from the north. Choosing one shows its passage, note and fulfilments —
 /// beside the list on a wide screen, on a page of its own on a narrow one —
 /// and a verse opens in the reader, closing the page.
 class ProphecyPage extends StatefulWidget {
@@ -88,9 +79,13 @@ class _ProphecyPageState extends State<ProphecyPage> {
   List<ProphecyEntry>? _all;
 
   String _query = '';
+
+  /// A theme, empty for all, or a pattern as `pattern:<id>`.
   String _theme = '';
   ProphecyKinds _kinds = ProphecyKinds.all;
-  String _horizon = '';
+
+  /// A stage, empty for any.
+  String _stage = '';
 
   /// The prophecy shown beside the list on a wide screen.
   int? _selectedId;
@@ -137,9 +132,30 @@ class _ProphecyPageState extends State<ProphecyPage> {
     return '$start–${s.lastChapter}:${s.lastVerse}';
   }
 
+  /// The pattern chosen in place of a theme, if one is.
+  ProphecyPatternEntry? get _pattern {
+    if (!_theme.startsWith('pattern:')) return null;
+    final id = int.tryParse(_theme.substring('pattern:'.length));
+    return _patterns.where((p) => p.id == id).firstOrNull;
+  }
+
+  /// Every pattern any prophecy is part of, in order.
+  List<ProphecyPatternEntry> get _patterns {
+    final byId = <int, ProphecyPatternEntry>{
+      for (final p in _all ?? const <ProphecyEntry>[])
+        for (final pattern in p.patterns) pattern.id: pattern,
+    };
+    return [for (final id in byId.keys.toList()..sort()) byId[id]!];
+  }
+
   bool _matches(ProphecyEntry p) {
-    if (_theme.isNotEmpty && p.theme != _theme) return false;
-    if (_horizon.isNotEmpty && p.horizon != _horizon) return false;
+    final pattern = _pattern;
+    if (pattern != null) {
+      if (!pattern.members.any((m) => m.prophecyId == p.id)) return false;
+    } else if (_theme.isNotEmpty && p.theme != _theme) {
+      return false;
+    }
+    if (_stage.isNotEmpty && !p.stages.contains(_stage)) return false;
     switch (_kinds) {
       case ProphecyKinds.messianic when !p.messianic:
       case ProphecyKinds.general when p.messianic:
@@ -188,7 +204,23 @@ class _ProphecyPageState extends State<ProphecyPage> {
     ntSyriac: widget.ntSyriac,
     ntGreek: widget.ntGreek,
     onNavigateToPassage: _navigate,
+    onOpenProphecy: _openProphecy,
   );
+
+  /// Shows a prophecy a pattern steps to: beside the list on a wide screen,
+  /// on a page of its own on a narrow one.
+  void _openProphecy(int id) {
+    final p = _all?.where((p) => p.id == id).firstOrNull;
+    if (p == null) return;
+    if (_wide) {
+      setState(() => _selectedId = id);
+    } else {
+      _openOwnPage(p);
+    }
+  }
+
+  /// Whether the last layout put the chosen prophecy beside the list.
+  bool _wide = false;
 
   void _openOwnPage(ProphecyEntry p) => Navigator.of(context).push(
     MaterialPageRoute<void>(
@@ -222,7 +254,7 @@ class _ProphecyPageState extends State<ProphecyPage> {
             )
           : LayoutBuilder(
               builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 840;
+                final wide = _wide = constraints.maxWidth >= 840;
                 final shown = all.where(_matches).toList();
                 final list = Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -233,7 +265,8 @@ class _ProphecyPageState extends State<ProphecyPage> {
                   ],
                 );
                 if (!wide) return list;
-                final selected = shown
+                // A pattern's step may lead outside the filters.
+                final selected = all
                     .where((p) => p.id == _selectedId)
                     .firstOrNull;
                 return Row(
@@ -296,6 +329,16 @@ class _ProphecyPageState extends State<ProphecyPage> {
                 ),
                 const SizedBox(width: 6),
               ],
+              for (final pattern in _patterns) ...[
+                ChoiceChip(
+                  avatar: const Icon(Icons.repeat, size: 16),
+                  label: Text(pattern.title),
+                  selected: _theme == 'pattern:${pattern.id}',
+                  onSelected: (_) =>
+                      setState(() => _theme = 'pattern:${pattern.id}'),
+                ),
+                const SizedBox(width: 6),
+              ],
             ],
           ),
         ),
@@ -322,14 +365,26 @@ class _ProphecyPageState extends State<ProphecyPage> {
                 selected: {_kinds},
                 onSelectionChanged: (s) => setState(() => _kinds = s.single),
               ),
-              DropdownButton<String>(
-                key: const ValueKey('prophecy-horizon'),
-                value: _horizon,
-                items: [
-                  for (final (value, label) in _horizons)
-                    DropdownMenuItem(value: value, child: Text(label)),
-                ],
-                onChanged: (h) => setState(() => _horizon = h!),
+              // A set width, so the longest stage fits a phone's list.
+              SizedBox(
+                width: 220,
+                child: DropdownButton<String>(
+                  key: const ValueKey('prophecy-stage'),
+                  isExpanded: true,
+                  value: _stage,
+                  items: [
+                    const DropdownMenuItem(value: '', child: Text('Any time')),
+                    for (final stage in prophecyStages)
+                      DropdownMenuItem(
+                        value: stage,
+                        child: Text(
+                          prophecyStageLabel(stage),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: (stage) => setState(() => _stage = stage!),
+                ),
               ),
             ],
           ),
@@ -356,42 +411,66 @@ class _ProphecyPageState extends State<ProphecyPage> {
       return const Center(child: Text('No prophecies match.'));
     }
     final theme = Theme.of(context);
-    final rows = <Widget>[];
-    for (final (group, prophecies) in _groups(shown)) {
-      rows.add(
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: Text(
-            group.isEmpty ? 'Other prophecies' : prophecyThemeLabel(group),
-            style: theme.textTheme.titleSmall?.copyWith(
-              color: theme.colorScheme.primary,
-            ),
-          ),
+    Widget heading(String text) => Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Text(
+        text,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.primary,
         ),
-      );
-      for (final p in prophecies) {
-        final fulfilments = p.fulfilments.length;
+      ),
+    );
+    Widget row(ProphecyEntry p, String subtitle, {Key? key}) => ListTile(
+      key: key ?? ValueKey('prophecy-row-${p.id}'),
+      dense: true,
+      selected: wide && p.id == _selectedId,
+      title: Text(p.title.isEmpty ? 'Quoted as fulfilled in the NT' : p.title),
+      subtitle: Text(subtitle),
+      onTap: () => wide ? setState(() => _selectedId = p.id) : _openOwnPage(p),
+    );
+    final rows = <Widget>[];
+    final pattern = _pattern;
+    if (pattern != null) {
+      // The pattern's steps in order; a prophecy may be more than one.
+      rows.add(heading(pattern.title));
+      if (pattern.note.isNotEmpty) {
         rows.add(
-          ListTile(
-            key: ValueKey('prophecy-row-${p.id}'),
-            dense: true,
-            selected: wide && p.id == _selectedId,
-            title: Text(
-              p.title.isEmpty ? 'Quoted as fulfilled in the NT' : p.title,
-            ),
-            subtitle: Text(
-              [
-                _passage(p.passage),
-                if (fulfilments > 0)
-                  fulfilments == 1 ? '1 fulfilment' : '$fulfilments fulfilments'
-                else if (p.horizon.isNotEmpty)
-                  prophecyHorizonLabel(p.horizon),
-              ].join(' · '),
-            ),
-            onTap: () =>
-                wide ? setState(() => _selectedId = p.id) : _openOwnPage(p),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(pattern.note, style: theme.textTheme.bodySmall),
           ),
         );
+      }
+      for (final (i, m) in pattern.members.indexed) {
+        final p = shown.where((p) => p.id == m.prophecyId).firstOrNull;
+        if (p == null) continue;
+        rows.add(
+          row(
+            p,
+            '${prophecyStageLabel(m.stage)} · ${m.label} · '
+            '${_passage(m.passage)}',
+            key: ValueKey('pattern-row-$i'),
+          ),
+        );
+      }
+    } else {
+      for (final (group, prophecies) in _groups(shown)) {
+        rows.add(
+          heading(
+            group.isEmpty ? 'Other prophecies' : prophecyThemeLabel(group),
+          ),
+        );
+        for (final p in prophecies) {
+          rows.add(
+            row(
+              p,
+              [
+                _passage(p.passage),
+                ...p.stages.map(prophecyStageLabel),
+              ].join(' · '),
+            ),
+          );
+        }
       }
     }
     return ListView(

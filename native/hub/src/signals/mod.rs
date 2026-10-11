@@ -488,6 +488,8 @@ pub struct ProphecyFulfilmentEntry {
     pub prophecy_verses: PassageSpan,
     /// `quotation`, `allusion`, `type` or `event`.
     pub kind: String,
+    /// When it happens: one of the core's `PROPHECY_STAGES`.
+    pub stage: String,
     /// The citation formula found introducing it (`fulfilled+spoken`), or
     /// empty.
     pub formula: String,
@@ -506,10 +508,31 @@ pub struct ProphecyEntry {
     /// One of the core's `PROPHECY_THEMES`, or empty.
     pub theme: String,
     pub messianic: bool,
-    /// `first-advent`, `second-advent`, `both`, `history`, or empty.
-    pub horizon: String,
+    /// When it is fulfilled, in order: some of the core's `PROPHECY_STAGES`.
+    pub stages: Vec<String>,
     pub note: String,
     pub fulfilments: Vec<ProphecyFulfilmentEntry>,
+    /// The patterns it is part of, each with all its members.
+    pub patterns: Vec<ProphecyPatternEntry>,
+}
+
+/// A series of prophecies repeating one pattern, like the invasions from
+/// the north.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ProphecyPatternEntry {
+    pub id: u32,
+    pub title: String,
+    pub note: String,
+    pub members: Vec<ProphecyPatternMemberEntry>,
+}
+
+/// One step of a [`ProphecyPatternEntry`]: a prophecy at one of its stages.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ProphecyPatternMemberEntry {
+    pub prophecy_id: u32,
+    pub passage: PassageSpan,
+    pub stage: String,
+    pub label: String,
 }
 
 /// Ask for the prophecies one verse belongs to: as part of a prophecy, or of a

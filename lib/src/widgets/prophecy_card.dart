@@ -37,13 +37,23 @@ String prophecyThemeLabel(String theme) => switch (theme) {
   _ => theme,
 };
 
-/// When a prophecy is fulfilled, for a reader.
-String prophecyHorizonLabel(String horizon) => switch (horizon) {
-  'first-advent' => 'Fulfilled in Christ\'s first coming',
-  'second-advent' => 'Awaits Christ\'s return',
-  'both' => 'Fulfilled at his first coming and his return',
-  'history' => 'Fulfilled in history',
-  _ => horizon,
+/// When prophecies are fulfilled, in order: the core's stages.
+const prophecyStages = [
+  'history',
+  'first-advent',
+  'ad70',
+  'return',
+  'millennium-end',
+];
+
+/// A stage's name for a reader.
+String prophecyStageLabel(String stage) => switch (stage) {
+  'history' => 'Before Christ',
+  'first-advent' => 'Christ\'s first coming',
+  'ad70' => 'AD 70',
+  'return' => 'Christ\'s return',
+  'millennium-end' => 'After the thousand years',
+  _ => stage,
 };
 
 /// How a passage fulfils a prophecy, for a reader.
@@ -56,9 +66,10 @@ String _kindLabel(String kind) => switch (kind) {
 };
 
 /// A prophecy of the Old Testament: its passage, title, theme and when it is
-/// fulfilled, its first verse, then the passages fulfilling it, each opening
-/// in the reader. A prophecy may have none: one still awaiting Christ's
-/// return, or one fulfilled in history the Bible does not narrate.
+/// fulfilled, its first verse, then the passages fulfilling it by stage, each
+/// opening in the reader, and the patterns it is part of. A prophecy may have
+/// no fulfilment: one still awaiting Christ's return, or one fulfilled in
+/// history the Bible does not narrate.
 class ProphecyCard extends StatelessWidget {
   const ProphecyCard({
     super.key,
@@ -69,6 +80,7 @@ class ProphecyCard extends StatelessWidget {
     this.ntSyriac = false,
     this.ntGreek = false,
     this.onNavigateToPassage,
+    this.onOpenProphecy,
   });
 
   final ProphecyEntry prophecy;
@@ -85,6 +97,10 @@ class ProphecyCard extends StatelessWidget {
   /// Opens a passage: 0-based book index, chapter, verse.
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
+
+  /// Shows another prophecy of a pattern, by its id. Without it a pattern's
+  /// step opens its passage in the reader.
+  final ValueChanged<int>? onOpenProphecy;
 
   String _ref(int book, int chapter, int verse) =>
       '${bookDisplayName(book - 1, useEnglish: useEnglishBookNames)} '
@@ -135,8 +151,10 @@ class ProphecyCard extends StatelessWidget {
     final details = [
       if (p.messianic) 'Messianic',
       if (p.theme.isNotEmpty) prophecyThemeLabel(p.theme),
-      if (p.horizon.isNotEmpty) prophecyHorizonLabel(p.horizon),
     ].join(' · ');
+    final stageHeading = theme.textTheme.labelMedium?.copyWith(
+      color: theme.colorScheme.primary,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -168,6 +186,14 @@ class ProphecyCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
             child: Text(details, style: muted),
           ),
+        if (p.stages.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
+            child: Text(
+              'Fulfilled: ${p.stages.map(prophecyStageLabel).join(' · ')}',
+              style: muted,
+            ),
+          ),
         if (p.note.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
@@ -182,34 +208,153 @@ class ProphecyCard extends StatelessWidget {
             child: Text('No fulfilment recorded in the Bible.', style: muted),
           )
         else
-          for (final f in p.fulfilments) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 6, 4, 2),
-              child: Text(
-                [
-                  _kindLabel(f.kind),
-                  _span(f.passage),
-                  // The verses it takes up, where not the whole prophecy.
-                  if (!_same(f.prophecyVerses, p.passage))
-                    'of ${_span(f.prophecyVerses)}',
-                  if (!f.reviewed) 'found, unreviewed',
-                ].join(' · '),
-                style: muted,
-              ),
-            ),
-            if (f.note.isNotEmpty)
+          for (final stage in [
+            ...prophecyStages,
+            // A stage this app does not know yet, last.
+            ...{
+              for (final f in p.fulfilments)
+                if (!prophecyStages.contains(f.stage)) f.stage,
+            },
+          ])
+            if (p.fulfilments.where((f) => f.stage == stage).toList()
+                case final fulfilments when fulfilments.isNotEmpty) ...[
               Padding(
-                padding: const EdgeInsets.fromLTRB(4, 0, 4, 2),
-                child: Text(
-                  f.note,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontStyle: FontStyle.italic,
+                padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+                child: Text(prophecyStageLabel(stage), style: stageHeading),
+              ),
+              for (final f in fulfilments) ..._fulfilment(context, f, muted),
+            ],
+        for (final pattern in p.patterns) _pattern(context, pattern),
+      ],
+    );
+  }
+
+  List<Widget> _fulfilment(
+    BuildContext context,
+    ProphecyFulfilmentEntry f,
+    TextStyle? muted,
+  ) {
+    final theme = Theme.of(context);
+    final p = prophecy;
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 6, 4, 2),
+        child: Text(
+          [
+            _kindLabel(f.kind),
+            _span(f.passage),
+            // The verses it takes up, where not the whole prophecy.
+            if (!_same(f.prophecyVerses, p.passage))
+              'of ${_span(f.prophecyVerses)}',
+            if (!f.reviewed) 'found, unreviewed',
+          ].join(' · '),
+          style: muted,
+        ),
+      ),
+      if (f.note.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 2),
+          child: Text(
+            f.note,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      _verseRow(f.passage),
+    ];
+  }
+
+  /// A pattern this prophecy is part of: its title and note, then its steps
+  /// in order, this prophecy's own marked, the others opening theirs.
+  Widget _pattern(BuildContext context, ProphecyPatternEntry pattern) {
+    final theme = Theme.of(context);
+    final open = onOpenProphecy;
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Card(
+        key: ValueKey('pattern-${pattern.id}'),
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.repeat,
+                    size: 16,
+                    color: theme.colorScheme.primary,
                   ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      pattern.title,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                  ),
+                ],
+              ),
+              if (pattern.note.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 4),
+                  child: Text(pattern.note, style: theme.textTheme.bodySmall),
+                ),
+              for (final m in pattern.members)
+                _step(
+                  context,
+                  m,
+                  current: m.prophecyId == prophecy.id,
+                  onTap: m.prophecyId == prophecy.id
+                      ? null
+                      : open != null
+                      ? () => open(m.prophecyId)
+                      : _open(m.passage),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _step(
+    BuildContext context,
+    ProphecyPatternMemberEntry m, {
+    required bool current,
+    VoidCallback? onTap,
+  }) {
+    final theme = Theme.of(context);
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 132,
+              child: Text(
+                prophecyStageLabel(m.stage),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-            _verseRow(f.passage),
+            ),
+            Expanded(
+              child: Text(
+                '${m.label} · ${_span(m.passage)}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: current ? FontWeight.w700 : null,
+                  color: current ? null : theme.colorScheme.primary,
+                ),
+              ),
+            ),
           ],
-      ],
+        ),
+      ),
     );
   }
 }
