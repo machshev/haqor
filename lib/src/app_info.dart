@@ -81,7 +81,8 @@ const dataSourceCredits = <DataSourceCredit>[
         'Marcus Jastrow, A Dictionary of the Targumim, the Talmud Babli and '
         'Yerushalmi, and the Midrashic Literature (Luzac, London, 1903), '
         'digitised by Sefaria. Haqor carries its biblical and Aramaic '
-        'entries, reformatted but with the wording unchanged.',
+        'entries, reformatted but with the wording unchanged, save "Yahweh" '
+        'for "Jehovah".',
     licence: 'Public domain',
     url: 'https://www.sefaria.org/Jastrow',
   ),
@@ -167,6 +168,51 @@ const dataSourceCredits = <DataSourceCredit>[
         'Its definitions (the Online Bible\'s abridged BDB) are not used.',
     licence: 'CC BY 4.0',
     url: 'https://github.com/STEPBible/STEPBible-Data',
+  ),
+  DataSourceCredit(
+    title: 'STEP Bible TAGNT',
+    description:
+        'The Greek New Testament, read as the Textus Receptus (Scrivener '
+        '1894), each word tagged with its dictionary form, gloss and grammar '
+        'and given its English in context, based on the Berean Study Bible; '
+        'with dictionary forms and glosses from STEP Bible\'s TBESG for the '
+        'readings TAGNT gives as variants. Data created by STEPBible.org '
+        'based on work at Tyndale House Cambridge. Haqor chooses the TR\'s '
+        'words from its editions, orders them as Scrivener has them, keeps its '
+        'punctuation only where the TR shares it, and replaces the Strong\'s '
+        'numbers with ids of its own.',
+    licence: 'CC BY 4.0',
+    url: 'https://github.com/STEPBible/STEPBible-Data',
+  ),
+  DataSourceCredit(
+    title: "Scrivener's Textus Receptus",
+    description:
+        "Dr Maurice A. Robinson's transcription of Scrivener's 1894 edition, "
+        'which gives the Greek New Testament its words\' order and verses.',
+    licence: 'Public domain',
+    url: 'https://github.com/byztxt/greektext-scrivener',
+  ),
+  DataSourceCredit(
+    title: 'Abbott-Smith Greek Lexicon',
+    description:
+        'G. Abbott-Smith, A Manual Greek Lexicon of the New Testament '
+        "(Scribner's, New York, 1922), as the Translatable Exegetical Tools "
+        'project marks it up. Haqor reformats its entries, keys them to the '
+        'Textus Receptus\'s dictionary forms, follows its derivations to each '
+        'word\'s root, and writes "Yahweh" for "Jehovah".',
+    licence: 'Public domain',
+    url: 'https://github.com/translatable-exegetical-tools/Abbott-Smith',
+  ),
+  DataSourceCredit(
+    title: 'Thayer Greek Lexicon',
+    description:
+        'J. H. Thayer, A Greek-English Lexicon of the New Testament (1889), '
+        'from the thayers-greek-lexicon-dataset machine reading of it, which '
+        'has had a single reading pass and is not proofread. Haqor joins entries split over a '
+        'page, links their references, keys them to the Textus Receptus\'s '
+        'dictionary forms, and writes "Yahweh" for "Jehovah".',
+    licence: 'Public domain; the dataset is released under CC0',
+    url: 'https://github.com/nigelmsipa/thayers-greek-lexicon-dataset',
   ),
   DataSourceCredit(
     title: 'OpenBible.info Bible Geocoding',

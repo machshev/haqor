@@ -13,6 +13,7 @@ import 'package:haqor/src/reader_page.dart';
 import 'package:haqor/src/study_workspace.dart' as study;
 import 'package:haqor/src/widgets/cross_references_sheet.dart';
 import 'package:haqor/src/widgets/greek_word_sheet.dart';
+import 'package:haqor/src/widgets/lexicon_source.dart';
 import 'package:haqor/src/widgets/syntax_sheet.dart';
 import 'package:haqor/src/widgets/verse_row.dart';
 import 'package:haqor/src/widgets/study_workspace_panel.dart';
@@ -2979,6 +2980,27 @@ void greekTests() {
     final word = rust.greekWordRequests.single;
     expect((word.book, word.chapter, word.verse, word.position), (40, 1, 1, 0));
 
+    const abbottSmith = BdbSummary(
+      headword: 'βίβλος',
+      gloss: 'a book, a roll',
+      contentJson:
+          '{"forms":[{"t":"-ου, ἡ","g":true}],'
+          '"senses":[{"definition":[{"t":"a book","b":true},{"t":", "},'
+          '{"t":"Mt 1:1","href":"Matthew 1:1"}]}]}',
+      posCategory: '',
+      source: 'abbott-smith',
+      lang: '',
+      homograph: '',
+    );
+    const thayer = BdbSummary(
+      headword: 'βίβλος',
+      gloss: '',
+      contentJson: '{"senses":[{"definition":[{"t":"a written book"}]}]}',
+      posCategory: '',
+      source: 'thayer',
+      lang: '',
+      homograph: '',
+    );
     assignRustSignal['GreekWordInfo']!(
       GreekWordInfo(
         requestId: word.requestId,
@@ -2990,9 +3012,46 @@ void greekTests() {
         grammar: 'N-NSF',
         grammarDescription: 'noun, nominative singular feminine',
         name: null,
+        root: 'βίβλος',
+        roots: const ['βίβλος'],
+        lexemes: const [
+          GreekLexemeEntry(
+            lemma: 'βιβλίον',
+            gloss: 'book',
+            occurrences: 1,
+            isCurrent: false,
+            entries: [],
+          ),
+          GreekLexemeEntry(
+            lemma: 'βίβλος',
+            gloss: 'book',
+            occurrences: 2,
+            isCurrent: true,
+            entries: [abbottSmith, thayer],
+          ),
+        ],
         occurrences: const [
-          GreekOccurrenceEntry(book: 40, chapter: 1, verse: 1, position: 0),
-          GreekOccurrenceEntry(book: 41, chapter: 12, verse: 26, position: 18),
+          GreekOccurrenceEntry(
+            book: 40,
+            chapter: 1,
+            verse: 1,
+            position: 0,
+            lemma: 'βίβλος',
+          ),
+          GreekOccurrenceEntry(
+            book: 41,
+            chapter: 12,
+            verse: 26,
+            position: 18,
+            lemma: 'βίβλος',
+          ),
+          GreekOccurrenceEntry(
+            book: 42,
+            chapter: 4,
+            verse: 17,
+            position: 3,
+            lemma: 'βιβλίον',
+          ),
         ],
       ).bincodeSerialize(),
       Uint8List(0),
@@ -3002,14 +3061,87 @@ void greekTests() {
       find.textContaining('nominative singular feminine', findRichText: true),
       findsWidgets,
     );
-    // Laid out as the Hebrew pane is: a Lexicon tab and an Occurrences tab.
+    // Laid out as the Hebrew pane is: the Lexicon tab holds the words built
+    // on its root, its own opened on Abbott-Smith's and Thayer's entries.
     expect(find.text('Lexicon'), findsOneWidget);
+    expect(find.byTooltip(LexiconSource.abbottSmith.title), findsOneWidget);
+    expect(find.byTooltip(LexiconSource.thayer.title), findsOneWidget);
+    expect(
+      find.textContaining('a written book', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.text('βιβλίον'), findsOneWidget);
+    // The Occurrences tab lists the word's own, or every word of its root.
     await tester.tap(find.text('Occurrences'));
     await tester.pumpAndSettle();
     expect(find.text('2 verses'), findsOneWidget);
+    await tester.tap(find.text('All of βίβλος'));
+    await tester.pumpAndSettle();
+    expect(find.text('3 verses'), findsOneWidget);
     // Their verses are asked for in Greek.
     await tester.pump(const Duration(milliseconds: 50));
     expect(rust.verseTextRequests.any((r) => r.greek), isTrue);
+  });
+
+  testWidgets('a compound Greek word is read under either of its roots', (
+    tester,
+  ) async {
+    final rust = await _pumpWorkspace(
+      tester,
+      const Size(1366, 744),
+      prefs: {'book': 39, 'chapter': 1, 'nt_greek': true},
+    );
+    tester
+        .widget<VerseRow>(_verse(40, 1, 1))
+        .onWordTap('Βίβλος', null, 0, 'βίβλος');
+    await tester.pump();
+    final word = rust.greekWordRequests.single;
+    expect(word.root, '');
+    GreekWordInfo reply(String root) => GreekWordInfo(
+      requestId: word.requestId,
+      found: true,
+      word: 'ἀγαθοποιός',
+      lemma: 'ἀγαθοποιός',
+      gloss: 'doing good',
+      english: 'doers of good',
+      grammar: 'A-GPM',
+      grammarDescription: 'adjective, genitive plural masculine',
+      name: null,
+      root: root,
+      roots: const ['ποιέω', 'ἀγαθός'],
+      lexemes: [
+        GreekLexemeEntry(
+          lemma: root,
+          gloss: root == 'ποιέω' ? 'to do' : 'good',
+          occurrences: 500,
+          isCurrent: false,
+          entries: const [],
+        ),
+        const GreekLexemeEntry(
+          lemma: 'ἀγαθοποιός',
+          gloss: 'doing good',
+          occurrences: 1,
+          isCurrent: true,
+          entries: [],
+        ),
+      ],
+      occurrences: const [],
+    );
+    assignRustSignal['GreekWordInfo']!(
+      reply('ποιέω').bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    expect(find.text('to do'), findsOneWidget);
+    await tester.tap(find.byTooltip('Read this word under ἀγαθός'));
+    await tester.pump();
+    expect(rust.greekWordRequests.last.root, 'ἀγαθός');
+    assignRustSignal['GreekWordInfo']!(
+      reply('ἀγαθός').bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pump();
+    expect(find.text('good'), findsOneWidget);
   });
 
   testWidgets('the Old Testament stays Hebrew, right to left', (tester) async {

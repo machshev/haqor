@@ -1902,19 +1902,39 @@ pub struct GetGreekWord {
     pub chapter: u8,
     pub verse: u8,
     pub position: u32,
+    /// The root to read the word under, one of those it is built on; empty
+    /// for its first.
+    pub root: String,
 }
 
-/// Where a word of the Greek text stands.
+/// Where a word of the Greek text stands, and its dictionary form.
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct GreekOccurrenceEntry {
     pub book: u8,
     pub chapter: u8,
     pub verse: u8,
     pub position: u32,
+    pub lemma: String,
 }
 
-/// Reply to [`GetGreekWord`]: the word, its tags, and every word sharing its
-/// dictionary form.
+/// A dictionary form of the TR built on the root a Greek word is read
+/// under, with Abbott-Smith's and Thayer's entries for it.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct GreekLexemeEntry {
+    pub lemma: String,
+    pub gloss: String,
+    /// How many words of the TR it is.
+    pub occurrences: u32,
+    /// Whether it is the looked-up word's own.
+    pub is_current: bool,
+    /// Abbott-Smith's entries, then Thayer's (`source`), with no part of
+    /// speech.
+    pub entries: Vec<BdbSummary>,
+}
+
+/// Reply to [`GetGreekWord`]: the word, its tags, the root it is read under
+/// with the other dictionary forms built on it and their lexicon entries, and
+/// every word of the TR built on that root.
 #[derive(Debug, Serialize, RustSignal)]
 pub struct GreekWordInfo {
     pub request_id: u32,
@@ -1933,7 +1953,14 @@ pub struct GreekWordInfo {
     pub grammar_description: String,
     /// The person or place it names, in brief.
     pub name: Option<NameSummaryEntry>,
-    /// Every word of the TR with the same dictionary form, in order, this
-    /// one included.
+    /// The root it is read under, and every root it is built on, its first
+    /// first; empty for a database without them.
+    pub root: String,
+    pub roots: Vec<String>,
+    /// The dictionary forms built on [`Self::root`], the most used first;
+    /// its own alone, with its entries, where there is no root.
+    pub lexemes: Vec<GreekLexemeEntry>,
+    /// Every word of the TR built on [`Self::root`] (failing a root, with
+    /// the same dictionary form), in order, this one included.
     pub occurrences: Vec<GreekOccurrenceEntry>,
 }

@@ -26,7 +26,7 @@ use crate::signals::{
 };
 #[cfg(target_arch = "wasm32")]
 use crate::signals::{FlushProgress, ProgressSnapshot};
-use crate::signals::{GetGreekWord, GreekOccurrenceEntry, GreekWordInfo};
+use crate::signals::{GetGreekWord, GreekLexemeEntry, GreekOccurrenceEntry, GreekWordInfo};
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -153,11 +153,27 @@ fn lexicon_summary(e: LexiconEntry) -> BdbSummary {
     }
 }
 
-/// Answer the previews of Klein and Jastrow links: one entry by its key.
+/// Answer the previews of Klein, Jastrow, Abbott-Smith and Thayer links: one
+/// entry by its key (a Greek lexicon's, its headword).
 pub async fn get_dictionary_entry(bible: SharedBible) {
     let receiver = GetDictionaryEntry::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let req = signal_pack.message;
+        if matches!(req.source.as_str(), "abbott-smith" | "thayer") {
+            let entry = lock(&bible)
+                .greek_lexicon_entry(&req.source, &req.key)
+                .unwrap_or_else(|e| {
+                    debug_print!("greek_lexicon_entry({:?}, {:?}) error: {e:?}", req.source, req.key);
+                    None
+                });
+            DictionaryEntry {
+                request_id: req.request_id,
+                found: entry.is_some(),
+                entry: entry.map(greek_lexicon_summary),
+            }
+            .send_signal_to_dart();
+            continue;
+        }
         let entry = LexiconSource::parse(&req.source).and_then(|source| {
             lock(&bible)
                 .dictionary_entry(source, &req.key)
@@ -2589,8 +2605,22 @@ fn translation_spans(
         .collect()
 }
 
+/// An entry of Abbott-Smith or Thayer as the Lexicon tab renders an entry.
+fn greek_lexicon_summary(e: haqor_core::greek::GreekLexiconEntry) -> BdbSummary {
+    BdbSummary {
+        headword: e.headword,
+        gloss: e.gloss,
+        content_json: e.body,
+        pos_category: String::new(),
+        source: e.source,
+        lang: String::new(),
+        homograph: String::new(),
+    }
+}
+
 /// A word of the Greek New Testament: its tags, the person or place it
-/// names, and every word of the TR sharing its dictionary form.
+/// names, the root it is read under with the dictionary forms built on it and
+/// their lexicon entries, and every word of the TR built on that root.
 pub async fn get_greek_word(bible: SharedBible) {
     let receiver = GetGreekWord::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
@@ -2614,6 +2644,9 @@ pub async fn get_greek_word(bible: SharedBible) {
                 grammar: String::new(),
                 grammar_description: String::new(),
                 name: None,
+                root: String::new(),
+                roots: Vec::new(),
+                lexemes: Vec::new(),
                 occurrences: Vec::new(),
             }
             .send_signal_to_dart();
@@ -2623,17 +2656,63 @@ pub async fn get_greek_word(bible: SharedBible) {
             .name
             .and_then(|id| bible.name_entity(id).ok().flatten())
             .map(|entity| name_summary_entry(entity.summary));
-        let occurrences = bible
-            .greek_lemma_occurrences(&word.lemma)
+        let roots = bible.greek_roots(&word.lemma).unwrap_or_default();
+        let root = roots
+            .iter()
+            .find(|r| **r == req.root)
+            .or(roots.first())
+            .cloned()
+            .unwrap_or_default();
+        let entries = |lemma: &str| -> Vec<BdbSummary> {
+            bible
+                .greek_lexicon_entries(lemma)
+                .unwrap_or_default()
+                .into_iter()
+                .map(greek_lexicon_summary)
+                .collect()
+        };
+        let mut lexemes: Vec<GreekLexemeEntry> = bible
+            .greek_root_lemmas(&root)
             .unwrap_or_default()
             .into_iter()
-            .map(|o| GreekOccurrenceEntry {
+            .map(|l| GreekLexemeEntry {
+                is_current: l.lemma == word.lemma,
+                entries: entries(&l.lemma),
+                lemma: l.lemma,
+                gloss: l.gloss,
+                occurrences: l.occurrences,
+            })
+            .collect();
+        let occurrence = |o: haqor_core::greek::GreekOccurrence, lemma: String| {
+            GreekOccurrenceEntry {
                 book: o.book,
                 chapter: o.chapter,
                 verse: o.verse,
                 position: o.position,
-            })
-            .collect();
+                lemma,
+            }
+        };
+        let occurrences: Vec<GreekOccurrenceEntry> = if lexemes.is_empty() {
+            // A database without roots: the word's own dictionary form.
+            let own = bible.greek_lemma_occurrences(&word.lemma).unwrap_or_default();
+            lexemes.push(GreekLexemeEntry {
+                lemma: word.lemma.clone(),
+                gloss: word.gloss.clone(),
+                occurrences: own.len() as u32,
+                is_current: true,
+                entries: entries(&word.lemma),
+            });
+            own.into_iter()
+                .map(|o| occurrence(o, word.lemma.clone()))
+                .collect()
+        } else {
+            bible
+                .greek_root_occurrences(&root)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(o, lemma)| occurrence(o, lemma))
+                .collect()
+        };
         GreekWordInfo {
             request_id: req.request_id,
             found: true,
@@ -2644,6 +2723,9 @@ pub async fn get_greek_word(bible: SharedBible) {
             english: word.english,
             grammar: word.grammar,
             name,
+            root,
+            roots,
+            lexemes,
             occurrences,
         }
         .send_signal_to_dart();

@@ -7,15 +7,17 @@ import 'package:rinf/rinf.dart';
 import '../app_settings.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
+import 'lexicon_source.dart';
 import 'name_details.dart';
 import 'verse_text_cache.dart';
 import 'word_info_sheet.dart'
-    show CanonDistribution, OccurrenceVerseRow, VerseModeIcon;
+    show CanonDistribution, LexiconEntryView, OccurrenceVerseRow, VerseModeIcon;
 
 /// A word of the Greek New Testament (the TR), laid out as the Hebrew and
-/// Aramaic word pane is: its gloss and the word over its dictionary form, its
-/// grammar as chips, and two tabs, one for what the lexicon says of it, the
-/// other for every word sharing its dictionary form, each in its verse.
+/// Aramaic word pane is: its gloss and the word over its root, its grammar as
+/// chips, and two tabs, one for the words built on its root with Abbott-Smith's
+/// and Thayer's entries for each, the other for their occurrences, each in its
+/// verse.
 class GreekWordSheet extends StatefulWidget {
   const GreekWordSheet({
     super.key,
@@ -30,6 +32,7 @@ class GreekWordSheet extends StatefulWidget {
     this.nameBookmarks,
     this.sendRequest,
     this.sendVerseTextsRequest,
+    this.sendDictionaryRequest,
   });
 
   /// The word as the reader shows it, shown until its details arrive.
@@ -49,16 +52,17 @@ class GreekWordSheet extends StatefulWidget {
   onNavigateToPassage;
   final NameBookmarks? nameBookmarks;
 
-  /// Test seams: how the word and the occurrences' verses are asked for.
+  /// Test seams: how the word, the occurrences' verses and a linked lexicon
+  /// entry are asked for.
   final void Function(GetGreekWord request)? sendRequest;
   final void Function(GetVerseTexts request)? sendVerseTextsRequest;
+  final void Function(GetDictionaryEntry request)? sendDictionaryRequest;
 
   @override
   State<GreekWordSheet> createState() => _GreekWordSheetState();
 }
 
-/// One verse of the occurrence list, with every position in it that shares
-/// the word's dictionary form.
+/// One verse of the occurrence list, with the positions in it to highlight.
 typedef _GreekVerse = ({int book, int chapter, int verse, List<int> positions});
 
 class _GreekWordSheetState extends State<GreekWordSheet>
@@ -76,6 +80,17 @@ class _GreekWordSheetState extends State<GreekWordSheet>
   GreekWordInfo? _info;
   bool _englishOnly = false;
 
+  /// The root the word is read under, empty for its first.
+  String _root = '';
+
+  /// Whether the occurrence list holds every word built on the root, rather
+  /// than the word's own dictionary form alone.
+  bool _wholeRoot = false;
+
+  /// The dictionary forms whose entries are shown or hidden against their
+  /// default: the word's own shown, the rest hidden.
+  final Set<String> _toggledLexemes = {};
+
   /// The books the occurrence list is narrowed to, by 1-based number; empty
   /// for all of them.
   final Set<int> _books = {};
@@ -90,12 +105,22 @@ class _GreekWordSheetState extends State<GreekWordSheet>
       if (pack.message.requestId != _requestId || !mounted) return;
       setState(() => _info = pack.message);
     });
+    _request();
+    unawaited(
+      occurrenceVerseEnglishOnlyEnabled().then((enabled) {
+        if (mounted) setState(() => _englishOnly = enabled);
+      }),
+    );
+  }
+
+  void _request() {
     final request = GetGreekWord(
       requestId: _requestId,
       book: widget.book,
       chapter: widget.chapter,
       verse: widget.verse,
       position: widget.position,
+      root: _root,
     );
     final send = widget.sendRequest;
     if (send != null) {
@@ -103,11 +128,17 @@ class _GreekWordSheetState extends State<GreekWordSheet>
     } else {
       request.sendSignalToRust();
     }
-    unawaited(
-      occurrenceVerseEnglishOnlyEnabled().then((enabled) {
-        if (mounted) setState(() => _englishOnly = enabled);
-      }),
-    );
+  }
+
+  /// Read the word under another of its roots: both tabs move to it.
+  void _selectRoot(String root) {
+    if (root == _info?.root) return;
+    setState(() {
+      _root = root;
+      _toggledLexemes.clear();
+      _books.clear();
+    });
+    _request();
   }
 
   @override
@@ -138,7 +169,7 @@ class _GreekWordSheetState extends State<GreekWordSheet>
   );
 
   /// The occurrences merged by verse, in canonical order as they come.
-  List<_GreekVerse> _verses(List<GreekOccurrenceEntry> occurrences) {
+  List<_GreekVerse> _verses(Iterable<GreekOccurrenceEntry> occurrences) {
     final verses = <_GreekVerse>[];
     for (final o in occurrences) {
       final last = verses.lastOrNull;
@@ -267,23 +298,33 @@ class _GreekWordSheetState extends State<GreekWordSheet>
                   else
                     const Spacer(),
                   const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        info.word.isNotEmpty ? info.word : widget.word,
-                        style: _wordStyle(theme),
-                      ),
-                      if (info.lemma.isNotEmpty)
-                        Text(
-                          info.lemma,
-                          style: TextStyle(
-                            fontFamily: 'Cardo',
-                            fontSize: 13,
-                            color: theme.colorScheme.onSurfaceVariant,
+                  // Greek words run long: the word shrinks to fit a narrow
+                  // pane rather than overflow it.
+                  Flexible(
+                    flex: 2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            info.word.isNotEmpty ? info.word : widget.word,
+                            style: _wordStyle(theme),
                           ),
                         ),
-                    ],
+                        if (info.roots.length > 1)
+                          _rootSelector(context, info)
+                        else if (info.root.isNotEmpty || info.lemma.isNotEmpty)
+                          Text(
+                            info.root.isNotEmpty ? info.root : info.lemma,
+                            style: TextStyle(
+                              fontFamily: 'Cardo',
+                              fontSize: 13,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -331,21 +372,63 @@ class _GreekWordSheetState extends State<GreekWordSheet>
     );
   }
 
+  /// The roots a compound is built on, the one it is read under lit; tapping
+  /// another reads it under that one.
+  Widget _rootSelector(BuildContext context, GreekWordInfo info) {
+    final theme = Theme.of(context);
+    return Wrap(
+      alignment: WrapAlignment.end,
+      spacing: 4,
+      children: [
+        for (final root in info.roots)
+          Tooltip(
+            message: 'Read this word under $root',
+            child: InkWell(
+              onTap: () => _selectRoot(root),
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: root == info.root
+                      ? theme.colorScheme.secondaryContainer
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: root == info.root
+                        ? theme.colorScheme.secondaryContainer
+                        : theme.colorScheme.outlineVariant,
+                  ),
+                ),
+                child: Text(
+                  root,
+                  style: TextStyle(
+                    fontFamily: 'Cardo',
+                    fontSize: 13,
+                    color: root == info.root
+                        ? theme.colorScheme.onSecondaryContainer
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  bool _lexemeExpanded(GreekLexemeEntry lexeme) =>
+      lexeme.isCurrent != _toggledLexemes.contains(lexeme.lemma);
+
+  /// Who or what the word names, then every dictionary form built on its
+  /// root, the word's own opened on Abbott-Smith's and Thayer's entries and
+  /// the rest folded to a line.
   Widget _buildLexiconTab(
     BuildContext context,
     GreekWordInfo info,
     double bottomPad,
   ) {
     final theme = Theme.of(context);
-    Widget sectionHeading(String label) => Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Text(
-        label,
-        style: theme.textTheme.labelLarge?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
+    final lexemes = info.lexemes;
     return ListView(
       padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
       children: [
@@ -355,60 +438,128 @@ class _GreekWordSheetState extends State<GreekWordSheet>
           NameCard(name: name, onOpen: () => _openName(name)),
           const SizedBox(height: 16),
         ],
-        if (info.lemma.isNotEmpty) ...[
-          sectionHeading('Dictionary form'),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(8),
-            ),
+        if (lexemes.length > 1 && info.root.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
             child: Text.rich(
               TextSpan(
                 children: [
+                  const TextSpan(text: 'Built on '),
                   TextSpan(
-                    text: info.lemma,
-                    style: TextStyle(
-                      fontFamily: 'Cardo',
-                      fontSize: 20,
-                      color: theme.colorScheme.onSurface,
-                    ),
+                    text: info.root,
+                    style: const TextStyle(fontFamily: 'Cardo'),
                   ),
-                  if (info.gloss.isNotEmpty)
-                    TextSpan(
-                      text: '  ${info.gloss}',
-                      style: theme.textTheme.bodyMedium,
-                    ),
                 ],
+              ),
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
-          const SizedBox(height: 12),
-        ],
-        if (info.grammar.isNotEmpty) ...[
-          sectionHeading('Grammar'),
-          Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(
-                  text: info.grammarDescription,
-                  style: theme.textTheme.bodyMedium,
-                ),
-                TextSpan(
-                  text: '  ${info.grammar}',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        for (final lexeme in lexemes) _lexemeRow(context, lexeme),
       ],
     );
   }
 
-  /// A header with the count, the verse-text switch and the canon
+  Widget _lexemeRow(BuildContext context, GreekLexemeEntry lexeme) {
+    final theme = Theme.of(context);
+    final expanded = _lexemeExpanded(lexeme);
+    final header = InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: () => setState(() {
+        if (!_toggledLexemes.remove(lexeme.lemma)) {
+          _toggledLexemes.add(lexeme.lemma);
+        }
+      }),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Icon(
+              expanded ? Icons.expand_less : Icons.expand_more,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              lexeme.lemma,
+              style: TextStyle(
+                fontFamily: 'Cardo',
+                fontSize: 18,
+                fontWeight: lexeme.isCurrent ? FontWeight.bold : null,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                lexeme.gloss,
+                maxLines: expanded ? null : 1,
+                overflow: expanded ? null : TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+            Text(
+              '${lexeme.occurrences}×',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    final row = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        header,
+        if (expanded) ...[
+          if (lexeme.entries.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 0, 0, 8),
+              child: Text(
+                'No lexicon entry for this word.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          for (final entry in lexeme.entries)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LexiconSourceBadge(source: entry.source),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: LexiconEntryView(
+                      entry: entry,
+                      onNavigateToPassage: widget.onNavigateToPassage,
+                      sendDictionaryRequest: widget.sendDictionaryRequest,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ],
+    );
+    if (!lexeme.isCurrent) return row;
+    return Container(
+      key: ValueKey('current-lexeme-${lexeme.lemma}'),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: row,
+    );
+  }
+
+  /// A header with the scope, the count, the verse-text switch and the canon
   /// distribution over the verses, as the Hebrew pane's Occurrences tab has.
   Widget _buildOccurrencesTab(
     BuildContext context,
@@ -416,10 +567,14 @@ class _GreekWordSheetState extends State<GreekWordSheet>
     double bottomPad,
   ) {
     final theme = Theme.of(context);
-    final all = _verses(info.occurrences);
-    if (all.isEmpty) return const SizedBox.shrink();
+    final own = info.occurrences.where((o) => o.lemma == info.lemma).toList();
+    // The root's other words: the choice of scope only where it has some.
+    final rootWide = info.occurrences.length > own.length;
+    final scoped = _wholeRoot && rootWide ? info.occurrences : own;
+    final all = _verses(scoped);
+    if (all.isEmpty && !rootWide) return const SizedBox.shrink();
     final bookCounts = <int, int>{};
-    for (final o in info.occurrences) {
+    for (final o in scoped) {
       bookCounts[o.book] = (bookCounts[o.book] ?? 0) + 1;
     }
     final verses = _books.isEmpty
@@ -427,6 +582,19 @@ class _GreekWordSheetState extends State<GreekWordSheet>
         : all.where((v) => _books.contains(v.book)).toList();
     final hits = verses.fold(0, (sum, v) => sum + v.positions.length);
     final versePart = '${verses.length} verse${verses.length == 1 ? '' : 's'}';
+    final countStyle = theme.textTheme.labelSmall;
+    Widget segment(String name, int count, {bool greek = false}) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: greek ? const TextStyle(fontFamily: 'Cardo') : null,
+        ),
+        Text('$count', maxLines: 1, style: countStyle),
+      ],
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -443,6 +611,38 @@ class _GreekWordSheetState extends State<GreekWordSheet>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (rootWide)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 2),
+                  child: SegmentedButton<bool>(
+                    segments: [
+                      ButtonSegment(
+                        value: false,
+                        label: segment(info.lemma, own.length, greek: true),
+                      ),
+                      ButtonSegment(
+                        value: true,
+                        label: segment(
+                          'All of ${info.root}',
+                          info.occurrences.length,
+                          greek: true,
+                        ),
+                      ),
+                    ],
+                    selected: {_wholeRoot},
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      padding: WidgetStatePropertyAll(
+                        EdgeInsets.symmetric(horizontal: 6),
+                      ),
+                    ),
+                    onSelectionChanged: (selection) => setState(() {
+                      _wholeRoot = selection.first;
+                      _books.clear();
+                    }),
+                  ),
+                ),
               Row(
                 children: [
                   Expanded(

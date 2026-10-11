@@ -60,6 +60,34 @@ const Map<String, int> _kBdbBookToIndex = {
   'Nehemiah': 36,
   'I Chronicles': 37,
   'II Chronicles': 38,
+  // The New Testament, which Abbott-Smith and Thayer cite.
+  'Matthew': 39,
+  'Mark': 40,
+  'Luke': 41,
+  'John': 42,
+  'Acts': 43,
+  'Romans': 44,
+  'I Corinthians': 45,
+  'II Corinthians': 46,
+  'Galatians': 47,
+  'Ephesians': 48,
+  'Philippians': 49,
+  'Colossians': 50,
+  'I Thessalonians': 51,
+  'II Thessalonians': 52,
+  'I Timothy': 53,
+  'II Timothy': 54,
+  'Titus': 55,
+  'Philemon': 56,
+  'Hebrews': 57,
+  'James': 58,
+  'I Peter': 59,
+  'II Peter': 60,
+  'I John': 61,
+  'II John': 62,
+  'III John': 63,
+  'Jude': 64,
+  'Revelation': 65,
 };
 
 ({int bookIndex, int chapter, int verse})? _parseBibleRef(String href) {
@@ -673,26 +701,8 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     super.dispose();
   }
 
-  void _onBibleRefTap(BuildContext context, String href) {
-    final parsed = _parseBibleRef(href);
-    if (parsed == null) return;
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => BibleRefPreviewDialog(
-        displayRef: href,
-        bookIndex: parsed.bookIndex,
-        chapter: parsed.chapter,
-        verse: parsed.verse,
-        onNavigate: widget.onNavigateToPassage == null
-            ? null
-            : () => widget.onNavigateToPassage!(
-                parsed.bookIndex,
-                parsed.chapter,
-                parsed.verse,
-              ),
-      ),
-    );
-  }
+  void _onBibleRefTap(BuildContext context, String href) =>
+      showBibleRefPreview(context, href, widget.onNavigateToPassage);
 
   void _onXrefTap(String bdbId, String headword) =>
       _openWordInfo(headword, bdbId: bdbId);
@@ -706,18 +716,14 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     String key,
     String text,
   ) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => _DictionaryEntryPreviewDialog(
-        source: source,
-        entryKey: key,
-        linkText: text,
-        send: widget.sendDictionaryRequest,
-        onBibleRefTap: (href) => _onBibleRefTap(context, href),
-        onXrefTap: _onXrefTap,
-        onDictionaryLinkTap: (source, key, text) =>
-            _onDictionaryLinkTap(ctx, source, key, text),
-      ),
+    showDictionaryEntryPreview(
+      context,
+      source: source,
+      entryKey: key,
+      linkText: text,
+      send: widget.sendDictionaryRequest,
+      onNavigateToPassage: widget.onNavigateToPassage,
+      onXrefTap: _onXrefTap,
     );
   }
 
@@ -3587,6 +3593,103 @@ class _VersePlaceholder extends StatelessWidget {
   }
 }
 
+/// A verse a lexicon cites (`Matthew 1:1`), in a preview over the sheet,
+/// with a way to go to it.
+void showBibleRefPreview(
+  BuildContext context,
+  String href,
+  void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
+) {
+  final parsed = _parseBibleRef(href);
+  if (parsed == null) return;
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => BibleRefPreviewDialog(
+      displayRef: href,
+      bookIndex: parsed.bookIndex,
+      chapter: parsed.chapter,
+      verse: parsed.verse,
+      onNavigate: onNavigateToPassage == null
+          ? null
+          : () => onNavigateToPassage(
+              parsed.bookIndex,
+              parsed.chapter,
+              parsed.verse,
+            ),
+    ),
+  );
+}
+
+/// Another entry of a lexicon (Klein, Jastrow, Abbott-Smith, Thayer) that one
+/// links to, in a preview over the sheet. The target's own links open further
+/// previews on top, so a chain of derivations can be followed and walked back.
+void showDictionaryEntryPreview(
+  BuildContext context, {
+  required String source,
+  required String entryKey,
+  required String linkText,
+  void Function(GetDictionaryEntry)? send,
+  void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
+  void Function(String bdbId, String headword)? onXrefTap,
+}) {
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => _DictionaryEntryPreviewDialog(
+      source: source,
+      entryKey: entryKey,
+      linkText: linkText,
+      send: send,
+      onBibleRefTap: (href) =>
+          showBibleRefPreview(context, href, onNavigateToPassage),
+      onXrefTap: onXrefTap ?? (_, _) {},
+      onDictionaryLinkTap: (source, key, text) => showDictionaryEntryPreview(
+        ctx,
+        source: source,
+        entryKey: key,
+        linkText: text,
+        send: send,
+        onNavigateToPassage: onNavigateToPassage,
+        onXrefTap: onXrefTap,
+      ),
+    ),
+  );
+}
+
+/// One lexicon entry's body as the word sheet's Lexicon tab shows it, its
+/// verses and its links to other entries opening in previews.
+class LexiconEntryView extends StatelessWidget {
+  const LexiconEntryView({
+    super.key,
+    required this.entry,
+    this.onNavigateToPassage,
+    this.sendDictionaryRequest,
+  });
+
+  final BdbSummary entry;
+  final void Function(int bookIndex, int chapter, int verse)?
+  onNavigateToPassage;
+
+  /// Test seam: how a linked entry is asked for.
+  final void Function(GetDictionaryEntry)? sendDictionaryRequest;
+
+  @override
+  Widget build(BuildContext context) => _BdbContent(
+    contentJson: entry.contentJson,
+    source: entry.source,
+    onBibleRefTap: (href) =>
+        showBibleRefPreview(context, href, onNavigateToPassage),
+    onXrefTap: (_, _) {},
+    onDictionaryLinkTap: (source, key, text) => showDictionaryEntryPreview(
+      context,
+      source: source,
+      entryKey: key,
+      linkText: text,
+      send: sendDictionaryRequest,
+      onNavigateToPassage: onNavigateToPassage,
+    ),
+  );
+}
+
 class _BdbContent extends StatelessWidget {
   const _BdbContent({
     required this.contentJson,
@@ -3665,6 +3768,15 @@ class _BdbContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Abbott-Smith's and Thayer's inflection and notes on the form,
+          // before the senses as they print them.
+          if (entry['forms'] case final List<dynamic> forms)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: SelectableText.rich(
+                TextSpan(children: _spansFromDefinition(context, forms)),
+              ),
+            ),
           ...senses.map<Widget>(
             (s) => _buildSense(context, s as Map<String, dynamic>, 0),
           ),
@@ -3678,6 +3790,10 @@ class _BdbContent extends StatelessWidget {
             section('Etymology', etymology),
           if (entry['derivatives'] case final List<dynamic> derivatives)
             section('Derivatives', derivatives),
+          if (entry['lxx'] case final List<dynamic> lxx)
+            section('Septuagint', lxx),
+          if (entry['related'] case final List<dynamic> related)
+            section('Synonyms', related),
         ],
       ),
     );
@@ -3714,6 +3830,15 @@ class _BdbContent extends StatelessWidget {
             ),
           if (lang != null)
             Padding(padding: const EdgeInsets.only(bottom: 2), child: lang),
+          // A numbered sense whose senses carry all its text.
+          if (definition == null && num != null)
+            Text(
+              num,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           if (definition != null)
             SelectableText.rich(
               TextSpan(
@@ -3756,6 +3881,8 @@ class _BdbContent extends StatelessWidget {
       final italic = span['i'] == true;
       final small = span['s'] == true;
       final rtl = span['rtl'] == true;
+      // Greek in Abbott-Smith and Thayer.
+      final greek = span['g'] == true;
       final href = span['href'] as String?;
       // A <w src> cross-reference: tappable, navigates to the target entry.
       final xref = span['xref'] as String?;
@@ -3767,7 +3894,7 @@ class _BdbContent extends StatelessWidget {
         fontWeight: bold ? FontWeight.bold : null,
         fontStyle: italic ? FontStyle.italic : null,
         fontSize: small ? (baseStyle?.fontSize ?? 12) * 0.85 : null,
-        fontFamily: rtl ? 'Cardo' : null,
+        fontFamily: rtl || greek ? 'Cardo' : null,
         fontFamilyFallback: rtl ? const ['Noto Serif Hebrew'] : null,
         color: isLink ? theme.colorScheme.primary : null,
         decoration: isLink ? TextDecoration.underline : null,

@@ -45,6 +45,17 @@ void main() {
     expect(sedra.note, contains('Syriac Computing Institute'));
   });
 
+  test('TAGNT credit names STEP Bible and Tyndale House, as CC BY asks', () {
+    // CC BY 4.0 is conditional on this credit, for as long as haqor.db
+    // carries the Greek New Testament.
+    final tagnt = dataSourceCredits.firstWhere(
+      (c) => c.title == 'STEP Bible TAGNT',
+    );
+    expect(tagnt.description, contains('STEPBible.org'));
+    expect(tagnt.description, contains('Tyndale House'));
+    expect(tagnt.licence, 'CC BY 4.0');
+  });
+
   test(
     'Klein credit names its author, digitiser and non-commercial licence',
     () {

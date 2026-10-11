@@ -6,7 +6,9 @@ enum LexiconSource {
   bdb('B', 'Brown-Driver-Briggs'),
   klein('K', "Klein's Etymological Dictionary"),
   jastrow('J', "Jastrow's Dictionary of the Targumim, Talmud and Midrash"),
-  sedra('S', 'SEDRA Syriac lexicon of the Peshitta');
+  sedra('S', 'SEDRA Syriac lexicon of the Peshitta'),
+  abbottSmith('A', "Abbott-Smith's Manual Greek Lexicon of the New Testament"),
+  thayer('T', "Thayer's Greek-English Lexicon of the New Testament");
 
   const LexiconSource(this.letter, this.title);
 
@@ -22,16 +24,20 @@ enum LexiconSource {
     'klein' => LexiconSource.klein,
     'jastrow' => LexiconSource.jastrow,
     'sedra' => LexiconSource.sedra,
+    'abbott-smith' => LexiconSource.abbottSmith,
+    'thayer' => LexiconSource.thayer,
     _ => LexiconSource.bdb,
   };
 }
 
 /// A small monogram naming which lexicon an entry comes from, so entries of
-/// one lexeme from BDB, Klein, Jastrow and SEDRA can be told apart at a glance.
+/// one lexeme from BDB, Klein, Jastrow and SEDRA, or Abbott-Smith and Thayer,
+/// can be told apart at a glance.
 class LexiconSourceBadge extends StatelessWidget {
   const LexiconSourceBadge({super.key, required this.source});
 
-  /// The hub's source key: `bdb`, `klein`, `jastrow` or `sedra`.
+  /// The hub's source key: `bdb`, `klein`, `jastrow`, `sedra`, `abbott-smith`
+  /// or `thayer`.
   final String source;
 
   @override
@@ -51,6 +57,14 @@ class LexiconSourceBadge extends StatelessWidget {
       LexiconSource.sedra => (
         scheme.surfaceContainerHighest,
         scheme.onSurfaceVariant,
+      ),
+      LexiconSource.abbottSmith => (
+        scheme.primaryContainer,
+        scheme.onPrimaryContainer,
+      ),
+      LexiconSource.thayer => (
+        scheme.tertiaryContainer,
+        scheme.onTertiaryContainer,
       ),
     };
     return Tooltip(

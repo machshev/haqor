@@ -301,7 +301,32 @@ apply to this data wherever Haqor is redistributed.
 **Rabbinic and Aramaic dictionary** — Marcus Jastrow, *A Dictionary of the
 Targumim, the Talmud Babli and Yerushalmi, and the Midrashic Literature*
 (Luzac, London, 1903), in the public domain, from the
-[digitisation by Sefaria](https://www.sefaria.org/Jastrow).
+[digitisation by Sefaria](https://www.sefaria.org/Jastrow), with "Yahweh"
+written for "Jehovah".
+
+**Greek New Testament** — the Textus Receptus (Scrivener 1894) from STEP
+Bible's [TAGNT](https://github.com/STEPBible/STEPBible-Data) (Translators
+Amalgamated Greek NT), data created by www.STEPBible.org based on work at
+Tyndale House Cambridge, licensed CC BY 4.0, its English renderings based on
+the Berean Study Bible; with dictionary forms and glosses for the readings
+TAGNT gives as variants from STEP Bible's TBESG, also CC BY 4.0. Its words
+are ordered and divided into verses as in Dr Maurice A. Robinson's
+transcription of Scrivener's edition
+([greektext-scrivener](https://github.com/byztxt/greektext-scrivener)), in
+the public domain. Haqor chooses the TR's words from TAGNT's editions, keeps
+TAGNT's punctuation only where the TR shares it, and replaces the Strong's
+numbers with ids of its own.
+
+**Greek lexicons** — G. Abbott-Smith, *A Manual Greek Lexicon of the New
+Testament* (Scribner's, New York, 1922), in the public domain, as the
+[Translatable Exegetical Tools project](https://github.com/translatable-exegetical-tools/Abbott-Smith)
+marks it up; and J. H. Thayer, *A Greek-English Lexicon of the New
+Testament* (1889), in the public domain, from a
+[machine reading](https://github.com/nigelmsipa/thayers-greek-lexicon-dataset)
+released under CC0, which has had a single reading pass and is not
+proofread. Haqor reformats their entries, keys them to the TR's dictionary
+forms, follows their derivations to each word's root, and writes "Yahweh"
+for "Jehovah".
 
 **Interlinear translations** — STEP Bible's
 [TAHOT dataset](https://github.com/STEPBible/STEPBible-Data), licensed CC BY
