@@ -117,6 +117,57 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('going to a New Testament verse opens it in the text shown', (
+    tester,
+  ) async {
+    final events = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleRefPreviewDialog(
+          displayRef: 'Matthew 1:1',
+          bookIndex: 39,
+          chapter: 1,
+          verse: 1,
+          ntSyriac: false,
+          ntGreek: true,
+          sendVerseText: (_) {},
+          onNtGreekChanged: (greek) => events.add('greek: $greek'),
+          onNavigate: () => events.add('go'),
+        ),
+      ),
+    );
+    // Switched to the Aramaic here, the reader is switched to it first.
+    await tester.tap(find.byKey(const ValueKey('nt-text-toggle')));
+    await tester.pump();
+    await tester.tap(find.text('Go to passage'));
+    await tester.pump();
+    expect(events, ['greek: false', 'go']);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('an Old Testament verse leaves the NT text alone', (
+    tester,
+  ) async {
+    final events = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleRefPreviewDialog(
+          displayRef: 'Gen 1:1',
+          bookIndex: 0,
+          chapter: 1,
+          verse: 1,
+          sendVerseText: (_) {},
+          onNtGreekChanged: (greek) => events.add('greek: $greek'),
+          onNavigate: () => events.add('go'),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Go to passage'));
+    await tester.pump();
+    expect(events, ['go']);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('a verse that never arrives stops spinning', (tester) async {
     await pump(tester);
     await tester.pump(requestTimeout + const Duration(seconds: 1));

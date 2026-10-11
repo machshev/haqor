@@ -785,6 +785,7 @@ class _GreekWordSheetState extends State<GreekWordSheet>
                     child: LexiconEntryView(
                       entry: entry,
                       onNavigateToPassage: widget.onNavigateToPassage,
+                      onNtGreekChanged: widget.onNtGreekChanged,
                       sendDictionaryRequest: widget.sendDictionaryRequest,
                     ),
                   ),

@@ -716,8 +716,12 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     super.dispose();
   }
 
-  void _onBibleRefTap(BuildContext context, String href) =>
-      showBibleRefPreview(context, href, widget.onNavigateToPassage);
+  void _onBibleRefTap(BuildContext context, String href) => showBibleRefPreview(
+    context,
+    href,
+    widget.onNavigateToPassage,
+    onNtGreekChanged: widget.onNtGreekChanged,
+  );
 
   void _onXrefTap(String bdbId, String headword) =>
       _openWordInfo(headword, bdbId: bdbId);
@@ -738,6 +742,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       linkText: text,
       send: widget.sendDictionaryRequest,
       onNavigateToPassage: widget.onNavigateToPassage,
+      onNtGreekChanged: widget.onNtGreekChanged,
       onXrefTap: _onXrefTap,
     );
   }
@@ -3675,8 +3680,9 @@ class _VersePlaceholder extends StatelessWidget {
 void showBibleRefPreview(
   BuildContext context,
   String href,
-  void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
-) {
+  void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage, {
+  ValueChanged<bool>? onNtGreekChanged,
+}) {
   final parsed = _parseBibleRef(href);
   if (parsed == null) return;
   showDialog<void>(
@@ -3686,6 +3692,7 @@ void showBibleRefPreview(
       bookIndex: parsed.bookIndex,
       chapter: parsed.chapter,
       verse: parsed.verse,
+      onNtGreekChanged: onNtGreekChanged,
       onNavigate: onNavigateToPassage == null
           ? null
           : () => onNavigateToPassage(
@@ -3707,6 +3714,7 @@ void showDictionaryEntryPreview(
   required String linkText,
   void Function(GetDictionaryEntry)? send,
   void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
+  ValueChanged<bool>? onNtGreekChanged,
   void Function(String bdbId, String headword)? onXrefTap,
 }) {
   showDialog<void>(
@@ -3716,8 +3724,12 @@ void showDictionaryEntryPreview(
       entryKey: entryKey,
       linkText: linkText,
       send: send,
-      onBibleRefTap: (href) =>
-          showBibleRefPreview(context, href, onNavigateToPassage),
+      onBibleRefTap: (href) => showBibleRefPreview(
+        context,
+        href,
+        onNavigateToPassage,
+        onNtGreekChanged: onNtGreekChanged,
+      ),
       onXrefTap: onXrefTap ?? (_, _) {},
       onDictionaryLinkTap: (source, key, text) => showDictionaryEntryPreview(
         ctx,
@@ -3726,6 +3738,7 @@ void showDictionaryEntryPreview(
         linkText: text,
         send: send,
         onNavigateToPassage: onNavigateToPassage,
+        onNtGreekChanged: onNtGreekChanged,
         onXrefTap: onXrefTap,
       ),
     ),
@@ -3739,12 +3752,17 @@ class LexiconEntryView extends StatelessWidget {
     super.key,
     required this.entry,
     this.onNavigateToPassage,
+    this.onNtGreekChanged,
     this.sendDictionaryRequest,
   });
 
   final BdbSummary entry;
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
+
+  /// Where a cited verse's preview, going to it, sets the New Testament's
+  /// text to the one it shows.
+  final ValueChanged<bool>? onNtGreekChanged;
 
   /// Test seam: how a linked entry is asked for.
   final void Function(GetDictionaryEntry)? sendDictionaryRequest;
@@ -3753,8 +3771,12 @@ class LexiconEntryView extends StatelessWidget {
   Widget build(BuildContext context) => _BdbContent(
     contentJson: entry.contentJson,
     source: entry.source,
-    onBibleRefTap: (href) =>
-        showBibleRefPreview(context, href, onNavigateToPassage),
+    onBibleRefTap: (href) => showBibleRefPreview(
+      context,
+      href,
+      onNavigateToPassage,
+      onNtGreekChanged: onNtGreekChanged,
+    ),
     onXrefTap: (_, _) {},
     onDictionaryLinkTap: (source, key, text) => showDictionaryEntryPreview(
       context,
@@ -3763,6 +3785,7 @@ class LexiconEntryView extends StatelessWidget {
       linkText: text,
       send: sendDictionaryRequest,
       onNavigateToPassage: onNavigateToPassage,
+      onNtGreekChanged: onNtGreekChanged,
     ),
   );
 }
@@ -4359,6 +4382,7 @@ class BibleRefPreviewDialog extends StatefulWidget {
     this.onNavigate,
     this.ntSyriac,
     this.ntGreek,
+    this.onNtGreekChanged,
     this.sendVerseText,
   });
 
@@ -4372,6 +4396,10 @@ class BibleRefPreviewDialog extends StatefulWidget {
   /// or the Greek. Read from the saved settings when not given.
   final bool? ntSyriac;
   final bool? ntGreek;
+
+  /// Where going to a New Testament verse sets the reader's text to the one
+  /// the preview shows, so the passage opens as it was read here.
+  final ValueChanged<bool>? onNtGreekChanged;
 
   /// Stands in for the signal to Rust so a test can capture the request.
   final void Function(GetVerseText)? sendVerseText;
@@ -4529,6 +4557,7 @@ class _BibleRefPreviewDialogState extends State<BibleRefPreviewDialog> {
           FilledButton.tonal(
             onPressed: () {
               Navigator.pop(context);
+              if (_newTestament) widget.onNtGreekChanged?.call(_greek);
               widget.onNavigate!();
             },
             child: const Text('Go to passage'),
