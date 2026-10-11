@@ -1836,7 +1836,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     final id = widget.proximityId;
     return proximity != null &&
         id != null &&
-        proximity.sources.any((source) => source.id != id);
+        proximity.sourcesOf(greek: false).any((source) => source.id != id);
   }
 
   /// The combined results when the proximity search is on: this word's list
@@ -1851,7 +1851,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       return null;
     }
     final others = [
-      for (final source in proximity.sources)
+      for (final source in proximity.sourcesOf(greek: false))
         if (source.id != widget.proximityId && proximity.isIncluded(source.id))
           source,
     ];
@@ -1935,7 +1935,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         runSpacing: 4,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          for (final source in proximity.sources)
+          for (final source in proximity.sourcesOf(greek: false))
             FilterChip(
               key: ValueKey('proximity-word-${source.id}'),
               label: Text(

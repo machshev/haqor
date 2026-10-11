@@ -181,7 +181,12 @@ int _chapterKey(int book, int chapter) => (book << 8) | chapter;
 
 /// One open word pane's contribution to a proximity search.
 class ProximitySource {
-  ProximitySource({required this.id, required this.label, required this.hits});
+  ProximitySource({
+    required this.id,
+    required this.label,
+    required this.hits,
+    this.greek = false,
+  });
 
   /// The pane's id, stable across that pane's word history.
   final String id;
@@ -193,6 +198,12 @@ class ProximitySource {
   /// filters — not its book filter, which only narrows the pane's own list.
   /// Null while the pane's occurrences are still loading.
   final List<ProximityHit>? Function() hits;
+
+  /// Whether the pane's word is the Greek New Testament's. A Greek word is
+  /// searched with Greek words alone, and a Hebrew or Aramaic one without
+  /// them: their word positions are of different texts of the New
+  /// Testament, so would mark the wrong words in each other's verses.
+  final bool greek;
 }
 
 /// The open word panes a proximity search can combine, and the search's
@@ -207,6 +218,13 @@ class WordProximity extends ChangeNotifier {
 
   /// Registered panes, in the order they were first opened.
   List<ProximitySource> get sources => List.unmodifiable(_sources.values);
+
+  /// The panes of one kind, Greek or not: those a search over the one or the
+  /// other combines (see [ProximitySource.greek]).
+  List<ProximitySource> sourcesOf({required bool greek}) => [
+    for (final source in _sources.values)
+      if (source.greek == greek) source,
+  ];
 
   /// Whether the occurrence lists show proximity results rather than each
   /// word's own occurrences.

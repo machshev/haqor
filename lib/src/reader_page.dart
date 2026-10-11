@@ -802,6 +802,20 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _proximity.forget(id);
   }
 
+  /// Opens another dictionary form of a Greek word's root in the pane, found
+  /// by itself, as a Hebrew headword is.
+  void _openInspectorGreekLemma(String lemma) => _selectInspectorWord(
+    _SelectedWord(
+      word: lemma,
+      bookIndex: 39,
+      chapter: null,
+      verse: null,
+      position: null,
+      root: lemma,
+      greek: true,
+    ),
+  );
+
   void _openInspectorWord(String word, String? bdbId) {
     final current = _selectedWord;
     if (current == null) return;
@@ -1033,6 +1047,25 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         useEnglishBookNames: _activeReader?._englishBookNames ?? false,
         ntSyriac: _activeReader?._ntSyriac ?? false,
         nameBookmarks: _activeReader?._nameBookmarks,
+        onNtGreekChanged: _setActiveNtGreek,
+        proximity: _proximity,
+        proximityId: pane.id,
+        onOpenLemma: _openInspectorGreekLemma,
+        reportContext: {
+          if (placed) ...{
+            'bookIndex': selected.bookIndex,
+            'book': kBooks[selected.bookIndex].transliteration,
+            'chapter': selected.chapter,
+            'verse': selected.verse,
+          },
+        },
+        isStudyBookmarked: (bookmark) =>
+            _activeReader?._activeStudyWorkspace?.wordForBookmark(bookmark) !=
+            null,
+        onToggleStudyBookmark: (bookmark) async {
+          return await _activeReader?._toggleStudyWordBookmark(bookmark) ??
+              false;
+        },
         onNavigateToPassage: (book, chapter, verse) {
           _activeReader?._navigateTo(book, chapter, verse: verse);
           if (_mobileLayout == true) _showReaderPage();

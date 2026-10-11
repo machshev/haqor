@@ -110,4 +110,25 @@ void main() {
       ],
     );
   });
+
+  test('Greek panes and Hebrew or Aramaic ones are searched apart', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    final proximity = WordProximity();
+    addTearDown(proximity.dispose);
+    ProximitySource source(String id, {bool greek = false}) => ProximitySource(
+      id: id,
+      label: () => id,
+      hits: () => const [],
+      greek: greek,
+    );
+    proximity
+      ..register(source('hebrew'))
+      ..register(source('greek', greek: true))
+      ..register(source('aramaic'));
+    expect(
+      [for (final s in proximity.sourcesOf(greek: false)) s.id],
+      ['hebrew', 'aramaic'],
+    );
+    expect([for (final s in proximity.sourcesOf(greek: true)) s.id], ['greek']);
+  });
 }
