@@ -35,7 +35,7 @@ fn no_place() -> NameSummaryEntry {
 }
 
 /// A core find as the signals carry it.
-fn entry(a: Artifact) -> ArtifactEntry {
+pub(crate) fn entry(a: Artifact) -> ArtifactEntry {
     ArtifactEntry {
         id: a.id,
         key: a.key,
@@ -81,7 +81,7 @@ fn entry(a: Artifact) -> ArtifactEntry {
     }
 }
 
-fn source(s: ArtifactSource) -> ArtifactSourceEntry {
+pub(crate) fn source(s: ArtifactSource) -> ArtifactSourceEntry {
     ArtifactSourceEntry {
         id: s.id,
         citation: s.citation,

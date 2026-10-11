@@ -39,6 +39,8 @@ void _deliverEntity(
   List<NameLinkEntry> links = const [],
   List<PlaceLocationEntry> locations = const [],
   List<PlaceImageEntry> images = const [],
+  List<ArtifactEntry> artifacts = const [],
+  List<ArtifactSourceEntry> artifactSources = const [],
   List<NameVerse> verses = const [],
   List<BibleEventEntry> events = const [],
 }) {
@@ -61,6 +63,8 @@ void _deliverEntity(
       images: images,
       verses: verses,
       events: events,
+      artifacts: artifacts,
+      artifactSources: artifactSources,
     ).bincodeSerialize(),
     Uint8List(0),
   );
@@ -449,6 +453,134 @@ void main() {
     expect(licenseLabel('CC-Zero'), 'CC0');
     expect(licenseLabel('PD'), 'public domain');
     expect(licenseLabel('GFDL'), 'GFDL');
+  });
+
+  testWidgets('a person is attested by the finds naming them', (tester) async {
+    final requests = <GetNameEntity>[];
+    final opened = <(int, int, int)>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NameDetailsPage(
+          id: 5,
+          sendRequest: requests.add,
+          useEnglishBookNames: true,
+          onNavigateToPassage: (b, c, v) => opened.add((b, c, v)),
+        ),
+      ),
+    );
+    final hezekiah = _summary(5, 'Hezekiah');
+    ArtifactEntry artifact(int id, String name, String how, String strength) =>
+        ArtifactEntry(
+          id: id,
+          key: 'find-$id',
+          name: name,
+          otherNames: const [],
+          kind: 'bulla',
+          date: 'c. 710 BC',
+          year: -710,
+          script: 'Hebrew',
+          foundSite: 'Ophel, Jerusalem',
+          foundYear: 2009,
+          foundPlace: _summary(0, ''),
+          museum: '',
+          wikipedia: '',
+          wikidata: '',
+          summary: 'A royal seal impression.',
+          attestations: [
+            ArtifactAttestationEntry(
+              person: _summary(9, 'Ahaz'),
+              strength: 'strong',
+              how: 'Named as his father.',
+              source: 's',
+            ),
+            ArtifactAttestationEntry(
+              person: hezekiah,
+              strength: strength,
+              how: how,
+              source: 's',
+            ),
+          ],
+          passages: [
+            ArtifactPassageEntry(
+              passage: PassageSpan(
+                book: 11,
+                chapter: 18,
+                verse: 13,
+                lastChapter: 18,
+                lastVerse: 16,
+              ),
+              strength: 'strong',
+              how: 'His tribute.',
+              source: 's',
+            ),
+          ],
+        );
+    _deliverEntity(
+      requests.single,
+      hezekiah,
+      artifacts: [
+        artifact(1, 'Royal bulla of Hezekiah', 'His own seal.', 'strong'),
+        artifact(2, 'A lesser find', 'Perhaps him.', 'possible'),
+      ],
+      artifactSources: [
+        ArtifactSourceEntry(id: 's', citation: 'Mykytiuk 2014', url: ''),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('Attested by'), 200);
+    expect(find.text('Royal bulla of Hezekiah'), findsOneWidget);
+    // The row gives how it names him, not his father.
+    expect(find.text('c. 710 BC · His own seal.'), findsOneWidget);
+    expect(find.text('c. 710 BC · Perhaps him.'), findsOneWidget);
+    expect(find.text('Possible'), findsOneWidget);
+
+    await tester.tap(find.text('Royal bulla of Hezekiah'));
+    await tester.pumpAndSettle();
+    expect(find.text('A royal seal impression.'), findsOneWidget);
+    expect(find.text('His own seal.\nSource: Mykytiuk 2014'), findsOneWidget);
+
+    // A passage closes the find and the name page, and opens the reader.
+    await tester.tap(find.text('2 Kings 18:13–16'));
+    await tester.pumpAndSettle();
+    expect(opened, [(10, 18, 13)]);
+    expect(find.text('A royal seal impression.'), findsNothing);
+  });
+
+  testWidgets('a place lists the finds found there', (tester) async {
+    final requests = <GetNameEntity>[];
+    await tester.pumpWidget(
+      MaterialApp(home: NameDetailsPage(id: 6, sendRequest: requests.add)),
+    );
+    _deliverEntity(
+      requests.single,
+      _summary(6, 'Dibon', kind: 'place'),
+      artifacts: [
+        ArtifactEntry(
+          id: 1,
+          key: 'mesha-stele',
+          name: 'Mesha Stele',
+          otherNames: const [],
+          kind: 'stele',
+          date: 'c. 840 BC',
+          year: -840,
+          script: 'Moabite',
+          foundSite: 'Dhiban',
+          foundYear: 1868,
+          foundPlace: _summary(6, 'Dibon', kind: 'place'),
+          museum: 'Louvre, Paris',
+          wikipedia: '',
+          wikidata: '',
+          summary: 'Mesha of Moab.',
+          attestations: const [],
+          passages: const [],
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Finds from here'), 200);
+    expect(find.text('Attested by'), findsNothing);
+    expect(find.text('c. 840 BC'), findsOneWidget);
   });
 
   testWidgets('a timeline tab draws and lists the events they are in', (

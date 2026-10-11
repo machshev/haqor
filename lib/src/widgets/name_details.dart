@@ -9,6 +9,7 @@ import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../external_link.dart';
 import '../study_workspace.dart';
+import 'archaeology_page.dart';
 import 'bible_timeline_page.dart';
 import 'place_map.dart';
 import 'place_photos.dart';
@@ -281,6 +282,30 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
       ),
     ),
   );
+
+  /// A find naming it, or found there, on a page of its own.
+  void _openArtifact(NameEntityInfo info, ArtifactEntry artifact) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          // Named as a page of names, so going to a verse closes it too.
+          settings: const RouteSettings(name: NameDetailsPage.routeName),
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: Text(artifact.name)),
+            body: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              children: [
+                ArtifactCard(
+                  artifact: artifact,
+                  sources: info.artifactSources,
+                  useEnglishBookNames: widget.useEnglishBookNames,
+                  onNavigateToPassage: _navigate,
+                  onOpenPerson: _openOther,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
   /// Bookmark the person or place in the active study, or remove it.
   Future<void> _toggleBookmark(
@@ -578,6 +603,15 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
                 ),
             ],
           ),
+        ]),
+      if (info.artifacts.isNotEmpty)
+        section(summary.kind == 'place' ? 'Finds from here' : 'Attested by', [
+          for (final artifact in info.artifacts)
+            _ArtifactRow(
+              artifact: artifact,
+              person: summary.kind == 'place' ? null : summary.id,
+              onOpen: () => _openArtifact(info, artifact),
+            ),
         ]),
       if (info.forms.isNotEmpty)
         section('Forms of the name', [
@@ -915,6 +949,45 @@ String _viewLabel(PlaceImageEntry view) =>
     view.description.startsWith('Google Streetview')
     ? 'Street View'
     : 'Google Maps photos';
+
+/// An archaeological find on a person's or place's page: its name and date,
+/// and for a person, how strongly and how it names them.
+class _ArtifactRow extends StatelessWidget {
+  const _ArtifactRow({
+    required this.artifact,
+    this.person,
+    required this.onOpen,
+  });
+
+  final ArtifactEntry artifact;
+
+  /// The person whose page it is on, for the link naming them; null on a
+  /// place's page.
+  final int? person;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final link = person == null
+        ? null
+        : artifact.attestations.where((t) => t.person.id == person).firstOrNull;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      leading: const Icon(Icons.account_balance_outlined),
+      title: Text(artifact.name),
+      subtitle: Text(
+        [artifact.date, if (link != null) link.how].join(' · '),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: StrengthBadge(
+        strength: link?.strength ?? strongestOf(artifact),
+      ),
+      onTap: onOpen,
+    );
+  }
+}
 
 /// A form of the name, its Hebrew a link to its word sheet.
 class _FormRow extends StatelessWidget {

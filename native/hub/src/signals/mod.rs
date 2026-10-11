@@ -1062,6 +1062,10 @@ pub struct NameEntityInfo {
     pub verses: Vec<NameVerse>,
     /// The events of the Bible it takes part in, in time order.
     pub events: Vec<BibleEventEntry>,
+    /// The archaeological finds naming a person, or found at a place,
+    /// oldest first, and the works their links cite.
+    pub artifacts: Vec<ArtifactEntry>,
+    pub artifact_sources: Vec<ArtifactSourceEntry>,
 }
 
 /// A verse naming a person, place or other named thing, and the words in it

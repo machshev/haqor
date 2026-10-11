@@ -2308,9 +2308,26 @@ pub async fn get_name_entity(bible: SharedBible) {
                 images: Vec::new(),
                 verses: Vec::new(),
                 events: Vec::new(),
+                artifacts: Vec::new(),
+                artifact_sources: Vec::new(),
             }
             .send_signal_to_dart();
             continue;
+        };
+        // The finds naming a person, or found at a place.
+        let artifacts = match entity.summary.kind {
+            haqor_core::names::NameKind::Person => bible.person_artifacts(req.id),
+            haqor_core::names::NameKind::Place => bible.place_artifacts(req.id),
+            haqor_core::names::NameKind::Other => Ok(Vec::new()),
+        }
+        .unwrap_or_else(|e| {
+            debug_print!("get_name_entity artifacts error: {:?}", e);
+            Vec::new()
+        });
+        let artifact_sources = if artifacts.is_empty() {
+            Vec::new()
+        } else {
+            bible.artifacts().map(|a| a.sources).unwrap_or_default()
         };
         let mut verses: Vec<NameVerse> = Vec::new();
         for at in bible.name_occurrences(req.id).unwrap_or_default() {
@@ -2375,6 +2392,11 @@ pub async fn get_name_entity(bible: SharedBible) {
                 .unwrap_or_default()
                 .into_iter()
                 .map(bible_event_entry)
+                .collect(),
+            artifacts: artifacts.into_iter().map(crate::archaeology::entry).collect(),
+            artifact_sources: artifact_sources
+                .into_iter()
+                .map(crate::archaeology::source)
                 .collect(),
         }
         .send_signal_to_dart();
