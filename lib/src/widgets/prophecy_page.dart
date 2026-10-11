@@ -6,6 +6,7 @@ import 'package:rinf/rinf.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import 'prophecy_card.dart';
+import 'side_scroll.dart';
 import 'verse_text_cache.dart';
 
 /// The prophecies of the whole Bible, grouped by theme: the promises
@@ -313,9 +314,8 @@ class _ProphecyPageState extends State<ProphecyPage> {
             onChanged: (query) => setState(() => _query = query),
           ),
         ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        SideScroll(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Row(
             children: [
               for (final (value, label) in [

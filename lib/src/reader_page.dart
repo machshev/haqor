@@ -31,6 +31,7 @@ import 'widgets/bible_timeline_page.dart';
 import 'widgets/places_page.dart';
 import 'widgets/archaeology_page.dart';
 import 'widgets/prophecy_page.dart';
+import 'widgets/side_scroll.dart';
 import 'widgets/study_workspace_panel.dart';
 import 'widgets/study_passage_editor.dart';
 import 'widgets/study_section_editor.dart';
@@ -1378,35 +1379,38 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                       return Row(
                         children: [
                           Expanded(
-                            child: ListView.separated(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
+                            child: ScrollConfiguration(
+                              behavior: mouseDraggable(context),
+                              child: ListView.separated(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _tabs.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(width: 4),
+                                itemBuilder: (context, index) {
+                                  final tab = _tabs[index];
+                                  return InputChip(
+                                    label: _tabLabel(tab),
+                                    selected:
+                                        !_studyPageSelected &&
+                                        !_wordPageSelected &&
+                                        !_crossReferencesPageSelected &&
+                                        tab.id == _activeTabId,
+                                    onPressed: () {
+                                      setState(() => _activeTabId = tab.id);
+                                      _showReaderPage();
+                                      _saveWorkspace();
+                                    },
+                                    onDeleted: _tabs.length > 1
+                                        ? () => _closeTab(tab.id)
+                                        : null,
+                                    deleteButtonTooltipMessage:
+                                        'Close reader tab',
+                                  );
+                                },
                               ),
-                              scrollDirection: Axis.horizontal,
-                              itemCount: _tabs.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(width: 4),
-                              itemBuilder: (context, index) {
-                                final tab = _tabs[index];
-                                return InputChip(
-                                  label: _tabLabel(tab),
-                                  selected:
-                                      !_studyPageSelected &&
-                                      !_wordPageSelected &&
-                                      !_crossReferencesPageSelected &&
-                                      tab.id == _activeTabId,
-                                  onPressed: () {
-                                    setState(() => _activeTabId = tab.id);
-                                    _showReaderPage();
-                                    _saveWorkspace();
-                                  },
-                                  onDeleted: _tabs.length > 1
-                                      ? () => _closeTab(tab.id)
-                                      : null,
-                                  deleteButtonTooltipMessage:
-                                      'Close reader tab',
-                                );
-                              },
                             ),
                           ),
                           for (final action in directActions)

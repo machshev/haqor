@@ -4,6 +4,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../external_link.dart';
+import 'side_scroll.dart';
 
 /// A study note written in Markdown, rendered in [style] (the ambient text
 /// style by default). Web and email links open outside the app.
@@ -268,8 +269,8 @@ class _MarkdownNoteFieldState extends State<MarkdownNoteField> {
         Row(
           children: [
             Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
+              child: SideScroll(
+                padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
                     _button('Bold', Icons.format_bold, () => _wrap('**')),

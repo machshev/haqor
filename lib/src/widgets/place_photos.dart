@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../bindings/bindings.dart';
 import '../external_link.dart';
+import 'side_scroll.dart';
 
 /// OpenBible.info's licence code as a reader would write it: `CC-BY-SA-4.0`
 /// is "CC BY-SA 4.0", `PD` "public domain".
@@ -98,57 +99,61 @@ class PlacePhotoStrip extends StatelessWidget {
     final theme = Theme.of(context);
     return SizedBox(
       height: height,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: photos.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final photo = photos[i];
-          final aspect = photo.width > 0 && photo.height > 0
-              ? (photo.width / photo.height).clamp(0.75, 1.8)
-              : 4 / 3;
-          return Semantics(
-            button: true,
-            label: photo.description,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: (height - 36) * aspect,
-                child: Material(
-                  color: theme.colorScheme.surfaceContainerLow,
-                  child: InkWell(
-                    onTap: () => showPlacePhoto(
-                      context,
-                      photo,
-                      siteLabel(photo.location),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          child: _photo(
-                            photo,
-                            photo.thumbnailUrl,
-                            BoxFit.cover,
+      child: SideScroll.builder(
+        builder: (context, controller) => ListView.separated(
+          controller: controller,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.only(bottom: 10),
+          itemCount: photos.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (context, i) {
+            final photo = photos[i];
+            final aspect = photo.width > 0 && photo.height > 0
+                ? (photo.width / photo.height).clamp(0.75, 1.8)
+                : 4 / 3;
+            return Semantics(
+              button: true,
+              label: photo.description,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: (height - 36) * aspect,
+                  child: Material(
+                    color: theme.colorScheme.surfaceContainerLow,
+                    child: InkWell(
+                      onTap: () => showPlacePhoto(
+                        context,
+                        photo,
+                        siteLabel(photo.location),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: _photo(
+                              photo,
+                              photo.thumbnailUrl,
+                              BoxFit.cover,
+                            ),
                           ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-                          child: Text(
-                            photo.description,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                            child: Text(
+                              photo.description,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

@@ -7,6 +7,7 @@ import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../external_link.dart';
 import 'name_details.dart';
+import 'side_scroll.dart';
 
 /// The eras the index groups finds by, each the years it starts at (the
 /// first from the beginning), in order.
@@ -500,9 +501,8 @@ class _ArchaeologyPageState extends State<ArchaeologyPage> {
             onChanged: (query) => setState(() => _query = query),
           ),
         ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        SideScroll(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Row(
             children: [
               FilterChip(
