@@ -11,6 +11,7 @@ import '../external_link.dart';
 import '../study_workspace.dart';
 import 'bible_timeline_page.dart';
 import 'place_map.dart';
+import 'place_photos.dart';
 import 'timeline_chart.dart';
 import 'verse_text_cache.dart';
 import 'word_info_sheet.dart'
@@ -456,6 +457,10 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
     for (final link in info.links) {
       linkGroups.putIfAbsent(link.relation, () => []).add(link);
     }
+    final photos = [
+      for (final image in info.images)
+        if (!image.view) image,
+    ];
     final bottom = MediaQuery.viewPaddingOf(context).bottom;
     final side = _side(context);
 
@@ -497,9 +502,24 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
             ),
           ),
         ),
+        if (photos.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          PlacePhotoStrip(
+            photos: photos,
+            siteLabel: (i) =>
+                i < info.locations.length ? info.locations[i].label : '',
+          ),
+        ],
         section('Where it was', [
           for (final (i, location) in info.locations.indexed)
-            _LocationRow(location: location, likeliest: i == 0),
+            _LocationRow(
+              location: location,
+              likeliest: i == 0,
+              views: [
+                for (final image in info.images)
+                  if (image.view && image.location == i) image,
+              ],
+            ),
         ]),
       ],
       if (info.text.isNotEmpty)
@@ -551,6 +571,9 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
           if (info.locations.any((l) => l.confidence < 0 && l.label.isNotEmpty))
             "Location as Haqor identifies it, in place of OpenBible.info's "
                 '(see About)',
+          if (photos.isNotEmpty)
+            'Photographs from Wikimedia Commons, chosen by OpenBible.info; '
+                'tap one for its credit and licence',
         ].join('. '),
         style: theme.textTheme.bodySmall?.copyWith(
           color: scheme.onSurfaceVariant,
@@ -785,10 +808,18 @@ MapPin placePin(
 );
 
 class _LocationRow extends StatelessWidget {
-  const _LocationRow({required this.location, required this.likeliest});
+  const _LocationRow({
+    required this.location,
+    required this.likeliest,
+    this.views = const [],
+  });
 
   final PlaceLocationEntry location;
   final bool likeliest;
+
+  /// Views of the site on Google Maps (Street View and the like), chosen by
+  /// OpenBible.info: they open there, beside Maps and Earth.
+  final List<PlaceImageEntry> views;
 
   @override
   Widget build(BuildContext context) {
@@ -830,11 +861,26 @@ class _LocationRow extends StatelessWidget {
               title: Text('Google Earth'),
             ),
           ),
+          for (final view in views)
+            PopupMenuItem(
+              value: Uri.parse(view.pageUrl),
+              child: ListTile(
+                leading: const Icon(Icons.streetview),
+                title: Text(_viewLabel(view)),
+              ),
+            ),
         ],
       ),
     );
   }
 }
+
+/// A Google view's menu entry: "Street View", or "Google Maps" for a place
+/// page; the row already names the site.
+String _viewLabel(PlaceImageEntry view) =>
+    view.description.startsWith('Google Streetview')
+    ? 'Street View'
+    : 'Google Maps photos';
 
 /// A form of the name, its Hebrew a link to its word sheet.
 class _FormRow extends StatelessWidget {

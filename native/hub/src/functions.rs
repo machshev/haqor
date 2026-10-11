@@ -22,7 +22,7 @@ use crate::signals::{
     ChapterPlaces, ChapterRelationEntry, GetBibleEvents, GetChapterPeople, GetChapterPlaces,
     GetJourneys, GetNameEntity, GetPlaces, JourneyEntry, JourneyStopEntry, Journeys,
     NameEntityInfo, NameFormEntry, NameLinkEntry, NameSummaryEntry, NameVerse, PlaceListEntry,
-    PlaceLocationEntry, PlaceRegionEntry, Places, SenseChoice, WordSenseEntry,
+    PlaceImageEntry, PlaceLocationEntry, PlaceRegionEntry, Places, SenseChoice, WordSenseEntry,
 };
 #[cfg(target_arch = "wasm32")]
 use crate::signals::{FlushProgress, ProgressSnapshot};
@@ -1041,6 +1041,22 @@ fn place_location_entry(l: haqor_core::names::PlaceLocation) -> PlaceLocationEnt
         area,
         line,
         estimated: l.estimated,
+    }
+}
+
+fn place_image_entry(i: haqor_core::names::PlaceImage) -> PlaceImageEntry {
+    PlaceImageEntry {
+        location: i.location as u32,
+        view: i.role == haqor_core::names::PlaceImageRole::View,
+        thumbnail_url: i.thumbnail_url(500).unwrap_or_default(),
+        large_url: i.thumbnail_url(1280).unwrap_or_default(),
+        description: i.description,
+        page_url: i.page_url,
+        width: i.width,
+        height: i.height,
+        credit: i.credit,
+        license: i.license,
+        placeholder: i.placeholder,
     }
 }
 
@@ -2228,6 +2244,7 @@ pub async fn get_name_entity(bible: SharedBible) {
                 forms: Vec::new(),
                 links: Vec::new(),
                 locations: Vec::new(),
+                images: Vec::new(),
                 verses: Vec::new(),
                 events: Vec::new(),
             }
@@ -2290,6 +2307,7 @@ pub async fn get_name_entity(bible: SharedBible) {
                 .into_iter()
                 .map(place_location_entry)
                 .collect(),
+            images: entity.images.into_iter().map(place_image_entry).collect(),
             verses,
             events: bible
                 .name_events(req.id)

@@ -8,6 +8,7 @@ import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/bible_timeline_page.dart';
 import 'package:haqor/src/widgets/name_details.dart';
 import 'package:haqor/src/widgets/place_map.dart';
+import 'package:haqor/src/widgets/place_photos.dart';
 import 'package:haqor/src/widgets/word_info_sheet.dart';
 
 /// A square of land round the Levant, and a lake in it.
@@ -37,6 +38,7 @@ void _deliverEntity(
   NameSummaryEntry summary, {
   List<NameLinkEntry> links = const [],
   List<PlaceLocationEntry> locations = const [],
+  List<PlaceImageEntry> images = const [],
   List<NameVerse> verses = const [],
   List<BibleEventEntry> events = const [],
 }) {
@@ -56,6 +58,7 @@ void _deliverEntity(
       ],
       links: links,
       locations: locations,
+      images: images,
       verses: verses,
       events: events,
     ).bincodeSerialize(),
@@ -305,6 +308,105 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Google Maps'), findsOneWidget);
     expect(find.text('Google Earth'), findsOneWidget);
+  });
+
+  testWidgets('a place page shows photos of its sites and their Google views', (
+    tester,
+  ) async {
+    final requests = <GetNameEntity>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NameDetailsPage(
+          id: 4,
+          sendRequest: requests.add,
+          basemap: _basemap,
+        ),
+      ),
+    );
+    PlaceLocationEntry site(String label) => PlaceLocationEntry(
+      latitude: 31.56,
+      longitude: 34.85,
+      confidence: 900,
+      kind: 'settlement',
+      label: label,
+      area: const [],
+      line: const [],
+      estimated: false,
+    );
+    PlaceImageEntry image(
+      int location,
+      String description, {
+      bool view = false,
+    }) => PlaceImageEntry(
+      location: location,
+      view: view,
+      description: description,
+      pageUrl: view
+          ? 'https://www.google.com/maps/@31.56,34.85,3a'
+          : 'https://commons.wikimedia.org/wiki/File:Lachish.jpg',
+      thumbnailUrl: view
+          ? ''
+          : 'https://upload.wikimedia.org/500px-Lachish.jpg',
+      largeUrl: view ? '' : 'https://upload.wikimedia.org/1280px-Lachish.jpg',
+      width: view ? 0 : 4000,
+      height: view ? 0 : 3000,
+      credit: view ? '' : 'Avi1111',
+      license: view ? '' : 'CC-BY-SA-4.0',
+      placeholder: const ['#80a0bc', '#4c5959'],
+    );
+    _deliverEntity(
+      requests.single,
+      _summary(4, 'Lachish', kind: 'place'),
+      locations: [site('Tel Lachish'), site('Umm Lakis')],
+      images: [
+        image(0, 'ruins at Tel Lachish'),
+        image(0, 'Google Streetview of Tel Lachish', view: true),
+        image(1, 'ruins at Umm Lakis'),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    // Photos only in the strip: the view is a link.
+    expect(find.byType(PlacePhotoStrip), findsOneWidget);
+    expect(find.text('ruins at Tel Lachish'), findsOneWidget);
+    expect(find.text('ruins at Umm Lakis'), findsOneWidget);
+    expect(find.text('Google Streetview of Tel Lachish'), findsNothing);
+
+    // A photo opens large with its credit and licence.
+    await tester.tap(find.text('ruins at Tel Lachish'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Photo: Avi1111 · CC BY-SA 4.0, via Wikimedia Commons'),
+      findsOneWidget,
+    );
+    expect(find.text('Wikimedia Commons'), findsOneWidget);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+
+    // The likeliest site has a Street View; the other does not.
+    final menus = find.byTooltip('Open in Google Maps or Google Earth');
+    await tester.ensureVisible(menus.first);
+    await tester.pumpAndSettle();
+    await tester.tap(menus.first);
+    await tester.pumpAndSettle();
+    expect(find.text('Street View'), findsOneWidget);
+    await tester.tapAt(Offset.zero);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(menus.last);
+    await tester.pumpAndSettle();
+    await tester.tap(menus.last);
+    await tester.pumpAndSettle();
+    expect(find.text('Google Earth'), findsOneWidget);
+    expect(find.text('Street View'), findsNothing);
+  });
+
+  test('licence codes read as people write them', () {
+    expect(licenseLabel('CC-BY-SA-4.0'), 'CC BY-SA 4.0');
+    expect(licenseLabel('CC-BY-2.5'), 'CC BY 2.5');
+    expect(licenseLabel('CC-BY-SA-3.0-IGO'), 'CC BY-SA 3.0-IGO');
+    expect(licenseLabel('CC-Zero'), 'CC0');
+    expect(licenseLabel('PD'), 'public domain');
+    expect(licenseLabel('GFDL'), 'GFDL');
   });
 
   testWidgets('a timeline tab draws and lists the events they are in', (

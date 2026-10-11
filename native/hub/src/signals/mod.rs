@@ -867,6 +867,33 @@ pub struct PlaceLocationEntry {
     pub estimated: bool,
 }
 
+/// A photograph of a site a place is identified with (on Wikimedia Commons),
+/// or a link to a view of it on Google Maps: OpenBible.info's choice.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct PlaceImageEntry {
+    /// The index in [`NameEntityInfo::locations`] of the site it shows.
+    pub location: u32,
+    /// A link to a view on Google Maps, to open there, rather than a photo.
+    pub view: bool,
+    /// What it shows: "ruins at Tel Lachish", "Google Streetview of Bethel".
+    pub description: String,
+    /// Its page, to credit and open: on Wikimedia Commons, or Google Maps.
+    pub page_url: String,
+    /// The photo about 500 pixels wide, for a strip of them, and about 1280
+    /// for one shown alone; empty for a view.
+    pub thumbnail_url: String,
+    pub large_url: String,
+    /// The original's size in pixels, for its shape; 0 for a view.
+    pub width: u32,
+    pub height: u32,
+    /// Who to credit, and the licence (`CC-BY-SA-4.0`, `PD`, `GFDL`, …).
+    pub credit: String,
+    pub license: String,
+    /// Up to three colours (`#94abd4`) to stand in for it while it loads,
+    /// top to bottom.
+    pub placeholder: Vec<String>,
+}
+
 /// Reply to [`GetNameEntity`].
 #[derive(Debug, Serialize, RustSignal)]
 pub struct NameEntityInfo {
@@ -881,6 +908,9 @@ pub struct NameEntityInfo {
     pub links: Vec<NameLinkEntry>,
     /// The likeliest first; empty for all but places.
     pub locations: Vec<PlaceLocationEntry>,
+    /// Photographs of the sites in `locations` and links to views of them,
+    /// the likeliest site's first.
+    pub images: Vec<PlaceImageEntry>,
     /// The verses naming it, in canonical order.
     pub verses: Vec<NameVerse>,
     /// The events of the Bible it takes part in, in time order.
