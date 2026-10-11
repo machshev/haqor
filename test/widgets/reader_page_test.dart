@@ -2999,7 +2999,11 @@ void greekTests() {
       find.textContaining('nominative singular feminine', findRichText: true),
       findsWidgets,
     );
-    expect(find.text('2 occurrences of βίβλος'), findsOneWidget);
+    // Laid out as the Hebrew pane is: a Lexicon tab and an Occurrences tab.
+    expect(find.text('Lexicon'), findsOneWidget);
+    await tester.tap(find.text('Occurrences'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 verses'), findsOneWidget);
     // Their verses are asked for in Greek.
     await tester.pump(const Duration(milliseconds: 50));
     expect(rust.verseTextRequests.any((r) => r.greek), isTrue);

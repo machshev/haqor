@@ -2516,6 +2516,7 @@ class OccurrenceVerseRow extends StatelessWidget {
     required this.highlightWords,
     required this.englishOnly,
     this.syriac = false,
+    this.greek = false,
     required this.useEnglishBookNames,
     this.positions = const [],
     this.isCurrent = false,
@@ -2538,6 +2539,10 @@ class OccurrenceVerseRow extends StatelessWidget {
   /// Show the verse in Syriac script (an NT verse, with the reader set to it).
   /// Ignored with [englishOnly].
   final bool syriac;
+
+  /// Show the verse in the Greek of the TR, left to right. Ignored with
+  /// [englishOnly].
+  final bool greek;
   final bool useEnglishBookNames;
 
   /// The verse the reader was looking at when the sheet opened.
@@ -2563,6 +2568,7 @@ class OccurrenceVerseRow extends StatelessWidget {
         verse: verse,
         englishOnly: englishOnly,
         syriac: syriac,
+        greek: greek,
       ),
       builder: (context, data, _) {
         return InkWell(
@@ -2691,7 +2697,9 @@ class OccurrenceVerseRow extends StatelessWidget {
     spans.insert(0, refSpan);
     return SelectableText.rich(
       TextSpan(children: spans),
-      textDirection: englishOnly ? TextDirection.ltr : TextDirection.rtl,
+      textDirection: englishOnly || greek
+          ? TextDirection.ltr
+          : TextDirection.rtl,
       // SelectableText swallows taps, so the wrapping InkWell never sees them;
       // forward single taps to keep click-to-navigate working.
       onTap: onTap,

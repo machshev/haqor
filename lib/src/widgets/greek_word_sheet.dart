@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:rinf/rinf.dart';
 
 import '../app_settings.dart';
@@ -9,12 +9,13 @@ import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import 'name_details.dart';
 import 'verse_text_cache.dart';
-import 'word_info_sheet.dart' show VerseModeIcon;
+import 'word_info_sheet.dart'
+    show CanonDistribution, OccurrenceVerseRow, VerseModeIcon;
 
-/// A word of the Greek New Testament (the TR), as the word pane shows it:
-/// the word and its dictionary form, its English here, its grammar in words,
-/// the person or place it names, and every word sharing its dictionary form,
-/// each in its verse.
+/// A word of the Greek New Testament (the TR), laid out as the Hebrew and
+/// Aramaic word pane is: its gloss and the word over its dictionary form, its
+/// grammar as chips, and two tabs, one for what the lexicon says of it, the
+/// other for every word sharing its dictionary form, each in its verse.
 class GreekWordSheet extends StatefulWidget {
   const GreekWordSheet({
     super.key,
@@ -56,15 +57,28 @@ class GreekWordSheet extends StatefulWidget {
   State<GreekWordSheet> createState() => _GreekWordSheetState();
 }
 
-class _GreekWordSheetState extends State<GreekWordSheet> {
+/// One verse of the occurrence list, with every position in it that shares
+/// the word's dictionary form.
+typedef _GreekVerse = ({int book, int chapter, int verse, List<int> positions});
+
+class _GreekWordSheetState extends State<GreekWordSheet>
+    with SingleTickerProviderStateMixin {
   /// Request ids are handed out app-wide: replies are broadcast, and two
   /// panes must not take each other's.
   static int _nextRequestId = 1;
 
   late final int _requestId = _nextRequestId++;
+  late final TabController _tabController = TabController(
+    length: 2,
+    vsync: this,
+  );
   StreamSubscription<RustSignalPack<GreekWordInfo>>? _sub;
   GreekWordInfo? _info;
   bool _englishOnly = false;
+
+  /// The books the occurrence list is narrowed to, by 1-based number; empty
+  /// for all of them.
+  final Set<int> _books = {};
   late final VerseTextCache _verseTexts = VerseTextCache(
     send: widget.sendVerseTextsRequest,
   );
@@ -99,6 +113,7 @@ class _GreekWordSheetState extends State<GreekWordSheet> {
   @override
   void dispose() {
     _sub?.cancel();
+    _tabController.dispose();
     _verseTexts.dispose();
     super.dispose();
   }
@@ -109,7 +124,7 @@ class _GreekWordSheetState extends State<GreekWordSheet> {
   }
 
   String _reference(int book, int chapter, int verse) =>
-      '${bookSelectorLabel(book - 1, useEnglish: widget.useEnglishBookNames)} '
+      '${bookDisplayName(book - 1, useEnglish: widget.useEnglishBookNames)} '
       '$chapter:$verse';
 
   void _openName(NameSummaryEntry name) => NameDetailsPage.open(
@@ -122,283 +137,449 @@ class _GreekWordSheetState extends State<GreekWordSheet> {
     bookmarks: widget.nameBookmarks,
   );
 
+  /// The occurrences merged by verse, in canonical order as they come.
+  List<_GreekVerse> _verses(List<GreekOccurrenceEntry> occurrences) {
+    final verses = <_GreekVerse>[];
+    for (final o in occurrences) {
+      final last = verses.lastOrNull;
+      if (last != null &&
+          last.book == o.book &&
+          last.chapter == o.chapter &&
+          last.verse == o.verse) {
+        last.positions.add(o.position);
+      } else {
+        verses.add((
+          book: o.book,
+          chapter: o.chapter,
+          verse: o.verse,
+          positions: [o.position],
+        ));
+      }
+    }
+    return verses;
+  }
+
+  bool _isCurrentVerse(_GreekVerse v) =>
+      v.book == widget.book &&
+      v.chapter == widget.chapter &&
+      v.verse == widget.verse;
+
+  Future<void> _copyReferences(List<_GreekVerse> verses) async {
+    final refs = verses
+        .map((v) => _reference(v.book, v.chapter, v.verse))
+        .join('\n');
+    await Clipboard.setData(ClipboardData(text: refs));
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(
+          'Copied ${verses.length} reference${verses.length == 1 ? '' : 's'}',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final info = _info;
-    final greekStyle = TextStyle(
-      fontFamily: 'Cardo',
-      fontSize: 30,
-      fontWeight: FontWeight.w500,
-      color: theme.colorScheme.onSurface,
+    return ColoredBox(
+      color: theme.colorScheme.surface,
+      child: SelectionArea(
+        child: info == null
+            ? _buildLoading(context)
+            : !info.found
+            ? _buildNotFound(context)
+            : _buildContent(context, info),
+      ),
     );
-    final header = <Widget>[
-      Text(
-        info?.word.isNotEmpty == true ? info!.word : widget.word,
-        style: greekStyle,
-      ),
-      Text(
-        _reference(widget.book, widget.chapter, widget.verse),
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+  }
+
+  TextStyle _wordStyle(ThemeData theme) => TextStyle(
+    fontFamily: 'Cardo',
+    fontSize: 32,
+    fontWeight: FontWeight.bold,
+    color: theme.colorScheme.onSurface,
+  );
+
+  /// The tapped word, as the reader had it, while its details are asked for.
+  Widget _buildLoading(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Text(widget.word, style: _wordStyle(theme)),
+          ),
         ),
-      ),
-    ];
-    if (info == null) {
-      return ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          ...header,
-          const SizedBox(height: 24),
-          const Center(child: CircularProgressIndicator()),
-        ],
-      );
-    }
-    if (!info.found) {
-      return ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          ...header,
-          const SizedBox(height: 16),
-          const Text('Nothing is known of this word.'),
-        ],
-      );
-    }
-    Widget row(String label, Widget value) => Padding(
-      padding: const EdgeInsets.only(top: 12),
+        const LinearProgressIndicator(minHeight: 2),
+      ],
+    );
+  }
+
+  Widget _buildNotFound(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(widget.word, style: _wordStyle(theme)),
+          const SizedBox(height: 8),
           Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w600,
+            'Not found in lexicon',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 2),
-          value,
         ],
       ),
     );
-    final occurrences = info.occurrences;
-    return CustomScrollView(
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-          sliver: SliverList.list(
+  }
+
+  Widget _buildContent(BuildContext context, GreekWordInfo info) {
+    final theme = Theme.of(context);
+    final bottomPad = MediaQuery.viewPaddingOf(context).bottom;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              ...header,
-              if (info.name case final name?) ...[
-                const SizedBox(height: 12),
-                NameCard(name: name, onOpen: () => _openName(name)),
-              ],
-              if (info.lemma.isNotEmpty)
-                row(
-                  'Dictionary form',
-                  Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: info.lemma,
-                          style: const TextStyle(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  if (info.gloss.isNotEmpty)
+                    Expanded(
+                      child: Text(
+                        info.gloss,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    )
+                  else
+                    const Spacer(),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        info.word.isNotEmpty ? info.word : widget.word,
+                        style: _wordStyle(theme),
+                      ),
+                      if (info.lemma.isNotEmpty)
+                        Text(
+                          info.lemma,
+                          style: TextStyle(
                             fontFamily: 'Cardo',
-                            fontSize: 20,
-                          ),
-                        ),
-                        if (info.gloss.isNotEmpty)
-                          TextSpan(
-                            text: '  ${info.gloss}',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              if (info.english.isNotEmpty)
-                row(
-                  'Here',
-                  Text(info.english, style: theme.textTheme.bodyMedium),
-                ),
-              if (info.grammar.isNotEmpty)
-                row(
-                  'Grammar',
-                  Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: info.grammarDescription,
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                        TextSpan(
-                          text: '  ${info.grammar}',
-                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontSize: 13,
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
-                      ],
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // "verb, second aorist active participle, nominative singular
+              // masculine": a chip for each part, as the Hebrew parse has.
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final part in info.grammarDescription.split(', '))
+                    if (part.isNotEmpty) _chip(context, part),
+                ],
+              ),
+              if (info.english.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Here “${info.english}”',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
-              if (occurrences.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        occurrences.length == 1
-                            ? 'Its only occurrence'
-                            : '${occurrences.length} occurrences of '
-                                  '${info.lemma}',
-                        style: theme.textTheme.titleSmall,
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: _englishOnly ? 'Show the Greek' : 'Show English',
-                      onPressed: _toggleEnglishOnly,
-                      icon: VerseModeIcon(
-                        englishOnly: _englishOnly,
-                        sourceLetter: 'α',
-                      ),
-                    ),
-                  ],
-                ),
-              ],
             ],
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-          sliver: SliverList.builder(
-            itemCount: occurrences.length,
-            itemBuilder: (context, index) {
-              final occurrence = occurrences[index];
-              return _GreekOccurrenceRow(
-                key: ValueKey(
-                  '${occurrence.book}:${occurrence.chapter}:'
-                  '${occurrence.verse}:${occurrence.position}',
-                ),
-                occurrence: occurrence,
-                reference: _reference(
-                  occurrence.book,
-                  occurrence.chapter,
-                  occurrence.verse,
-                ),
-                current:
-                    occurrence.book == widget.book &&
-                    occurrence.chapter == widget.chapter &&
-                    occurrence.verse == widget.verse &&
-                    occurrence.position == widget.position,
-                text: _verseTexts.textFor(
-                  book: occurrence.book,
-                  chapter: occurrence.chapter,
-                  verse: occurrence.verse,
-                  englishOnly: _englishOnly,
-                  greek: true,
-                ),
-                englishOnly: _englishOnly,
-                onTap: widget.onNavigateToPassage == null
-                    ? null
-                    : () => widget.onNavigateToPassage!(
-                        occurrence.book - 1,
-                        occurrence.chapter,
-                        occurrence.verse,
-                      ),
-              );
-            },
+        TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Lexicon', height: 32),
+            Tab(text: 'Occurrences', height: 32),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildLexiconTab(context, info, bottomPad),
+              _buildOccurrencesTab(context, info, bottomPad),
+            ],
           ),
         ),
       ],
     );
   }
-}
 
-/// One occurrence: its reference and its verse, Greek or English, with the
-/// word itself, or the English rendering it, highlighted.
-class _GreekOccurrenceRow extends StatelessWidget {
-  const _GreekOccurrenceRow({
-    super.key,
-    required this.occurrence,
-    required this.reference,
-    required this.current,
-    required this.text,
-    required this.englishOnly,
-    this.onTap,
-  });
-
-  final GreekOccurrenceEntry occurrence;
-  final String reference;
-  final bool current;
-  final ValueListenable<VerseTextData?> text;
-  final bool englishOnly;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildLexiconTab(
+    BuildContext context,
+    GreekWordInfo info,
+    double bottomPad,
+  ) {
     final theme = Theme.of(context);
-    final base = TextStyle(
-      fontFamily: 'Cardo',
-      fontSize: 16,
-      height: 1.5,
-      color: theme.colorScheme.onSurface,
+    Widget sectionHeading(String label) => Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        label,
+        style: theme.textTheme.labelLarge?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
     );
-    final highlight = base.copyWith(
-      backgroundColor: theme.colorScheme.primaryContainer,
-      color: theme.colorScheme.onPrimaryContainer,
-    );
-    final refStyle = base.copyWith(
-      fontSize: 12,
-      fontWeight: FontWeight.bold,
-      color: theme.colorScheme.primary,
-    );
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        color: current
-            ? theme.colorScheme.secondaryContainer.withValues(alpha: 0.5)
-            : null,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: ValueListenableBuilder<VerseTextData?>(
-          valueListenable: text,
-          builder: (context, data, _) {
-            final children = <InlineSpan>[
-              TextSpan(text: '$reference  ', style: refStyle),
-            ];
-            if (data == null) {
-              children.add(TextSpan(text: '…', style: base));
-            } else if (englishOnly && data.translation.isNotEmpty) {
-              bool renders(TranslationSpanEntry span) => span.words.any(
-                (w) =>
-                    w.chapter == occurrence.chapter &&
-                    w.verse == occurrence.verse &&
-                    w.position == occurrence.position,
-              );
-              for (final span in data.translation) {
-                children.add(
+    return ListView(
+      padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomPad),
+      children: [
+        // Who or what the word names here: the lexicon can only say what
+        // the name means.
+        if (info.name case final name?) ...[
+          NameCard(name: name, onOpen: () => _openName(name)),
+          const SizedBox(height: 16),
+        ],
+        if (info.lemma.isNotEmpty) ...[
+          sectionHeading('Dictionary form'),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text.rich(
+              TextSpan(
+                children: [
                   TextSpan(
-                    text: span.text,
-                    style: (renders(span) ? highlight : base).copyWith(
-                      fontStyle: span.supplied ? FontStyle.italic : null,
+                    text: info.lemma,
+                    style: TextStyle(
+                      fontFamily: 'Cardo',
+                      fontSize: 20,
+                      color: theme.colorScheme.onSurface,
                     ),
                   ),
-                );
-              }
-            } else {
-              final words = englishOnly
-                  ? data.glossWords
-                  : data.text.split(' ');
-              for (final (i, word) in words.indexed) {
-                if (i > 0) children.add(TextSpan(text: ' ', style: base));
-                children.add(
-                  TextSpan(
-                    text: word,
-                    style: i == occurrence.position ? highlight : base,
+                  if (info.gloss.isNotEmpty)
+                    TextSpan(
+                      text: '  ${info.gloss}',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (info.grammar.isNotEmpty) ...[
+          sectionHeading('Grammar'),
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: info.grammarDescription,
+                  style: theme.textTheme.bodyMedium,
+                ),
+                TextSpan(
+                  text: '  ${info.grammar}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                );
-              }
-            }
-            return Text.rich(TextSpan(children: children));
-          },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// A header with the count, the verse-text switch and the canon
+  /// distribution over the verses, as the Hebrew pane's Occurrences tab has.
+  Widget _buildOccurrencesTab(
+    BuildContext context,
+    GreekWordInfo info,
+    double bottomPad,
+  ) {
+    final theme = Theme.of(context);
+    final all = _verses(info.occurrences);
+    if (all.isEmpty) return const SizedBox.shrink();
+    final bookCounts = <int, int>{};
+    for (final o in info.occurrences) {
+      bookCounts[o.book] = (bookCounts[o.book] ?? 0) + 1;
+    }
+    final verses = _books.isEmpty
+        ? all
+        : all.where((v) => _books.contains(v.book)).toList();
+    final hits = verses.fold(0, (sum, v) => sum + v.positions.length);
+    final versePart = '${verses.length} verse${verses.length == 1 ? '' : 's'}';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            border: Border(
+              bottom: BorderSide(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      hits == verses.length ? versePart : '$versePart · $hits×',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Copy references',
+                    icon: const Icon(Icons.copy_all_outlined, size: 20),
+                    onPressed: verses.isEmpty
+                        ? null
+                        : () => _copyReferences(verses),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minHeight: 40),
+                  ),
+                  IconButton(
+                    tooltip: _englishOnly
+                        ? 'Show Greek verse text'
+                        : 'Show English-only verse text',
+                    icon: VerseModeIcon(
+                      englishOnly: _englishOnly,
+                      sourceLetter: 'α',
+                    ),
+                    onPressed: _toggleEnglishOnly,
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    alignment: Alignment.centerRight,
+                    constraints: const BoxConstraints(minHeight: 40),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              CanonDistribution(
+                countsByBook: bookCounts,
+                selectedBooks: _books,
+                useEnglishBookNames: widget.useEnglishBookNames,
+                onSelect: (books) => setState(() {
+                  _books
+                    ..clear()
+                    ..addAll(books);
+                }),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: verses.isEmpty
+              ? Center(
+                  child: Text(
+                    'No occurrences match this filter',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              : _occurrenceVerseList(verses, bottomPad: bottomPad),
+        ),
+      ],
+    );
+  }
+
+  Widget _occurrenceVerseRow(_GreekVerse v) {
+    final bookIndex = v.book - 1;
+    return OccurrenceVerseRow(
+      key: ValueKey('${v.book}:${v.chapter}:${v.verse}'),
+      cache: _verseTexts,
+      displayRef: _reference(v.book, v.chapter, v.verse),
+      bookIndex: bookIndex,
+      chapter: v.chapter,
+      verse: v.verse,
+      highlightWords: const [],
+      positions: v.positions,
+      isCurrent: _isCurrentVerse(v),
+      englishOnly: _englishOnly,
+      greek: true,
+      useEnglishBookNames: widget.useEnglishBookNames,
+      onTap: widget.onNavigateToPassage == null
+          ? null
+          : () => widget.onNavigateToPassage!(bookIndex, v.chapter, v.verse),
+    );
+  }
+
+  /// The occurrence list, opened at the reader's own verse: the verses before
+  /// it grow backwards from a zero-height centre, as in the Hebrew pane.
+  Widget _occurrenceVerseList(
+    List<_GreekVerse> verses, {
+    required double bottomPad,
+  }) {
+    final anchor = verses.indexWhere(_isCurrentVerse);
+    final centre = anchor < 0 ? 0 : anchor;
+    final identity = '$centre-${verses.length}';
+    return CustomScrollView(
+      key: ValueKey('occurrences-$identity'),
+      center: ValueKey('occurrence-centre-$identity'),
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: SliverList.builder(
+            itemCount: centre,
+            itemBuilder: (context, i) =>
+                _occurrenceVerseRow(verses[centre - 1 - i]),
+          ),
+        ),
+        SliverToBoxAdapter(
+          key: ValueKey('occurrence-centre-$identity'),
+          child: const SizedBox.shrink(),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: SliverList.builder(
+            itemCount: verses.length - centre,
+            itemBuilder: (context, i) =>
+                _occurrenceVerseRow(verses[centre + i]),
+          ),
+        ),
+        SliverToBoxAdapter(child: SizedBox(height: 8 + bottomPad)),
+      ],
+    );
+  }
+
+  Widget _chip(BuildContext context, String value) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        value,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSecondaryContainer,
         ),
       ),
     );
