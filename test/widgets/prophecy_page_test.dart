@@ -334,6 +334,54 @@ void main() {
     expect(find.byKey(const ValueKey('detail-5')), findsOneWidget);
   });
 
+  testWidgets('a Gospel prophecy names its parallels apart from fulfilments', (
+    tester,
+  ) async {
+    final opened = <(int, int, int)>[];
+    final requests = await _pump(
+      tester,
+      size: const Size(1200, 900),
+      onNavigate: (b, c, v) => opened.add((b, c, v)),
+    );
+    _deliver(requests.single, [
+      _prophecy(
+        id: 6,
+        passage: _span(40, 21, 33, 46),
+        title: 'The wicked husbandmen',
+        theme: 'jerusalem',
+        stages: ['ad70'],
+        fulfilments: [
+          for (final (book, chapter, verse, last) in [
+            (41, 12, 1, 12),
+            (42, 20, 9, 19),
+          ])
+            ProphecyFulfilmentEntry(
+              passage: _span(book, chapter, verse, last),
+              prophecyVerses: _span(40, 21, 33, 46),
+              kind: 'parallel',
+              stage: 'ad70',
+              formula: '',
+              reviewed: true,
+              note: '',
+            ),
+        ],
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    expect(find.text('Judgment on Jerusalem'), findsWidgets);
+    await tester.tap(find.text('The wicked husbandmen'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Also in '), findsOneWidget);
+    expect(find.text('Mark 12:1–12 · '), findsOneWidget);
+    expect(find.text('Fulfilled: AD 70'), findsOneWidget);
+    // The parallels fulfil nothing: no stage lists them.
+    expect(find.text('No fulfilment recorded in the Bible.'), findsOneWidget);
+    await tester.tap(find.text('Luke 20:9–19'));
+    await tester.pumpAndSettle();
+    expect(opened, [(41, 20, 9)]);
+  });
+
   testWidgets('says so when the database has none', (tester) async {
     final requests = await _pump(tester);
     _deliver(requests.single, const []);

@@ -19,6 +19,7 @@ const prophecyThemes = [
   'kingdom',
   'priest',
   'israel',
+  'jerusalem',
   'nations',
   'empires',
 ];
@@ -32,6 +33,7 @@ String prophecyThemeLabel(String theme) => switch (theme) {
   'kingdom' => 'The kingdom',
   'priest' => 'The priest',
   'israel' => 'Israel',
+  'jerusalem' => 'Judgment on Jerusalem',
   'nations' => 'The nations',
   'empires' => 'Empires',
   _ => theme,
@@ -62,6 +64,7 @@ String _kindLabel(String kind) => switch (kind) {
   'allusion' => 'Allusion',
   'type' => 'Type',
   'event' => 'Event',
+  'parallel' => 'Parallel',
   _ => kind,
 };
 
@@ -155,6 +158,16 @@ class ProphecyCard extends StatelessWidget {
     final stageHeading = theme.textTheme.labelMedium?.copyWith(
       color: theme.colorScheme.primary,
     );
+    // The other Gospels' accounts of the same prophecy, apart from its
+    // fulfilments.
+    final parallels = [
+      for (final f in p.fulfilments)
+        if (f.kind == 'parallel') f,
+    ];
+    final fulfilled = [
+      for (final f in p.fulfilments)
+        if (f.kind != 'parallel') f,
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -186,6 +199,27 @@ class ProphecyCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
             child: Text(details, style: muted),
           ),
+        if (parallels.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text('Also in ', style: muted),
+                for (final (i, f) in parallels.indexed)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: _open(f.passage),
+                    child: Text(
+                      i + 1 < parallels.length
+                          ? '${_span(f.passage)} · '
+                          : _span(f.passage),
+                      style: muted?.copyWith(color: theme.colorScheme.primary),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         if (p.stages.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
@@ -202,7 +236,7 @@ class ProphecyCard extends StatelessWidget {
         const SizedBox(height: 6),
         _verseRow(p.passage),
         const SizedBox(height: 8),
-        if (p.fulfilments.isEmpty)
+        if (fulfilled.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text('No fulfilment recorded in the Bible.', style: muted),
@@ -212,11 +246,11 @@ class ProphecyCard extends StatelessWidget {
             ...prophecyStages,
             // A stage this app does not know yet, last.
             ...{
-              for (final f in p.fulfilments)
+              for (final f in fulfilled)
                 if (!prophecyStages.contains(f.stage)) f.stage,
             },
           ])
-            if (p.fulfilments.where((f) => f.stage == stage).toList()
+            if (fulfilled.where((f) => f.stage == stage).toList()
                 case final fulfilments when fulfilments.isNotEmpty) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
