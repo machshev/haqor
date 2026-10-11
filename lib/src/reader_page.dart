@@ -5305,7 +5305,6 @@ class _ReaderSessionState extends State<_ReaderSession>
   );
 
   Widget _sessionScaffold(BuildContext context, {required double width}) {
-    final book = kBooks[_bookIndex];
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
@@ -5321,7 +5320,7 @@ class _ReaderSessionState extends State<_ReaderSession>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      book.hebrew,
+                      bookTitle(_bookIndex),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -6039,7 +6038,6 @@ class _ChapterDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final book = kBooks[bookIndex];
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
@@ -6062,7 +6060,7 @@ class _ChapterDivider extends StatelessWidget {
                 if (studyNote)
                   const Icon(Icons.sticky_note_2_outlined, size: 12),
                 Text(
-                  book.hebrew,
+                  bookTitle(bookIndex),
                   style: TextStyle(
                     fontFamily: 'Cardo',
                     fontFamilyFallback: const ['Noto Serif Hebrew'],

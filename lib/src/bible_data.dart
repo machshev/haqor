@@ -591,6 +591,44 @@ const kGreekBookAbbreviations = [
   'Heb', 'Iak', 'Pe1', 'Pe2', 'Io1', 'Io2', 'Io3', 'Iou', 'Apo',
 ];
 
+/// The New Testament's books by their Greek names, in Greek, as [BookInfo.hebrew]
+/// names them in Hebrew letters from the Peshitta.
+const kGreekBookTitles = [
+  'Ματθαῖος',
+  'Μάρκος',
+  'Λουκᾶς',
+  'Ἰωάννης',
+  'Πράξεις',
+  'Ῥωμαῖοι',
+  'Κορίνθιοι Αʹ',
+  'Κορίνθιοι Βʹ',
+  'Γαλάται',
+  'Ἐφέσιοι',
+  'Φιλιππήσιοι',
+  'Κολοσσαεῖς',
+  'Θεσσαλονικεῖς Αʹ',
+  'Θεσσαλονικεῖς Βʹ',
+  'Τιμόθεος Αʹ',
+  'Τιμόθεος Βʹ',
+  'Τίτος',
+  'Φιλήμων',
+  'Ἑβραῖοι',
+  'Ἰάκωβος',
+  'Πέτρος Αʹ',
+  'Πέτρος Βʹ',
+  'Ἰωάννης Αʹ',
+  'Ἰωάννης Βʹ',
+  'Ἰωάννης Γʹ',
+  'Ἰούδας',
+  'Ἀποκάλυψις',
+];
+
+/// A book's name in the letters of the text the reader shows it in: Hebrew,
+/// or for the New Testament read in Greek, Greek (see [greekBookNames]).
+String bookTitle(int bookIndex) => greekBookNames && bookIndex >= 39
+    ? kGreekBookTitles[bookIndex - 39]
+    : kBooks[bookIndex].hebrew;
+
 /// Whether the New Testament's books are named from the Greek rather than the
 /// Peshitta, where English names are not used: the reader sets it as it reads
 /// the New Testament in one or the other. Held here, as the app's theme is,

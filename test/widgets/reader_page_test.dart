@@ -3291,6 +3291,7 @@ void greekToggleTests() {
     expect(find.byTooltip('Greek · switch to Aramaic'), findsOneWidget);
     // The books are named from the Greek, and from the Peshitta after.
     expect(find.textContaining('Matthaios'), findsWidgets);
+    expect(find.text('Ματθαῖος'), findsWidgets);
 
     rust.chapterRequests.clear();
     await tester.tap(find.byKey(const ValueKey('reader-nt-text-toggle')));
@@ -3305,6 +3306,8 @@ void greekToggleTests() {
     expect(find.byTooltip('Aramaic · switch to Greek'), findsOneWidget);
     expect(find.textContaining('Matthaios'), findsNothing);
     expect(find.textContaining('Mattai'), findsWidgets);
+    expect(find.text('Ματθαῖος'), findsNothing);
+    expect(find.text('מַתַּי'), findsWidgets);
     expect(
       tester.widget<VerseRow>(_verse(40, 1, 1)).sourceDirection,
       TextDirection.rtl,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../bible_data.dart';
+import '../surface.dart';
 
 class BookSelectorSheet extends StatelessWidget {
   const BookSelectorSheet({
@@ -51,8 +52,12 @@ class BookSelectorSheet extends StatelessWidget {
           ),
           for (int s = 0; s < _sections.length; s++) ...[
             _BookSectionHeader(
-              hebrew: _sections[s].hebrew,
-              label: _sections[s].label,
+              hebrew: s == _sections.length - 1 && greekBookNames
+                  ? 'Ἡ Καινὴ Διαθήκη'
+                  : _sections[s].hebrew,
+              label: s == _sections.length - 1 && greekBookNames
+                  ? 'Kainē Diathēkē'
+                  : _sections[s].label,
             ),
             const SizedBox(height: 4),
             Wrap(
@@ -97,7 +102,7 @@ class _BookSectionHeader extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           hebrew,
-          textDirection: TextDirection.rtl,
+          textDirection: wordDirection(hebrew),
           style: TextStyle(
             fontFamily: 'Cardo',
             fontFamilyFallback: const ['Noto Serif Hebrew'],
@@ -130,7 +135,8 @@ class _BookChip extends StatelessWidget {
     final theme = Theme.of(context);
     return Tooltip(
       message:
-          '${bookDisplayName(bookIndex, useEnglish: useEnglishBookNames)}  ${book.hebrew}',
+          '${bookDisplayName(bookIndex, useEnglish: useEnglishBookNames)}  '
+          '${bookTitle(bookIndex)}',
       child: GestureDetector(
         onTap: () => Navigator.of(context).pop(bookIndex),
         child: AnimatedContainer(
