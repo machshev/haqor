@@ -4749,7 +4749,12 @@ class _ReaderSessionState extends State<_ReaderSession>
       case _VerseMenuAction.syntax:
         await _showSyntax(bookIndex, chapter, verse);
       case _VerseMenuAction.memoriseChapter:
-        await memoriseChapter(context, bookIndex, chapter);
+        await memoriseChapter(
+          context,
+          bookIndex,
+          chapter,
+          greek: _isGreek(bookIndex),
+        );
       case _VerseMenuAction.addTimelineEvent:
       case _VerseMenuAction.addTimelineSpan:
         await _addStudyTimelineEntryAt(

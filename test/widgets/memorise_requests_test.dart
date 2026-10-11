@@ -23,6 +23,7 @@ void _fail(String request, String key, String message) => _deliver(
 const _card = MemoryCard(
   passageId: 'p',
   book: 19,
+  greek: false,
   purpose: 'read',
   title: 'Title',
   prompt: 'Read it aloud.',

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../app_settings.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../prefs_read.dart';
@@ -18,16 +19,19 @@ import 'memorise_shape.dart';
 /// Seconds east of UTC, so the core counts days (goal, streak) locally.
 int memoryUtcOffset() => DateTime.now().timeZoneOffset.inSeconds;
 
-/// The reference a passage covers, e.g. "Psalms 23:1–6".
+/// The reference a passage covers, e.g. "Psalms 23:1–6", or "John 3:16 in
+/// Greek" for one learnt in the Greek rather than the Peshitta.
 String passageReference(MemoryPassageEntry p, {required bool useEnglish}) {
   final book = bookDisplayName(p.book - 1, useEnglish: useEnglish);
+  final text = p.greek ? ' in Greek' : '';
   if (p.startChapter == p.endChapter) {
     if (p.startVerse == p.endVerse) {
-      return '$book ${p.startChapter}:${p.startVerse}';
+      return '$book ${p.startChapter}:${p.startVerse}$text';
     }
-    return '$book ${p.startChapter}:${p.startVerse}–${p.endVerse}';
+    return '$book ${p.startChapter}:${p.startVerse}–${p.endVerse}$text';
   }
-  return '$book ${p.startChapter}:${p.startVerse}–${p.endChapter}:${p.endVerse}';
+  return '$book ${p.startChapter}:${p.startVerse}–'
+      '${p.endChapter}:${p.endVerse}$text';
 }
 
 String passageTitle(MemoryPassageEntry p, {required bool useEnglish}) =>
@@ -38,15 +42,24 @@ Future<bool> _useEnglishBookNames() async {
   return prefs.readBool('english_book_names') ?? false;
 }
 
+/// Whether the reader shows the New Testament in Greek, so a passage added
+/// here starts out in the text being read.
+Future<bool> _readsGreek() async =>
+    readReadingSettings(await SharedPreferences.getInstance()).ntGreek;
+
 /// Add a whole chapter as a passage (from the reader), open the memorisation
-/// dashboard, and go straight on to shaping it.
+/// dashboard, and go straight on to shaping it. `greek` learns a New
+/// Testament chapter in the Greek, as the reader shows it, rather than the
+/// Peshitta.
 Future<void> memoriseChapter(
   BuildContext context,
   int bookIndex,
-  int chapter,
-) => Navigator.of(context).push(
+  int chapter, {
+  bool greek = false,
+}) => Navigator.of(context).push(
   MaterialPageRoute(
-    builder: (_) => MemorisePage(addChapter: (bookIndex + 1, chapter)),
+    builder: (_) =>
+        MemorisePage(addChapter: (bookIndex + 1, chapter), addGreek: greek),
   ),
 );
 
@@ -54,10 +67,18 @@ Future<void> memoriseChapter(
 /// being learnt with a heatmap of every verse; activity graphs; and
 /// achievements.
 class MemorisePage extends StatefulWidget {
-  const MemorisePage({super.key, this.addChapter, this.sendRequest});
+  const MemorisePage({
+    super.key,
+    this.addChapter,
+    this.addGreek = false,
+    this.sendRequest,
+  });
 
   /// A (book, chapter) to add as a passage on opening, then shape.
   final (int, int)? addChapter;
+
+  /// Add [addChapter] in the Greek rather than the Peshitta.
+  final bool addGreek;
 
   /// Stands in for the signal to Rust so a test can capture the page's
   /// requests (`sendSignalToRust` needs the native library).
@@ -132,6 +153,7 @@ class _MemorisePageState extends State<MemorisePage> {
       _send(
         SaveMemoryPassage(
           book: add.$1,
+          greek: widget.addGreek,
           startChapter: add.$2,
           startVerse: 1,
           endChapter: add.$2,
@@ -297,6 +319,7 @@ class _MemorisePageState extends State<MemorisePage> {
     _send(
       SaveMemoryPassage(
         book: passage.book,
+        greek: passage.greek,
         startChapter: passage.startChapter,
         startVerse: passage.startVerse,
         endChapter: passage.endChapter,
@@ -1178,9 +1201,20 @@ class _AddPassageSheetState extends State<_AddPassageSheet> {
   int _book = 26;
   int _chapter = 23;
   bool _wholeChapter = true;
+
+  /// Learn a New Testament passage in the Greek rather than the Peshitta.
+  bool _greek = false;
   final _from = TextEditingController(text: '1');
   final _to = TextEditingController();
   final _title = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _readsGreek().then((greek) {
+      if (mounted) setState(() => _greek = greek);
+    });
+  }
 
   @override
   void dispose() {
@@ -1232,6 +1266,7 @@ class _AddPassageSheetState extends State<_AddPassageSheet> {
     }
     SaveMemoryPassage(
       book: _book + 1,
+      greek: _book >= 39 && _greek,
       startChapter: _chapter,
       startVerse: from,
       endChapter: _chapter,
@@ -1280,6 +1315,20 @@ class _AddPassageSheetState extends State<_AddPassageSheet> {
                   ),
                 ],
               ),
+              // The New Testament can be learnt in either text; a verse
+              // learnt in one is not learnt in the other.
+              if (_book >= 39) ...[
+                const SizedBox(height: 12),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('Aramaic')),
+                    ButtonSegment(value: true, label: Text('Greek')),
+                  ],
+                  selected: {_greek},
+                  onSelectionChanged: (value) =>
+                      setState(() => _greek = value.single),
+                ),
+              ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Whole chapter'),

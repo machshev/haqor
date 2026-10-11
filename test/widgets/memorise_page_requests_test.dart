@@ -105,4 +105,24 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('a chapter read in Greek is added to learn in Greek', (
+    tester,
+  ) async {
+    final sent = <Object>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MemorisePage(
+          addChapter: (43, 3),
+          addGreek: true,
+          sendRequest: sent.add,
+        ),
+      ),
+    );
+    await tester.pump();
+    final save = sent.whereType<SaveMemoryPassage>().single;
+    expect((save.book, save.startChapter, save.greek), (43, 3, true));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpWidget(const SizedBox());
+  });
 }

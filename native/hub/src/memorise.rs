@@ -26,6 +26,7 @@ fn send_passages(bible: &Bible, saved_id: String, saved_nothing: bool) {
                 .map(|s| MemoryPassageEntry {
                     id: s.passage.id,
                     book: s.passage.book,
+                    greek: s.passage.greek,
                     start_chapter: s.passage.start_chapter,
                     start_verse: s.passage.start_verse,
                     end_chapter: s.passage.end_chapter,
@@ -57,8 +58,8 @@ fn send_passages(bible: &Bible, saved_id: String, saved_nothing: bool) {
 }
 
 fn send_layout(bible: &Bible, passage_id: &str) {
-    let book = match bible.memory_passage(passage_id) {
-        Ok(p) => p.map_or(0, |p| p.book),
+    let (book, greek) = match bible.memory_passage(passage_id) {
+        Ok(p) => p.map_or((0, false), |p| (p.book, p.greek)),
         Err(e) => {
             send_failure("memory_layout", passage_id, e);
             return;
@@ -68,6 +69,7 @@ fn send_layout(bible: &Bible, passage_id: &str) {
         Ok(verses) => MemoryLayout {
             passage_id: passage_id.to_string(),
             book,
+            greek,
             verses: verses
                 .into_iter()
                 .map(|v| MemoryLayoutVerse {
@@ -96,6 +98,7 @@ fn to_signal_card(card: core::MemoryCard) -> MemoryCard {
     MemoryCard {
         passage_id: card.passage_id,
         book: card.book,
+        greek: card.greek,
         purpose: card.purpose.as_str().to_string(),
         title: card.title,
         prompt: card.prompt,
@@ -223,6 +226,7 @@ pub async fn save_memory_passage(bible: SharedBible) {
         let bible = lock(&bible);
         match bible.add_memory_passage(
             r.book,
+            r.greek,
             r.start_chapter,
             r.start_verse,
             r.end_chapter,
@@ -275,13 +279,21 @@ pub async fn set_memory_layout(bible: SharedBible) {
         let result = bible
             .set_memory_line_starts(
                 r.book,
+                r.greek,
                 r.chapter,
                 r.verse,
                 r.shaped.then_some(&starts[..]),
                 now,
             )
             .and_then(|()| {
-                bible.set_memory_section_start(r.book, r.chapter, r.verse, r.section_start, now)
+                bible.set_memory_section_start(
+                    r.book,
+                    r.greek,
+                    r.chapter,
+                    r.verse,
+                    r.section_start,
+                    now,
+                )
             });
         match result {
             Ok(()) => {
@@ -376,6 +388,7 @@ pub async fn submit_memory_recital(bible: SharedBible) {
         match bible.submit_memory_recital(
             &r.passage_id,
             r.book,
+            r.greek,
             purpose,
             target,
             r.step as usize,
@@ -445,6 +458,7 @@ mod tests {
         SubmitMemoryRecital {
             passage_id: "p".to_string(),
             book: 27,
+            greek: false,
             purpose: "review".to_string(),
             target_chapter: 23,
             target_verse: 2,

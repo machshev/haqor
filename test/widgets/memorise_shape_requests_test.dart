@@ -84,6 +84,7 @@ void main() {
         MemoryLayout(
           passageId: 'p',
           book: 1,
+          greek: false,
           verses: verses,
         ).bincodeSerialize(),
         Uint8List(0),

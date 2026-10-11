@@ -70,6 +70,7 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
   // only once the last edit's has come.
   int _pending = 0;
   int _book = 0;
+  bool _greek = false;
   bool _glosses = true;
 
   @override
@@ -81,6 +82,7 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
       if (_pending > 0 && --_pending > 0) return;
       setState(() {
         _book = pack.message.book;
+        _greek = pack.message.greek;
         _verses = pack.message.verses;
         _error = null;
       });
@@ -149,6 +151,7 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
     final edit = SetMemoryLayout(
       passageId: widget.passageId,
       book: _book,
+      greek: _greek,
       chapter: v.chapter,
       verse: v.verse,
       lineStarts: lineStarts ?? v.lineStarts,
@@ -264,6 +267,7 @@ class _MemoryShapePageState extends State<MemoryShapePage> {
                     first: s == 0,
                     last: s + 1 == sections.length,
                     glosses: _glosses,
+                    greek: _greek,
                     onToggleBreak: _toggleBreak,
                     onKeepWhole: _keepWhole,
                     onToggleSection: _toggleSection,
@@ -300,6 +304,7 @@ class _SectionCard extends StatelessWidget {
     required this.first,
     required this.last,
     required this.glosses,
+    required this.greek,
     required this.onToggleBreak,
     required this.onKeepWhole,
     required this.onToggleSection,
@@ -310,6 +315,9 @@ class _SectionCard extends StatelessWidget {
   final bool first;
   final bool last;
   final bool glosses;
+
+  /// The passage is learnt in the Greek, left to right.
+  final bool greek;
   final void Function(MemoryLayoutVerse, int) onToggleBreak;
   final ValueChanged<MemoryLayoutVerse> onKeepWhole;
   final ValueChanged<MemoryLayoutVerse> onToggleSection;
@@ -377,6 +385,7 @@ class _SectionCard extends StatelessWidget {
                 verse: verses[i],
                 canStartSection: !(first && i == 0),
                 glosses: glosses,
+                greek: greek,
                 onToggleBreak: (w) => onToggleBreak(verses[i], w),
                 onKeepWhole: () => onKeepWhole(verses[i]),
                 onToggleSection: () => onToggleSection(verses[i]),
@@ -393,6 +402,7 @@ class _VerseShape extends StatelessWidget {
     required this.verse,
     required this.canStartSection,
     required this.glosses,
+    required this.greek,
     required this.onToggleBreak,
     required this.onKeepWhole,
     required this.onToggleSection,
@@ -401,6 +411,7 @@ class _VerseShape extends StatelessWidget {
   final MemoryLayoutVerse verse;
   final bool canStartSection;
   final bool glosses;
+  final bool greek;
   final ValueChanged<int> onToggleBreak;
   final VoidCallback onKeepWhole;
   final VoidCallback onToggleSection;
@@ -412,7 +423,7 @@ class _VerseShape extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: greek ? TextDirection.ltr : TextDirection.rtl,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

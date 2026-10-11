@@ -24,6 +24,7 @@ MemorySegment _segment(int verse, List<String> words, {int line = 0}) =>
 MemoryCard _card(String purpose, List<MemorySegment> segments) => MemoryCard(
   passageId: 'p',
   book: 27,
+  greek: false,
   purpose: purpose,
   title: 'Title',
   prompt: 'Picture the scene.',
@@ -107,6 +108,7 @@ void main() {
           MemoryPassageEntry(
             id: 'x',
             book: 27,
+            greek: false,
             startChapter: sc,
             startVerse: sv,
             endChapter: ec,
@@ -130,6 +132,22 @@ void main() {
         passageReference(p(22, 30, 23, 2), useEnglish: true),
         'Psalms 22:30–23:2',
       );
+      final john = MemoryPassageEntry(
+        id: 'g',
+        book: 43,
+        greek: true,
+        startChapter: 3,
+        startVerse: 16,
+        endChapter: 3,
+        endVerse: 16,
+        title: '',
+        verses: const [],
+        learnt: 0,
+        due: 0,
+        masteryPct: 0,
+        needsShaping: false,
+      );
+      expect(passageReference(john, useEnglish: true), 'John 3:16 in Greek');
     },
   );
 

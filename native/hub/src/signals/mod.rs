@@ -1520,6 +1520,9 @@ pub struct GetMemoryPassages {}
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct SaveMemoryPassage {
     pub book: u8,
+    /// Learn a New Testament passage in the Greek (the Textus Receptus)
+    /// rather than the Peshitta; ignored in the Old Testament.
+    pub greek: bool,
     pub start_chapter: u8,
     pub start_verse: u8,
     pub end_chapter: u8,
@@ -1548,6 +1551,8 @@ pub struct MemoryVerseState {
 pub struct MemoryPassageEntry {
     pub id: String,
     pub book: u8,
+    /// Learnt in the Greek rather than the Peshitta.
+    pub greek: bool,
     pub start_chapter: u8,
     pub start_verse: u8,
     pub end_chapter: u8,
@@ -1585,6 +1590,8 @@ pub struct GetMemoryLayout {
 pub struct SetMemoryLayout {
     pub passage_id: String,
     pub book: u8,
+    /// The passage's `greek`, as [`MemoryLayout`] gives it.
+    pub greek: bool,
     pub chapter: u8,
     pub verse: u8,
     pub line_starts: Vec<u8>,
@@ -1614,6 +1621,8 @@ pub struct MemoryLayout {
     pub passage_id: String,
     /// The passage's book (0 if it is gone).
     pub book: u8,
+    /// The passage is learnt in the Greek, left to right.
+    pub greek: bool,
     pub verses: Vec<MemoryLayoutVerse>,
 }
 
@@ -1659,6 +1668,8 @@ pub struct MemorySegment {
 pub struct MemoryCard {
     pub passage_id: String,
     pub book: u8,
+    /// The text is the Greek, left to right, rather than the Peshitta.
+    pub greek: bool,
     pub purpose: String,
     pub title: String,
     pub prompt: String,
@@ -1691,12 +1702,14 @@ pub struct MemoryItem {
 
 /// How a card went. `grade` (0 Again, 1 Hard, 2 Good, 3 Easy) is the
 /// learner's grade for the card; `chapters`/`verses`/`grades` grade each
-/// verse recited, in parallel. Echo the card's purpose, target and step.
+/// verse recited, in parallel. Echo the card's book, text (`greek`),
+/// purpose, target and step.
 /// The reply is [`MemoryReviewResult`]; the app then asks for the next card.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct SubmitMemoryRecital {
     pub passage_id: String,
     pub book: u8,
+    pub greek: bool,
     pub purpose: String,
     pub target_chapter: u8,
     pub target_verse: u8,

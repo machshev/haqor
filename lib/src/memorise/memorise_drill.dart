@@ -237,6 +237,7 @@ class _MemoryDrillPageState extends State<MemoryDrillPage> {
     final recital = SubmitMemoryRecital(
       passageId: card.passageId,
       book: card.book,
+      greek: card.greek,
       purpose: card.purpose,
       targetChapter: card.targetChapter,
       targetVerse: card.targetVerse,
@@ -617,6 +618,7 @@ class _MemoryRecitalViewState extends State<MemoryRecitalView> {
       lines.add(
         _LineRow(
           segment: seg,
+          greek: _card.greek,
           firstIndex: first,
           keys: _keys,
           hidden: _hidden,
@@ -697,7 +699,9 @@ class _MemoryRecitalViewState extends State<MemoryRecitalView> {
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Text(
                         _card.cue,
-                        textDirection: TextDirection.rtl,
+                        textDirection: _card.greek
+                            ? TextDirection.ltr
+                            : TextDirection.rtl,
                         style: memoryHebrewStyle(
                           theme,
                           20,
@@ -863,11 +867,12 @@ class _StepDots extends StatelessWidget {
   }
 }
 
-/// One line of a verse, right to left, its verse number leading the verse's
-/// first line.
+/// One line of a verse, right to left (left to right in the Greek), its verse
+/// number leading the verse's first line.
 class _LineRow extends StatelessWidget {
   const _LineRow({
     required this.segment,
+    required this.greek,
     required this.firstIndex,
     required this.keys,
     required this.hidden,
@@ -880,6 +885,7 @@ class _LineRow extends StatelessWidget {
   });
 
   final MemorySegment segment;
+  final bool greek;
   final int firstIndex;
   final List<GlobalKey> keys;
   final bool hidden;
@@ -896,7 +902,7 @@ class _LineRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Directionality(
-        textDirection: TextDirection.rtl,
+        textDirection: greek ? TextDirection.ltr : TextDirection.rtl,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
