@@ -3370,14 +3370,27 @@ void greekToggleTests() {
     expect(prefs.getBool('nt_greek'), isFalse);
   });
 
-  testWidgets('in the Old Testament the toggle says Hebrew and Greek is off', (
+  testWidgets('in the Old Testament the toggle says Hebrew and Greek is gone', (
     tester,
   ) async {
     await _pumpWorkspace(tester, const Size(1366, 744));
     expect(find.byTooltip('Hebrew · switch to English'), findsOneWidget);
-    final toggle = tester.widget<IconButton>(
-      find.byKey(const ValueKey('reader-nt-text-toggle')),
+    expect(find.byKey(const ValueKey('reader-nt-text-toggle')), findsNothing);
+  });
+
+  testWidgets('the English alone has no interlinear or rapid reading', (
+    tester,
+  ) async {
+    await _pumpWorkspace(
+      tester,
+      const Size(1366, 744),
+      prefs: {'reader_text': 'english'},
     );
-    expect(toggle.onPressed, isNull);
+    expect(find.byTooltip('English · switch to Side by side'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('reader-interlinear-toggle')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('reader-rapid-toggle')), findsNothing);
   });
 }

@@ -2085,28 +2085,44 @@ class _ReaderSessionState extends State<_ReaderSession>
   }
 
   /// The reader's top-bar actions, as many as [width] leaves room for beside
-  /// the title. Rapid reading always keeps its button, being the toggle a
-  /// reader reaches for mid-passage; the rest give way in [_barPriority]
+  /// the title. Rapid reading keeps its button wherever it shows, being the
+  /// toggle a reader reaches for mid-passage; the rest give way in [_barPriority]
   /// order to one overflow menu.
   List<Widget> _barActions(double width) {
     const titleRoom = 200.0;
     final slots = ((width - titleRoom) / kMinInteractiveDimension).floor();
-    final others = _ReaderBarAction.values
+    // The New Testament's Aramaic or Greek has no place in the Old, nor the
+    // interlinear and rapid reading in the English alone.
+    final englishOnly = _readerText == ReaderText.english;
+    final actions = [
+      for (final action in _ReaderBarAction.values)
+        if (!switch (action) {
+          _ReaderBarAction.ntText => _isOldTestament,
+          _ReaderBarAction.interlinear ||
+          _ReaderBarAction.rapidReading => englishOnly,
+          _ => false,
+        })
+          action,
+    ];
+    final rapid = actions.contains(_ReaderBarAction.rapidReading);
+    final others = actions
         .where((action) => action != _ReaderBarAction.rapidReading)
         .toList();
     final Set<_ReaderBarAction> shown;
-    if (slots >= _ReaderBarAction.values.length) {
-      shown = _ReaderBarAction.values.toSet();
+    if (slots >= actions.length) {
+      shown = actions.toSet();
     } else {
-      // One slot for rapid reading and one for the menu.
+      // One slot for rapid reading, where it shows, and one for the menu.
       shown = {
-        _ReaderBarAction.rapidReading,
-        ..._barPriority.take(math.max(0, slots - 2)),
+        if (rapid) _ReaderBarAction.rapidReading,
+        ..._barPriority
+            .where(actions.contains)
+            .take(math.max(0, slots - (rapid ? 2 : 1))),
       };
     }
     final overflow = others.where((action) => !shown.contains(action));
     return [
-      for (final action in _ReaderBarAction.values)
+      for (final action in actions)
         if (shown.contains(action)) _barButton(action),
       if (overflow.isNotEmpty)
         PopupMenuButton<Object>(
@@ -2211,10 +2227,8 @@ class _ReaderSessionState extends State<_ReaderSession>
           ),
         ),
       ),
-      onPressed: _isOldTestament ? null : _toggleNtGreek,
-      tooltip: _isOldTestament
-          ? 'The New Testament in Aramaic or Greek'
-          : _ntGreek
+      onPressed: _toggleNtGreek,
+      tooltip: _ntGreek
           ? 'Greek · switch to Aramaic'
           : 'Aramaic · switch to Greek',
     ),
@@ -2274,7 +2288,6 @@ class _ReaderSessionState extends State<_ReaderSession>
       _ReaderBarAction.ntText => [
         CheckedPopupMenuItem(
           value: action,
-          enabled: !_isOldTestament,
           checked: _ntGreek,
           child: const Text('Greek New Testament'),
         ),
