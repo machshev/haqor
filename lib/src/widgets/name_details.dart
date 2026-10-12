@@ -11,6 +11,7 @@ import '../external_link.dart';
 import '../study_workspace.dart';
 import 'archaeology_page.dart';
 import 'bible_timeline_page.dart';
+import 'chapter_span.dart';
 import 'place_map.dart';
 import 'place_photos.dart';
 import 'timeline_chart.dart';
@@ -1055,6 +1056,7 @@ class ChapterPlacesSheet extends StatefulWidget {
     super.key,
     required this.bookIndex,
     required this.chapter,
+    this.lastChapter,
     this.useEnglishBookNames = false,
     this.ntSyriac = false,
     this.ntGreek = false,
@@ -1069,6 +1071,12 @@ class ChapterPlacesSheet extends StatefulWidget {
   /// Zero-based, as the reader counts books.
   final int bookIndex;
   final int chapter;
+
+  /// The last of a run of chapters from [chapter], or none for [chapter]
+  /// alone.
+  final int? lastChapter;
+  int get toChapter => lastChapter ?? chapter;
+  bool get oneChapter => toChapter == chapter;
   final bool useEnglishBookNames;
 
   /// How the reader shows the New Testament, for the pages these open, and
@@ -1116,6 +1124,7 @@ class _ChapterPlacesSheetState extends State<ChapterPlacesSheet> {
       requestId: _requestId = _nextRequestId++,
       book: widget.bookIndex + 1,
       chapter: widget.chapter,
+      lastChapter: widget.toChapter,
     );
     final send = widget.sendRequest;
     if (send != null) {
@@ -1153,8 +1162,7 @@ class _ChapterPlacesSheetState extends State<ChapterPlacesSheet> {
     final theme = Theme.of(context);
     final places = _places;
     final title =
-        'Places in ${bookDisplayName(widget.bookIndex, useEnglish: widget.useEnglishBookNames)} '
-        '${widget.chapter}';
+        'Places in ${chapterSpanName(widget.bookIndex, widget.chapter, widget.toChapter, useEnglish: widget.useEnglishBookNames)}';
     return SafeArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1208,8 +1216,10 @@ class _ChapterPlacesSheetState extends State<ChapterPlacesSheet> {
                                   [
                                     if (entry.place.origin.isNotEmpty)
                                       entry.place.origin,
-                                    'verse${entry.verses.length == 1 ? '' : 's'} '
-                                        '${entry.verses.join(', ')}',
+                                    namedVersesLabel(
+                                      entry.verses,
+                                      oneChapter: widget.oneChapter,
+                                    ),
                                   ].join(' · '),
                                 ),
                                 trailing: const Icon(Icons.chevron_right),
@@ -1235,6 +1245,7 @@ class ChapterPeopleSheet extends StatefulWidget {
     super.key,
     required this.bookIndex,
     required this.chapter,
+    this.lastChapter,
     this.useEnglishBookNames = false,
     this.ntSyriac = false,
     this.ntGreek = false,
@@ -1248,6 +1259,12 @@ class ChapterPeopleSheet extends StatefulWidget {
   /// Zero-based, as the reader counts books.
   final int bookIndex;
   final int chapter;
+
+  /// The last of a run of chapters from [chapter], or none for [chapter]
+  /// alone.
+  final int? lastChapter;
+  int get toChapter => lastChapter ?? chapter;
+  bool get oneChapter => toChapter == chapter;
   final bool useEnglishBookNames;
 
   /// How the reader shows the New Testament, for the pages these open, and
@@ -1294,6 +1311,7 @@ class _ChapterPeopleSheetState extends State<ChapterPeopleSheet> {
       requestId: _requestId = _nextRequestId++,
       book: widget.bookIndex + 1,
       chapter: widget.chapter,
+      lastChapter: widget.toChapter,
     );
     final send = widget.sendRequest;
     if (send != null) {
@@ -1355,8 +1373,7 @@ class _ChapterPeopleSheetState extends State<ChapterPeopleSheet> {
     final theme = Theme.of(context);
     final people = _people;
     final title =
-        'People in ${bookDisplayName(widget.bookIndex, useEnglish: widget.useEnglishBookNames)} '
-        '${widget.chapter}';
+        'People in ${chapterSpanName(widget.bookIndex, widget.chapter, widget.toChapter, useEnglish: widget.useEnglishBookNames)}';
     final byId = <int, NameSummaryEntry>{
       for (final p in people?.people ?? const <ChapterPersonEntry>[])
         p.person.id: p.person,
@@ -1405,7 +1422,7 @@ class _ChapterPeopleSheetState extends State<ChapterPeopleSheet> {
         if (person.origin.isNotEmpty) person.origin,
       ].join(' · '),
       relations,
-      'verse${entry.verses.length == 1 ? '' : 's'} ${entry.verses.join(', ')}',
+      namedVersesLabel(entry.verses, oneChapter: widget.oneChapter),
     ].where((line) => line.isNotEmpty).toList();
     return ListTile(
       leading: Icon(nameKindIcon(person.kind)),

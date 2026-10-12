@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:haqor/src/bible_data.dart';
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/widgets/archaeology_page.dart';
 import 'package:haqor/src/widgets/chapter_context_sheet.dart';
+import 'package:haqor/src/widgets/chapter_span.dart';
 import 'package:haqor/src/widgets/name_details.dart';
 
 void main() {
@@ -54,5 +56,94 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(people, hasLength(1));
     expect(shown.last, ChapterContextTab.people);
+  });
+
+  testWidgets('the sheet widens to nearby chapters and the whole book', (
+    tester,
+  ) async {
+    final people = <GetChapterPeople>[];
+    final scopes = <ChapterContextScope>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChapterContextSheet(
+            // Genesis 12, of 50.
+            bookIndex: 0,
+            chapter: 12,
+            useEnglishBookNames: true,
+            initialTab: ChapterContextTab.people,
+            onScopeChanged: scopes.add,
+            sendPeopleRequest: people.add,
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Genesis 12'), findsOneWidget);
+    expect((people.last.chapter, people.last.lastChapter), (12, 12));
+
+    await tester.tap(find.text('Nearby'));
+    await tester.pump();
+    expect(find.text('Genesis 10–14'), findsOneWidget);
+    expect((people.last.chapter, people.last.lastChapter), (10, 14));
+
+    await tester.tap(find.text('Book'));
+    await tester.pump();
+    expect(find.text('Genesis'), findsOneWidget);
+    expect((people.last.chapter, people.last.lastChapter), (1, 50));
+    expect(scopes, [ChapterContextScope.nearby, ChapterContextScope.book]);
+  });
+
+  testWidgets('a one-chapter book offers no wider scope', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChapterContextSheet(
+            bookIndex: kBooks.indexWhere((b) => b.chapters == 1),
+            chapter: 1,
+            initialTab: ChapterContextTab.people,
+            sendPeopleRequest: (_) {},
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('chapter-context-scope')), findsNothing);
+  });
+
+  test('verses read by chapter across a run of chapters', () {
+    List<ChapterVerseEntry> at(List<(int, int)> refs) => [
+      for (final (chapter, verse) in refs)
+        ChapterVerseEntry(chapter: chapter, verse: verse),
+    ];
+    expect(
+      namedVersesLabel(at([(4, 1), (4, 2), (4, 19)]), oneChapter: true),
+      'verses 1, 2, 19',
+    );
+    expect(
+      namedVersesLabel(at([(1, 1), (1, 2), (4, 11)]), oneChapter: false),
+      'verses 1:1, 2; 4:11',
+    );
+    expect(
+      namedVersesLabel(
+        at([(1, 1), (1, 2), (1, 3)]),
+        oneChapter: false,
+        limit: 2,
+      ),
+      'verses 1:1, 2 and 1 more',
+    );
+    expect(
+      coveredVersesLabel(at([(18, 13), (18, 14), (18, 15)]), oneChapter: true),
+      'Verses 13–15',
+    );
+    expect(
+      coveredVersesLabel(
+        at([(18, 36), (18, 37), (19, 1), (19, 2), (19, 9)]),
+        oneChapter: false,
+      ),
+      'Verses 18:36–19:2 and 19:9',
+    );
+    expect(
+      coveredVersesLabel(at([(18, 13), (18, 14)]), oneChapter: false),
+      'Verses 18:13–14',
+    );
   });
 }

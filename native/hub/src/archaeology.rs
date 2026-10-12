@@ -7,9 +7,9 @@ use rinf::{DartSignal, RustSignal, debug_print};
 
 use crate::functions::{SharedBible, lock};
 use crate::signals::{
-    ArtifactAttestationEntry, ArtifactEntry, ArtifactPassageEntry, ArtifactSourceEntry,
-    Artifacts, ChapterArtifactEntry, ChapterArtifacts, GetArtifacts, GetChapterArtifacts,
-    NameSummaryEntry, PassageSpan,
+    ArtifactAttestationEntry, ArtifactEntry, ArtifactPassageEntry, ArtifactSourceEntry, Artifacts,
+    ChapterArtifactEntry, ChapterArtifacts, GetArtifacts, GetChapterArtifacts, NameSummaryEntry,
+    PassageSpan,
 };
 
 fn person(s: NameSummary) -> NameSummaryEntry {
@@ -114,7 +114,7 @@ pub async fn get_chapter_artifacts(bible: SharedBible) {
         debug_print!("{:?}", req);
         let bible = lock(&bible);
         let found = bible
-            .chapter_artifacts(req.book, req.chapter)
+            .chapter_artifacts(req.book, req.chapter..=req.last_chapter)
             .unwrap_or_else(|e| {
                 debug_print!("get_chapter_artifacts error: {:?}", e);
                 Vec::new()
@@ -129,11 +129,16 @@ pub async fn get_chapter_artifacts(bible: SharedBible) {
             request_id: req.request_id,
             book: req.book,
             chapter: req.chapter,
+            last_chapter: req.last_chapter,
             entries: found
                 .into_iter()
                 .map(|f| ChapterArtifactEntry {
                     artifact: entry(f.artifact),
-                    verses: f.verses,
+                    verses: f
+                        .verses
+                        .into_iter()
+                        .map(crate::functions::chapter_verse_entry)
+                        .collect(),
                     people: f.people.into_iter().map(person).collect(),
                 })
                 .collect(),

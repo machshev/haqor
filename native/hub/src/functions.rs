@@ -19,10 +19,11 @@ use crate::signals::{
 };
 use crate::signals::{
     BibleEventEntry, BibleEvents, ChapterPeople, ChapterPersonEntry, ChapterPlaceEntry,
-    ChapterPlaces, ChapterRelationEntry, GetBibleEvents, GetChapterPeople, GetChapterPlaces,
-    GetJourneys, GetNameEntity, GetPlaces, JourneyEntry, JourneyStopEntry, Journeys,
-    NameEntityInfo, NameFormEntry, NameLinkEntry, NameSummaryEntry, NameVerse, PlaceListEntry,
-    PlaceImageEntry, PlaceLocationEntry, PlaceRegionEntry, Places, SenseChoice, WordSenseEntry,
+    ChapterPlaces, ChapterRelationEntry, ChapterVerseEntry, GetBibleEvents, GetChapterPeople,
+    GetChapterPlaces, GetJourneys, GetNameEntity, GetPlaces, JourneyEntry, JourneyStopEntry,
+    Journeys, NameEntityInfo, NameFormEntry, NameLinkEntry, NameSummaryEntry, NameVerse,
+    PlaceImageEntry, PlaceListEntry, PlaceLocationEntry, PlaceRegionEntry, Places, SenseChoice,
+    WordSenseEntry,
 };
 #[cfg(target_arch = "wasm32")]
 use crate::signals::{FlushProgress, ProgressSnapshot};
@@ -166,7 +167,11 @@ pub async fn get_dictionary_entry(bible: SharedBible) {
             let entry = lock(&bible)
                 .greek_lexicon_entry(&req.source, &req.key)
                 .unwrap_or_else(|e| {
-                    debug_print!("greek_lexicon_entry({:?}, {:?}) error: {e:?}", req.source, req.key);
+                    debug_print!(
+                        "greek_lexicon_entry({:?}, {:?}) error: {e:?}",
+                        req.source,
+                        req.key
+                    );
                     None
                 });
             DictionaryEntry {
@@ -1512,9 +1517,9 @@ pub async fn get_word_occurrences(bible: SharedBible) {
             let bible = lock(&bible);
             if req.syriac {
                 let words = bible
-                    .sedra_word_info(&haqor_core::transliterate::syriac_to_hebrew(
-                        &strip_trope(&req.word),
-                    ))
+                    .sedra_word_info(&haqor_core::transliterate::syriac_to_hebrew(&strip_trope(
+                        &req.word,
+                    )))
                     .unwrap_or_default();
                 match words.first() {
                     Some(first) => (
@@ -2393,7 +2398,10 @@ pub async fn get_name_entity(bible: SharedBible) {
                 .into_iter()
                 .map(bible_event_entry)
                 .collect(),
-            artifacts: artifacts.into_iter().map(crate::archaeology::entry).collect(),
+            artifacts: artifacts
+                .into_iter()
+                .map(crate::archaeology::entry)
+                .collect(),
             artifact_sources: artifact_sources
                 .into_iter()
                 .map(crate::archaeology::source)
@@ -2408,57 +2416,65 @@ pub async fn get_chapter_people(bible: SharedBible) {
     while let Some(signal_pack) = receiver.recv().await {
         let req = signal_pack.message;
         debug_print!("{:?}", req);
-        let people = chapter_people(&lock(&bible), req.book, req.chapter).unwrap_or_else(|e| {
-            debug_print!("get_chapter_people error: {:?}", e);
-            Vec::new()
-        });
+        let people = chapter_people(&lock(&bible), req.book, req.chapter..=req.last_chapter)
+            .unwrap_or_else(|e| {
+                debug_print!("get_chapter_people error: {:?}", e);
+                Vec::new()
+            });
         ChapterPeople {
             request_id: req.request_id,
             book: req.book,
             chapter: req.chapter,
+            last_chapter: req.last_chapter,
             people,
         }
         .send_signal_to_dart();
     }
 }
 
-/// The people a chapter names, in the order it first names them, each with
-/// the verses naming them and their links to the others.
-fn chapter_people(bible: &Bible, book: u8, chapter: u8) -> Result<Vec<ChapterPersonEntry>, String> {
-    let mut people: Vec<(haqor_core::names::NameEntity, Vec<u8>)> = Vec::new();
-    // The Old Testament's naming words, or the New Testament's verses.
-    let words = bible
-        .chapter_names(book, chapter)
+/// The people a run of chapters names, in the order they are first named,
+/// each with the verses naming them and their links to the others.
+fn chapter_people(
+    bible: &Bible,
+    book: u8,
+    chapters: std::ops::RangeInclusive<u8>,
+) -> Result<Vec<ChapterPersonEntry>, String> {
+    let mut people: Vec<(haqor_core::names::NameEntity, Vec<(u8, u8)>)> = Vec::new();
+    // Names already found to be no person.
+    let mut others = std::collections::HashSet::new();
+    let names = bible
+        .chapters_named(book, chapters)
         .map_err(|e| format!("{e:?}"))?;
-    let verses = bible
-        .chapter_name_verses(book, chapter)
-        .map_err(|e| format!("{e:?}"))?;
-    let names = words
-        .into_iter()
-        .map(|(verse, _, id)| (verse, id))
-        .chain(verses);
+    // Where each person found so far stands in `people`.
+    let mut index: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
     for (verse, id) in names {
-        if let Some((_, verses)) = people.iter_mut().find(|(p, _)| p.summary.id == id) {
+        if let Some(&at) = index.get::<u32>(&id) {
+            let verses: &mut Vec<(u8, u8)> = &mut people[at].1;
             if verses.last() != Some(&verse) {
                 verses.push(verse);
             }
             continue;
         }
-        let Some(entity) = bible.name_entity(id).map_err(|e| format!("{e:?}"))? else {
+        if others.contains(&id) {
             continue;
-        };
-        if entity.summary.kind == haqor_core::names::NameKind::Person {
-            people.push((entity, vec![verse]));
+        }
+        match bible.name_entity(id).map_err(|e| format!("{e:?}"))? {
+            Some(entity) if entity.summary.kind == haqor_core::names::NameKind::Person => {
+                index.insert(id, people.len());
+                people.push((entity, vec![verse]));
+            }
+            _ => {
+                others.insert(id);
+            }
         }
     }
-    let named: std::collections::HashSet<u32> = people.iter().map(|(p, _)| p.summary.id).collect();
     Ok(people
         .into_iter()
         .map(|(entity, verses)| ChapterPersonEntry {
             relations: entity
                 .links
                 .into_iter()
-                .filter(|l| named.contains(&l.other.id))
+                .filter(|l| index.contains_key(&l.other.id))
                 .map(|l| ChapterRelationEntry {
                     relation: l.relation,
                     flag: l.flag,
@@ -2466,9 +2482,14 @@ fn chapter_people(bible: &Bible, book: u8, chapter: u8) -> Result<Vec<ChapterPer
                 })
                 .collect(),
             person: name_summary_entry(entity.summary),
-            verses,
+            verses: verses.into_iter().map(chapter_verse_entry).collect(),
         })
         .collect())
+}
+
+/// A `(chapter, verse)` from the core, for a reply.
+pub(crate) fn chapter_verse_entry((chapter, verse): (u8, u8)) -> ChapterVerseEntry {
+    ChapterVerseEntry { chapter, verse }
 }
 
 pub async fn get_chapter_places(bible: SharedBible) {
@@ -2477,7 +2498,7 @@ pub async fn get_chapter_places(bible: SharedBible) {
         let req = signal_pack.message;
         debug_print!("{:?}", req);
         let places = lock(&bible)
-            .chapter_places(req.book, req.chapter)
+            .chapter_places(req.book, req.chapter..=req.last_chapter)
             .unwrap_or_else(|e| {
                 debug_print!("get_chapter_places error: {:?}", e);
                 Vec::new()
@@ -2486,12 +2507,13 @@ pub async fn get_chapter_places(bible: SharedBible) {
             request_id: req.request_id,
             book: req.book,
             chapter: req.chapter,
+            last_chapter: req.last_chapter,
             places: places
                 .into_iter()
                 .map(|p| ChapterPlaceEntry {
                     place: name_summary_entry(p.place),
                     location: place_location_entry(p.location),
-                    verses: p.verses,
+                    verses: p.verses.into_iter().map(chapter_verse_entry).collect(),
                 })
                 .collect(),
         }
@@ -2798,20 +2820,21 @@ pub async fn get_greek_word(bible: SharedBible) {
                 occurrences: l.occurrences,
             })
             .collect();
-        let occurrence =
-            |o: haqor_core::greek::GreekOccurrence, lemma: String, grammar: String| {
-                GreekOccurrenceEntry {
-                    book: o.book,
-                    chapter: o.chapter,
-                    verse: o.verse,
-                    position: o.position,
-                    lemma,
-                    grammar,
-                }
-            };
+        let occurrence = |o: haqor_core::greek::GreekOccurrence, lemma: String, grammar: String| {
+            GreekOccurrenceEntry {
+                book: o.book,
+                chapter: o.chapter,
+                verse: o.verse,
+                position: o.position,
+                lemma,
+                grammar,
+            }
+        };
         let occurrences: Vec<GreekOccurrenceEntry> = if lexemes.is_empty() {
             // A database without roots: the word's own dictionary form.
-            let own = bible.greek_lemma_occurrences(&word.lemma).unwrap_or_default();
+            let own = bible
+                .greek_lemma_occurrences(&word.lemma)
+                .unwrap_or_default();
             lexemes.push(GreekLexemeEntry {
                 lemma: word.lemma.clone(),
                 gloss: word.gloss.clone(),

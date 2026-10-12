@@ -17,6 +17,10 @@ final _basemap = Basemap.parse(
   '"rivers":[[35.6,32.7,35.5,31.8]]}',
 );
 
+List<ChapterVerseEntry> _verses(int chapter, List<int> verses) => [
+  for (final verse in verses) ChapterVerseEntry(chapter: chapter, verse: verse),
+];
+
 NameSummaryEntry _summary(
   int id,
   String name, {
@@ -717,6 +721,7 @@ void main() {
         requestId: requests.single.requestId,
         book: 31,
         chapter: 1,
+        lastChapter: 1,
         places: [
           ChapterPlaceEntry(
             place: _summary(
@@ -735,7 +740,7 @@ void main() {
               line: const [],
               estimated: false,
             ),
-            verses: const [1, 2, 19],
+            verses: _verses(1, [1, 2, 19]),
           ),
         ],
       ).bincodeSerialize(),
@@ -771,10 +776,11 @@ void main() {
         requestId: requests.single.requestId,
         book: 31,
         chapter: 4,
+        lastChapter: 4,
         people: [
           ChapterPersonEntry(
             person: _summary(1, 'Boaz', description: 'Husband of Ruth'),
-            verses: const [1, 13],
+            verses: _verses(4, [1, 13]),
             relations: [
               ChapterRelationEntry(relation: 'partner', flag: '', otherId: 2),
               ChapterRelationEntry(relation: 'child', flag: '', otherId: 3),
@@ -782,14 +788,14 @@ void main() {
           ),
           ChapterPersonEntry(
             person: _summary(2, 'Ruth', origin: 'Moab'),
-            verses: const [13],
+            verses: _verses(4, [13]),
             relations: [
               ChapterRelationEntry(relation: 'partner', flag: '', otherId: 1),
             ],
           ),
           ChapterPersonEntry(
             person: _summary(3, 'Obed'),
-            verses: const [17, 21, 22],
+            verses: _verses(4, [17, 21, 22]),
             relations: [
               ChapterRelationEntry(relation: 'father', flag: '', otherId: 1),
               ChapterRelationEntry(relation: 'mother', flag: '', otherId: 2),

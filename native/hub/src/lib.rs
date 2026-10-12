@@ -1,9 +1,9 @@
 //! This `hub` crate is the
 //! entry point of the Rust logic.
 
+mod archaeology;
 mod functions;
 mod memorise;
-mod archaeology;
 mod prophecy;
 mod signals;
 

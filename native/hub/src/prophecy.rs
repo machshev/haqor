@@ -109,11 +109,7 @@ pub async fn get_prophecies(bible: SharedBible) {
         ) {
             (Ok(total), Ok(prophecies)) => (total, prophecies),
             (count, page) => {
-                debug_print!(
-                    "get_prophecies error: {:?} {:?}",
-                    count.err(),
-                    page.err()
-                );
+                debug_print!("get_prophecies error: {:?} {:?}", count.err(), page.err());
                 (0, Vec::new())
             }
         };

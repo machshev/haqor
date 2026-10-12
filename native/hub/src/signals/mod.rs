@@ -1081,12 +1081,21 @@ pub struct NameVerse {
     pub positions: Vec<u32>,
 }
 
-/// Ask for the places a chapter names, for a map of the chapter.
+/// Ask for the places a run of chapters names, for a map of them.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetChapterPlaces {
     pub request_id: u32,
     pub book: u8,
+    /// The first chapter, and the last (the same for one chapter alone).
     pub chapter: u8,
+    pub last_chapter: u8,
+}
+
+/// A verse of a run of chapters, by its chapter and number.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ChapterVerseEntry {
+    pub chapter: u8,
+    pub verse: u8,
 }
 
 #[derive(Debug, Serialize, SignalPiece)]
@@ -1094,8 +1103,8 @@ pub struct ChapterPlaceEntry {
     pub place: NameSummaryEntry,
     /// Its likeliest location.
     pub location: PlaceLocationEntry,
-    /// The verses of the chapter naming it.
-    pub verses: Vec<u8>,
+    /// The verses of the chapters naming it.
+    pub verses: Vec<ChapterVerseEntry>,
 }
 
 /// Reply to [`GetChapterPlaces`]: the places with a position, in the order
@@ -1105,6 +1114,7 @@ pub struct ChapterPlaces {
     pub request_id: u32,
     pub book: u8,
     pub chapter: u8,
+    pub last_chapter: u8,
     pub places: Vec<ChapterPlaceEntry>,
 }
 
@@ -1223,12 +1233,15 @@ pub struct BibleEvents {
     pub events: Vec<BibleEventEntry>,
 }
 
-/// Ask for the people a chapter names, for a list of who is who in it.
+/// Ask for the people a run of chapters names, for a list of who is who in
+/// them.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetChapterPeople {
     pub request_id: u32,
     pub book: u8,
+    /// The first chapter, and the last (the same for one chapter alone).
     pub chapter: u8,
+    pub last_chapter: u8,
 }
 
 /// How a person is linked to another the chapter names.
@@ -1245,8 +1258,8 @@ pub struct ChapterRelationEntry {
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct ChapterPersonEntry {
     pub person: NameSummaryEntry,
-    /// The verses of the chapter naming them.
-    pub verses: Vec<u8>,
+    /// The verses of the chapters naming them.
+    pub verses: Vec<ChapterVerseEntry>,
     /// Their links to the others in [`ChapterPeople::people`].
     pub relations: Vec<ChapterRelationEntry>,
 }
@@ -1259,6 +1272,7 @@ pub struct ChapterPeople {
     pub request_id: u32,
     pub book: u8,
     pub chapter: u8,
+    pub last_chapter: u8,
     pub people: Vec<ChapterPersonEntry>,
 }
 
@@ -2069,12 +2083,14 @@ pub struct Artifacts {
     pub sources: Vec<ArtifactSourceEntry>,
 }
 
-/// Ask for the finds bearing on a chapter.
+/// Ask for the finds bearing on a run of chapters.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetChapterArtifacts {
     pub request_id: u32,
     pub book: u8,
+    /// The first chapter, and the last (the same for one chapter alone).
     pub chapter: u8,
+    pub last_chapter: u8,
 }
 
 /// Reply to [`GetChapterArtifacts`]: those with a passage in the chapter
@@ -2084,6 +2100,7 @@ pub struct ChapterArtifacts {
     pub request_id: u32,
     pub book: u8,
     pub chapter: u8,
+    pub last_chapter: u8,
     pub entries: Vec<ChapterArtifactEntry>,
     pub sources: Vec<ArtifactSourceEntry>,
 }
@@ -2092,10 +2109,10 @@ pub struct ChapterArtifacts {
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct ChapterArtifactEntry {
     pub artifact: ArtifactEntry,
-    /// The chapter's verses its passages cover; empty if it is here only for
+    /// The chapters' verses its passages cover; empty if it is here only for
     /// the people it names.
-    pub verses: Vec<u8>,
-    /// The people it names whom the chapter names.
+    pub verses: Vec<ChapterVerseEntry>,
+    /// The people it names whom the chapters name.
     pub people: Vec<NameSummaryEntry>,
 }
 

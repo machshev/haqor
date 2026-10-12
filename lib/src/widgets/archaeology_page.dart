@@ -6,6 +6,7 @@ import 'package:rinf/rinf.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../external_link.dart';
+import 'chapter_span.dart';
 import 'multi_select_chip.dart';
 import 'name_details.dart';
 
@@ -592,13 +593,14 @@ class _ArchaeologyPageState extends State<ArchaeologyPage> {
   }
 }
 
-/// The finds bearing on one chapter: first those tied to a passage in it,
+/// The finds bearing on one chapter, or a run of them: first those tied to a passage in it,
 /// with the verses they cover, then those naming someone the chapter names.
 class ChapterArtifactsSheet extends StatefulWidget {
   const ChapterArtifactsSheet({
     super.key,
     required this.bookIndex,
     required this.chapter,
+    this.lastChapter,
     this.useEnglishBookNames = false,
     this.ntSyriac = false,
     this.ntGreek = false,
@@ -612,6 +614,13 @@ class ChapterArtifactsSheet extends StatefulWidget {
   /// Zero-based, as the reader counts books.
   final int bookIndex;
   final int chapter;
+
+  /// The last of a run of chapters from [chapter], or none for [chapter]
+  /// alone.
+  final int? lastChapter;
+  int get toChapter => lastChapter ?? chapter;
+  bool get oneChapter => toChapter == chapter;
+
   final bool useEnglishBookNames;
   final bool ntSyriac;
   final bool ntGreek;
@@ -647,6 +656,7 @@ class _ChapterArtifactsSheetState extends State<ChapterArtifactsSheet> {
       requestId: _requestId = _nextRequestId++,
       book: widget.bookIndex + 1,
       chapter: widget.chapter,
+      lastChapter: widget.toChapter,
     );
     final send = widget.sendRequest;
     if (send != null) {
@@ -707,30 +717,12 @@ class _ChapterArtifactsSheetState extends State<ChapterArtifactsSheet> {
     ),
   );
 
-  /// "Verses 13–37", "Verses 2, 5 and 7–9".
-  static String versesLabel(List<int> verses) {
-    final runs = <String>[];
-    var i = 0;
-    while (i < verses.length) {
-      var j = i;
-      while (j + 1 < verses.length && verses[j + 1] == verses[j] + 1) {
-        j++;
-      }
-      runs.add(i == j ? '${verses[i]}' : '${verses[i]}–${verses[j]}');
-      i = j + 1;
-    }
-    final word = verses.length == 1 ? 'Verse' : 'Verses';
-    if (runs.length == 1) return '$word ${runs.single}';
-    return '$word ${runs.sublist(0, runs.length - 1).join(', ')} and ${runs.last}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final reply = _reply;
     final title =
-        'Archaeology in ${bookDisplayName(widget.bookIndex, useEnglish: widget.useEnglishBookNames)} '
-        '${widget.chapter}';
+        'Archaeology in ${chapterSpanName(widget.bookIndex, widget.chapter, widget.toChapter, useEnglish: widget.useEnglishBookNames)}';
     Widget heading(String text) => Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: Text(
@@ -795,7 +787,7 @@ class _ChapterArtifactsSheetState extends State<ChapterArtifactsSheet> {
                             key: ValueKey('chapter-artifact-${e.artifact.id}'),
                             title: Text(e.artifact.name),
                             subtitle: Text(
-                              '${versesLabel(e.verses)} · ${e.artifact.date}',
+                              '${coveredVersesLabel(e.verses, oneChapter: widget.oneChapter)} · ${e.artifact.date}',
                             ),
                             trailing: StrengthBadge(
                               strength: strongestOf(e.artifact),
@@ -804,7 +796,11 @@ class _ChapterArtifactsSheetState extends State<ChapterArtifactsSheet> {
                           ),
                       ],
                       if (byPerson.isNotEmpty) ...[
-                        heading('Naming someone in this chapter'),
+                        heading(
+                          widget.oneChapter
+                              ? 'Naming someone in this chapter'
+                              : 'Naming someone in these chapters',
+                        ),
                         for (final e in byPerson)
                           ListTile(
                             key: ValueKey('chapter-artifact-${e.artifact.id}'),

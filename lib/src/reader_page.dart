@@ -3812,8 +3812,10 @@ class _ReaderSessionState extends State<_ReaderSession>
   /// Whether the chapter at the top of the reader is in the Hebrew Bible.
   bool get _isOldTestament => _bookIndex < 39;
 
-  /// The tab the chapter sheet last showed, for it to open on next.
+  /// The tab and scope the chapter sheet last showed, for it to open on
+  /// next.
   ChapterContextTab _chapterContextTab = ChapterContextTab.places;
+  ChapterContextScope _chapterContextScope = ChapterContextScope.chapter;
 
   /// The places, people and archaeological finds of the chapter at the top
   /// of the reader, a tab each.
@@ -3829,6 +3831,8 @@ class _ReaderSessionState extends State<_ReaderSession>
           chapter: _chapter,
           initialTab: _chapterContextTab,
           onTabChanged: (tab) => _chapterContextTab = tab,
+          initialScope: _chapterContextScope,
+          onScopeChanged: (scope) => _chapterContextScope = scope,
           useEnglishBookNames: _englishBookNames,
           ntSyriac: _ntSyriac,
           ntGreek: _ntGreek,

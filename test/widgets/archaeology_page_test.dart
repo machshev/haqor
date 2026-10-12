@@ -220,10 +220,14 @@ void main() {
         requestId: requests.single.requestId,
         book: 11,
         chapter: 18,
+        lastChapter: 18,
         entries: [
           ChapterArtifactEntry(
             artifact: _artifacts[1],
-            verses: [13, 14, 15, 16],
+            verses: [
+              for (final verse in [13, 14, 15, 16])
+                ChapterVerseEntry(chapter: 18, verse: verse),
+            ],
             people: [_person(11, 'Hezekiah')],
           ),
           ChapterArtifactEntry(
