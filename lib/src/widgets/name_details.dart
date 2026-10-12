@@ -1063,6 +1063,7 @@ class ChapterPlacesSheet extends StatefulWidget {
     this.sendRequest,
     this.basemap,
     this.bookmarks,
+    this.showTitle = true,
   });
 
   /// Zero-based, as the reader counts books.
@@ -1080,6 +1081,10 @@ class ChapterPlacesSheet extends StatefulWidget {
   final void Function(GetChapterPlaces)? sendRequest;
   final Basemap? basemap;
   final NameBookmarks? bookmarks;
+
+  /// Whether the sheet names its chapter, as it does standing alone; a
+  /// tab of [ChapterContextSheet] leaves that to the tabs' own heading.
+  final bool showTitle;
 
   @override
   State<ChapterPlacesSheet> createState() => _ChapterPlacesSheetState();
@@ -1154,10 +1159,11 @@ class _ChapterPlacesSheetState extends State<ChapterPlacesSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-            child: Text(title, style: theme.textTheme.titleMedium),
-          ),
+          if (widget.showTitle)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text(title, style: theme.textTheme.titleMedium),
+            ),
           Expanded(
             child: places == null
                 ? const Center(child: CircularProgressIndicator())
@@ -1236,6 +1242,7 @@ class ChapterPeopleSheet extends StatefulWidget {
     this.onNavigateToPassage,
     this.sendRequest,
     this.bookmarks,
+    this.showTitle = true,
   });
 
   /// Zero-based, as the reader counts books.
@@ -1252,6 +1259,10 @@ class ChapterPeopleSheet extends StatefulWidget {
   onNavigateToPassage;
   final void Function(GetChapterPeople)? sendRequest;
   final NameBookmarks? bookmarks;
+
+  /// Whether the sheet names its chapter, as it does standing alone; a
+  /// tab of [ChapterContextSheet] leaves that to the tabs' own heading.
+  final bool showTitle;
 
   @override
   State<ChapterPeopleSheet> createState() => _ChapterPeopleSheetState();
@@ -1354,10 +1365,11 @@ class _ChapterPeopleSheetState extends State<ChapterPeopleSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-            child: Text(title, style: theme.textTheme.titleMedium),
-          ),
+          if (widget.showTitle)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text(title, style: theme.textTheme.titleMedium),
+            ),
           Expanded(
             child: people == null
                 ? const Center(child: CircularProgressIndicator())

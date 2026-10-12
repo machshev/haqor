@@ -23,6 +23,7 @@ import 'syntax_tree.dart';
 import 'tutor/onboarding.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
+import 'widgets/chapter_context_sheet.dart';
 import 'widgets/cross_references_sheet.dart';
 import 'widgets/greek_word_sheet.dart';
 import 'widgets/markdown_note.dart';
@@ -210,9 +211,7 @@ class _SelectedWord {
 /// The reader top bar's own actions, in the order the bar shows them.
 enum _ReaderBarAction {
   crossReferences,
-  places,
-  people,
-  archaeology,
+  chapterContext,
   text,
   ntText,
   interlinear,
@@ -2149,9 +2148,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     _ReaderBarAction.back,
     _ReaderBarAction.forward,
     _ReaderBarAction.crossReferences,
-    _ReaderBarAction.places,
-    _ReaderBarAction.people,
-    _ReaderBarAction.archaeology,
+    _ReaderBarAction.chapterContext,
   ];
 
   void _runBarAction(_ReaderBarAction action) => switch (action) {
@@ -2160,9 +2157,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       _chapter,
       null,
     ),
-    _ReaderBarAction.places => _showChapterPlaces(),
-    _ReaderBarAction.people => _showChapterPeople(),
-    _ReaderBarAction.archaeology => _showChapterArtifacts(),
+    _ReaderBarAction.chapterContext => _showChapterContext(),
     _ReaderBarAction.text => _cycleReaderText(),
     _ReaderBarAction.ntText => _toggleNtGreek(),
     _ReaderBarAction.interlinear => _toggleInterlinear(),
@@ -2178,23 +2173,11 @@ class _ReaderSessionState extends State<_ReaderSession>
       onPressed: () => _runBarAction(action),
       tooltip: 'Cross references in this chapter',
     ),
-    _ReaderBarAction.places => IconButton(
-      key: const ValueKey('reader-places'),
-      icon: const Icon(Icons.map_outlined),
+    _ReaderBarAction.chapterContext => IconButton(
+      key: const ValueKey('reader-chapter-context'),
+      icon: const Icon(Icons.explore_outlined),
       onPressed: () => _runBarAction(action),
-      tooltip: 'Places in this chapter',
-    ),
-    _ReaderBarAction.people => IconButton(
-      key: const ValueKey('reader-people'),
-      icon: const Icon(Icons.people_outline),
-      onPressed: () => _runBarAction(action),
-      tooltip: 'People in this chapter',
-    ),
-    _ReaderBarAction.archaeology => IconButton(
-      key: const ValueKey('reader-archaeology'),
-      icon: const Icon(Icons.account_balance_outlined),
-      onPressed: () => _runBarAction(action),
-      tooltip: 'Archaeology in this chapter',
+      tooltip: 'Places, people and archaeology in this chapter',
     ),
     _ReaderBarAction.text => IconButton(
       key: const ValueKey('reader-text-toggle'),
@@ -2271,10 +2254,8 @@ class _ReaderSessionState extends State<_ReaderSession>
       _ReaderBarAction.crossReferences => [
         item(Icons.link, 'Cross references'),
       ],
-      _ReaderBarAction.places => [item(Icons.map_outlined, 'Places')],
-      _ReaderBarAction.people => [item(Icons.people_outline, 'People')],
-      _ReaderBarAction.archaeology => [
-        item(Icons.account_balance_outlined, 'Archaeology'),
+      _ReaderBarAction.chapterContext => [
+        item(Icons.explore_outlined, 'Places, people & archaeology'),
       ],
       _ReaderBarAction.text => [
         for (final text in ReaderText.values)
@@ -3831,65 +3812,23 @@ class _ReaderSessionState extends State<_ReaderSession>
   /// Whether the chapter at the top of the reader is in the Hebrew Bible.
   bool get _isOldTestament => _bookIndex < 39;
 
-  /// The places the chapter at the top of the reader names, on a map.
-  Future<void> _showChapterPlaces() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      builder: (sheetContext) => SizedBox(
-        height: MediaQuery.sizeOf(sheetContext).height * 0.82,
-        child: ChapterPlacesSheet(
-          bookIndex: _bookIndex,
-          chapter: _chapter,
-          useEnglishBookNames: _englishBookNames,
-          ntSyriac: _ntSyriac,
-          ntGreek: _ntGreek,
-          onNtGreekChanged: _setNtGreek,
-          bookmarks: _nameBookmarks,
-          onNavigateToPassage: (book, chapter, verse) =>
-              _navigateTo(book, chapter, verse: verse),
-        ),
-      ),
-    );
-  }
+  /// The tab the chapter sheet last showed, for it to open on next.
+  ChapterContextTab _chapterContextTab = ChapterContextTab.places;
 
-  /// The people the chapter at the top of the reader names, and how they are
-  /// related.
-  Future<void> _showChapterPeople() async {
+  /// The places, people and archaeological finds of the chapter at the top
+  /// of the reader, a tab each.
+  Future<void> _showChapterContext() async {
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
       builder: (sheetContext) => SizedBox(
         height: MediaQuery.sizeOf(sheetContext).height * 0.82,
-        child: ChapterPeopleSheet(
+        child: ChapterContextSheet(
           bookIndex: _bookIndex,
           chapter: _chapter,
-          useEnglishBookNames: _englishBookNames,
-          ntSyriac: _ntSyriac,
-          ntGreek: _ntGreek,
-          onNtGreekChanged: _setNtGreek,
-          bookmarks: _nameBookmarks,
-          onNavigateToPassage: (book, chapter, verse) =>
-              _navigateTo(book, chapter, verse: verse),
-        ),
-      ),
-    );
-  }
-
-  /// The archaeological finds bearing on the chapter at the top of the
-  /// reader.
-  Future<void> _showChapterArtifacts() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      builder: (sheetContext) => SizedBox(
-        height: MediaQuery.sizeOf(sheetContext).height * 0.82,
-        child: ChapterArtifactsSheet(
-          bookIndex: _bookIndex,
-          chapter: _chapter,
+          initialTab: _chapterContextTab,
+          onTabChanged: (tab) => _chapterContextTab = tab,
           useEnglishBookNames: _englishBookNames,
           ntSyriac: _ntSyriac,
           ntGreek: _ntGreek,

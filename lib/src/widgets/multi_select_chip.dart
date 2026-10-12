@@ -70,9 +70,7 @@ class MultiSelectChip<T> extends StatelessWidget {
             value: selected.contains(o.value),
             closeOnActivate: false,
             onChanged: (on) => onChanged(
-              on!
-                  ? {...selected, o.value}
-                  : ({...selected}..remove(o.value)),
+              on! ? {...selected, o.value} : ({...selected}..remove(o.value)),
             ),
             child: Text(o.label),
           ),

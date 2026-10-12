@@ -606,6 +606,7 @@ class ChapterArtifactsSheet extends StatefulWidget {
     this.bookmarks,
     this.onNavigateToPassage,
     this.sendRequest,
+    this.showTitle = true,
   });
 
   /// Zero-based, as the reader counts books.
@@ -619,6 +620,10 @@ class ChapterArtifactsSheet extends StatefulWidget {
   final void Function(int bookIndex, int chapter, int verse)?
   onNavigateToPassage;
   final void Function(GetChapterArtifacts)? sendRequest;
+
+  /// Whether the sheet names its chapter, as it does standing alone; a
+  /// tab of [ChapterContextSheet] leaves that to the tabs' own heading.
+  final bool showTitle;
 
   @override
   State<ChapterArtifactsSheet> createState() => _ChapterArtifactsSheetState();
@@ -743,27 +748,29 @@ class _ChapterArtifactsSheetState extends State<ChapterArtifactsSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.account_balance_outlined,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(title, style: theme.textTheme.titleMedium),
-                ),
-                IconButton(
-                  tooltip: 'Close',
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                ),
-              ],
+          if (widget.showTitle) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.account_balance_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(title, style: theme.textTheme.titleMedium),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const Divider(height: 1),
+            const Divider(height: 1),
+          ],
           Expanded(
             child: reply == null
                 ? const Center(child: CircularProgressIndicator())
