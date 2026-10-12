@@ -41,6 +41,7 @@ class GreekWordSheet extends StatefulWidget {
     this.onToggleStudyBookmark,
     this.onOpenLemma,
     this.reportContext,
+    this.openOccurrences = false,
     this.proximity,
     this.proximityId,
     this.sendRequest,
@@ -91,6 +92,10 @@ class GreekWordSheet extends StatefulWidget {
 
   /// Where the reader was, for an issue logged about the word.
   final Map<String, Object?>? reportContext;
+
+  /// Whether the pane opens on the Occurrences tab, as a word found by a
+  /// search does, rather than on its lexicon entries.
+  final bool openOccurrences;
 
   /// The open word panes a proximity search combines: this word joins it,
   /// under [proximityId], with the other Greek words open.
@@ -161,7 +166,10 @@ class _GreekWordSheetState extends State<GreekWordSheet>
     _tabController = TabController(
       length: 2,
       vsync: this,
-      initialIndex: widget.proximity?.enabled ?? false ? 1 : 0,
+      initialIndex:
+          widget.openOccurrences || (widget.proximity?.enabled ?? false)
+          ? 1
+          : 0,
     );
     _sub = GreekWordInfo.rustSignalStream.listen((pack) {
       if (pack.message.requestId != _requestId || !mounted) return;

@@ -141,6 +141,9 @@ class WordInfoSheet extends StatefulWidget {
     this.docked = false,
     this.proximity,
     this.proximityId,
+    this.openOccurrences = false,
+    this.initialForms,
+    this.initialLexeme,
   });
 
   final String word;
@@ -178,6 +181,17 @@ class WordInfoSheet extends StatefulWidget {
   /// and, with another pane open, offers a proximity search over them.
   final WordProximity? proximity;
   final String? proximityId;
+
+  /// Whether the sheet opens on the Occurrences tab, as a word found by a
+  /// search does, rather than on its lexicon.
+  final bool openOccurrences;
+
+  /// What the occurrence list starts narrowed to in place of the looked-up
+  /// form: these forms of the root (a BDB entry's, for a word found by a
+  /// search), or this SEDRA lexeme. Either is dropped where the root's list
+  /// holds none of it.
+  final Set<String>? initialForms;
+  final String? initialLexeme;
 
   /// When set, the sheet shows the BDB entry with this id (a Lexicon
   /// cross-reference target) rather than parsing [word] as a surface form;
@@ -277,7 +291,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     _tabController = TabController(
       length: 2,
       vsync: this,
-      initialIndex: widget.proximity?.enabled ?? false ? 1 : 0,
+      initialIndex:
+          widget.openOccurrences || (widget.proximity?.enabled ?? false)
+          ? 1
+          : 0,
     );
     _tabController.animation?.addListener(_onTabAnimation);
     _selectedRoot = widget.initialRoot;
@@ -335,13 +352,42 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     _occRequestId = null;
     setState(() {
       _occ = occ;
-      final exact = _exactFormKey();
-      if (exact != null && _forms.isEmpty && _parse.isEmpty) {
-        _forms.add(exact);
+      if (_forms.isEmpty && _parse.isEmpty && !_applyInitialFilter(occ)) {
+        final exact = _exactFormKey();
+        if (exact != null) _forms.add(exact);
       }
     });
     _occurrenceFilterChanged();
   }
+
+  /// Narrows the first occurrence list to [WordInfoSheet.initialForms] or
+  /// [WordInfoSheet.initialLexeme], as far as the list holds them; true when
+  /// it did. Only once: a later list (another root's) starts as any other.
+  bool _applyInitialFilter(WordOccurrences occ) {
+    if (_initialFilterApplied) return false;
+    _initialFilterApplied = true;
+    final forms = widget.initialForms;
+    if (forms != null && forms.isNotEmpty) {
+      final present = {
+        for (final o in occ.tokens)
+          if (forms.contains(o.surface)) o.surface,
+      };
+      if (present.isEmpty) return false;
+      // Every form of the root is the list unnarrowed, its All forms scope.
+      final all = {for (final o in occ.tokens) o.surface};
+      if (present.length < all.length) _forms.addAll(present);
+      return true;
+    }
+    final lexeme = widget.initialLexeme;
+    if (lexeme != null && lexeme.isNotEmpty) {
+      if (!occ.tokens.any((o) => o.lexeme == lexeme)) return false;
+      _parse[_ParseDimension.lexeme] = {lexeme};
+      return true;
+    }
+    return false;
+  }
+
+  bool _initialFilterApplied = false;
 
   /// Heading for the Occurrences tab fetches its lists at once.
   void _onTabAnimation() {

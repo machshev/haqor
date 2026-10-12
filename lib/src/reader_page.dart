@@ -41,6 +41,7 @@ import 'widgets/timeline_chart.dart';
 import 'widgets/syntax_sheet.dart';
 import 'widgets/verse_row.dart';
 import 'widgets/word_info_sheet.dart';
+import 'widgets/word_search_page.dart';
 import 'word_proximity.dart';
 
 class _PassageRef {
@@ -183,6 +184,9 @@ class _SelectedWord {
     this.greek = false,
     this.syriac,
     this.bookmarkedForm = false,
+    this.openOccurrences = false,
+    this.forms,
+    this.lexeme,
   });
 
   final String word;
@@ -206,10 +210,18 @@ class _SelectedWord {
   /// Whether a placeless word is a bookmarked form, to be found spelled as
   /// it is, rather than a root.
   final bool bookmarkedForm;
+
+  /// Whether the pane opens on the word's occurrences, as for a word found
+  /// by a search, narrowed to its dictionary word's [forms] (Hebrew) or
+  /// [lexeme] (the Peshitta) where given.
+  final bool openOccurrences;
+  final Set<String>? forms;
+  final String? lexeme;
 }
 
 /// The reader top bar's own actions, in the order the bar shows them.
 enum _ReaderBarAction {
+  search,
   chapterContext,
   text,
   ntText,
@@ -1051,6 +1063,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         position: placed ? selected.position : null,
         lemma: selected.root,
         matchSpelling: selected.bookmarkedForm,
+        openOccurrences: selected.openOccurrences,
         useEnglishBookNames: _activeReader?._englishBookNames ?? false,
         ntSyriac: _activeReader?._ntSyriac ?? false,
         nameBookmarks: _activeReader?._nameBookmarks,
@@ -1094,6 +1107,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       bdbId: selected.bdbId,
       onOpenWord: _openInspectorWord,
       initialRoot: selected.root.isEmpty ? null : selected.root,
+      openOccurrences: selected.openOccurrences,
+      initialForms: selected.forms,
+      initialLexeme: selected.lexeme,
       syriac: selected.isSyriac,
       ntSyriac: _activeReader?._ntSyriac ?? false,
       ntGreek: _activeReader?._ntGreek ?? false,
@@ -2152,6 +2168,7 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   /// Which actions stay in the bar as it narrows, the first kept longest.
   static const _barPriority = [
+    _ReaderBarAction.search,
     _ReaderBarAction.interlinear,
     _ReaderBarAction.text,
     _ReaderBarAction.ntText,
@@ -2161,6 +2178,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   ];
 
   void _runBarAction(_ReaderBarAction action) => switch (action) {
+    _ReaderBarAction.search => _openWordSearch(),
     _ReaderBarAction.chapterContext => _showChapterContext(),
     _ReaderBarAction.text => _cycleReaderText(),
     _ReaderBarAction.ntText => _toggleNtGreek(),
@@ -2171,6 +2189,12 @@ class _ReaderSessionState extends State<_ReaderSession>
   };
 
   Widget _barButton(_ReaderBarAction action) => switch (action) {
+    _ReaderBarAction.search => IconButton(
+      key: const ValueKey('reader-word-search'),
+      icon: const Icon(Icons.search),
+      onPressed: _openWordSearch,
+      tooltip: 'Find a word',
+    ),
     _ReaderBarAction.chapterContext => IconButton(
       key: const ValueKey('reader-chapter-context'),
       icon: const Icon(Icons.explore_outlined),
@@ -2249,6 +2273,7 @@ class _ReaderSessionState extends State<_ReaderSession>
           child: ListTile(leading: Icon(icon), title: Text(label)),
         );
     return switch (action) {
+      _ReaderBarAction.search => [item(Icons.search, 'Find a word')],
       _ReaderBarAction.chapterContext => [
         item(Icons.explore_outlined, 'Chapter context'),
       ],
@@ -3723,6 +3748,41 @@ class _ReaderSessionState extends State<_ReaderSession>
     if (workspace != null) {
       _replaceStudyWorkspace(workspace.moveItem(item, groupId, index: index));
     }
+  }
+
+  /// Finds a word by what the reader types, and opens the word chosen in a
+  /// word pane at its occurrences, switching the New Testament to the Greek
+  /// or the Peshitta first for a word of either, as a bookmark does.
+  Future<void> _openWordSearch() async {
+    final match = await WordSearchPage.open(context);
+    if (match == null || !mounted) return;
+    final language = WordSearchLanguage.of(match);
+    switch (language) {
+      case WordSearchLanguage.greek:
+        _setNtGreek(true);
+      case WordSearchLanguage.aramaic:
+        _setNtGreek(false);
+      case WordSearchLanguage.hebrew:
+        break;
+    }
+    widget.onWordInfoRequested(
+      _SelectedWord(
+        word: match.word,
+        bookIndex: language == WordSearchLanguage.hebrew ? 0 : 39,
+        chapter: null,
+        verse: null,
+        position: null,
+        root: language == WordSearchLanguage.greek
+            ? match.headword
+            : match.root,
+        greek: language == WordSearchLanguage.greek,
+        syriac: language == WordSearchLanguage.aramaic,
+        openOccurrences: true,
+        forms: match.forms.isEmpty ? null : match.forms.toSet(),
+        lexeme: match.lexeme.isEmpty ? null : match.lexeme,
+      ),
+      newPane: true,
+    );
   }
 
   /// Opens a bookmarked word in the text it was read in, switching the New

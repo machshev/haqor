@@ -6,6 +6,7 @@ mod functions;
 mod memorise;
 mod prophecy;
 mod signals;
+mod word_search;
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -275,6 +276,7 @@ async fn main() {
         memorise::submit_memory_recital,
         memorise::get_memory_stats,
         memorise::set_memory_settings,
+        word_search::search_words,
     );
     // The browser keeps progress in memory; Dart is sent it when it asks rather
     // than after every write.

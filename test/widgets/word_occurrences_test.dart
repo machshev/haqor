@@ -152,6 +152,9 @@ Future<_FakeRust> _pumpOccurrences(
   WordProximity? proximity,
   bool syriac = false,
   bool ntSyriac = false,
+  bool openOccurrences = false,
+  Set<String>? initialForms,
+  String? initialLexeme,
 }) async {
   SharedPreferences.setMockInitialValues({
     'occurrence_verse_english_only': false,
@@ -173,6 +176,9 @@ Future<_FakeRust> _pumpOccurrences(
             useEnglishBookNames: true,
             proximity: proximity,
             proximityId: proximity == null ? null : 'self',
+            openOccurrences: openOccurrences,
+            initialForms: initialForms,
+            initialLexeme: initialLexeme,
             sendInfoRequest: rust.onInfoRequest,
             sendOccurrencesRequest: rust.onOccurrencesRequest,
             sendVerseTextsRequest: rust.onVerseTextsRequest,
@@ -973,5 +979,57 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('simple'), findsOneWidget);
     expect(find.text('2 verses'), findsOneWidget);
+  });
+
+  group('a word found by a search', () {
+    testWidgets('opens on its occurrences, narrowed to its own forms', (
+      tester,
+    ) async {
+      final rust = await _pumpOccurrences(
+        tester,
+        [
+          _occurrence(book: 1, chapter: 1, verse: 1),
+          _occurrence(book: 1, chapter: 1, verse: 2, surface: 'יִבְרָא'),
+          _occurrence(book: 1, chapter: 1, verse: 3, surface: 'נִבְרָא'),
+        ],
+        openOccurrences: true,
+        initialForms: {'בָּרָא', 'יִבְרָא', 'בְּרָאתִיו'},
+      );
+
+      // Asked for at once, with no wait to see whether the reader stays.
+      expect(rust.occurrenceRequests, hasLength(1));
+      expect(_visibleRefs(tester), ['Genesis 1:1', 'Genesis 1:2']);
+    });
+
+    testWidgets('falls back to its own form when none of its forms is listed', (
+      tester,
+    ) async {
+      await _pumpOccurrences(
+        tester,
+        [
+          _occurrence(book: 1, chapter: 1, verse: 1),
+          _occurrence(book: 1, chapter: 1, verse: 2, surface: 'יִבְרָא'),
+        ],
+        openOccurrences: true,
+        initialForms: {'בְּרָאתִיו'},
+      );
+
+      expect(_visibleRefs(tester), ['Genesis 1:1']);
+    });
+
+    testWidgets('a Peshitta word is narrowed to its lexeme', (tester) async {
+      await _pumpOccurrences(
+        tester,
+        [
+          _occurrence(book: 40, chapter: 1, verse: 1, lexeme: 'חובא'),
+          _occurrence(book: 40, chapter: 1, verse: 2, lexeme: 'חבא'),
+        ],
+        syriac: true,
+        openOccurrences: true,
+        initialLexeme: 'חובא',
+      );
+
+      expect(_visibleRefs(tester), ['Matthew 1:1']);
+    });
   });
 }

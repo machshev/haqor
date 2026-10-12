@@ -2173,3 +2173,50 @@ pub struct ArtifactSourceEntry {
     pub citation: String,
     pub url: String,
 }
+
+// ---------------------------------------------------------------------------
+// Finding a word by what the reader types (see `haqor_core::word_search`).
+// ---------------------------------------------------------------------------
+
+/// Ask for the dictionary words a query names: Hebrew or Aramaic letters,
+/// pointed or not; Greek, with or without its accents; Syriac; or English.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SearchWords {
+    /// Echoed in the [`WordSearchResults`] reply, so a search box tells the
+    /// answer to what it holds now from one to an earlier keystroke.
+    pub request_id: u32,
+    pub query: String,
+}
+
+/// One dictionary word a search found, with what opens it at its
+/// occurrences.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct WordSearchEntry {
+    /// `hebrew` (the Old Testament), `aramaic` (the Peshitta) or `greek`.
+    pub language: String,
+    /// What matched, the closest first: `headword`, `form`, `root`, `prefix`
+    /// or `gloss`.
+    pub matched: String,
+    /// BDB's pointed headword, the Greek lemma, or the SEDRA lexeme.
+    pub headword: String,
+    pub root: String,
+    pub gloss: String,
+    pub part_of_speech: String,
+    /// A form of it in the text to open its word pane with; the lemma for
+    /// Greek.
+    pub word: String,
+    /// Hebrew: its forms in the text, to narrow its root's occurrences to.
+    pub forms: Vec<String>,
+    /// Aramaic: the lexeme as its occurrences name it, for the same.
+    pub lexeme: String,
+    /// How many words of the text it is.
+    pub occurrences: u32,
+}
+
+/// Reply to [`SearchWords`]: every language's matches, each language's
+/// closest first.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct WordSearchResults {
+    pub request_id: u32,
+    pub matches: Vec<WordSearchEntry>,
+}
