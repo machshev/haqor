@@ -109,6 +109,32 @@ void main() {
     expect(find.byKey(const ValueKey('chapter-context-scope')), findsNothing);
   });
 
+  testWidgets('cross references come first, over the span picked', (
+    tester,
+  ) async {
+    final spans = <(int, int)>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChapterContextSheet(
+            bookIndex: 0,
+            chapter: 12,
+            crossReferencesBuilder: (context, first, last) {
+              spans.add((first, last));
+              return Text('links $first–$last');
+            },
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Cross refs'), findsOneWidget);
+    expect(find.text('links 12–12'), findsOneWidget);
+    await tester.tap(find.text('Nearby'));
+    await tester.pump();
+    expect(find.text('links 10–14'), findsOneWidget);
+    expect(spans.last, (10, 14));
+  });
+
   test('verses read by chapter across a run of chapters', () {
     List<ChapterVerseEntry> at(List<(int, int)> refs) => [
       for (final (chapter, verse) in refs)

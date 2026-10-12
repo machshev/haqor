@@ -101,6 +101,7 @@ class CrossReferencesPanel extends StatefulWidget {
     required this.book,
     required this.chapter,
     this.target,
+    this.chapterSpan,
     this.targetRequest = 0,
     required this.useEnglishBookNames,
     this.ntSyriac = false,
@@ -126,6 +127,10 @@ class CrossReferencesPanel extends StatefulWidget {
   /// its filters kept.
   final int book;
   final int chapter;
+
+  /// The chapters the overview lists, set by whoever holds the panel (the
+  /// reader's chapter sheet): the panel then offers no scope of its own.
+  final (int, int)? chapterSpan;
 
   /// A verse (1-based book) whose links to open: at once, and again whenever
   /// [targetRequest] changes — so asking for the same verse twice reopens it.
@@ -212,10 +217,12 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
   /// The list the overview last asked for.
   _Section? _overviewLoaded;
 
-  CrossReferenceScope _scope = CrossReferenceScope.chapter;
+  late CrossReferenceScope _scope = widget.chapterSpan == null
+      ? CrossReferenceScope.chapter
+      : CrossReferenceScope.book;
   CrossReferenceLinks _links = CrossReferenceLinks.all;
-  late int _firstChapter = 1;
-  late int _lastChapter = _chapterCount;
+  late int _firstChapter = widget.chapterSpan?.$1 ?? 1;
+  late int _lastChapter = widget.chapterSpan?.$2 ?? _chapterCount;
   bool _byReference = true;
   late double _minScore = widget.minScore;
 
@@ -300,6 +307,17 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
     super.didUpdateWidget(old);
     if (widget.ntGreek != old.ntGreek) _ntGreek = widget.ntGreek;
     if (widget.targetRequest != old.targetRequest) _openTarget();
+    // Held by a chapter sheet, it lists the chapters the sheet picks.
+    if (widget.chapterSpan case final span?) {
+      if (span != old.chapterSpan || widget.book != old.book) {
+        _firstChapter = span.$1;
+        _lastChapter = span.$2;
+        _scope = CrossReferenceScope.book;
+        _overviewOffset = 0;
+        _requestOverview();
+      }
+      return;
+    }
     // Docked, the panel follows the reader: a new book resets the chapter
     // range to the whole of it, and the overview is asked for again with the
     // other filters kept.
@@ -519,10 +537,11 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Cross references',
-                      style: theme.textTheme.titleMedium,
-                    ),
+                    if (widget.chapterSpan == null)
+                      Text(
+                        'Cross references',
+                        style: theme.textTheme.titleMedium,
+                      ),
                     Text(
                       prophecy
                           ? (everywhere
@@ -579,27 +598,29 @@ class _CrossReferencesPanelState extends State<CrossReferencesPanel> {
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              SegmentedButton<CrossReferenceScope>(
-                showSelectedIcon: false,
-                segments: [
-                  ButtonSegment(
-                    value: CrossReferenceScope.chapter,
-                    label: Text('Chapter ${widget.chapter}'),
-                  ),
-                  const ButtonSegment(
-                    value: CrossReferenceScope.book,
-                    label: Text('Book'),
-                  ),
-                  if (prophecy)
-                    const ButtonSegment(
-                      value: CrossReferenceScope.bible,
-                      label: Text('Bible'),
+              if (widget.chapterSpan == null)
+                SegmentedButton<CrossReferenceScope>(
+                  showSelectedIcon: false,
+                  segments: [
+                    ButtonSegment(
+                      value: CrossReferenceScope.chapter,
+                      label: Text('Chapter ${widget.chapter}'),
                     ),
-                ],
-                selected: {_scope},
-                onSelectionChanged: (s) => _update(() => _scope = s.single),
-              ),
-              if (_scope == CrossReferenceScope.book)
+                    const ButtonSegment(
+                      value: CrossReferenceScope.book,
+                      label: Text('Book'),
+                    ),
+                    if (prophecy)
+                      const ButtonSegment(
+                        value: CrossReferenceScope.bible,
+                        label: Text('Bible'),
+                      ),
+                  ],
+                  selected: {_scope},
+                  onSelectionChanged: (s) => _update(() => _scope = s.single),
+                ),
+              if (_scope == CrossReferenceScope.book &&
+                  widget.chapterSpan == null)
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

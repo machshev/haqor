@@ -2518,15 +2518,49 @@ Future<_FakeRust> _pumpWorkspace(
 }
 
 void crossReferenceDockTests() {
-  testWidgets('cross references dock beside the reader from its toolbar', (
-    tester,
-  ) async {
+  testWidgets('the chapter sheet lists the chapter'
+      's cross references', (tester) async {
+    final rust = await _pumpWorkspace(tester, const Size(1366, 744));
+    await tester.tap(find.byKey(const ValueKey('reader-chapter-context')));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(
+      find.byKey(const ValueKey('chapter-context-crossReferences')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(CrossReferencesPanel), findsOneWidget);
+    expect(find.byType(BottomSheet), findsOneWidget);
+    final request = rust.quotationRequests.single;
+    expect(
+      (request.book, request.firstChapter, request.lastChapter),
+      (1, 1, 1),
+    );
+
+    // Widened to the book, it lists the book.
+    await tester.tap(find.text('Book'));
+    await tester.pump();
+    expect(
+      (
+        rust.quotationRequests.last.firstChapter,
+        rust.quotationRequests.last.lastChapter,
+      ),
+      (1, 50),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a verse number'
+      's menu docks the chapter'
+      's cross references', (tester) async {
     final rust = await _pumpWorkspace(tester, const Size(1366, 744));
     expect(find.byType(CrossReferencesPanel), findsNothing);
-    // The workspace bar no longer carries it: the reader's own toolbar does.
+    // The workspace bar does not carry them.
     expect(find.byTooltip('Cross references'), findsNothing);
 
-    await tester.tap(find.byTooltip('Cross references in this chapter'));
+    await tester.longPress(find.byKey(const ValueKey('verse-number-2')).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Chapter cross references'));
     await tester.pump();
     expect(find.byType(CrossReferencesPanel), findsOneWidget);
     expect(find.byType(BottomSheet), findsNothing, reason: 'docked');
@@ -2555,9 +2589,12 @@ void crossReferenceDockTests() {
     expect(rust.thematicRequests.single.verse, 2);
     expect(rust.prophecyRequests.single.verse, 2);
 
-    // The reader's toolbar button brings the docked panel back to the
+    // The verse number's chapter entry brings the docked panel back to the
     // chapter's overview.
-    await tester.tap(find.byTooltip('Cross references in this chapter'));
+    await tester.longPress(find.byKey(const ValueKey('verse-number-2')).first);
+    // The open panel's spinner never settles.
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.text('Chapter cross references'));
     await tester.pump();
     expect(find.byTooltip('All cross references'), findsNothing);
     expect(find.text('Quotations'), findsOneWidget);
@@ -2975,7 +3012,7 @@ void compactViewMenuTests() {
 
     await tester.tap(find.byKey(const ValueKey('reader-view-menu')));
     await tester.pumpAndSettle();
-    expect(find.text('Cross references'), findsOneWidget);
+    expect(find.text('Chapter context'), findsOneWidget);
     expect(find.text('Forward'), findsOneWidget);
     await tester.tap(
       find.widgetWithText(CheckedPopupMenuItem<Object>, 'Side by side'),
@@ -3005,7 +3042,7 @@ void compactViewMenuTests() {
       'reader-rapid-toggle',
       'reader-interlinear-toggle',
       'reader-text-toggle',
-      'reader-cross-references',
+      'reader-chapter-context',
     ]) {
       expect(find.byKey(ValueKey(key)), findsOneWidget, reason: key);
     }

@@ -10,6 +10,7 @@ import 'name_details.dart';
 
 /// The tabs of [ChapterContextSheet], in the order it shows them.
 enum ChapterContextTab {
+  crossReferences('Cross refs', Icons.link),
   places('Places', Icons.map_outlined),
   people('People', Icons.people_outline),
   archaeology('Archaeology', Icons.account_balance_outlined);
@@ -45,14 +46,15 @@ enum ChapterContextScope {
   };
 }
 
-/// What surrounds a chapter, one tab each: the places it names on a map, the
-/// people it names and how they are related, and the finds bearing on it.
+/// What surrounds a chapter, one tab each: its cross references, the places
+/// it names on a map, the people it names and how they are related, and the
+/// finds bearing on it. It can widen to the chapters nearby or the book.
 class ChapterContextSheet extends StatefulWidget {
   const ChapterContextSheet({
     super.key,
     required this.bookIndex,
     required this.chapter,
-    this.initialTab = ChapterContextTab.places,
+    this.initialTab = ChapterContextTab.crossReferences,
     this.onTabChanged,
     this.initialScope = ChapterContextScope.chapter,
     this.onScopeChanged,
@@ -65,6 +67,7 @@ class ChapterContextSheet extends StatefulWidget {
     this.sendPlacesRequest,
     this.sendPeopleRequest,
     this.sendArtifactsRequest,
+    this.crossReferencesBuilder,
   });
 
   /// Zero-based, as the reader counts books.
@@ -94,15 +97,29 @@ class ChapterContextSheet extends StatefulWidget {
   final void Function(GetChapterPeople)? sendPeopleRequest;
   final void Function(GetChapterArtifacts)? sendArtifactsRequest;
 
+  /// The cross references of the chapters [first] to [last], which the
+  /// reader builds with its own bookmarks and strength filter. Without it
+  /// the sheet has no cross-references tab.
+  final Widget Function(BuildContext context, int first, int last)?
+  crossReferencesBuilder;
+
   @override
   State<ChapterContextSheet> createState() => _ChapterContextSheetState();
 }
 
 class _ChapterContextSheetState extends State<ChapterContextSheet>
     with SingleTickerProviderStateMixin {
+  /// The tabs shown: cross references only where the reader builds them.
+  late final List<ChapterContextTab> _shown = [
+    for (final tab in ChapterContextTab.values)
+      if (tab != ChapterContextTab.crossReferences ||
+          widget.crossReferencesBuilder != null)
+        tab,
+  ];
+
   late final TabController _tabs = TabController(
-    length: ChapterContextTab.values.length,
-    initialIndex: widget.initialTab.index,
+    length: _shown.length,
+    initialIndex: math.max(0, _shown.indexOf(widget.initialTab)),
     vsync: this,
   )..addListener(_tabChanged);
 
@@ -132,7 +149,7 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
 
   void _tabChanged() {
     if (_tabs.indexIsChanging) return;
-    widget.onTabChanged?.call(ChapterContextTab.values[_tabs.index]);
+    widget.onTabChanged?.call(_shown[_tabs.index]);
   }
 
   @override
@@ -146,6 +163,10 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
     // A new span is a new request.
     final key = ValueKey((tab, first, last));
     return switch (tab) {
+      ChapterContextTab.crossReferences => KeyedSubtree(
+        key: key,
+        child: widget.crossReferencesBuilder!(context, first, last),
+      ),
       ChapterContextTab.places => ChapterPlacesSheet(
         bookIndex: widget.bookIndex,
         key: key,
@@ -250,7 +271,7 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
           TabBar(
             controller: _tabs,
             tabs: [
-              for (final tab in ChapterContextTab.values)
+              for (final tab in _shown)
                 Tab(
                   key: ValueKey('chapter-context-${tab.name}'),
                   icon: Icon(tab.icon),
@@ -264,8 +285,7 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
               // A swipe would fight the map's own panning.
               physics: const NeverScrollableScrollPhysics(),
               children: [
-                for (final tab in ChapterContextTab.values)
-                  _KeepAlive(child: _tab(tab)),
+                for (final tab in _shown) _KeepAlive(child: _tab(tab)),
               ],
             ),
           ),

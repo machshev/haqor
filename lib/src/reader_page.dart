@@ -210,7 +210,6 @@ class _SelectedWord {
 
 /// The reader top bar's own actions, in the order the bar shows them.
 enum _ReaderBarAction {
-  crossReferences,
   chapterContext,
   text,
   ntText,
@@ -656,6 +655,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     sendSyntaxTreesRequest: widget.sendSyntaxTreesRequest,
     sendTranslationRequest: widget.sendTranslationRequest,
     sendVerseTextsRequest: widget.sendVerseTextsRequest,
+    sendQuotationsRequest: widget.sendQuotationsRequest,
+    sendThematicOverviewRequest: widget.sendThematicOverviewRequest,
+    sendProphecyOverviewRequest: widget.sendProphecyOverviewRequest,
     onPassageChanged: () {
       if (mounted) setState(() {});
     },
@@ -1693,6 +1695,9 @@ class _ReaderSession extends StatefulWidget {
     this.sendSyntaxTreesRequest,
     this.sendTranslationRequest,
     this.sendVerseTextsRequest,
+    this.sendQuotationsRequest,
+    this.sendThematicOverviewRequest,
+    this.sendProphecyOverviewRequest,
   });
 
   final String sessionId;
@@ -1732,6 +1737,11 @@ class _ReaderSession extends StatefulWidget {
 
   /// Test seam: how the Syntax sheet asks for its verse's words.
   final void Function(GetVerseTexts request)? sendVerseTextsRequest;
+
+  /// Test seams: how the chapter sheet's cross references reach Rust.
+  final void Function(GetQuotations)? sendQuotationsRequest;
+  final void Function(GetThematicOverview)? sendThematicOverviewRequest;
+  final void Function(GetProphecies)? sendProphecyOverviewRequest;
 
   static Future<void> seedNavigation(
     String sessionId,
@@ -2147,16 +2157,10 @@ class _ReaderSessionState extends State<_ReaderSession>
     _ReaderBarAction.ntText,
     _ReaderBarAction.back,
     _ReaderBarAction.forward,
-    _ReaderBarAction.crossReferences,
     _ReaderBarAction.chapterContext,
   ];
 
   void _runBarAction(_ReaderBarAction action) => switch (action) {
-    _ReaderBarAction.crossReferences => widget.onCrossReferencesRequested(
-      _bookIndex,
-      _chapter,
-      null,
-    ),
     _ReaderBarAction.chapterContext => _showChapterContext(),
     _ReaderBarAction.text => _cycleReaderText(),
     _ReaderBarAction.ntText => _toggleNtGreek(),
@@ -2167,17 +2171,11 @@ class _ReaderSessionState extends State<_ReaderSession>
   };
 
   Widget _barButton(_ReaderBarAction action) => switch (action) {
-    _ReaderBarAction.crossReferences => IconButton(
-      key: const ValueKey('reader-cross-references'),
-      icon: const Icon(Icons.link),
-      onPressed: () => _runBarAction(action),
-      tooltip: 'Cross references in this chapter',
-    ),
     _ReaderBarAction.chapterContext => IconButton(
       key: const ValueKey('reader-chapter-context'),
       icon: const Icon(Icons.explore_outlined),
       onPressed: () => _runBarAction(action),
-      tooltip: 'Places, people and archaeology in this chapter',
+      tooltip: 'Cross references, places, people and archaeology',
     ),
     _ReaderBarAction.text => IconButton(
       key: const ValueKey('reader-text-toggle'),
@@ -2251,11 +2249,8 @@ class _ReaderSessionState extends State<_ReaderSession>
           child: ListTile(leading: Icon(icon), title: Text(label)),
         );
     return switch (action) {
-      _ReaderBarAction.crossReferences => [
-        item(Icons.link, 'Cross references'),
-      ],
       _ReaderBarAction.chapterContext => [
-        item(Icons.explore_outlined, 'Places, people & archaeology'),
+        item(Icons.explore_outlined, 'Chapter context'),
       ],
       _ReaderBarAction.text => [
         for (final text in ReaderText.values)
@@ -3814,7 +3809,7 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   /// The tab and scope the chapter sheet last showed, for it to open on
   /// next.
-  ChapterContextTab _chapterContextTab = ChapterContextTab.places;
+  ChapterContextTab _chapterContextTab = ChapterContextTab.crossReferences;
   ChapterContextScope _chapterContextScope = ChapterContextScope.chapter;
 
   /// The places, people and archaeological finds of the chapter at the top
@@ -3840,6 +3835,29 @@ class _ReaderSessionState extends State<_ReaderSession>
           bookmarks: _nameBookmarks,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
+          crossReferencesBuilder: (context, first, last) =>
+              CrossReferencesPanel(
+                book: _bookIndex + 1,
+                chapter: _chapter,
+                chapterSpan: (first, last),
+                useEnglishBookNames: _englishBookNames,
+                ntSyriac: _ntSyriac,
+                ntGreek: _ntGreek,
+                onNtGreekChanged: _setNtGreek,
+                isLinkBookmarked: _isStudyLinkBookmarked,
+                onToggleLinkBookmark: _toggleStudyLinkBookmark,
+                minScore: _crossReferenceMinScore,
+                onMinScoreChanged: _setCrossReferenceMinScore,
+                // A linked verse opens in the reader, in place of the sheet.
+                onNavigateToPassage: (book, chapter, verse) {
+                  Navigator.of(context).maybePop();
+                  _navigateTo(book, chapter, verse: verse);
+                },
+                sendVerseTextsRequest: widget.sendVerseTextsRequest,
+                sendQuotationsRequest: widget.sendQuotationsRequest,
+                sendThematicOverviewRequest: widget.sendThematicOverviewRequest,
+                sendProphecyOverviewRequest: widget.sendProphecyOverviewRequest,
+              ),
         ),
       ),
     );
