@@ -172,9 +172,9 @@ jobs:
 
           # Compressed blobs are unreadable without the dictionaries they were
           # trained against, which travel inside the database: the build's
-          # (1) and the English translation's (2).
+          # (1), the English translation's (2) and the Greek lexicon's (3).
           if [[ "$codec" == "zstd" ]]; then
-            test "$(query "SELECT count(*) FROM blob_dict;")" -eq 2
+            test "$(query "SELECT count(*) FROM blob_dict;")" -eq 3
           fi
 
           test "$(query "SELECT count(*) FROM verse;")" -eq 31171
