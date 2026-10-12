@@ -887,7 +887,7 @@ void main() {
       return occurrenceRequests;
     }
 
-    testWidgets('marks the sense a word has and filters by it', (tester) async {
+    testWidgets('filters a word\'s occurrences by sense', (tester) async {
       final requests = await pumpSheet(
         tester,
         sense: WordSenseEntry(
@@ -905,10 +905,10 @@ void main() {
         ),
       );
       expect(find.text('Here “to lie down” means “be dead”'), findsOneWidget);
-      final chip = find.widgetWithText(FilterChip, 'be dead · 45');
-      expect(tester.widget<FilterChip>(chip).selected, isTrue);
+      // The senses are filters, not header chips.
+      expect(find.byType(FilterChip), findsNothing);
 
-      await tester.tap(find.widgetWithText(FilterChip, 'lay down · 102'));
+      await tester.tap(find.text('Occurrences'));
       // The tab waits on its occurrences, so it never settles.
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
@@ -946,6 +946,17 @@ void main() {
         ).bincodeSerialize(),
         Uint8List(0),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(ActionChip));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sense'));
+      await tester.pumpAndSettle();
+      // Each sense without the gloss they share, the one here marked.
+      expect(find.text('This occurrence'), findsOneWidget);
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'lay down'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sense (1)'), findsOneWidget);
+      Navigator.of(tester.element(find.text('Filter occurrences'))).pop();
       await tester.pumpAndSettle();
       // The Occurrences tab, narrowed to the one verse with that sense.
       expect(find.textContaining('1 verse'), findsWidgets);

@@ -1086,7 +1086,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                   if (info.vavCon) _chip(context, 'Vav', 'consecutive'),
                 ],
               ),
-              ?_senseRow(context, info),
+              ?_senseLine(context, info),
             ],
           ),
         ),
@@ -1439,68 +1439,23 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     bookmarks: widget.nameBookmarks,
   );
 
-  /// The senses of the word, the one it has here marked, each narrowing the
-  /// Occurrences tab to the tokens with it. Nothing for a word with one sense:
-  /// the gloss above says all there is.
-  Widget? _senseRow(BuildContext context, WordInfo info) {
+  /// What the word means here, when its root has more than one sense. The
+  /// senses themselves are on the occurrence filter's Sense tab.
+  Widget? _senseLine(BuildContext context, WordInfo info) {
     final sense = info.sense;
-    if (sense == null || sense.senses.length < 2) return null;
+    if (sense == null || sense.senses.length < 2 || sense.meaning.isEmpty) {
+      return null;
+    }
     final theme = Theme.of(context);
-    String label(SenseChoice choice) => choice.meaning.isEmpty
-        ? sense.gloss
-        : '${sense.gloss}: ${choice.meaning}';
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            sense.meaning.isEmpty
-                ? 'Senses of “${sense.gloss}”'
-                : 'Here “${sense.gloss}” means “${sense.meaning}”',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              for (final choice in sense.senses)
-                FilterChip(
-                  label: Text(
-                    '${choice.meaning.isEmpty ? sense.gloss : choice.meaning} · ${choice.occurrences}',
-                  ),
-                  tooltip: 'Show the occurrences with this sense',
-                  // The sense the list is narrowed to, or else this word's.
-                  selected: switch (_parse[_ParseDimension.sense]) {
-                    final senses? when senses.isNotEmpty => senses.contains(
-                      label(choice),
-                    ),
-                    _ => choice.isCurrent,
-                  },
-                  visualDensity: VisualDensity.compact,
-                  onSelected: (_) => _showSense(label(choice)),
-                ),
-            ],
-          ),
-        ],
+      child: Text(
+        'Here “${sense.gloss}” means “${sense.meaning}”',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
-  }
-
-  /// Narrow the Occurrences tab to the tokens with [sense], and go there.
-  void _showSense(String sense) {
-    setState(() {
-      _forms.clear();
-      _parse
-        ..clear()
-        ..[_ParseDimension.sense] = {sense};
-    });
-    _occurrenceFilterChanged();
-    _fetchOccurrences();
-    _tabController.animateTo(1);
   }
 
   /// A filter header and a canon distribution over a merged-by-verse list,
@@ -1617,8 +1572,11 @@ class _WordInfoSheetState extends State<WordInfoSheet>
                           fontFamilyFallback: ['Noto Serif Hebrew'],
                         ),
                       ),
-                      onPressed: () =>
-                          _openFilterSheet(context, occurrences: inScope),
+                      onPressed: () => _openFilterSheet(
+                        context,
+                        occurrences: inScope,
+                        sense: info.sense,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -2101,12 +2059,13 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     );
   }
 
-  /// The filter sheet: forms on one tab, parses on the other, each searchable
+  /// The filter sheet: parses, forms and senses on tabs of their own, searchable
   /// because a common root has hundreds of forms (בוא alone has 320) and a wall
   /// of unsorted checkboxes is not a filter anyone can use.
   Future<void> _openFilterSheet(
     BuildContext context, {
     required List<Occurrence> occurrences,
+    WordSenseEntry? sense,
   }) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -2114,6 +2073,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       isScrollControlled: true,
       builder: (sheetContext) => _OccurrenceFilterSheet(
         occurrences: occurrences,
+        sense: sense,
         selectedForms: _forms,
         selectedParse: _parse,
         onChanged: (forms, parse) {
@@ -2335,8 +2295,8 @@ enum _ParseDimension {
 }
 
 /// The dimensions of a token's parse proper, which the tapped word's "this
-/// parse" scope matches on: all but its sense, which has a filter of its own
-/// in the header.
+/// parse" scope matches on: all but its sense, which has a filter tab of its
+/// own.
 final _morphology = [
   for (final dimension in _ParseDimension.values)
     if (dimension != _ParseDimension.sense) dimension,
@@ -3278,7 +3238,8 @@ class _BookCategoryHeader extends StatelessWidget {
 }
 
 /// The occurrence filter: the parse by morphology dimension on one tab,
-/// surface forms on the other.
+/// surface forms on the next, and the word's senses on a third when its root
+/// has more than one.
 ///
 /// The parse tab groups its entries under Part of speech / Lexeme / Stem family
 /// / Stem / Tense / Person / Gender / Number / State rather than listing whole
@@ -3293,6 +3254,7 @@ class _BookCategoryHeader extends StatelessWidget {
 class _OccurrenceFilterSheet extends StatefulWidget {
   const _OccurrenceFilterSheet({
     required this.occurrences,
+    required this.sense,
     required this.selectedForms,
     required this.selectedParse,
     required this.onChanged,
@@ -3303,6 +3265,10 @@ class _OccurrenceFilterSheet extends StatefulWidget {
   /// those go stale the moment a selection changes, which is the one thing the
   /// sheet exists to do.
   final List<Occurrence> occurrences;
+
+  /// The tapped word's senses, for the Sense tab to mark the one it has here
+  /// and to name each without the gloss they all share.
+  final WordSenseEntry? sense;
   final Set<String> selectedForms;
   final Map<_ParseDimension, Set<String>> selectedParse;
   final void Function(
@@ -3317,7 +3283,20 @@ class _OccurrenceFilterSheet extends StatefulWidget {
 
 class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+  // A Sense tab only where there is a choice of senses, or one still selected
+  // to undo.
+  late final bool _hasSenses =
+      widget.occurrences
+              .map((o) => o.sense)
+              .where((s) => s.isNotEmpty)
+              .toSet()
+              .length >
+          1 ||
+      (widget.selectedParse[_ParseDimension.sense]?.isNotEmpty ?? false);
+  late final TabController _tabs = TabController(
+    length: _hasSenses ? 3 : 2,
+    vsync: this,
+  );
   late Set<String> _forms = {...widget.selectedForms};
   late final Map<_ParseDimension, Set<String>> _parse = {
     for (final entry in widget.selectedParse.entries)
@@ -3360,8 +3339,12 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
     widget.onChanged(_forms, _parse);
   }
 
-  int get _parseSelectionCount =>
-      _parse.values.fold(0, (sum, selected) => sum + selected.length);
+  int get _parseSelectionCount => _morphology.fold(
+    0,
+    (sum, dimension) => sum + _selected(dimension).length,
+  );
+
+  int get _senseSelectionCount => _selected(_ParseDimension.sense).length;
 
   Set<String> _selected(_ParseDimension dimension) =>
       _parse[dimension] ?? const {};
@@ -3465,7 +3448,7 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
                   Text('Filter occurrences', style: theme.textTheme.titleSmall),
                   const Spacer(),
                   TextButton(
-                    onPressed: _forms.isEmpty && _parseSelectionCount == 0
+                    onPressed: _forms.isEmpty && _parse.isEmpty
                         ? null
                         : () => _apply(() {
                             _forms = {};
@@ -3496,6 +3479,13 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
                   height: 36,
                   text: _forms.isEmpty ? 'Form' : 'Form (${_forms.length})',
                 ),
+                if (_hasSenses)
+                  Tab(
+                    height: 36,
+                    text: _senseSelectionCount == 0
+                        ? 'Sense'
+                        : 'Sense ($_senseSelectionCount)',
+                  ),
               ],
             ),
             Padding(
@@ -3526,7 +3516,11 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
             Flexible(
               child: TabBarView(
                 controller: _tabs,
-                children: [_parseTab(context), _formTab(context)],
+                children: [
+                  _parseTab(context),
+                  _formTab(context),
+                  if (_hasSenses) _senseTab(context),
+                ],
               ),
             ),
           ],
@@ -3540,7 +3534,7 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
     // A dimension with nothing to offer is left out entirely — nouns have no
     // stem, verbs no state, and an empty heading is just noise.
     final sections = <(_ParseDimension, Map<String, int>, List<String>)>[];
-    for (final dimension in _ParseDimension.values) {
+    for (final dimension in _morphology) {
       final counts = _facets().parse[dimension]!;
       final entries = _entries(counts);
       // Kept when a search hides its entries but a selection of it is live, so
@@ -3676,6 +3670,65 @@ class _OccurrenceFilterSheetState extends State<_OccurrenceFilterSheet>
             final next = {..._forms};
             (on ?? false) ? next.add(form) : next.remove(form);
             _forms = next;
+          }),
+        );
+      },
+    );
+  }
+
+  Widget _senseTab(BuildContext context) {
+    final theme = Theme.of(context);
+    final counts = _facets().parse[_ParseDimension.sense]!;
+    final entries = _entries(counts);
+    final selected = _selected(_ParseDimension.sense);
+    // A live selection the search or another filter has hidden stays listed,
+    // so it can be turned off.
+    final shown = [
+      ...entries,
+      for (final value in selected)
+        if (!entries.contains(value)) value,
+    ];
+    final sense = widget.sense;
+    final here = sense == null || sense.meaning.isEmpty
+        ? null
+        : '${sense.gloss}: ${sense.meaning}';
+    final prefix = sense == null ? null : '${sense.gloss}: ';
+    return ListView.builder(
+      itemCount: shown.length + 1,
+      itemBuilder: (context, i) {
+        if (i == 0) {
+          return CheckboxListTile(
+            dense: true,
+            title: const Text('All senses'),
+            value: selected.isEmpty,
+            onChanged: (_) =>
+                _apply(() => _parse.remove(_ParseDimension.sense)),
+          );
+        }
+        final value = shown[i - 1];
+        return CheckboxListTile(
+          dense: true,
+          title: Text(
+            prefix != null && value.startsWith(prefix)
+                ? value.substring(prefix.length)
+                : value,
+          ),
+          subtitle: value == here
+              ? Text(
+                  'This occurrence',
+                  style: TextStyle(color: theme.colorScheme.primary),
+                )
+              : null,
+          secondary: Text('${counts[value] ?? 0}'),
+          value: selected.contains(value),
+          onChanged: (on) => _apply(() {
+            final next = {...selected};
+            (on ?? false) ? next.add(value) : next.remove(value);
+            if (next.isEmpty) {
+              _parse.remove(_ParseDimension.sense);
+            } else {
+              _parse[_ParseDimension.sense] = next;
+            }
           }),
         );
       },
