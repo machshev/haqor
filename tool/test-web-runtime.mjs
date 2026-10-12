@@ -101,13 +101,13 @@ try {
     };
   })()`);
   for (const [request, message, expected] of [
-    ['get_verse_text', [1, 1, 1, 0], 'VerseText'],
+    ['get_verse_text', [1, 1, 1, 0, 0, 0], 'VerseText'],
     ['get_cross_references', [1, 1, 1, 0, 0, 0, 0], 'CrossReferences'],
     ['get_memory_passages', [], 'MemoryPassages'],
     ['get_memory_stats', [0, 0, 0, 0, 0, 0, 0, 0], 'MemoryStats'],
     ['get_next_study_item', [], 'StudyItem'],
     ['get_tutor_stats', [], 'TutorStats'],
-    ['get_verse_text', [1, 1, 2, 0], 'VerseText'],
+    ['get_verse_text', [1, 1, 2, 0, 0, 0], 'VerseText'],
   ]) {
     await evaluate(`window.haqorReplies = []; import('./pkg/hub.js').then(module =>
       module.rinf_send_dart_signal_${request}(new Uint8Array(${JSON.stringify(message)}), new Uint8Array(0)))`);
@@ -147,7 +147,7 @@ try {
     throw new Error(`Screen text not found: ${text}: ${await evaluate("document.querySelector(\'flt-semantics-host\')?.textContent")}`);
   };
   // A fresh install opens on the welcome question; keep the defaults.
-  await waitForText('How familiar are you with Hebrew?');
+  await waitForText('How familiar are you with Hebrew and Greek?');
   await click('Reading Hebrew', {prefix: true});
   await click('Memorise');
   await waitForText('Choose a passage');
