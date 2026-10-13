@@ -24,6 +24,10 @@ runs:
         primary-key: nix-app-${{ runner.os }}-${{ hashFiles('haqor/flake.lock') }}
         restore-prefixes-first-match: nix-app-${{ runner.os }}-
 
+    - name: Configure Kotlin compilation
+      shell: bash
+      run: echo 'ORG_GRADLE_PROJECT_kotlin.compiler.execution.strategy=in-process' >> "$GITHUB_ENV"
+
     - name: Cache rustup and cargo homes
       uses: actions/cache@v4
       with:
