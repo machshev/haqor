@@ -19,15 +19,30 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Identify Rust target set
+      id: targets
+      shell: bash
+      env:
+        RUST_TARGETS: ${{ inputs.rust-targets }}
+      run: |
+        set -euo pipefail
+        normalized="$(printf '%s' "$RUST_TARGETS" | tr ',' '\n' | sed '/^[[:space:]]*$/d; s/[[:space:]]//g' | sort | paste -sd, -)"
+        if command -v sha256sum >/dev/null 2>&1; then
+          digest="$(printf '%s' "$normalized" | sha256sum | cut -d' ' -f1)"
+        else
+          digest="$(printf '%s' "$normalized" | shasum -a 256 | cut -d' ' -f1)"
+        fi
+        printf 'id=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+
     - name: Cache rustup and cargo homes
       uses: actions/cache@v4
       with:
         path: |
           ~/.rustup
           ~/.cargo
-        key: rust-home-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rust-targets }}-${{ hashFiles('haqor/rust-toolchain.toml') }}-${{ hashFiles('haqor/pubspec.lock', 'haqor/Cargo.lock', 'haqor/tool/build-web.sh') }}
+        key: rust-home-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ steps.targets.outputs.id }}-${{ hashFiles('haqor/rust-toolchain.toml') }}-${{ hashFiles('haqor/pubspec.lock', 'haqor/Cargo.lock', 'haqor/tool/build-web.sh') }}
         restore-keys: |
-          rust-home-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rust-targets }}-${{ hashFiles('haqor/rust-toolchain.toml') }}-
+          rust-home-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ steps.targets.outputs.id }}-${{ hashFiles('haqor/rust-toolchain.toml') }}-
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -76,9 +91,9 @@ runs:
           haqor/build/**/plugins/rinf/cargokit_build
           haqor/build/**/rinf.build
           haqor/target
-        key: rust-build-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rust-targets }}-${{ inputs.flutter-version }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('haqor/pubspec.lock', 'haqor/Cargo.lock', 'haqor/Cargo.toml', 'haqor/native/hub/Cargo.toml', 'haqor/tool/build-web.sh', 'haqor/.github/actions/setup-build/action.yml') }}
+        key: rust-build-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ steps.targets.outputs.id }}-${{ inputs.flutter-version }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('haqor/pubspec.lock', 'haqor/Cargo.lock', 'haqor/Cargo.toml', 'haqor/native/hub/Cargo.toml', 'haqor/tool/build-web.sh', 'haqor/.github/actions/setup-build/action.yml') }}
         restore-keys: |
-          rust-build-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rust-targets }}-${{ inputs.flutter-version }}-${{ steps.compiler.outputs.id }}-
+          rust-build-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ steps.targets.outputs.id }}-${{ inputs.flutter-version }}-${{ steps.compiler.outputs.id }}-
 
     - name: Install bundled databases
       uses: actions/download-artifact@v4
