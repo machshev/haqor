@@ -87,6 +87,7 @@ runs:
         printf 'id=%s\n' "$digest" >> "$GITHUB_OUTPUT"
 
     - name: Cache compiled Rust outputs
+      if: ${{ !contains(inputs.rust-targets, 'apple-ios') }}
       uses: actions/cache@v4
       with:
         path: |
@@ -96,6 +97,19 @@ runs:
         key: rust-build-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ steps.targets.outputs.id }}-${{ inputs.flutter-version }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('haqor/pubspec.lock', 'haqor/Cargo.lock', 'haqor/Cargo.toml', 'haqor/native/hub/Cargo.toml', 'haqor/tool/build-web.sh', 'haqor/.github/actions/setup-build/action.yml') }}
         restore-keys: |
           rust-build-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ steps.targets.outputs.id }}-${{ inputs.flutter-version }}-${{ steps.compiler.outputs.id }}-
+
+    # CocoaPods gives Cargokit an Xcode TARGET_TEMP_DIR under DerivedData,
+    # outside the checkout. Keep this cache separate so adding the external
+    # path does not invalidate desktop compiled-output caches.
+    - name: Cache iOS Cargokit build outputs
+      if: contains(inputs.rust-targets, 'apple-ios')
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/Library/Developer/Xcode/DerivedData/**/Build/Intermediates.noindex/Pods.build/**/rinf.build
+        key: rust-build-v3-native-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.targets.outputs.id }}-${{ inputs.flutter-version }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('haqor/pubspec.lock', 'haqor/Cargo.lock', 'haqor/Cargo.toml', 'haqor/native/hub/Cargo.toml', 'haqor/.github/actions/setup-build/action.yml') }}
+        restore-keys: |
+          rust-build-v3-native-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.targets.outputs.id }}-${{ inputs.flutter-version }}-${{ steps.compiler.outputs.id }}-
 
     - name: Install bundled databases
       uses: actions/download-artifact@v4
