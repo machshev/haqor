@@ -21,22 +21,14 @@ runs:
   using: composite
   steps:
     - name: Install Nix
-      # cache-nix-action v6 expects the single-user store created by this
-      # installer; the previous daemon installer left restores unreadable.
+      # cache.nixos.org supplies the pinned store; reserve GitHub cache
+      # space for compiled outputs below.
       uses: nixbuild/nix-quick-install-action@v30
       with:
         github_access_token: ${{ github.token }}
         nix_conf: |
           keep-env-derivations = true
           keep-outputs = true
-
-    - name: Cache Nix store
-      uses: nix-community/cache-nix-action@v6
-      with:
-        # v2 starts a fresh namespace so broken daemon-store archives are
-        # never selected for restore.
-        primary-key: nix-app-v2-${{ runner.os }}-${{ hashFiles('haqor/flake.nix', 'haqor/flake.lock') }}
-        restore-prefixes-first-match: nix-app-v2-${{ runner.os }}-
 
     - name: Configure Kotlin compilation
       shell: bash

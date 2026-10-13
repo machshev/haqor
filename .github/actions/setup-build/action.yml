@@ -54,7 +54,9 @@ runs:
       with:
         channel: stable
         flutter-version: ${{ inputs.flutter-version }}
-        cache: true
+        # Keep the pinned SDK download, but do not archive the whole SDK and
+        # pub cache in GitHub's shared cache budget.
+        cache: false
 
     - name: Install cargo-binstall
       uses: cargo-bins/cargo-binstall@main
