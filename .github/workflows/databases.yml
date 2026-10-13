@@ -7,10 +7,10 @@
 # never looks at — so they are produced here and left behind. See
 # haqor-core doc/adr/0006-single-runtime-database.md.
 #
-# The .db files are gitignored in both repos, so every CI/release build
-# regenerates them here — cached per haqor-core commit — and ships haqor.db
-# plus its version stamp to the platform build jobs as the `assets-db`
-# artifact.
+# The .db files are gitignored in both repos. Tagged core releases publish a
+# verified runtime database; older core tags fall back to generation here.
+# Either path ships haqor.db plus its version stamp to platform jobs as the
+# `assets-db` artifact.
 #
 # Reusable workflow: called by ci.yml and release.yml. Uses haqor-core's Nix
 # flake (packages.haqor-cli) so the generator toolchain is pinned by that
@@ -77,8 +77,33 @@ jobs:
         id: core
         run: echo "sha=$(git -C haqor-core rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Fetch verified core release database
+        id: release-db
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CORE_REF: ${{ steps.core-ref.outputs.ref }}
+          CORE_SHA: ${{ steps.core.outputs.sha }}
+          BLOB_CODEC: ${{ inputs.blob-codec }}
+        run: |
+          set +e
+          python3 haqor/tool/fetch_core_db.py \
+            "$CORE_REF" \
+            "$CORE_SHA" \
+            haqor-core/data/haqor.db \
+            --codec "$BLOB_CODEC"
+          status=$?
+          set -e
+          if [[ "$status" -eq 3 ]]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$status" -eq 0 ]]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            exit "$status"
+          fi
+
       - name: Cache the runtime database
         id: db-cache
+        if: steps.release-db.outputs.found != 'true'
         uses: actions/cache@v4
         with:
           # Only haqor.db is cached: the generation databases are inputs to it
@@ -119,7 +144,7 @@ jobs:
           key: cargo-dbgen-${{ runner.os }}-${{ hashFiles('haqor-core/Cargo.lock') }}
 
       - name: Add swap space
-        if: steps.db-cache.outputs.cache-hit != 'true'
+        if: steps.release-db.outputs.found != 'true' && steps.db-cache.outputs.cache-hit != 'true'
         # gen-hebrew's reverse-parse index peaks at ~19 GB RSS (measured), just
         # over the 16 GB on standard runners — without extra swap the VM's OOM
         # killer takes down the runner agent ("runner received a shutdown
@@ -132,7 +157,7 @@ jobs:
           free -h
 
       - name: Generate databases
-        if: steps.db-cache.outputs.cache-hit != 'true'
+        if: steps.release-db.outputs.found != 'true' && steps.db-cache.outputs.cache-hit != 'true'
         working-directory: haqor-core
         env:
           RUST_LOG: info

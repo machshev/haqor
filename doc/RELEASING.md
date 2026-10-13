@@ -14,8 +14,9 @@ attaches all of them to a GitHub Release. Both repos are public, so all runners
 2. If the release should ship new databases, pin the `haqor-core` version they
    come from: `native/hub/Cargo.toml`'s exact requirement (and `Cargo.lock`) is
    what `databases.yml` derives its `machshev/haqor-core` tag from, and it
-   regenerates `haqor.db` there — the local `assets/db/` is gitignored and never
-   reaches a build. Nothing else is needed to make existing installs refresh:
+   consumes the matching core release database when it has been published, and
+   regenerates it for older core tags — the local `assets/db/` is gitignored and
+   never reaches a build. Nothing else is needed to make existing installs refresh:
    the version travels with the databases as `assets/db/version.txt` (their own
    build stamp), and the installer reinstalls on any difference.
 3. Commit any other release changes, then create the version commit and tag:
@@ -96,13 +97,12 @@ to create a GitHub Release.
 
 ## How the build is wired
 
-- `.github/workflows/databases.yml` regenerates the four bundled SQLite
-  databases from `haqor-core` (cached per haqor-core commit) via `cargo run`
-  inside haqor-core's devshell, and shares them with all platform jobs as the
-  `assets-db` artifact. It uses `cargo run` rather than the nix-built binary
-  because gen-lexicon resolves `data/lexicon_overrides.json` through a
-  compile-time `CARGO_MANIFEST_DIR` path that a relocated binary cannot
-  satisfy.
+- `.github/workflows/databases.yml` obtains the single validated `haqor.db`
+  from the matching `haqor-core` release, verifies its SHA-256 manifest and
+  core commit, and shares it with platform jobs as the `assets-db` artifact.
+  Older core releases, including the current pinned `0.9.10`, have no release
+  asset and use the legacy generation fallback. Wait for the core publish
+  workflow to finish before bumping the app's core dependency to a new tag.
 - Linux-hosted jobs (databases, Android, CI checks) build inside the Nix
   devshell (`.github/actions/setup-nix-build`) so the toolchain is pinned by
   `flake.lock`.
