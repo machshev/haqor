@@ -92,15 +92,22 @@ jobs:
       # that check matters most on the cache-hit path, where nothing else here
       # would open the file the release is about to ship.
       - name: Install Nix
-        uses: cachix/install-nix-action@v31
+        # cache-nix-action v6 expects the single-user store created by this
+        # installer; the previous daemon installer left restores unreadable.
+        uses: nixbuild/nix-quick-install-action@v30
         with:
           github_access_token: ${{ github.token }}
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
 
       - name: Cache Nix store
         uses: nix-community/cache-nix-action@v6
         with:
-          primary-key: nix-dbgen-${{ runner.os }}-${{ hashFiles('haqor-core/flake.lock', 'haqor-core/Cargo.lock') }}
-          restore-prefixes-first-match: nix-dbgen-${{ runner.os }}-
+          # v2 starts a fresh namespace so broken daemon-store archives are
+          # never selected for restore; the key follows the flake inputs only.
+          primary-key: nix-dbgen-v2-${{ runner.os }}-${{ hashFiles('haqor-core/flake.nix', 'haqor-core/flake.lock') }}
+          restore-prefixes-first-match: nix-dbgen-v2-${{ runner.os }}-
 
       - name: Cache cargo build
         uses: actions/cache@v4
