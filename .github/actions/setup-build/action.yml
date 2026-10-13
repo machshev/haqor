@@ -62,7 +62,12 @@ runs:
         elif [[ "${{ runner.os }}" == "Linux" ]]; then
           context+="$(clang --version; cmake --version | head -1)"
         fi
-        printf '%s' "$context" | sha256sum | cut -d' ' -f1 | sed 's/^/id=/' >> "$GITHUB_OUTPUT"
+        if command -v sha256sum >/dev/null 2>&1; then
+          digest="$(printf '%s' "$context" | sha256sum | cut -d' ' -f1)"
+        else
+          digest="$(printf '%s' "$context" | shasum -a 256 | cut -d' ' -f1)"
+        fi
+        printf 'id=%s\n' "$digest" >> "$GITHUB_OUTPUT"
 
     - name: Cache compiled Rust outputs
       uses: actions/cache@v4
