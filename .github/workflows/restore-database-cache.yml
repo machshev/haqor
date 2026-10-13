@@ -1,0 +1,199 @@
+name: Restore database cache
+
+on:
+  workflow_dispatch:
+    inputs:
+      source-run-id:
+        description: Successful CI run whose immutable assets-db artifact should seed the cache
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: restore-database-cache-${{ inputs.source-run-id }}
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    name: Restore validated database cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout app at the selected revision
+        uses: actions/checkout@v4
+
+      - name: Validate source run and resolve pinned core
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          token = os.environ["GH_TOKEN"]
+          repository = os.environ["GITHUB_REPOSITORY"]
+          run_id = os.environ["SOURCE_RUN_ID"]
+
+          def get_json(path):
+              request = urllib.request.Request(
+                  "https://api.github.com/repos/" + repository + path,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": "Bearer " + token,
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.loads(response.read())
+
+          def pinned_version(text):
+              match = re.search(
+                  r'^haqor-core\s*=\s*\{[^\n]*?version\s*=\s*"=([^"\s]+)"',
+                  text,
+                  re.MULTILINE,
+              )
+              if not match:
+                  raise SystemExit("could not find an exact haqor-core version pin")
+              return match.group(1)
+
+          run = get_json("/actions/runs/" + urllib.parse.quote(run_id, safe=""))
+          if (
+              run.get("repository", {}).get("full_name") != repository
+              or run.get("path") != ".github/workflows/ci.yml"
+              or run.get("event") != "push"
+              or run.get("conclusion") != "success"
+              or not isinstance(run.get("head_sha"), str)
+              or not re.fullmatch(r"[0-9a-f]{40}", run["head_sha"])
+          ):
+              raise SystemExit("source run is not a successful push of this repository's ci.yml")
+          source_sha = run["head_sha"]
+
+          current_text = Path("native/hub/Cargo.toml").read_text(encoding="utf-8")
+          current_version = pinned_version(current_text)
+          source_file = get_json(
+              "/contents/native/hub/Cargo.toml?ref="
+              + urllib.parse.quote(source_sha, safe="")
+          )
+          source_workflow = get_json(
+              "/contents/.github/workflows/ci.yml?ref="
+              + urllib.parse.quote(source_sha, safe="")
+          )
+          try:
+              source_text = base64.b64decode(source_file["content"]).decode("utf-8")
+              workflow_text = base64.b64decode(source_workflow["content"]).decode("utf-8")
+          except (KeyError, ValueError, UnicodeDecodeError) as error:
+              raise SystemExit("source run pin file could not be read") from error
+          source_version = pinned_version(source_text)
+          if source_version != current_version:
+              raise SystemExit("source run core pin differs from the current checkout")
+          database_job = re.search(
+              r"(?ms)^  databases:\n(.*?)(?=^  [A-Za-z0-9_-]+:|\Z)",
+              workflow_text,
+          )
+          if database_job is None or re.search(r"^\s+core-ref:", database_job.group(1), re.MULTILINE):
+              raise SystemExit("source CI database job has an unexpected core-ref override")
+
+          core_ref = "v" + current_version
+          print("source run validated: " + run_id)
+          print("source commit: " + source_sha)
+          print("core ref: " + core_ref)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("core-ref=" + core_ref + "\n")
+          PY
+
+      - name: Checkout pinned haqor-core
+        uses: actions/checkout@v4
+        with:
+          repository: machshev/haqor-core
+          ref: ${{ steps.source.outputs.core-ref }}
+          path: haqor-core
+
+      - name: Resolve exact core commit
+        id: core
+        working-directory: haqor-core
+        run: |
+          set -euo pipefail
+          core_sha="$(git rev-parse HEAD)"
+          test "${#core_sha}" -eq 40
+          echo "sha=$core_sha" >> "$GITHUB_OUTPUT"
+          echo "core commit: $core_sha"
+
+      - name: Verify source database job used this core SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+          CORE_SHA: ${{ steps.core.outputs.sha }}
+        run: |
+          set -euo pipefail
+          mapfile -t job_ids < <(
+            gh api --paginate \
+              "/repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/jobs" \
+              --jq '.jobs[] | select(.conclusion == "success" and (.name == "databases / Generate SQLite databases" or .name == "Generate SQLite databases")) | .id'
+          )
+          test "${#job_ids[@]}" -eq 1
+          log_file="$(mktemp)"
+          trap 'rm -f "$log_file"' EXIT
+          gh api --allow-escape-sequences "/repos/${GITHUB_REPOSITORY}/actions/jobs/${job_ids[0]}/logs" > "$log_file"
+          grep -Fq "assets-db-v3-zstd-${CORE_SHA}" "$log_file"
+          echo "source database job verified for core $CORE_SHA"
+
+      - name: Download source database artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: assets-db
+          path: source-assets
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source-run-id }}
+          github-token: ${{ github.token }}
+
+      - name: Install and verify source database
+        env:
+          CORE_SHA: ${{ steps.core.outputs.sha }}
+        run: |
+          set -euo pipefail
+          mapfile -t databases < <(find source-assets -type f -name haqor.db -print)
+          mapfile -t versions < <(find source-assets -type f -name version.txt -print)
+          test "${#databases[@]}" -eq 1
+          test "${#versions[@]}" -eq 1
+          cp "${databases[0]}" haqor-core/data/haqor.db
+          test -s haqor-core/data/haqor.db
+          test -s "${versions[0]}"
+          built="$(sqlite3 haqor-core/data/haqor.db "SELECT value FROM meta WHERE key = 'built';")"
+          codec="$(sqlite3 haqor-core/data/haqor.db "SELECT value FROM meta WHERE key = 'blob_codec';")"
+          stamp="$(tr -d '\r\n' < "${versions[0]}")"
+          test "$codec" = zstd
+          test -n "$built"
+          test "$built" = "$stamp"
+          test "$(sqlite3 haqor-core/data/haqor.db 'SELECT count(*) FROM verse;')" -eq 31171
+          test "$(sqlite3 haqor-core/data/haqor.db 'SELECT count(*) FROM word;')" -gt 300000
+          test "$(sqlite3 haqor-core/data/haqor.db 'SELECT count(*) FROM word_info;')" -gt 50000
+          test "$(sqlite3 haqor-core/data/haqor.db 'SELECT count(*) FROM syntax_tree;')" -eq 23213
+          test "$(sqlite3 haqor-core/data/haqor.db 'SELECT count(*) FROM translation_verse;')" -gt 23150
+          test "$(sqlite3 haqor-core/data/haqor.db 'SELECT count(*) FROM word WHERE gloss_id IS NOT NULL;')" -gt 250000
+          echo "validated zstd database for core $CORE_SHA (built $built)"
+
+      - name: Check for an existing exact cache
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: haqor-core/data/haqor.db
+          key: assets-db-v3-zstd-${{ steps.core.outputs.sha }}
+          lookup-only: true
+
+      - name: Save exact database cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: haqor-core/data/haqor.db
+          key: assets-db-v3-zstd-${{ steps.core.outputs.sha }}
