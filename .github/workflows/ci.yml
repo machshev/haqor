@@ -64,6 +64,7 @@ jobs:
       - uses: ./haqor/.github/actions/setup-nix-build
         with:
           rust-targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          gradle-cache: "true"
 
       - name: Build Android APK
         working-directory: haqor

@@ -19,6 +19,16 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Cache rustup and cargo homes
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.rustup
+          ~/.cargo
+        key: rust-home-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rust-targets }}-${{ hashFiles('haqor/rust-toolchain.toml') }}-${{ hashFiles('haqor/pubspec.lock', 'haqor/Cargo.lock', 'haqor/tool/build-web.sh') }}
+        restore-keys: |
+          rust-home-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rust-targets }}-${{ hashFiles('haqor/rust-toolchain.toml') }}-
+
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
@@ -38,6 +48,32 @@ runs:
       shell: bash
       # Version requirement mirrors the rinf constraint in pubspec.yaml.
       run: cargo binstall --no-confirm rinf_cli --version '^8.6'
+
+    - name: Identify native Rust compiler and SDK
+      id: compiler
+      shell: bash
+      run: |
+        set -euo pipefail
+        context="$(rustup run stable rustc -Vv; rinf --version 2>/dev/null || true)
+        runner=${{ runner.os }}-${{ runner.arch }}
+        image=${ImageVersion:-unknown}"
+        if [[ "${{ runner.os }}" == "macOS" ]]; then
+          context+="$(xcodebuild -version; xcrun --sdk macosx --show-sdk-version; xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || true)"
+        elif [[ "${{ runner.os }}" == "Linux" ]]; then
+          context+="$(clang --version; cmake --version | head -1)"
+        fi
+        printf '%s' "$context" | sha256sum | cut -d' ' -f1 | sed 's/^/id=/' >> "$GITHUB_OUTPUT"
+
+    - name: Cache compiled Rust outputs
+      uses: actions/cache@v4
+      with:
+        path: |
+          haqor/build/**/plugins/rinf/cargokit_build
+          haqor/build/**/rinf.build
+          haqor/target
+        key: rust-build-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rust-targets }}-${{ inputs.flutter-version }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('haqor/pubspec.lock', 'haqor/Cargo.lock', 'haqor/Cargo.toml', 'haqor/native/hub/Cargo.toml', 'haqor/tool/build-web.sh', 'haqor/.github/actions/setup-build/action.yml') }}
+        restore-keys: |
+          rust-build-v3-native-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rust-targets }}-${{ inputs.flutter-version }}-${{ steps.compiler.outputs.id }}-
 
     - name: Install bundled databases
       uses: actions/download-artifact@v4

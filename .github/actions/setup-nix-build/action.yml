@@ -13,6 +13,9 @@ inputs:
   install-database:
     description: Download the bundled database artifact into assets/db
     default: "true"
+  gradle-cache:
+    description: Restore Gradle's build cache for Android jobs
+    default: "false"
 
 runs:
   using: composite
@@ -39,13 +42,19 @@ runs:
       shell: bash
       run: echo 'ORG_GRADLE_PROJECT_kotlin.compiler.execution.strategy=in-process' >> "$GITHUB_ENV"
 
+    - name: Restore Gradle build cache
+      if: ${{ inputs.gradle-cache == 'true' }}
+      uses: gradle/actions/setup-gradle@v4
+
     - name: Cache rustup and cargo homes
       uses: actions/cache@v4
       with:
         path: |
           ~/.rustup
           ~/.cargo
-        key: rust-home-${{ runner.os }}-${{ hashFiles('haqor/rust-toolchain.toml', 'haqor/pubspec.yaml', 'haqor/tool/build-web.sh') }}
+        key: rust-home-v3-nix-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rust-targets }}-${{ hashFiles('haqor/rust-toolchain.toml', 'haqor/flake.nix', 'haqor/flake.lock') }}-${{ hashFiles('haqor/pubspec.lock', 'haqor/Cargo.lock', 'haqor/tool/build-web.sh') }}
+        restore-keys: |
+          rust-home-v3-nix-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rust-targets }}-${{ hashFiles('haqor/rust-toolchain.toml', 'haqor/flake.nix', 'haqor/flake.lock') }}-
 
     - name: Bootstrap Rust toolchain and rinf_cli
       shell: bash
@@ -65,6 +74,27 @@ runs:
           fi
           command -v rinf >/dev/null || cargo install rinf_cli --locked
         '
+
+    - name: Identify Nix Rust compiler and SDK
+      id: compiler
+      shell: bash
+      working-directory: haqor
+      run: |
+        set -euo pipefail
+        context="$(nix develop --command bash -c 'rustup run stable rustc -Vv; rinf --version 2>/dev/null || true; printf "\\nNDK=%s\\nFlutter=%s\\n" "$ANDROID_NDK_ROOT" "$FLUTTER_ROOT"')"
+        printf '%s' "$context" | sha256sum | cut -d' ' -f1 | sed 's/^/id=/' >> "$GITHUB_OUTPUT"
+
+    - name: Cache compiled Rust outputs
+      uses: actions/cache@v4
+      with:
+        path: |
+          haqor/build/rinf/build
+          haqor/build/**/plugins/rinf/cargokit_build
+          haqor/build/**/rinf.build
+          haqor/target
+        key: rust-build-v3-nix-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rust-targets }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('haqor/pubspec.lock', 'haqor/Cargo.lock', 'haqor/Cargo.toml', 'haqor/native/hub/Cargo.toml', 'haqor/tool/build-web.sh', 'haqor/flake.nix', 'haqor/flake.lock', 'haqor/.github/actions/setup-nix-build/action.yml') }}
+        restore-keys: |
+          rust-build-v3-nix-${{ runner.os }}-${{ runner.arch }}-${{ inputs.rust-targets }}-${{ steps.compiler.outputs.id }}-
 
     - name: Install bundled databases
       if: ${{ inputs.install-database == 'true' }}
