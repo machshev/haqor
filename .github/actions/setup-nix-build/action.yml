@@ -3,12 +3,16 @@ description: >
   Toolchain for Linux-hosted app builds, provided by this repo's Nix flake so
   CI matches the dev environment exactly (Flutter, JDK, Android SDK/NDK,
   rustup, GTK libs — all pinned by flake.lock). Expects this repo checked out
-  at ./haqor and an `assets-db` artifact uploaded earlier in the run.
+  at ./haqor. Database installation is enabled by default and expects an
+  `assets-db` artifact uploaded earlier in the run.
 
 inputs:
   rust-targets:
     description: Extra Rust targets to install (space separated)
     default: ""
+  install-database:
+    description: Download the bundled database artifact into assets/db
+    default: "true"
 
 runs:
   using: composite
@@ -63,10 +67,16 @@ runs:
         '
 
     - name: Install bundled databases
+      if: ${{ inputs.install-database == 'true' }}
       uses: actions/download-artifact@v4
       with:
         name: assets-db
         path: haqor/assets/db
+
+    - name: Prepare empty database asset directory
+      if: ${{ inputs.install-database != 'true' }}
+      shell: bash
+      run: mkdir -p haqor/assets/db
 
     - name: Fetch Dart dependencies and generate bindings
       shell: bash

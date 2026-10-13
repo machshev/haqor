@@ -17,9 +17,8 @@ jobs:
   databases:
     uses: ./.github/workflows/databases.yml
 
-  checks:
-    name: Analyze, test, build
-    needs: databases
+  fast-checks:
+    name: Fast checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout haqor
@@ -28,7 +27,7 @@ jobs:
           path: haqor
       - uses: ./haqor/.github/actions/setup-nix-build
         with:
-          rust-targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          install-database: "false"
 
       - uses: actions/setup-node@v4
         with:
@@ -53,6 +52,19 @@ jobs:
         working-directory: haqor
         run: nix develop --command flutter test
 
+  android:
+    name: Build Android APK
+    needs: [databases, fast-checks]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout haqor
+        uses: actions/checkout@v4
+        with:
+          path: haqor
+      - uses: ./haqor/.github/actions/setup-nix-build
+        with:
+          rust-targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+
       - name: Build Android APK
         working-directory: haqor
         run: nix develop --command flutter build apk --release
@@ -62,3 +74,17 @@ jobs:
           name: release-apk
           path: haqor/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+  checks:
+    name: Analyze, test, build
+    if: ${{ always() }}
+    needs: [fast-checks, android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require fast checks and Android build
+        env:
+          FAST_CHECKS_RESULT: ${{ needs.fast-checks.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+        run: |
+          test "$FAST_CHECKS_RESULT" = success
+          test "$ANDROID_RESULT" = success
