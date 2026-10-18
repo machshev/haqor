@@ -1401,6 +1401,29 @@ void main() {
     });
   });
 
+  test('a span keeps how it is drawn, a bar unless chosen otherwise', () {
+    const span = StudyTimelineEntry(
+      id: 'pilgrimage',
+      title: 'Pilgrimage',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 14),
+      end: TimelineTime(0, month: 1, day: 21),
+    );
+    expect(span.toJson().containsKey('style'), isFalse);
+    for (final style in TimelineSpanStyle.values) {
+      expect(
+        StudyTimelineEntry.fromJson(
+          span.copyWith(style: style).toJson(),
+        )?.style,
+        style,
+      );
+    }
+    expect(
+      StudyTimelineEntry.fromJson({...span.toJson(), 'style': 'zigzag'})?.style,
+      TimelineSpanStyle.bar,
+    );
+  });
+
   test('a study without timelines stores none', () {
     final json = const StudyWorkspace(id: 's', name: 'Study').toJson();
     expect(json.containsKey('timelines'), isFalse);

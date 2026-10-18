@@ -713,6 +713,7 @@ class TimelineChart extends StatelessWidget {
                             '${slot.entry.id}',
                           ),
                           rising: before,
+                          thin: _SpanPainter.isThin(slot.entry.style),
                           title: taper.title,
                           color: switch (timeline.colorOf(slot.entry)) {
                             final index? => timelineCategoryColor(
@@ -968,6 +969,7 @@ class _Wedge extends StatelessWidget {
   const _Wedge({
     super.key,
     required this.rising,
+    this.thin = false,
     required this.title,
     required this.color,
     required this.selected,
@@ -976,6 +978,10 @@ class _Wedge extends StatelessWidget {
   });
 
   final bool rising;
+
+  /// Drawn at the foot of its row, leading into a span drawn as a line
+  /// (see [_SpanPainter.isThin]), its title above.
+  final bool thin;
   final String title;
   final Color color;
   final bool selected;
@@ -999,14 +1005,18 @@ class _Wedge extends StatelessWidget {
             return CustomPaint(
               painter: _WedgePainter(
                 rising: rising,
+                thin: thin,
                 color: color,
                 selected: selected,
               ),
               child: fits
                   ? Align(
-                      alignment: rising
-                          ? AlignmentDirectional.centerEnd
-                          : AlignmentDirectional.centerStart,
+                      alignment: switch ((rising, thin)) {
+                        (true, false) => AlignmentDirectional.centerEnd,
+                        (false, false) => AlignmentDirectional.centerStart,
+                        (true, true) => AlignmentDirectional.topEnd,
+                        (false, true) => AlignmentDirectional.topStart,
+                      },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: Text(
@@ -1026,27 +1036,120 @@ class _Wedge extends StatelessWidget {
   }
 }
 
+/// A span drawn other than as a filled bar (see [TimelineSpanStyle]).
+class _SpanPainter extends CustomPainter {
+  const _SpanPainter({
+    required this.style,
+    required this.color,
+    required this.selected,
+  });
+
+  final TimelineSpanStyle style;
+  final Color color;
+  final bool selected;
+
+  /// Whether it is drawn as a line along the foot of its row, its title
+  /// above it.
+  static bool isThin(TimelineSpanStyle style) =>
+      style == TimelineSpanStyle.arrow || style == TimelineSpanStyle.bracket;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final line = Paint()
+      ..color = selected ? color : color.withValues(alpha: 0.75)
+      ..strokeWidth = selected ? 2 : 1.5
+      ..style = PaintingStyle.stroke;
+    switch (style) {
+      case TimelineSpanStyle.bar:
+        break;
+      case TimelineSpanStyle.dotted:
+        final box = RRect.fromRectAndRadius(
+          Offset.zero & size,
+          const Radius.circular(4),
+        );
+        canvas.drawRRect(box, Paint()..color = color.withValues(alpha: 0.1));
+        // Its outline in dots.
+        final dot = Paint()..color = line.color;
+        final r = selected ? 1.4 : 1.1;
+        for (final metric
+            in (Path()..addRRect(box.deflate(1))).computeMetrics()) {
+          for (var d = 0.0; d < metric.length; d += 4) {
+            if (metric.getTangentForOffset(d) case final t?) {
+              canvas.drawCircle(t.position, r, dot);
+            }
+          }
+        }
+      case TimelineSpanStyle.arrow:
+        final y = size.height - 3;
+        final head = math.min(6.0, w / 3);
+        canvas.drawLine(Offset(0, y), Offset(w, y), line);
+        final fill = Paint()..color = line.color;
+        canvas.drawPath(
+          Path()
+            ..moveTo(0, y)
+            ..lineTo(head, y - 3.5)
+            ..lineTo(head, y + 3.5)
+            ..close(),
+          fill,
+        );
+        canvas.drawPath(
+          Path()
+            ..moveTo(w, y)
+            ..lineTo(w - head, y - 3.5)
+            ..lineTo(w - head, y + 3.5)
+            ..close(),
+          fill,
+        );
+      case TimelineSpanStyle.bracket:
+        final y = size.height - 6;
+        final fill = Paint()..color = line.color;
+        canvas.drawRect(Rect.fromLTWH(0, y, w, selected ? 4 : 3), fill);
+        // Its stops, reaching down at either end.
+        final stop = math.min(4.0, w / 2);
+        for (final x in [0.0, w - stop]) {
+          canvas.drawPath(
+            Path()
+              ..moveTo(x, y)
+              ..lineTo(x + stop, y)
+              ..lineTo(x == 0 ? 0 : w, size.height)
+              ..close(),
+            fill,
+          );
+        }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SpanPainter old) =>
+      old.style != style || old.color != color || old.selected != selected;
+}
+
 class _WedgePainter extends CustomPainter {
   const _WedgePainter({
     required this.rising,
+    this.thin = false,
     required this.color,
     required this.selected,
   });
 
   final bool rising;
+  final bool thin;
   final Color color;
   final bool selected;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final mid = size.height / 2;
+    // Thin, the height of the line's stops at the foot of the row.
+    final top = thin ? size.height - 8 : 0.0;
+    final mid = thin ? size.height - 4.5 : size.height / 2;
     // Thin far from the span, its full height where it meets it.
-    final (thin, thick) = rising ? (0.0, size.width) : (size.width, 0.0);
+    final (tip, base) = rising ? (0.0, size.width) : (size.width, 0.0);
     final path = Path()
-      ..moveTo(thin, mid - 1)
-      ..lineTo(thick, 0)
-      ..lineTo(thick, size.height)
-      ..lineTo(thin, mid + 1)
+      ..moveTo(tip, mid - 1)
+      ..lineTo(base, top)
+      ..lineTo(base, size.height)
+      ..lineTo(tip, mid + 1)
       ..close();
     canvas.drawPath(path, Paint()..color = color.withValues(alpha: 0.16));
     canvas.drawPath(
@@ -1060,7 +1163,10 @@ class _WedgePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_WedgePainter old) =>
-      old.rising != rising || old.color != color || old.selected != selected;
+      old.rising != rising ||
+      old.thin != thin ||
+      old.color != color ||
+      old.selected != selected;
 }
 
 /// A season of the land as a band across its stretch of the year, named
@@ -1248,19 +1354,32 @@ class _EntryMark extends StatelessWidget {
                 clipBehavior: Clip.none,
                 alignment: AlignmentDirectional.centerStart,
                 children: [
-                  Container(
-                    width: barWidth,
-                    decoration: BoxDecoration(
-                      color:
-                          color?.withValues(alpha: 0.22) ??
-                          scheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: selected ? bar : bar.withValues(alpha: 0.5),
-                        width: selected ? 2 : 1,
+                  if (entry.style == TimelineSpanStyle.bar)
+                    Container(
+                      width: barWidth,
+                      decoration: BoxDecoration(
+                        color:
+                            color?.withValues(alpha: 0.22) ??
+                            scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: selected ? bar : bar.withValues(alpha: 0.5),
+                          width: selected ? 2 : 1,
+                        ),
+                      ),
+                    )
+                  else
+                    SizedBox(
+                      width: barWidth,
+                      height: double.infinity,
+                      child: CustomPaint(
+                        painter: _SpanPainter(
+                          style: entry.style,
+                          color: bar,
+                          selected: selected,
+                        ),
                       ),
                     ),
-                  ),
                   if ((entry.isCounted || entry.dayNotes.isNotEmpty) &&
                       countedDays > 0)
                     SizedBox(
@@ -1279,7 +1398,11 @@ class _EntryMark extends StatelessWidget {
                       ),
                     ),
                   Padding(
-                    padding: const EdgeInsetsDirectional.only(start: 6),
+                    // Above a thin line, clear of it.
+                    padding: EdgeInsetsDirectional.only(
+                      start: 6,
+                      bottom: _SpanPainter.isThin(entry.style) ? 7 : 0,
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

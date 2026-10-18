@@ -584,6 +584,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   /// The days leading up to the span and trailing after it.
   late final _TaperDraft _lead, _trail;
   late bool _span, _byDuration, _sabbath, _counted;
+  late TimelineSpanStyle _style;
 
   /// The part of its day an event falls in; null for the whole day.
   TimelineDayPart? _part;
@@ -695,6 +696,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     _span = e.isSpan;
     _sabbath = e.sabbath;
     _counted = e.counted;
+    _style = e.style;
     _part = e.part;
     // A new entry starts empty, BC by default counting by era.
     // A day already chosen (from the calendar) is kept.
@@ -913,6 +915,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
           .copyWith(
             title: title,
             shortTitle: _shortTitle.text.trim(),
+            style: _span ? _style : TimelineSpanStyle.bar,
             timelineId: _timelineId,
             date: _date.text.trim(),
             verses: _verses,
@@ -1629,17 +1632,38 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                 ),
               if (_span) ...[
                 const SizedBox(height: 16),
-                SegmentedButton<bool>(
-                  key: const ValueKey('timeline-entry-span-by'),
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('End')),
-                    ButtonSegment(value: true, label: Text('Duration')),
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SegmentedButton<bool>(
+                      key: const ValueKey('timeline-entry-span-by'),
+                      segments: const [
+                        ButtonSegment(value: false, label: Text('End')),
+                        ButtonSegment(value: true, label: Text('Duration')),
+                      ],
+                      selected: {_byDuration},
+                      onSelectionChanged: (s) => setState(() {
+                        _byDuration = s.single;
+                        _error = null;
+                      }),
+                    ),
+                    DropdownButton<TimelineSpanStyle>(
+                      key: const ValueKey('timeline-entry-style'),
+                      value: _style,
+                      underline: const SizedBox.shrink(),
+                      items: [
+                        for (final style in TimelineSpanStyle.values)
+                          DropdownMenuItem(
+                            value: style,
+                            child: Text('Drawn as: ${style.label}'),
+                          ),
+                      ],
+                      onChanged: (style) =>
+                          setState(() => _style = style ?? _style),
+                    ),
                   ],
-                  selected: {_byDuration},
-                  onSelectionChanged: (s) => setState(() {
-                    _byDuration = s.single;
-                    _error = null;
-                  }),
                 ),
                 const SizedBox(height: 8),
                 if (_byDuration)

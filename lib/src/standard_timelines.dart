@@ -112,6 +112,7 @@ final _moadim = StandardTimeline(
       category: _before,
       lead: _up1,
       trail: _home1,
+      style: TimelineSpanStyle.bracket,
       verses: [
         _ref(_deuteronomy, 16, 16),
         _ref(_exodus, 23, 17),
@@ -253,6 +254,7 @@ final _moadim = StandardTimeline(
       end: const TimelineTime(0, month: 3, day: 6),
       duration: const TimelineDuration(50, _day),
       counted: true,
+      style: TimelineSpanStyle.arrow,
       pin: const TimelinePin('omer', TimelineDuration(1, _day)),
       verses: [_ref(_leviticus, 23, 15, 16)],
       note:
@@ -273,6 +275,7 @@ final _moadim = StandardTimeline(
       category: _before,
       lead: _up2,
       trail: _home2,
+      style: TimelineSpanStyle.bracket,
       pin: const TimelinePin('omer', TimelineDuration(50, _day)),
       verses: [
         _ref(_deuteronomy, 16, 16),
@@ -405,6 +408,7 @@ final _moadim = StandardTimeline(
       category: _before,
       lead: _up3,
       trail: _home3,
+      style: TimelineSpanStyle.bracket,
       verses: [
         _ref(_deuteronomy, 16, 15, 16),
         _ref(_chronicles2, 7, 8, 10),

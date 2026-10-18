@@ -39,6 +39,26 @@ enum TimelineDayPart {
   final double fraction;
 }
 
+/// How a span is drawn, as the bars of a Gantt chart: the work itself
+/// filled, a period grouping others as a bracket over them.
+enum TimelineSpanStyle {
+  /// A filled bar.
+  bar('Bar'),
+
+  /// A bar outlined in dots, light: what is uncertain or looked for.
+  dotted('Dotted'),
+
+  /// A thin line with arrowheads at both ends: a stretch of time.
+  arrow('Arrow'),
+
+  /// A thin bar with stops at its ends: a period grouping what is in it.
+  bracket('Bracket');
+
+  const TimelineSpanStyle(this.label);
+
+  final String label;
+}
+
 /// What a span's length is counted in.
 enum TimelineDurationUnit { years, months, days, units }
 
@@ -1093,6 +1113,7 @@ class StudyTimelineEntry {
     this.pin,
     this.lead,
     this.trail,
+    this.style = TimelineSpanStyle.bar,
     this.extra = const {},
   });
 
@@ -1162,6 +1183,9 @@ class StudyTimelineEntry {
   /// again. Only for a span dated to the day.
   final TimelineTaper? lead, trail;
 
+  /// How a span is drawn.
+  final TimelineSpanStyle style;
+
   bool get isSpan => end != null;
   bool get isHighSabbath => sabbath && !isSpan;
   bool get isCounted => counted && isSpan;
@@ -1203,6 +1227,7 @@ class StudyTimelineEntry {
     pin: pin,
     lead: lead,
     trail: trail,
+    style: style,
   );
 
   bool linksVerse(int book, int chapter, int verse) =>
@@ -1235,6 +1260,7 @@ class StudyTimelineEntry {
     pin: pin,
     lead: lead,
     trail: trail,
+    style: style,
   );
 
   /// The entry on [timeline], its end worked out again from its duration
@@ -1265,6 +1291,7 @@ class StudyTimelineEntry {
     int? order,
     TimelineTaper? Function()? lead,
     TimelineTaper? Function()? trail,
+    TimelineSpanStyle? style,
   }) => StudyTimelineEntry(
     extra: extra,
     id: id,
@@ -1287,6 +1314,7 @@ class StudyTimelineEntry {
     pin: pin,
     lead: lead == null ? this.lead : lead(),
     trail: trail == null ? this.trail : trail(),
+    style: style ?? this.style,
   );
 
   Map<String, Object?> toJson() => {
@@ -1318,6 +1346,7 @@ class StudyTimelineEntry {
     if (pin != null) 'pin': pin!.toJson(),
     if (lead != null) 'lead': lead!.toJson(),
     if (trail != null) 'trail': trail!.toJson(),
+    if (style != TimelineSpanStyle.bar) 'style': style.name,
   };
 
   static StudyTimelineEntry? fromJson(Object? value) {
@@ -1372,6 +1401,7 @@ class StudyTimelineEntry {
         'offset',
         'lead',
         'trail',
+        'style',
       }),
       id: id,
       title: title,
@@ -1426,6 +1456,11 @@ class StudyTimelineEntry {
       pin: pin,
       lead: TimelineTaper.fromJson(value['lead']),
       trail: TimelineTaper.fromJson(value['trail']),
+      style:
+          TimelineSpanStyle.values
+              .where((s) => s.name == value['style'])
+              .firstOrNull ??
+          TimelineSpanStyle.bar,
     );
     return entry.isValid ? entry : null;
   }
