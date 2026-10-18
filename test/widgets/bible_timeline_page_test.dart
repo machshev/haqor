@@ -179,4 +179,149 @@ void main() {
     expect((passage.endChapter, passage.endVerse), (null, null));
     expect(passage.reference, '4:8');
   });
+
+  _groupingTests();
+}
+
+final _lives = [
+  _event(4, 'Lifetime of Adam', -4004, duration: 930, unit: 'years'),
+  _event(7, 'Birth of Seth', -3874),
+  _event(8, 'Lifetime of Seth', -3874, duration: 912, unit: 'years'),
+  _event(23, 'Death of Adam', -3075),
+  _event(60, 'Birth of Reuben', -1758),
+  _event(70, 'Reign of Ahaziah (Jehoahaz)', -886, duration: 1, unit: 'years'),
+  _event(71, 'Death of Jehoahaz', -885),
+  _event(80, 'Prophecies of Elijah', -910, duration: 13, unit: 'years'),
+];
+
+void _groupingTests() {
+  test('events are sorted into kinds, births and deaths pinned to lives', () {
+    final entries = {for (final e in bibleTimelineEntries(_lives)) e.id: e};
+    expect(entries['4']!.category, 'Lifetimes');
+    expect(entries['7']!.category, 'Births');
+    expect(entries['23']!.category, 'Deaths');
+    expect(entries['70']!.category, 'Reigns');
+    expect(entries['80']!.category, 'Prophets');
+    expect(bibleEventCategory('Deliverance by Gideon', span: true), 'Judges');
+    expect(bibleEventCategory('The Great Flood', span: true), 'Periods');
+    expect(bibleEventCategory('Tower of Babel', span: false), 'Events');
+
+    // Seth's birth starts his life, Adam's death falls 929 years into his.
+    expect(entries['7']!.pin!.anchorId, '8');
+    expect(entries['7']!.pin!.offset.amount, 0);
+    expect(entries['23']!.pin!.anchorId, '4');
+    expect(entries['23']!.pin!.offset.amount, 929);
+    // A king known by two names; Reuben has no life to belong to.
+    expect(entries['71']!.pin!.anchorId, '70');
+    expect(entries['60']!.pin, isNull);
+    expect(entries['4']!.pin, isNull);
+  });
+
+  testWidgets('births and deaths fold under lives, and kinds hide', (
+    tester,
+  ) async {
+    final requests = <GetBibleEvents>[];
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(home: BibleTimelinePage(sendRequest: requests.add)),
+    );
+    assignRustSignal['BibleEvents']!(
+      BibleEvents(
+        requestId: requests.single.requestId,
+        events: _lives,
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    Finder row(String id) => find.byKey(ValueKey('timeline-row-$id'));
+
+    // Folded away at first, a count on the span's bar and its row.
+    expect(row('4'), findsOneWidget);
+    expect(row('23'), findsNothing);
+    expect(row('7'), findsNothing);
+    expect(row('60'), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-group-4')), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-group-row-4')), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-mark-23')), findsNothing);
+
+    // Opened from the bar, its death shows beneath it, set in.
+    await tester.tap(find.byKey(const ValueKey('timeline-group-4')));
+    await tester.pumpAndSettle();
+    expect(row('23'), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-mark-23')), findsOneWidget);
+    expect(
+      tester.getTopLeft(row('23')).dy,
+      greaterThan(tester.getTopLeft(row('4')).dy),
+    );
+    expect(
+      tester
+          .getTopLeft(
+            find.descendant(
+              of: row('23'),
+              matching: find.text('Death of Adam'),
+            ),
+          )
+          .dx,
+      greaterThan(
+        tester
+            .getTopLeft(
+              find.descendant(
+                of: row('4'),
+                matching: find.text('Lifetime of Adam'),
+              ),
+            )
+            .dx,
+      ),
+    );
+    expect(row('7'), findsNothing);
+
+    // All opened, then all closed.
+    await tester.tap(find.byKey(const ValueKey('timeline-expand-all')));
+    await tester.pumpAndSettle();
+    expect(row('7'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('timeline-collapse-all')));
+    await tester.pumpAndSettle();
+    expect(row('7'), findsNothing);
+    expect(row('23'), findsNothing);
+
+    // With lives hidden, births and deaths stand alone; with births hidden,
+    // they go.
+    await tester.tap(find.byKey(const ValueKey('timeline-category-Lifetimes')));
+    await tester.pumpAndSettle();
+    expect(row('4'), findsNothing);
+    expect(row('7'), findsOneWidget);
+    expect(row('23'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('timeline-category-Births')));
+    await tester.pumpAndSettle();
+    expect(row('7'), findsNothing);
+    expect(row('60'), findsNothing);
+    expect(row('23'), findsOneWidget);
+  });
+
+  testWidgets('opened on an event folded away, its life opens', (tester) async {
+    final requests = <GetBibleEvents>[];
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleTimelinePage(
+          sendRequest: requests.add,
+          initialEventId: '23',
+        ),
+      ),
+    );
+    assignRustSignal['BibleEvents']!(
+      BibleEvents(
+        requestId: requests.single.requestId,
+        events: _lives,
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('timeline-row-23')), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-row-7')), findsNothing);
+  });
 }

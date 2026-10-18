@@ -377,11 +377,19 @@ class TimelineChart extends StatelessWidget {
     this.selectedId,
     this.seasons = false,
     this.faded = const {},
+    this.groups = const {},
+    this.onToggleGroup,
   });
 
   final StudyTimeline timeline;
   final List<StudyTimelineEntry> entries;
   final double pixelsPerUnit;
+
+  /// The spans with entries grouped under them (those pinned to them), by
+  /// id: how many, and whether they are shown. Each such span's bar has a
+  /// button after its title to show or hide them, by [onToggleGroup].
+  final Map<String, ({int count, bool open})> groups;
+  final ValueChanged<StudyTimelineEntry>? onToggleGroup;
 
   /// Whether to show the seasons of the land above the entries, and the
   /// new and full moons on the axis, zoomed in to them.
@@ -428,7 +436,10 @@ class TimelineChart extends StatelessWidget {
       x: px,
       width: (e) => e.isHighSabbath
           ? _dot + 2
-          : (e.isSpan ? 6 : _dot + 4) + _textWidth(e.title, labelStyle) + 4,
+          : (e.isSpan ? 6 : _dot + 4) +
+                _textWidth(e.title, labelStyle) +
+                4 +
+                (groups.containsKey(e.id) ? _GroupToggle.width : 0),
     );
     final lanes = slots.isEmpty
         ? 1
@@ -536,6 +547,18 @@ class TimelineChart extends StatelessWidget {
                   onTap: onTapEntry == null
                       ? null
                       : () => onTapEntry!(slot.entry),
+                  group: switch (groups[slot.entry.id]) {
+                    final group? => _GroupToggle(
+                      key: ValueKey('timeline-group-${slot.entry.id}'),
+                      count: group.count,
+                      open: group.open,
+                      dense: true,
+                      onPressed: onToggleGroup == null
+                          ? null
+                          : () => onToggleGroup!(slot.entry),
+                    ),
+                    null => null,
+                  },
                 ),
               ),
             ),
@@ -592,10 +615,15 @@ class _EntryMark extends StatelessWidget {
     required this.selected,
     required this.tooltip,
     this.onTap,
+    this.group,
   });
 
   final StudyTimelineEntry entry;
   final double barWidth;
+
+  /// For a span with entries grouped under it, the button after its title
+  /// that shows or hides them.
+  final Widget? group;
 
   /// For a span dated to the day, its days, to mark them across its bar,
   /// and its weeks where it is counted (see [StudyTimelineEntry.isCounted]),
@@ -668,7 +696,12 @@ class _EntryMark extends StatelessWidget {
                     ),
                   Padding(
                     padding: const EdgeInsetsDirectional.only(start: 6),
-                    child: label,
+                    child: group == null
+                        ? label
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [label, const SizedBox(width: 4), group!],
+                          ),
                   ),
                 ],
               )
@@ -700,6 +733,68 @@ class _EntryMark extends StatelessWidget {
                   ],
                 ],
               ),
+      ),
+    );
+  }
+}
+
+/// The button that shows or hides the [count] entries grouped under a span
+/// (see [TimelinePage.collapseGroups]): a chevron and their number, [dense]
+/// to fit after the title on its bar.
+class _GroupToggle extends StatelessWidget {
+  const _GroupToggle({
+    super.key,
+    required this.count,
+    required this.open,
+    this.dense = false,
+    this.onPressed,
+  });
+
+  /// The room it takes on a bar, with the gap before it.
+  static const width = 44.0;
+
+  final int count;
+  final bool open;
+  final bool dense;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final events = '$count ${count == 1 ? 'entry' : 'entries'}';
+    return Tooltip(
+      message: open ? 'Hide $events' : 'Show $events',
+      child: Material(
+        color: open ? scheme.secondaryContainer : scheme.surfaceContainerHigh,
+        shape: StadiumBorder(
+          side: BorderSide(color: scheme.outline.withValues(alpha: 0.5)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: dense ? 4 : 8,
+              vertical: dense ? 0 : 4,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  open ? Icons.expand_less : Icons.expand_more,
+                  size: dense ? 14 : 18,
+                ),
+                Text(
+                  '$count',
+                  style: (dense
+                      ? theme.textTheme.labelSmall
+                      : theme.textTheme.labelMedium),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1140,6 +1235,7 @@ class TimelinePage extends StatefulWidget {
     this.linksOf,
     this.onOpenLink,
     this.baseTitles = const {},
+    this.collapseGroups = false,
   });
 
   final StudyTimeline timeline;
@@ -1190,6 +1286,11 @@ class TimelinePage extends StatefulWidget {
   /// among [entries], shown faded beneath its own and not edited here.
   final Map<String, String> baseTitles;
 
+  /// Whether the entries pinned to a span start collapsed beneath it in the
+  /// chart and the list, shown when it is opened; each group can be opened
+  /// or closed either way.
+  final bool collapseGroups;
+
   /// More about an entry, shown in its details beneath its verses.
   final Widget Function(BuildContext sheetContext, StudyTimelineEntry entry)?
   entryDetails;
@@ -1228,6 +1329,130 @@ class _TimelinePageState extends State<TimelinePage> {
   /// The categories whose entries are hidden from every view.
   final _hidden = <String>{};
 
+  /// Whether the groups of entries pinned to spans start collapsed, and
+  /// the spans whose groups are turned the other way.
+  late bool _collapsed = widget.collapseGroups;
+  final _toggled = <String>{};
+
+  bool _isOpen(String spanId) => _collapsed == _toggled.contains(spanId);
+
+  void _toggleGroup(StudyTimelineEntry span) => setState(() {
+    if (!_toggled.remove(span.id)) _toggled.add(span.id);
+  });
+
+  /// Opens or closes every group.
+  void _setAllGroups({required bool open}) => setState(() {
+    _collapsed = !open;
+    _toggled.clear();
+  });
+
+  /// The span [entry] is grouped under: the one it is pinned to, among
+  /// [byId], unless its category is hidden.
+  StudyTimelineEntry? _groupOf(
+    StudyTimelineEntry entry,
+    Map<String, StudyTimelineEntry> byId,
+  ) {
+    final anchor = byId[entry.pin?.anchorId];
+    return anchor != null &&
+            anchor.isSpan &&
+            anchor.id != entry.id &&
+            !_hidden.contains(anchor.category)
+        ? anchor
+        : null;
+  }
+
+  /// [entries] (those of categories shown) as the chart and list show
+  /// them: each beneath the span it is grouped under, at [depth] from the
+  /// top, left out where a group over it is collapsed; and the entries
+  /// grouped under each span, by its id.
+  ({
+    List<({StudyTimelineEntry entry, int depth})> rows,
+    Map<String, int> groupSizes,
+  })
+  _grouped(List<StudyTimelineEntry> entries) {
+    final byId = {for (final e in entries) e.id: e};
+    final children = <String, List<StudyTimelineEntry>>{};
+    final top = <StudyTimelineEntry>[];
+    // Groups pinned round in a ring are left at the top.
+    bool inRing(StudyTimelineEntry entry) {
+      final seen = {entry.id};
+      for (var g = _groupOf(entry, byId); g != null; g = _groupOf(g, byId)) {
+        if (!seen.add(g.id)) return g.id == entry.id;
+      }
+      return false;
+    }
+
+    for (final entry in entries) {
+      final group = _groupOf(entry, byId);
+      if (group == null || inRing(entry)) {
+        top.add(entry);
+      } else {
+        (children[group.id] ??= []).add(entry);
+      }
+    }
+    final rows = <({StudyTimelineEntry entry, int depth})>[];
+    final seen = <String>{};
+    void add(StudyTimelineEntry entry, int depth) {
+      if (!seen.add(entry.id)) return;
+      rows.add((entry: entry, depth: depth));
+      if (!_isOpen(entry.id)) return;
+      for (final child in children[entry.id] ?? const <StudyTimelineEntry>[]) {
+        add(child, depth + 1);
+      }
+    }
+
+    for (final entry in top) {
+      add(entry, 0);
+    }
+    return (
+      rows: rows,
+      groupSizes: {
+        for (final MapEntry(:key, :value) in children.entries)
+          key: value.length,
+      },
+    );
+  }
+
+  /// What a row of the list ends with: for a span with entries grouped
+  /// under it, [grouped] of them, its button to open or close them; and,
+  /// where it can be edited here, its button to edit it. Null for neither.
+  Widget? _rowActions(StudyTimelineEntry entry, int? grouped) {
+    final edit = entry.timelineId == _timeline.id ? widget.onEditEntry : null;
+    final actions = [
+      if (grouped != null)
+        _GroupToggle(
+          key: ValueKey('timeline-group-row-${entry.id}'),
+          count: grouped,
+          open: _isOpen(entry.id),
+          onPressed: () => _toggleGroup(entry),
+        ),
+      if (edit != null)
+        IconButton(
+          tooltip: entry.isSpan ? 'Edit span' : 'Edit event',
+          icon: const Icon(Icons.edit_note),
+          onPressed: () => _edit(() => edit(entry)),
+        ),
+    ];
+    return switch (actions) {
+      [] => null,
+      [final only] => only,
+      _ => Row(mainAxisSize: MainAxisSize.min, children: actions),
+    };
+  }
+
+  /// Opens the groups over [entry], so that it shows.
+  void _reveal(StudyTimelineEntry entry) {
+    final byId = {for (final e in _entries) e.id: e};
+    var group = _groupOf(entry, byId);
+    final seen = <String>{};
+    while (group != null && seen.add(group.id)) {
+      if (!_isOpen(group.id)) {
+        if (!_toggled.remove(group.id)) _toggled.add(group.id);
+      }
+      group = _groupOf(group, byId);
+    }
+  }
+
   /// Shows the timeline drawn to scale, fitted again to its entries; the
   /// calendar ([calendar] true); or the year's wheel ([wheel] true).
   void _showView({bool calendar = false, bool wheel = false}) => setState(() {
@@ -1254,10 +1479,11 @@ class _TimelinePageState extends State<TimelinePage> {
   void initState() {
     super.initState();
     final id = widget.initialSelectedId;
-    if (!widget.showInitialSelected || id == null) return;
+    final entry = _entries.where((e) => e.id == id).firstOrNull;
+    if (entry != null) _reveal(entry);
+    if (!widget.showInitialSelected || entry == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final entry = _entries.where((e) => e.id == id).firstOrNull;
-      if (mounted && entry != null) _show(entry);
+      if (mounted) _show(entry);
     });
   }
 
@@ -1631,7 +1857,10 @@ class _TimelinePageState extends State<TimelinePage> {
   }
 
   Future<void> _show(StudyTimelineEntry entry) async {
-    setState(() => _selectedId = entry.id);
+    setState(() {
+      _selectedId = entry.id;
+      _reveal(entry);
+    });
     // One of a timeline it is built on is changed there, not here.
     final own = entry.timelineId == _timeline.id;
     final edit = own ? widget.onEditEntry : null;
@@ -2015,9 +2244,12 @@ class _TimelinePageState extends State<TimelinePage> {
       for (final e in _entries)
         if (!_hidden.contains(e.category)) e,
     ]..sort(compareTimelineEntries);
+    // The chart and list leave out those under a collapsed span.
+    final grouped = _grouped(entries);
+    final shown = [for (final row in grouped.rows) row.entry];
+    final groups = grouped.groupSizes;
     final add = widget.onAddEntry;
     final editTimeline = widget.onEditTimeline;
-    final editEntry = widget.onEditEntry;
     return LayoutBuilder(
       builder: (context, constraints) {
         final viewport = constraints.maxWidth;
@@ -2068,6 +2300,21 @@ class _TimelinePageState extends State<TimelinePage> {
                     onPressed: () => _showView(wheel: true),
                   ),
               ],
+              if (_chart && groups.isNotEmpty)
+                if (groups.keys.any((id) => !_isOpen(id)))
+                  IconButton(
+                    key: const ValueKey('timeline-expand-all'),
+                    tooltip: 'Expand all spans',
+                    icon: const Icon(Icons.unfold_more),
+                    onPressed: () => _setAllGroups(open: true),
+                  )
+                else
+                  IconButton(
+                    key: const ValueKey('timeline-collapse-all'),
+                    tooltip: 'Collapse all spans',
+                    icon: const Icon(Icons.unfold_less),
+                    onPressed: () => _setAllGroups(open: false),
+                  ),
               if (add != null)
                 PopupMenuButton<bool>(
                   tooltip: 'Add to timeline',
@@ -2197,12 +2444,21 @@ class _TimelinePageState extends State<TimelinePage> {
                                       children: [
                                         TimelineChart(
                                           timeline: _timeline,
-                                          entries: entries,
+                                          entries: shown,
                                           pixelsPerUnit: ppu,
                                           seasons: _timeline.showSeasons,
                                           faded: _faded,
                                           selectedId: _selectedId,
                                           onTapEntry: _show,
+                                          groups: {
+                                            for (final MapEntry(:key, :value)
+                                                in groups.entries)
+                                              key: (
+                                                count: value,
+                                                open: _isOpen(key),
+                                              ),
+                                          },
+                                          onToggleGroup: _toggleGroup,
                                         ),
                                         if (_drag case final drag?)
                                           Positioned(
@@ -2256,10 +2512,15 @@ class _TimelinePageState extends State<TimelinePage> {
                                 ),
                                 child: MarkdownNote(_timeline.note),
                               ),
-                            for (final entry in entries)
+                            for (final (:entry, :depth) in grouped.rows)
                               ListTile(
                                 key: ValueKey('timeline-row-${entry.id}'),
                                 selected: entry.id == _selectedId,
+                                // Those grouped under a span set in beneath it.
+                                contentPadding: EdgeInsetsDirectional.only(
+                                  start: 16.0 + 24 * math.min(depth, 4),
+                                  end: 16,
+                                ),
                                 leading: Icon(
                                   timelineEntryIcon(entry),
                                   color: timelineEntryColor(
@@ -2287,18 +2548,7 @@ class _TimelinePageState extends State<TimelinePage> {
                                   ].join(' · '),
                                 ),
                                 onTap: () => _show(entry),
-                                trailing:
-                                    editEntry == null ||
-                                        entry.timelineId != _timeline.id
-                                    ? null
-                                    : IconButton(
-                                        tooltip: entry.isSpan
-                                            ? 'Edit span'
-                                            : 'Edit event',
-                                        icon: const Icon(Icons.edit_note),
-                                        onPressed: () =>
-                                            _edit(() => editEntry(entry)),
-                                      ),
+                                trailing: _rowActions(entry, groups[entry.id]),
                               ),
                           ],
                         ),

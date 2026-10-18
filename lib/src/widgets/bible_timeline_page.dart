@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
@@ -19,7 +20,50 @@ const bibleTimeline = StudyTimeline(
       '*Chronology of the Old Testament*, as [Theographic Bible Metadata]'
       '(https://github.com/robertrouse/theographic-bible-metadata) gives '
       'them (CC BY-SA 4.0).',
+  categoryColors: {
+    'Lifetimes': 0,
+    'Births': 1,
+    'Reigns': 3,
+    'Judges': 4,
+    'Prophets': 5,
+    'Periods': 6,
+    'Deaths': 7,
+  },
 );
+
+/// What kind of event of the Bible [title] names, from how it reads:
+/// "Birth of Seth" a birth, "Reign of Asa" a reign, the judges' times of
+/// deliverance and subjugation together; else a period, for a [span], or
+/// an event.
+String bibleEventCategory(String title, {required bool span}) {
+  if (title.startsWith('Birth of ')) return 'Births';
+  if (title.startsWith('Death of ')) return 'Deaths';
+  if (title.startsWith('Lifetime of ')) return 'Lifetimes';
+  if (title.startsWith('Reign of ')) return 'Reigns';
+  if (title.startsWith('Prophecies of ')) return 'Prophets';
+  if (RegExp(
+    r'^(Judgeship of|Deliverance by|Subjugation by|Oppression by|'
+    r'Usurpation by|Philistine Dominion)',
+  ).hasMatch(title)) {
+    return 'Judges';
+  }
+  return span ? 'Periods' : 'Events';
+}
+
+/// The people [title] is about, where it reads "Birth of …", "Lifetime of
+/// …", "Reign of …" or the like: "Birth of Jacob and Esau" is about Jacob
+/// and Esau, "Death of Eli, Ark Captured" about Eli, and "Reign of Ahaziah
+/// (Jehoahaz)" about him by either name.
+List<String> _subjects(String title) {
+  final match = RegExp(
+    r'^(?:Birth|Death|Lifetime|Reign|Judgeship) of ([^,]+)',
+  ).firstMatch(title);
+  if (match == null) return const [];
+  return [
+    for (final name in match.group(1)!.split(RegExp(r' and |[()]')))
+      if (name.trim().isNotEmpty) name.trim(),
+  ];
+}
 
 /// How long a [BibleEventEntry] lasted, as written: "40 days", "1 week".
 String bibleEventDuration(BibleEventEntry event) {
@@ -30,10 +74,63 @@ String bibleEventDuration(BibleEventEntry event) {
 }
 
 /// [events] as entries of [bibleTimeline]: those lasting years as spans,
-/// the rest as events, saying how long they lasted.
-List<StudyTimelineEntry> bibleTimelineEntries(List<BibleEventEntry> events) => [
-  for (final (order, event) in events.indexed) _entry(event, order),
-];
+/// the rest as events, saying how long they lasted; each in its category
+/// (see [bibleEventCategory]), and a birth or death pinned to the life of
+/// the one born or dying (see [TimelinePin]), or else a death to their
+/// reign or judgeship, so that it is grouped under it.
+List<StudyTimelineEntry> bibleTimelineEntries(List<BibleEventEntry> events) {
+  final entries = [
+    for (final (order, event) in events.indexed) _entry(event, order),
+  ];
+  // The spans of each person's life, reign or judgeship, by name.
+  final spans = <String, List<StudyTimelineEntry>>{};
+  for (final entry in entries) {
+    if (!entry.isSpan) continue;
+    for (final name in _subjects(entry.title)) {
+      (spans[name] ??= []).add(entry);
+    }
+  }
+  return [
+    for (final entry in entries)
+      switch (_pinFor(entry, spans)) {
+        final pin? => entry.pinnedTo(pin),
+        null => entry,
+      },
+  ];
+}
+
+/// How a birth or death is pinned to the span, among [spans] by name, of
+/// the life (or, for a death, the reign or judgeship) of one it names
+/// that runs over its year, a year either way; null for none.
+TimelinePin? _pinFor(
+  StudyTimelineEntry entry,
+  Map<String, List<StudyTimelineEntry>> spans,
+) {
+  if (entry.isSpan) return null;
+  final birth = entry.category == 'Births';
+  if (!birth && entry.category != 'Deaths') return null;
+  final at = bibleTimeline.positionOf(entry.start);
+  // A life first, then (only for a death) a reign or judgeship.
+  for (final kinds in [
+    const ['Lifetimes'],
+    if (!birth) const ['Reigns', 'Judges'],
+  ]) {
+    for (final name in _subjects(entry.title)) {
+      for (final span in spans[name] ?? const <StudyTimelineEntry>[]) {
+        if (!kinds.contains(span.category)) continue;
+        final start = bibleTimeline.positionOf(span.start);
+        final end = bibleTimeline.positionOf(span.last);
+        if (at < start - 1 || at > end + 1) continue;
+        final years = math.max(0, (at - start).round());
+        return TimelinePin(
+          span.id,
+          TimelineDuration(years.toDouble(), TimelineDurationUnit.years),
+        );
+      }
+    }
+  }
+  return null;
+}
 
 StudyTimelineEntry _entry(BibleEventEntry event, int order) {
   final start = TimelineTime(event.year.toDouble());
@@ -64,6 +161,7 @@ StudyTimelineEntry _entry(BibleEventEntry event, int order) {
         ),
     ],
     note: [lasted, event.note].where((s) => s.isNotEmpty).join(' '),
+    category: bibleEventCategory(event.title, span: end != null),
     order: order,
   );
 }
@@ -315,6 +413,8 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
       onOpenPassage: (passage) =>
           navigate?.call(passage.bookIndex, passage.chapter, passage.verse),
       entryDetails: _details,
+      // Births and deaths fold under the lives they belong to.
+      collapseGroups: true,
       linksOf: widget.linksOf,
       onOpenLink: widget.onOpenLink,
     );
