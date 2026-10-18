@@ -431,6 +431,7 @@ class StudyTimelineEntryEditor extends StatefulWidget {
 
 class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   late final TextEditingController _title, _date, _note, _amount, _offset;
+  late final TextEditingController _category;
   late final _TimeDraft _start, _end;
   late bool _span, _byDuration, _sabbath, _counted;
 
@@ -558,6 +559,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
             ? TimelineDurationUnit.days
             : TimelineDurationUnit.units);
     _date = TextEditingController(text: e.date);
+    _category = TextEditingController(text: e.category);
     _note = TextEditingController(text: e.note);
     _verses = List.of(e.verses);
     _anchorId = e.pin?.anchorId;
@@ -570,7 +572,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
 
   @override
   void dispose() {
-    for (final c in [_title, _date, _note, _amount, _offset]) {
+    for (final c in [_title, _date, _note, _amount, _offset, _category]) {
       c.dispose();
     }
     _start.dispose();
@@ -734,6 +736,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
             sabbath: sabbath,
             counted: _span && _counted && timeline.hasMonths,
             part: () => _span || start.day == null ? null : _part,
+            category: _category.text.trim(),
           )
           .pinnedTo(pin),
     );
@@ -956,6 +959,46 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     );
   }
 
+  /// Its category, typed or picked from those already on its timeline.
+  Widget _categoryField(ThemeData theme) {
+    final existing = {
+      for (final e in widget.entries)
+        if (e.timelineId == _timelineId && e.category.isNotEmpty) e.category,
+    }.toList()..sort();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          key: const ValueKey('timeline-entry-category'),
+          controller: _category,
+          decoration: const InputDecoration(
+            labelText: 'Category (optional)',
+            hintText: 'Pilgrim feast, Sabbath, fast…',
+          ),
+          onChanged: (_) => _changed(),
+        ),
+        if (existing.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final category in existing)
+                  ChoiceChip(
+                    label: Text(category),
+                    selected: _category.text.trim() == category,
+                    visualDensity: VisualDensity.compact,
+                    onSelected: (on) =>
+                        setState(() => _category.text = on ? category : ''),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
   /// How far from [anchor] it falls: which day counting from it, perhaps
   /// moved on to a day of the week, or else how long after it starts; and
   /// where that puts it.
@@ -1120,6 +1163,8 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                 ),
                 onChanged: (_) => _changed(),
               ),
+              const SizedBox(height: 12),
+              _categoryField(theme),
               if (widget.timelines.length > 1) ...[
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(

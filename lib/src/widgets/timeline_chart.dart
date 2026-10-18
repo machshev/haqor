@@ -504,6 +504,13 @@ class TimelineChart extends StatelessWidget {
                   4,
                   px(timelineEntryReach(timeline, slot.entry).end) - slot.left,
                 ),
+                color: switch (timeline.colorOf(slot.entry)) {
+                  final index? => timelineCategoryColor(
+                    index,
+                    theme.brightness,
+                  ),
+                  null => null,
+                },
                 countedDays: timeline.daysIn(slot.entry) ?? 0,
                 titleWidth: _textWidth(slot.entry.title, labelStyle),
                 selected: slot.entry.id == selectedId,
@@ -564,6 +571,7 @@ class _EntryMark extends StatelessWidget {
     required this.barWidth,
     this.countedDays = 0,
     this.titleWidth = 0,
+    this.color,
     required this.selected,
     required this.tooltip,
     this.onTap,
@@ -577,6 +585,9 @@ class _EntryMark extends StatelessWidget {
   /// [titleWidth] wide.
   final int countedDays;
   final double titleWidth;
+
+  /// Its category's colour (see [timelineEntryColor]); null for the usual.
+  final Color? color;
   final bool selected;
   final String tooltip;
   final VoidCallback? onTap;
@@ -584,6 +595,8 @@ class _EntryMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final bar = color ?? scheme.primary;
+    final dot = color ?? scheme.tertiary;
     final style = Theme.of(context).textTheme.bodySmall?.copyWith(
       fontWeight: selected ? FontWeight.bold : null,
     );
@@ -608,12 +621,12 @@ class _EntryMark extends StatelessWidget {
                   Container(
                     width: barWidth,
                     decoration: BoxDecoration(
-                      color: scheme.primaryContainer,
+                      color:
+                          color?.withValues(alpha: 0.22) ??
+                          scheme.primaryContainer,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
-                        color: selected
-                            ? scheme.primary
-                            : scheme.primary.withValues(alpha: 0.5),
+                        color: selected ? bar : bar.withValues(alpha: 0.5),
                         width: selected ? 2 : 1,
                       ),
                     ),
@@ -626,7 +639,7 @@ class _EntryMark extends StatelessWidget {
                         painter: _CountPainter(
                           days: countedDays,
                           skip: titleWidth + 12,
-                          color: scheme.primary,
+                          color: bar,
                           labelStyle: Theme.of(context).textTheme.labelSmall
                               ?.copyWith(color: scheme.onPrimaryContainer),
                         ),
@@ -645,7 +658,7 @@ class _EntryMark extends StatelessWidget {
                     Icon(
                       Icons.star,
                       size: TimelineChart._dot + 2,
-                      color: selected ? scheme.onSurface : scheme.tertiary,
+                      color: selected ? scheme.onSurface : dot,
                     )
                   else
                     Container(
@@ -653,7 +666,7 @@ class _EntryMark extends StatelessWidget {
                       height: TimelineChart._dot,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: scheme.tertiary,
+                        color: dot,
                         border: selected
                             ? Border.all(color: scheme.onSurface, width: 2)
                             : null,
@@ -1132,6 +1145,9 @@ class _TimelinePageState extends State<TimelinePage> {
 
   bool get _chart => !_calendar && !_wheel;
 
+  /// The categories whose entries are hidden from every view.
+  final _hidden = <String>{};
+
   /// Shows the timeline drawn to scale, fitted again to its entries; the
   /// calendar ([calendar] true); or the year's wheel ([wheel] true).
   void _showView({bool calendar = false, bool wheel = false}) => setState(() {
@@ -1269,6 +1285,108 @@ class _TimelinePageState extends State<TimelinePage> {
     final from = at(math.min(drag.from, drag.to));
     final to = at(math.max(drag.from, drag.to));
     _fitTo((start: from, end: to), viewport, label: false);
+  }
+
+  /// [body] beneath a key to the categories of the timeline's entries,
+  /// where they have any: each in its colour, shown or hidden by a tap, its
+  /// colour changed from its palette button.
+  Widget _withCategories(ThemeData theme, Widget body) {
+    final categories = {
+      for (final e in _entries)
+        if (e.category.isNotEmpty) e.category,
+    }.toList()..sort();
+    if (categories.isEmpty) return body;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final category in categories)
+                InputChip(
+                  key: ValueKey('timeline-category-$category'),
+                  label: Text(category),
+                  selected: !_hidden.contains(category),
+                  showCheckmark: false,
+                  visualDensity: VisualDensity.compact,
+                  avatar: CircleAvatar(
+                    backgroundColor:
+                        switch (_timeline.categoryColors[category]) {
+                          final index? => timelineCategoryColor(
+                            index,
+                            theme.brightness,
+                          ),
+                          null => theme.colorScheme.outline,
+                        },
+                  ),
+                  tooltip: _hidden.contains(category)
+                      ? 'Show $category'
+                      : 'Hide $category',
+                  onSelected: (shown) => setState(() {
+                    if (shown) {
+                      _hidden.remove(category);
+                    } else {
+                      _hidden.add(category);
+                    }
+                  }),
+                  deleteIcon: const Icon(Icons.palette_outlined, size: 18),
+                  deleteButtonTooltipMessage: 'Colour $category',
+                  onDeleted: () => _recolor(category),
+                ),
+            ],
+          ),
+        ),
+        Expanded(child: body),
+      ],
+    );
+  }
+
+  /// Picks a colour for [category] from the palette, kept with the
+  /// timeline where it can be saved.
+  Future<void> _recolor(String category) async {
+    final current = _timeline.categoryColors[category];
+    final brightness = Theme.of(context).brightness;
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text('Colour for $category'),
+        contentPadding: const EdgeInsets.all(16),
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              for (final (i, (name, _, _)) in timelineCategoryPalette.indexed)
+                Tooltip(
+                  message: name,
+                  child: InkWell(
+                    key: ValueKey('timeline-color-$i'),
+                    customBorder: const CircleBorder(),
+                    onTap: () => Navigator.pop(dialogContext, i),
+                    child: CircleAvatar(
+                      radius: 18,
+                      backgroundColor: timelineCategoryColor(i, brightness),
+                      child: i == current
+                          ? const Icon(Icons.check, color: Colors.white)
+                          : null,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+    if (picked == null || picked == current || !mounted) return;
+    final changed = _timeline.copyWith(
+      categoryColors: {..._timeline.categoryColors, category: picked},
+    );
+    setState(() => _timeline = changed);
+    final update = widget.onUpdateTimeline;
+    if (update != null) await _edit(() => update(changed));
   }
 
   /// The controls over the chart: zoom out, fit to the entries, pick a
@@ -1678,7 +1796,11 @@ class _TimelinePageState extends State<TimelinePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final entries = List.of(_entries)..sort(compareTimelineEntries);
+    // Those of a category hidden are left out of every view.
+    final entries = [
+      for (final e in _entries)
+        if (!_hidden.contains(e.category)) e,
+    ]..sort(compareTimelineEntries);
     final add = widget.onAddEntry;
     final editTimeline = widget.onEditTimeline;
     final editEntry = widget.onEditEntry;
@@ -1758,187 +1880,206 @@ class _TimelinePageState extends State<TimelinePage> {
                 ),
             ],
           ),
-          body: _wheel && _timeline.hasMonths
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _calendarBar(theme),
-                    Expanded(
-                      child: TimelineWheel(
-                        timeline: _timeline,
-                        entries: entries,
-                        year: _year,
-                        selectedId: _selectedId,
-                        onTapEntry: _show,
+          body: _withCategories(
+            theme,
+            _wheel && _timeline.hasMonths
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _calendarBar(theme),
+                      Expanded(
+                        child: TimelineWheel(
+                          timeline: _timeline,
+                          entries: entries,
+                          year: _year,
+                          selectedId: _selectedId,
+                          onTapEntry: _show,
+                        ),
+                      ),
+                    ],
+                  )
+                : _calendar && _timeline.hasMonths
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _calendarBar(theme),
+                      Expanded(
+                        child: TimelineCalendar(
+                          timeline: _timeline,
+                          entries: entries,
+                          year: _year,
+                          selected: _selectedDay,
+                          onTapDay: _showDay,
+                        ),
+                      ),
+                    ],
+                  )
+                : entries.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        add == null
+                            ? 'Add events and spans to this timeline from its '
+                                  'menu in the outline, or from a verse in the '
+                                  'reader.'
+                            : 'Add events and spans with the + above, or from a '
+                                  'verse in the reader.',
+                        textAlign: TextAlign.center,
                       ),
                     ),
-                  ],
-                )
-              : _calendar && _timeline.hasMonths
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _calendarBar(theme),
-                    Expanded(
-                      child: TimelineCalendar(
-                        timeline: _timeline,
-                        entries: entries,
-                        year: _year,
-                        selected: _selectedDay,
-                        onTapDay: _showDay,
-                      ),
-                    ),
-                  ],
-                )
-              : entries.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      add == null
-                          ? 'Add events and spans to this timeline from its '
-                                'menu in the outline, or from a verse in the '
-                                'reader.'
-                          : 'Add events and spans with the + above, or from a '
-                                'verse in the reader.',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: constraints.maxHeight * 0.55,
-                      ),
-                      child: Stack(
-                        children: [
-                          Scrollbar(
-                            controller: _horizontal,
-                            child: SingleChildScrollView(
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: constraints.maxHeight * 0.55,
+                        ),
+                        child: Stack(
+                          children: [
+                            Scrollbar(
                               controller: _horizontal,
-                              scrollDirection: Axis.horizontal,
-                              // Picking a stretch, a touch drag is the pick's.
-                              physics: _selecting
-                                  ? const NeverScrollableScrollPhysics()
-                                  : null,
-                              // Room above for the controls over the chart.
-                              padding: const EdgeInsets.only(top: 48),
                               child: SingleChildScrollView(
-                                child: GestureDetector(
-                                  key: const ValueKey('timeline-drag-zoom'),
-                                  // A mouse drag doesn't scroll, so always picks.
-                                  supportedDevices: _selecting
-                                      ? null
-                                      : const {PointerDeviceKind.mouse},
-                                  dragStartBehavior: DragStartBehavior.down,
-                                  onHorizontalDragStart: (d) => setState(
-                                    () => _drag = (
-                                      from: d.localPosition.dx,
-                                      to: d.localPosition.dx,
-                                    ),
-                                  ),
-                                  onHorizontalDragUpdate: (d) => setState(
-                                    () => _drag = (
-                                      from: _drag?.from ?? d.localPosition.dx,
-                                      to: d.localPosition.dx,
-                                    ),
-                                  ),
-                                  onHorizontalDragEnd: (_) =>
-                                      _zoomToDrag(ppu, viewport),
-                                  onHorizontalDragCancel: () =>
-                                      setState(() => _drag = null),
-                                  child: Stack(
-                                    children: [
-                                      TimelineChart(
-                                        timeline: _timeline,
-                                        entries: entries,
-                                        pixelsPerUnit: ppu,
-                                        seasons: _timeline.showSeasons,
-                                        selectedId: _selectedId,
-                                        onTapEntry: _show,
+                                controller: _horizontal,
+                                scrollDirection: Axis.horizontal,
+                                // Picking a stretch, a touch drag is the pick's.
+                                physics: _selecting
+                                    ? const NeverScrollableScrollPhysics()
+                                    : null,
+                                // Room above for the controls over the chart.
+                                padding: const EdgeInsets.only(top: 48),
+                                child: SingleChildScrollView(
+                                  child: GestureDetector(
+                                    key: const ValueKey('timeline-drag-zoom'),
+                                    // A mouse drag doesn't scroll, so always picks.
+                                    supportedDevices: _selecting
+                                        ? null
+                                        : const {PointerDeviceKind.mouse},
+                                    dragStartBehavior: DragStartBehavior.down,
+                                    onHorizontalDragStart: (d) => setState(
+                                      () => _drag = (
+                                        from: d.localPosition.dx,
+                                        to: d.localPosition.dx,
                                       ),
-                                      if (_drag case final drag?)
-                                        Positioned(
-                                          left: math.min(drag.from, drag.to),
-                                          width: (drag.to - drag.from).abs(),
-                                          top: 0,
-                                          bottom: 0,
-                                          child: IgnorePointer(
-                                            child: DecoratedBox(
-                                              decoration: BoxDecoration(
-                                                color: theme.colorScheme.primary
-                                                    .withValues(alpha: 0.12),
-                                                border: Border.symmetric(
-                                                  vertical: BorderSide(
-                                                    color: theme
-                                                        .colorScheme
-                                                        .primary,
+                                    ),
+                                    onHorizontalDragUpdate: (d) => setState(
+                                      () => _drag = (
+                                        from: _drag?.from ?? d.localPosition.dx,
+                                        to: d.localPosition.dx,
+                                      ),
+                                    ),
+                                    onHorizontalDragEnd: (_) =>
+                                        _zoomToDrag(ppu, viewport),
+                                    onHorizontalDragCancel: () =>
+                                        setState(() => _drag = null),
+                                    child: Stack(
+                                      children: [
+                                        TimelineChart(
+                                          timeline: _timeline,
+                                          entries: entries,
+                                          pixelsPerUnit: ppu,
+                                          seasons: _timeline.showSeasons,
+                                          selectedId: _selectedId,
+                                          onTapEntry: _show,
+                                        ),
+                                        if (_drag case final drag?)
+                                          Positioned(
+                                            left: math.min(drag.from, drag.to),
+                                            width: (drag.to - drag.from).abs(),
+                                            top: 0,
+                                            bottom: 0,
+                                            child: IgnorePointer(
+                                              child: DecoratedBox(
+                                                decoration: BoxDecoration(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .primary
+                                                      .withValues(alpha: 0.12),
+                                                  border: Border.symmetric(
+                                                    vertical: BorderSide(
+                                                      color: theme
+                                                          .colorScheme
+                                                          .primary,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                          Positioned(
-                            top: 0,
-                            right: 8,
-                            child: _zoomBar(viewport),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: ListView(
-                        children: [
-                          if (_timeline.note.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                              child: MarkdownNote(_timeline.note),
+                            Positioned(
+                              top: 0,
+                              right: 8,
+                              child: _zoomBar(viewport),
                             ),
-                          for (final entry in entries)
-                            ListTile(
-                              key: ValueKey('timeline-row-${entry.id}'),
-                              selected: entry.id == _selectedId,
-                              leading: Icon(
-                                timelineEntryIcon(entry),
-                                color: entry.isSpan
-                                    ? theme.colorScheme.primary
-                                    : theme.colorScheme.tertiary,
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: ListView(
+                          children: [
+                            if (_timeline.note.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  12,
+                                  16,
+                                  4,
+                                ),
+                                child: MarkdownNote(_timeline.note),
                               ),
-                              title: Text(entry.title),
-                              subtitle: Text(
-                                [
-                                  timelineEntryTime(_timeline, entry),
-                                  ?timelinePinLabel(_timeline, entry, _entries),
-                                  ...entry.verses.map(_reference),
-                                ].join(' · '),
-                              ),
-                              onTap: () => _show(entry),
-                              trailing: editEntry == null
-                                  ? null
-                                  : IconButton(
-                                      tooltip: entry.isSpan
-                                          ? 'Edit span'
-                                          : 'Edit event',
-                                      icon: const Icon(Icons.edit_note),
-                                      onPressed: () =>
-                                          _edit(() => editEntry(entry)),
+                            for (final entry in entries)
+                              ListTile(
+                                key: ValueKey('timeline-row-${entry.id}'),
+                                selected: entry.id == _selectedId,
+                                leading: Icon(
+                                  timelineEntryIcon(entry),
+                                  color: timelineEntryColor(
+                                    _timeline,
+                                    entry,
+                                    theme.brightness,
+                                    entry.isSpan
+                                        ? theme.colorScheme.primary
+                                        : theme.colorScheme.tertiary,
+                                  ),
+                                ),
+                                title: Text(entry.title),
+                                subtitle: Text(
+                                  [
+                                    timelineEntryTime(_timeline, entry),
+                                    ?timelinePinLabel(
+                                      _timeline,
+                                      entry,
+                                      _entries,
                                     ),
-                            ),
-                        ],
+                                    ...entry.verses.map(_reference),
+                                  ].join(' · '),
+                                ),
+                                onTap: () => _show(entry),
+                                trailing: editEntry == null
+                                    ? null
+                                    : IconButton(
+                                        tooltip: entry.isSpan
+                                            ? 'Edit span'
+                                            : 'Edit event',
+                                        icon: const Icon(Icons.edit_note),
+                                        onPressed: () =>
+                                            _edit(() => editEntry(entry)),
+                                      ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+          ),
         );
       },
     );

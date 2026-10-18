@@ -1996,7 +1996,12 @@ class StudyWorkspace {
           ? entry
           : entry.copyWith(order: nextOrder(entry.timelineId));
     }
-    return copyWith(timelineEntries: updated)._placePins();
+    // A category new to the timeline takes a colour of its own.
+    final coloured = timeline.withCategory(entry.category);
+    final placed = copyWith(timelineEntries: updated)._placePins();
+    return identical(coloured, timeline)
+        ? placed
+        : placed._putTimeline(coloured);
   }
 
   /// Removes an entry; those pinned to it stay where they are, unpinned.

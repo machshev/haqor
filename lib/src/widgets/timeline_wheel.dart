@@ -369,13 +369,19 @@ class _WheelPainter extends CustomPainter {
     // The spans as arcs, named at their start.
     for (final mark in marks.where((m) => m.entry.isSpan)) {
       final selected = mark.entry.id == selectedId;
+      final color = timelineEntryColor(
+        timeline,
+        mark.entry,
+        theme.brightness,
+        scheme.primary,
+      );
       canvas.drawArc(
         Rect.fromCircle(center: centre, radius: r * mark.radius),
         angle(mark.from),
         angle(mark.to) - angle(mark.from),
         false,
         Paint()
-          ..color = scheme.primary.withValues(alpha: selected ? 1 : 0.6)
+          ..color = color.withValues(alpha: selected ? 1 : 0.6)
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
           ..strokeWidth = selected ? 9 : 7,
@@ -387,7 +393,7 @@ class _WheelPainter extends CustomPainter {
         r * (mark.radius - 0.035),
         mark.from,
         small?.copyWith(
-          color: scheme.primary,
+          color: color,
           fontWeight: selected ? FontWeight.bold : null,
         ),
       );
@@ -398,6 +404,12 @@ class _WheelPainter extends CustomPainter {
       ..strokeWidth = 1;
     for (final mark in marks.where((m) => !m.entry.isSpan)) {
       final selected = mark.entry.id == selectedId;
+      final color = timelineEntryColor(
+        timeline,
+        mark.entry,
+        theme.brightness,
+        scheme.tertiary,
+      );
       final dot = timelineWheelPoint(centre, r * mark.radius, mark.from);
       final label = timelineWheelPoint(centre, r * mark.labelRadius, mark.from);
       canvas.drawLine(dot, label, leader);
@@ -407,12 +419,12 @@ class _WheelPainter extends CustomPainter {
           dot,
           6,
           Paint()
-            ..color = scheme.tertiary
+            ..color = color
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.5,
         );
       } else {
-        canvas.drawCircle(dot, 5, Paint()..color = scheme.tertiary);
+        canvas.drawCircle(dot, 5, Paint()..color = color);
       }
       if (selected) {
         canvas.drawCircle(

@@ -1211,6 +1211,104 @@ void main() {
     );
   });
 
+  testWidgets('categories colour entries, which a key shows and hides, and '
+      'recolours', (tester) async {
+    var feasts = const StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+    );
+    StudyTimelineEntry event(String id, int month, int day, String category) =>
+        StudyTimelineEntry(
+          id: id,
+          title: id,
+          timelineId: 'feasts',
+          start: TimelineTime(0, month: month, day: day),
+          category: category,
+        );
+    final passover = event('passover', 1, 14, 'Pilgrim feast');
+    final trumpets = event('trumpets', 7, 1, 'Holy convocation');
+    // Each category new to the timeline takes the next free colour, as an
+    // entry with it is put there.
+    var workspace = const StudyWorkspace(
+      id: 's',
+      name: 'Study',
+    ).putTimeline(feasts).putTimelineEntry(passover).putTimelineEntry(trumpets);
+    feasts = workspace.timelineById('feasts')!;
+    expect(feasts.categoryColors, {'Pilgrim feast': 0, 'Holy convocation': 1});
+    expect(feasts.colorOf(trumpets), 1);
+    expect(
+      StudyTimeline.fromJson(feasts.toJson())?.categoryColors,
+      feasts.categoryColors,
+    );
+    expect(
+      StudyTimelineEntry.fromJson(passover.toJson())?.category,
+      'Pilgrim feast',
+    );
+
+    final entries = [passover, trumpets];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TimelinePage(
+          timeline: feasts,
+          entries: entries,
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+          reload: () => (timeline: feasts, entries: entries),
+          onUpdateTimeline: (changed) async => feasts = changed,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('timeline-row-trumpets')), findsOneWidget);
+    await tester.tap(find.text('Holy convocation'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('timeline-row-trumpets')), findsNothing);
+    expect(find.byKey(const ValueKey('timeline-mark-trumpets')), findsNothing);
+    expect(find.byKey(const ValueKey('timeline-row-passover')), findsOneWidget);
+    await tester.tap(find.text('Holy convocation'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('timeline-row-trumpets')), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Colour Pilgrim feast'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('timeline-color-3')));
+    await tester.pumpAndSettle();
+    expect(feasts.categoryColors['Pilgrim feast'], 3);
+
+    // The editor offers the categories already on the timeline.
+    StudyTimelineEntry? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              saved = await showDialog<StudyTimelineEntry>(
+                context: context,
+                builder: (_) => StudyTimelineEntryEditor(
+                  initial: event('booths', 7, 15, ''),
+                  creating: false,
+                  timelines: [feasts],
+                  entries: entries,
+                  useEnglishBookNames: true,
+                  loadChapter: _chapter,
+                ),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Pilgrim feast'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(saved?.category, 'Pilgrim feast');
+  });
+
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
     tester,
   ) async {

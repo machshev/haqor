@@ -255,6 +255,7 @@ class StudyTimeline {
     this.nisanWeekday = 1,
     this.weekYear,
     this.showSeasons = false,
+    this.categoryColors = const {},
     this.note = '',
     this.parentId,
     this.order = 0,
@@ -289,6 +290,34 @@ class StudyTimeline {
   /// Whether its views show the seasons of the land and the moon's phases
   /// (see [timelineSeasons]).
   final bool showSeasons;
+
+  /// The colour each category of its entries is shown in, as an index
+  /// into the palette of category colours; given one as an entry first
+  /// takes it (see [withCategory]).
+  final Map<String, int> categoryColors;
+
+  /// The colour [entry] is shown in, as an index into the palette of
+  /// category colours; null for one without a category.
+  int? colorOf(StudyTimelineEntry entry) =>
+      entry.category.isEmpty ? null : categoryColors[entry.category];
+
+  /// This timeline with a colour for [category]: the one it has, or the
+  /// first of [palette] colours no other category has yet, else the next
+  /// round.
+  StudyTimeline withCategory(String category, {int palette = 8}) {
+    if (category.isEmpty || categoryColors.containsKey(category)) return this;
+    final used = categoryColors.values.toSet();
+    final free = [
+      for (var i = 0; i < palette; i++)
+        if (!used.contains(i)) i,
+    ];
+    return copyWith(
+      categoryColors: {
+        ...categoryColors,
+        category: free.firstOrNull ?? categoryColors.length % palette,
+      },
+    );
+  }
   final String note;
   final String? parentId;
   final int order;
@@ -736,6 +765,7 @@ class StudyTimeline {
     int? nisanWeekday,
     double? Function()? weekYear,
     bool? showSeasons,
+    Map<String, int>? categoryColors,
     String? note,
     String? Function()? parentId,
     int? order,
@@ -751,6 +781,7 @@ class StudyTimeline {
     nisanWeekday: nisanWeekday ?? this.nisanWeekday,
     weekYear: weekYear == null ? this.weekYear : weekYear(),
     showSeasons: showSeasons ?? this.showSeasons,
+    categoryColors: categoryColors ?? this.categoryColors,
     note: note ?? this.note,
     parentId: parentId == null ? this.parentId : parentId(),
     order: order ?? this.order,
@@ -769,6 +800,7 @@ class StudyTimeline {
     if (nisanWeekday != 1) 'nisanWeekday': nisanWeekday,
     if (weekYear != null) 'weekYear': _jsonNumber(weekYear!),
     if (showSeasons) 'seasons': true,
+    if (categoryColors.isNotEmpty) 'categories': categoryColors,
     if (note.isNotEmpty) 'note': note,
     if (parentId != null) 'parent': parentId,
     'order': order,
@@ -798,6 +830,7 @@ class StudyTimeline {
         'nisanWeekday',
         'weekYear',
         'seasons',
+        'categories',
         'sabbaths',
         'note',
         'parent',
@@ -831,6 +864,11 @@ class StudyTimeline {
           ? (value['weekYear'] as num).toDouble()
           : null,
       showSeasons: value['seasons'] == true,
+      categoryColors: {
+        if (value['categories'] case final Map categories)
+          for (final MapEntry(:key, :value) in categories.entries)
+            if (key is String && value is int && value >= 0) key: value,
+      },
       note: value['note'] is String ? value['note'] as String : '',
       parentId: value['parent'] is String ? value['parent'] as String : null,
       order: value['order'] is int ? value['order'] as int : 0,
@@ -940,6 +978,7 @@ class StudyTimelineEntry {
     this.sabbath = false,
     this.counted = false,
     this.part,
+    this.category = '',
     this.order = 0,
     this.pin,
     this.extra = const {},
@@ -976,6 +1015,11 @@ class StudyTimelineEntry {
   /// The part of its day an event falls in, where it is dated to the day;
   /// null for the whole day.
   final TimelineDayPart? part;
+
+  /// What kind of entry it is, as the study names it ("Pilgrim feast"),
+  /// coloured as its timeline colours it (see
+  /// [StudyTimeline.categoryColors]); empty for none.
+  final String category;
 
   /// [part] where it means anything: an event dated to the day.
   TimelineDayPart? get dayPart => isSpan || start.day == null ? null : part;
@@ -1016,6 +1060,7 @@ class StudyTimelineEntry {
     sabbath: sabbath,
     counted: counted,
     part: part,
+    category: category,
     order: order,
     pin: pin,
   );
@@ -1042,6 +1087,7 @@ class StudyTimelineEntry {
     sabbath: sabbath,
     counted: counted,
     part: part,
+    category: category,
     order: order,
     pin: pin,
   );
@@ -1067,6 +1113,7 @@ class StudyTimelineEntry {
     bool? sabbath,
     bool? counted,
     TimelineDayPart? Function()? part,
+    String? category,
     int? order,
   }) => StudyTimelineEntry(
     extra: extra,
@@ -1082,6 +1129,7 @@ class StudyTimelineEntry {
     sabbath: sabbath ?? this.sabbath,
     counted: counted ?? this.counted,
     part: part == null ? this.part : part(),
+    category: category ?? this.category,
     order: order ?? this.order,
     pin: pin,
   );
@@ -1115,6 +1163,7 @@ class StudyTimelineEntry {
     if (sabbath) 'sabbath': true,
     if (counted) 'counted': true,
     if (part != null) 'part': part!.name,
+    if (category.isNotEmpty) 'category': category,
     'order': order,
     if (pin != null) 'pin': pin!.toJson(),
   };
@@ -1161,6 +1210,7 @@ class StudyTimelineEntry {
         'sabbath',
         'counted',
         'part',
+        'category',
         'order',
         'pin',
         'span',
@@ -1196,6 +1246,9 @@ class StudyTimelineEntry {
       part: TimelineDayPart.values
           .where((p) => p.name == value['part'])
           .firstOrNull,
+      category: value['category'] is String
+          ? (value['category'] as String).trim()
+          : '',
       order: value['order'] is int ? value['order'] as int : 0,
       pin: pin,
     );

@@ -4,6 +4,38 @@ import 'package:flutter/material.dart';
 
 import '../study_workspace.dart';
 
+/// The colours a timeline's categories may take (see
+/// [StudyTimeline.categoryColors]), by name, each for light and for dark.
+const timelineCategoryPalette = [
+  ('Blue', Color(0xFF1E6FC2), Color(0xFF64B5F6)),
+  ('Green', Color(0xFF2E7D32), Color(0xFF81C784)),
+  ('Red', Color(0xFFC62828), Color(0xFFE57373)),
+  ('Purple', Color(0xFF7B1FA2), Color(0xFFBA68C8)),
+  ('Orange', Color(0xFFD86A00), Color(0xFFFFB74D)),
+  ('Teal', Color(0xFF00796B), Color(0xFF4DB6AC)),
+  ('Brown', Color(0xFF6D4C41), Color(0xFFBCAAA4)),
+  ('Pink', Color(0xFFC2185B), Color(0xFFF06292)),
+];
+
+/// The colour of the category [index] (see [timelineCategoryPalette]).
+Color timelineCategoryColor(int index, Brightness brightness) {
+  final (_, light, dark) =
+      timelineCategoryPalette[index % timelineCategoryPalette.length];
+  return brightness == Brightness.dark ? dark : light;
+}
+
+/// The colour [entry] is shown in on [timeline]: its category's, else
+/// [fallback].
+Color timelineEntryColor(
+  StudyTimeline timeline,
+  StudyTimelineEntry entry,
+  Brightness brightness,
+  Color fallback,
+) {
+  final index = timeline.colorOf(entry);
+  return index == null ? fallback : timelineCategoryColor(index, brightness);
+}
+
 /// The colour a season of the land is shown in: blue for rain, gold for
 /// the farming year.
 Color timelineSeasonColor(TimelineSeasonKind kind, Brightness brightness) {
@@ -473,13 +505,18 @@ class _Month extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    for (final _ in dots.take(3))
+                    for (final dot in dots.take(3))
                       Container(
                         width: 5,
                         height: 5,
                         margin: const EdgeInsets.symmetric(horizontal: 1),
                         decoration: BoxDecoration(
-                          color: scheme.tertiary,
+                          color: timelineEntryColor(
+                            timeline,
+                            dot,
+                            theme.brightness,
+                            scheme.tertiary,
+                          ),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -493,7 +530,12 @@ class _Month extends StatelessWidget {
                 bottom: 2,
                 child: Container(
                   height: 3,
-                  color: scheme.primary.withValues(alpha: 0.7),
+                  color: timelineEntryColor(
+                    timeline,
+                    over.first,
+                    theme.brightness,
+                    scheme.primary,
+                  ).withValues(alpha: 0.7),
                 ),
               ),
           ],
