@@ -29,7 +29,7 @@ import 'timeline_wheel.dart';
   List<StudyTimelineEntry> entries,
 ) {
   if (entries.isEmpty) return (start: 0, end: 1);
-  final reaches = [for (final e in entries) timelineEntryReach(timeline, e)];
+  final reaches = [for (final e in entries) timelineEntrySpread(timeline, e)];
   final start = reaches.map((r) => r.start).reduce(math.min);
   final end = reaches.map((r) => r.end).reduce(math.max);
   final margin = end - start < 1e-9
@@ -61,6 +61,47 @@ import 'timeline_wheel.dart';
   return (
     start: timeline.positionOf(entry.start),
     end: timeline.endOf(entry.last),
+  );
+}
+
+/// The days leading up to [entry] and trailing after it (see
+/// [StudyTimelineEntry.lead]), each as the first and last of them; null
+/// for one it has not, or that does not fit its timeline.
+({
+  ({TimelineTime from, TimelineTime to})? lead,
+  ({TimelineTime from, TimelineTime to})? trail,
+})
+timelineEntryTapers(StudyTimeline timeline, StudyTimelineEntry entry) {
+  ({TimelineTime from, TimelineTime to})? days(TimelineTime day, int a, int b) {
+    final from = timeline.addDays(day, a);
+    final to = timeline.addDays(day, b);
+    return from == null || to == null ? null : (from: from, to: to);
+  }
+
+  return (
+    lead: switch (entry.lead) {
+      final lead? when entry.isSpan => days(entry.start, -lead.days, -1),
+      _ => null,
+    },
+    trail: switch (entry.trail) {
+      final trail? when entry.isSpan => days(entry.last, 1, trail.days),
+      _ => null,
+    },
+  );
+}
+
+/// The stretch [entry] covers with the days leading up to it and trailing
+/// after it (see [timelineEntryTapers]): its reach, else.
+({double start, double end}) timelineEntrySpread(
+  StudyTimeline timeline,
+  StudyTimelineEntry entry,
+) {
+  final reach = timelineEntryReach(timeline, entry);
+  if (entry.lead == null && entry.trail == null) return reach;
+  final (:lead, :trail) = timelineEntryTapers(timeline, entry);
+  return (
+    start: lead == null ? reach.start : timeline.positionOf(lead.from),
+    end: trail == null ? reach.end : timeline.endOf(trail.to),
   );
 }
 
@@ -112,10 +153,21 @@ List<TimelineSlot> packTimelineLanes(
   sorted.forEach(visit);
   final sabbaths = sorted.any((e) => e.isHighSabbath && anchorOf(e) == null);
   final laneEnds = <double>[if (sabbaths) double.infinity];
-  ({double left, double right}) extent(StudyTimelineEntry e) {
+  // Where its mark starts, and the stretch it keeps from others, its
+  // wedges with it.
+  ({double left, double mark, double from, double right}) extent(
+    StudyTimelineEntry e,
+  ) {
     final reach = timelineEntryReach(timeline, e);
+    final spread = timelineEntrySpread(timeline, e);
     final left = x(reach.start);
-    return (left: left, right: math.max(x(reach.end), left + width(e)));
+    final mark = math.max(x(reach.end), left + width(e));
+    return (
+      left: left,
+      mark: mark,
+      from: x(spread.start),
+      right: math.max(x(spread.end), mark),
+    );
   }
 
   // A row for each category of two or more spans, none overlapping.
@@ -129,10 +181,10 @@ List<TimelineSlot> packTimelineLanes(
   for (final MapEntry(key: category, value: spans) in byCategory.entries) {
     if (spans.length < 2) continue;
     final at = spans.map(extent).toList()
-      ..sort((a, b) => a.left.compareTo(b.left));
+      ..sort((a, b) => a.from.compareTo(b.from));
     var apart = true;
     for (var i = 1; i < at.length && apart; i++) {
-      apart = at[i - 1].right + gap <= at[i].left;
+      apart = at[i - 1].right + gap <= at[i].from;
     }
     if (!apart) continue;
     rows[category] = laneEnds.length;
@@ -142,22 +194,22 @@ List<TimelineSlot> packTimelineLanes(
   final slots = <TimelineSlot>[];
   final laneOf = <String, int>{};
   for (final entry in ordered) {
-    final (:left, :right) = extent(entry);
+    final (:left, :mark, :from, :right) = extent(entry);
     if (entry.isSpan) {
       if (rows[entry.category] case final row?) {
         laneOf[entry.id] = row;
-        slots.add((entry: entry, lane: row, left: left, right: right));
+        slots.add((entry: entry, lane: row, left: left, right: mark));
         continue;
       }
     }
     final anchor = laneOf[anchorOf(entry)?.id];
     if (entry.isHighSabbath && anchor == null) {
-      slots.add((entry: entry, lane: 0, left: left, right: right));
+      slots.add((entry: entry, lane: 0, left: left, right: mark));
       laneOf[entry.id] = 0;
       continue;
     }
     var lane = laneEnds.indexWhere(
-      (end) => end + gap <= left,
+      (end) => end + gap <= from,
       anchor == null ? 0 : anchor + 1,
     );
     if (lane < 0) {
@@ -167,7 +219,7 @@ List<TimelineSlot> packTimelineLanes(
       laneEnds[lane] = right;
     }
     laneOf[entry.id] = lane;
-    slots.add((entry: entry, lane: lane, left: left, right: right));
+    slots.add((entry: entry, lane: lane, left: left, right: mark));
   }
   return slots;
 }
@@ -516,7 +568,11 @@ class TimelineChart extends StatelessWidget {
           : _dot,
       gap: _gap,
     );
-    final labels = _labelsFor(slots, labelStyle);
+    // Where each mark's room begins, its wedge before it.
+    double from(StudyTimelineEntry e) => e.lead == null
+        ? double.infinity
+        : px(timelineEntrySpread(timeline, e).start);
+    final labels = _labelsFor(slots, labelStyle, from);
     final lanes = slots.isEmpty
         ? 1
         : slots.map((s) => s.lane).reduce(math.max) + 1;
@@ -621,6 +677,63 @@ class TimelineChart extends StatelessWidget {
               height: seasonHeight,
               child: _SeasonBand(season: band.season),
             ),
+          // The days leading up to a span and trailing after it, as wedges
+          // in its row, opening it.
+          for (final slot in slots)
+            if (slot.entry.isSpan &&
+                (slot.entry.lead != null || slot.entry.trail != null))
+              for (final (taper, days, before) in [
+                (
+                  slot.entry.lead,
+                  timelineEntryTapers(timeline, slot.entry).lead,
+                  true,
+                ),
+                (
+                  slot.entry.trail,
+                  timelineEntryTapers(timeline, slot.entry).trail,
+                  false,
+                ),
+              ])
+                if ((taper, days) case (final taper?, final days?))
+                  if ((
+                        from: px(timeline.positionOf(days.from)),
+                        to: px(timeline.endOf(days.to)),
+                      )
+                      case final at)
+                    Positioned(
+                      left: at.from,
+                      width: math.max(2, at.to - at.from),
+                      top: top + slot.lane * laneHeight + 4,
+                      height: laneHeight - 8,
+                      child: Opacity(
+                        opacity: faded.contains(slot.entry.id) ? 0.45 : 1,
+                        child: _Wedge(
+                          key: ValueKey(
+                            'timeline-${before ? 'lead' : 'trail'}-'
+                            '${slot.entry.id}',
+                          ),
+                          rising: before,
+                          title: taper.title,
+                          color: switch (timeline.colorOf(slot.entry)) {
+                            final index? => timelineCategoryColor(
+                              index,
+                              theme.brightness,
+                            ),
+                            null => theme.colorScheme.primary,
+                          },
+                          selected: slot.entry.id == selectedId,
+                          tooltip: [
+                            if (taper.title.isNotEmpty) taper.title,
+                            slot.entry.title,
+                            '${timeline.formatTime(days.from)} – '
+                                '${timeline.formatTime(days.to)}',
+                          ].join(' · '),
+                          onTap: onTapEntry == null
+                              ? null
+                              : () => onTapEntry!(slot.entry),
+                        ),
+                      ),
+                    ),
           for (final slot in slots)
             if (labels[slot.entry.id]! case final label)
               Positioned(
@@ -766,7 +879,11 @@ class TimelineChart extends StatelessWidget {
   /// grouped under it shows. Zoomed out, labels are cut short or left
   /// out; zoomed in, they show whole.
   Map<String, ({double width, double title, bool whole, bool group})>
-  _labelsFor(List<TimelineSlot> slots, TextStyle? style) {
+  _labelsFor(
+    List<TimelineSlot> slots,
+    TextStyle? style,
+    double Function(StudyTimelineEntry entry) from,
+  ) {
     final next = <String, double>{};
     final byLane = <int, List<TimelineSlot>>{};
     for (final slot in slots) {
@@ -776,7 +893,9 @@ class TimelineChart extends StatelessWidget {
       lane.sort((a, b) => a.left.compareTo(b.left));
       for (var i = 0; i + 1 < lane.length; i++) {
         final after = lane[i + 1];
-        next[lane[i].entry.id] = after.left - _inset(after.entry) - _gap;
+        next[lane[i].entry.id] =
+            math.min(after.left - _inset(after.entry), from(after.entry)) -
+            _gap;
       }
     }
     return {
@@ -822,6 +941,107 @@ class TimelineChart extends StatelessWidget {
         }(),
     };
   }
+}
+
+/// The days leading up to a span ([rising] to it) or trailing after it, as
+/// a wedge narrowing away from it, its [title] shown where it fits.
+class _Wedge extends StatelessWidget {
+  const _Wedge({
+    super.key,
+    required this.rising,
+    required this.title,
+    required this.color,
+    required this.selected,
+    required this.tooltip,
+    this.onTap,
+  });
+
+  final bool rising;
+  final String title;
+  final Color color;
+  final bool selected;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelSmall;
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: LayoutBuilder(
+          builder: (context, box) {
+            // Its title, zoomed in to where it fits in the wedge's thick half.
+            final fits =
+                title.isNotEmpty &&
+                _textWidth(title, style) + 8 <= box.maxWidth / 2;
+            return CustomPaint(
+              painter: _WedgePainter(
+                rising: rising,
+                color: color,
+                selected: selected,
+              ),
+              child: fits
+                  ? Align(
+                      alignment: rising
+                          ? AlignmentDirectional.centerEnd
+                          : AlignmentDirectional.centerStart,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          softWrap: false,
+                          style: style,
+                        ),
+                      ),
+                    )
+                  : const SizedBox.expand(),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _WedgePainter extends CustomPainter {
+  const _WedgePainter({
+    required this.rising,
+    required this.color,
+    required this.selected,
+  });
+
+  final bool rising;
+  final Color color;
+  final bool selected;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final mid = size.height / 2;
+    // Thin far from the span, its full height where it meets it.
+    final (thin, thick) = rising ? (0.0, size.width) : (size.width, 0.0);
+    final path = Path()
+      ..moveTo(thin, mid - 1)
+      ..lineTo(thick, 0)
+      ..lineTo(thick, size.height)
+      ..lineTo(thin, mid + 1)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color.withValues(alpha: 0.16));
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = selected ? 1.5 : 1
+        ..color = color.withValues(alpha: selected ? 0.8 : 0.4),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_WedgePainter old) =>
+      old.rising != rising || old.color != color || old.selected != selected;
 }
 
 /// A season of the land as a band across its stretch of the year, named
@@ -2223,6 +2443,7 @@ class _TimelinePageState extends State<TimelinePage> {
     final links = widget.linksOf?.call(entry) ?? const [];
     final open = widget.onOpenLink;
     final pin = timelinePinLabel(_timeline, entry, _entries);
+    final tapers = timelineEntryTapers(_timeline, entry);
     final pinned = [
       for (final e in List.of(_entries)..sort(compareTimelineEntries))
         if (e.pin?.anchorId == entry.id) e,
@@ -2288,6 +2509,46 @@ class _TimelinePageState extends State<TimelinePage> {
                     ],
                   ),
                 ],
+                for (final (taper, days, before) in [
+                  (entry.lead, tapers.lead, true),
+                  (entry.trail, tapers.trail, false),
+                ])
+                  if ((taper, days) case (final taper?, final days?)) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      [
+                        if (taper.title.isNotEmpty) taper.title,
+                        '${taper.days} day${taper.days == 1 ? '' : 's'} '
+                            '${before ? 'before' : 'after'}',
+                        '${_timeline.formatTime(days.from)} – '
+                            '${_timeline.formatTime(days.to)}',
+                      ].join(' · '),
+                      key: ValueKey(
+                        'timeline-${before ? 'lead' : 'trail'}-heading',
+                      ),
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    if (taper.note.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      MarkdownNote(taper.note),
+                    ],
+                    if (taper.verses.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          for (final passage in taper.verses)
+                            ActionChip(
+                              avatar: const Icon(Icons.menu_book_outlined),
+                              label: Text(_reference(passage)),
+                              onPressed: () =>
+                                  Navigator.pop(sheetContext, passage),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ],
                 if (entry.dayNotes.isNotEmpty) _dayNotes(theme, entry),
                 if (links.isNotEmpty) ...[
                   const SizedBox(height: 12),

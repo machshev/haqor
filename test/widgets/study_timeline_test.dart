@@ -312,9 +312,11 @@ void main() {
       '959',
     );
 
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('timeline-entry-add-verses')),
-    );
+    final addVerses = find.byKey(const ValueKey('timeline-entry-add-verses'));
+    // Off the end field, which would keep itself in view.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(addVerses);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('timeline-entry-add-verses')));
     await tester.pumpAndSettle();
@@ -2099,5 +2101,61 @@ void main() {
     await tester.pumpAndSettle();
     expect(saved?.isHighSabbath, isTrue);
     expect(saved?.start, const TimelineTime(-1445, month: 7, day: 10));
+  });
+  testWidgets('a span draws the days before and after it as wedges in its '
+      'row, which open it', (tester) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+    );
+    const span = StudyTimelineEntry(
+      id: 'sukkot',
+      title: 'Sukkot',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 7, day: 15),
+      end: TimelineTime(0, month: 7, day: 21),
+      lead: TimelineTaper(days: 4, title: 'Going up'),
+      trail: TimelineTaper(days: 2),
+    );
+    StudyTimelineEntry? tapped;
+    const ppu = 354 * 80.0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: TimelineChart(
+              timeline: feasts,
+              entries: const [span],
+              pixelsPerUnit: ppu,
+              onTapEntry: (e) => tapped = e,
+            ),
+          ),
+        ),
+      ),
+    );
+    final bar = tester.getRect(
+      find.byKey(const ValueKey('timeline-mark-sukkot')),
+    );
+    final lead = tester.getRect(
+      find.byKey(const ValueKey('timeline-lead-sukkot')),
+    );
+    final trail = tester.getRect(
+      find.byKey(const ValueKey('timeline-trail-sukkot')),
+    );
+    // Its four days before it and two after, 80 pixels a day, in its row.
+    expect(lead.width, closeTo(320, 0.5));
+    expect(lead.right, closeTo(bar.left, 0.5));
+    expect(lead.top, bar.top);
+    expect(trail.width, closeTo(160, 0.5));
+    expect(trail.left, closeTo(bar.left + 7 * 80, 0.5));
+    // Zoomed in, the wedge's title fits in it.
+    expect(find.text('Going up'), findsOneWidget);
+    final trailing = find.byKey(const ValueKey('timeline-trail-sukkot'));
+    await tester.ensureVisible(trailing);
+    await tester.pumpAndSettle();
+    await tester.tap(trailing);
+    expect(tapped?.id, 'sukkot');
   });
 }

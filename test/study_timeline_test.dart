@@ -1053,12 +1053,19 @@ void main() {
     expect(entry(entries, 'moadim-1:before-3').end, day(7, 22));
     // The way up ends the day before each time, the way home starts the
     // day after it.
-    expect(entry(entries, 'moadim-1:up-1').start, day(1, 10));
-    expect(entry(entries, 'moadim-1:up-1').end, day(1, 13));
-    expect(entry(entries, 'moadim-1:home-1').start, day(1, 22));
-    expect(entry(entries, 'moadim-1:up-2').end, day(3, 8));
-    expect(entry(entries, 'moadim-1:home-2').start, day(3, 10));
-    expect(entry(entries, 'moadim-1:home-3').end, day(7, 26));
+    ({TimelineTime from, TimelineTime to})? lead(String id) =>
+        timelineEntryTapers(moadim, entry(entries, id)).lead;
+    ({TimelineTime from, TimelineTime to})? trail(String id) =>
+        timelineEntryTapers(moadim, entry(entries, id)).trail;
+    expect(lead('moadim-1:before-1'), (from: day(1, 10), to: day(1, 13)));
+    expect(trail('moadim-1:before-1'), (from: day(1, 22), to: day(1, 25)));
+    expect(lead('moadim-1:before-2'), (from: day(3, 5), to: day(3, 8)));
+    expect(trail('moadim-1:before-2'), (from: day(3, 10), to: day(3, 13)));
+    expect(trail('moadim-1:before-3')?.to, day(7, 26));
+    expect(timelineEntrySpread(moadim, entry(entries, 'moadim-1:before-1')), (
+      start: moadim.positionOf(day(1, 10)),
+      end: moadim.endOf(day(1, 25)),
+    ));
     // Nothing is added to it: it is built on.
     expect(
       workspace
@@ -1324,6 +1331,73 @@ void main() {
     expect(lanes([span('a', 1, 1, 10), span('b', 1, 5, 20)]).toSet(), {
       ('a', 0),
       ('b', 1),
+    });
+  });
+
+  test('a span keeps the days before and after it, which take room in its '
+      'row', () {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+    );
+    const span = StudyTimelineEntry(
+      id: 'sukkot',
+      title: 'Sukkot',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 7, day: 15),
+      end: TimelineTime(0, month: 7, day: 21),
+      lead: TimelineTaper(
+        days: 3,
+        title: 'Going up',
+        note: 'The way',
+        verses: [StudyPassage(bookIndex: 26, chapter: 122, verse: 1)],
+      ),
+      trail: TimelineTaper(days: 2),
+    );
+    final back = StudyTimelineEntry.fromJson(span.toJson())!;
+    expect(back.lead?.days, 3);
+    expect(back.lead?.title, 'Going up');
+    expect(back.lead?.note, 'The way');
+    expect(back.lead?.verses.single.chapter, 122);
+    expect(back.trail?.days, 2);
+    expect(back.copyWith(lead: () => null).lead, isNull);
+    // Only a span dated to the day has them.
+    expect(
+      StudyTimelineEntry.fromJson({
+        ...span.toJson(),
+        'end': null,
+        'endMonth': null,
+        'endDay': null,
+      }),
+      isNull,
+    );
+    final tapers = timelineEntryTapers(feasts, back);
+    expect(tapers.lead, (
+      from: const TimelineTime(0, month: 7, day: 12),
+      to: const TimelineTime(0, month: 7, day: 14),
+    ));
+    expect(tapers.trail?.to, const TimelineTime(0, month: 7, day: 23));
+    // An event two days before it no longer fits beside it in its row.
+    const before = StudyTimelineEntry(
+      id: 'before',
+      title: 'before',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 7, day: 13),
+    );
+    List<(String, int)> lanes(List<StudyTimelineEntry> entries) => [
+      for (final s in packTimelineLanes(
+        feasts,
+        entries,
+        x: (p) => p * 10000,
+        width: (_) => 4,
+      ))
+        (s.entry.id, s.lane),
+    ];
+    expect(lanes([before, back]).toSet(), {('before', 0), ('sukkot', 1)});
+    expect(lanes([before, back.copyWith(lead: () => null)]).toSet(), {
+      ('before', 0),
+      ('sukkot', 0),
     });
   });
 

@@ -1090,6 +1090,8 @@ class StudyTimelineEntry {
     this.links = const [],
     this.order = 0,
     this.pin,
+    this.lead,
+    this.trail,
     this.extra = const {},
   });
 
@@ -1146,6 +1148,11 @@ class StudyTimelineEntry {
   /// moves.
   final TimelinePin? pin;
 
+  /// The days leading up to a span and trailing after it, drawn as wedges
+  /// narrowing away from it in its row: the way up to a feast, and home
+  /// again. Only for a span dated to the day.
+  final TimelineTaper? lead, trail;
+
   bool get isSpan => end != null;
   bool get isHighSabbath => sabbath && !isSpan;
   bool get isCounted => counted && isSpan;
@@ -1158,7 +1165,10 @@ class StudyTimelineEntry {
       start.isValid &&
       (end == null || (end!.isValid && end!.position() >= start.position())) &&
       (duration == null || (end != null && duration!.isValid)) &&
-      (pin == null || (pin!.isValid && pin!.anchorId != id));
+      (pin == null || (pin!.isValid && pin!.anchorId != id)) &&
+      ((lead == null && trail == null) || (isSpan && start.day != null)) &&
+      (lead?.isValid ?? true) &&
+      (trail?.isValid ?? true);
 
   /// Pinned by [pin], or, given none, unpinned; the start is placed by
   /// the workspace (see [StudyTimeline.placePin]).
@@ -1181,6 +1191,8 @@ class StudyTimelineEntry {
     links: links,
     order: order,
     pin: pin,
+    lead: lead,
+    trail: trail,
   );
 
   bool linksVerse(int book, int chapter, int verse) =>
@@ -1210,6 +1222,8 @@ class StudyTimelineEntry {
     links: links,
     order: order,
     pin: pin,
+    lead: lead,
+    trail: trail,
   );
 
   /// The entry on [timeline], its end worked out again from its duration
@@ -1237,6 +1251,8 @@ class StudyTimelineEntry {
     Map<int, String>? dayNotes,
     List<TimelineLink>? links,
     int? order,
+    TimelineTaper? Function()? lead,
+    TimelineTaper? Function()? trail,
   }) => StudyTimelineEntry(
     extra: extra,
     id: id,
@@ -1256,6 +1272,8 @@ class StudyTimelineEntry {
     links: links ?? this.links,
     order: order ?? this.order,
     pin: pin,
+    lead: lead == null ? this.lead : lead(),
+    trail: trail == null ? this.trail : trail(),
   );
 
   Map<String, Object?> toJson() => {
@@ -1271,18 +1289,7 @@ class StudyTimelineEntry {
     if (end?.day != null) 'endDay': end!.day,
     if (duration != null) 'duration': duration!.toJson(),
     if (date.isNotEmpty) 'date': date,
-    if (verses.isNotEmpty)
-      'verses': [
-        for (final passage in verses)
-          {
-            'book': passage.bookIndex,
-            'chapter': passage.chapter,
-            'verse': passage.verse,
-            if (passage.wholeChapter) 'wholeChapter': true,
-            if (passage.endChapter != null) 'endChapter': passage.endChapter,
-            if (passage.endVerse != null) 'endVerse': passage.endVerse,
-          },
-      ],
+    if (verses.isNotEmpty) 'verses': _versesJson(verses),
     if (note.isNotEmpty) 'note': note,
     if (sabbath) 'sabbath': true,
     if (counted) 'counted': true,
@@ -1295,6 +1302,8 @@ class StudyTimelineEntry {
     if (links.isNotEmpty) 'links': [for (final link in links) link.toJson()],
     'order': order,
     if (pin != null) 'pin': pin!.toJson(),
+    if (lead != null) 'lead': lead!.toJson(),
+    if (trail != null) 'trail': trail!.toJson(),
   };
 
   static StudyTimelineEntry? fromJson(Object? value) {
@@ -1346,6 +1355,8 @@ class StudyTimelineEntry {
         'pin',
         'span',
         'offset',
+        'lead',
+        'trail',
       }),
       id: id,
       title: title,
@@ -1395,8 +1406,76 @@ class StudyTimelineEntry {
       ],
       order: value['order'] is int ? value['order'] as int : 0,
       pin: pin,
+      lead: TimelineTaper.fromJson(value['lead']),
+      trail: TimelineTaper.fromJson(value['trail']),
     );
     return entry.isValid ? entry : null;
+  }
+}
+
+List<Map<String, Object?>> _versesJson(List<StudyPassage> verses) => [
+  for (final passage in verses)
+    {
+      'book': passage.bookIndex,
+      'chapter': passage.chapter,
+      'verse': passage.verse,
+      if (passage.wholeChapter) 'wholeChapter': true,
+      if (passage.endChapter != null) 'endChapter': passage.endChapter,
+      if (passage.endVerse != null) 'endVerse': passage.endVerse,
+    },
+];
+
+/// The days leading up to a span or trailing after it (see
+/// [StudyTimelineEntry.lead]): how many, what they are, with a note and
+/// verses of their own.
+@immutable
+class TimelineTaper {
+  const TimelineTaper({
+    required this.days,
+    this.title = '',
+    this.note = '',
+    this.verses = const [],
+  });
+
+  final int days;
+  final String title;
+  final String note;
+  final List<StudyPassage> verses;
+
+  bool get isValid => days >= 1;
+
+  TimelineTaper copyWith({
+    int? days,
+    String? title,
+    String? note,
+    List<StudyPassage>? verses,
+  }) => TimelineTaper(
+    days: days ?? this.days,
+    title: title ?? this.title,
+    note: note ?? this.note,
+    verses: verses ?? this.verses,
+  );
+
+  Map<String, Object?> toJson() => {
+    'days': days,
+    if (title.isNotEmpty) 'title': title,
+    if (note.isNotEmpty) 'note': note,
+    if (verses.isNotEmpty) 'verses': _versesJson(verses),
+  };
+
+  static TimelineTaper? fromJson(Object? value) {
+    if (value is! Map || value['days'] is! int) return null;
+    final taper = TimelineTaper(
+      days: value['days'] as int,
+      title: value['title'] is String ? (value['title'] as String).trim() : '',
+      note: value['note'] is String ? value['note'] as String : '',
+      verses: [
+        if (value['verses'] is List)
+          for (final raw in value['verses'] as List)
+            ?StudyPassage.fromJson(raw),
+      ],
+    );
+    return taper.isValid ? taper : null;
   }
 }
 

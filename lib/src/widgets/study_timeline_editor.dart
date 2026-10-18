@@ -476,6 +476,42 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
 /// The parts of a time being entered: the year (or count), whether it is
 /// BC, and the month and day within the year where the timeline counts
 /// years.
+/// The fields for the days leading up to a span or trailing after it, keeping
+/// the verses it had.
+class _TaperDraft {
+  _TaperDraft(TimelineTaper? taper)
+    : verses = taper?.verses ?? const [],
+      days = TextEditingController(text: taper == null ? '' : '${taper.days}'),
+      title = TextEditingController(text: taper?.title ?? ''),
+      note = TextEditingController(text: taper?.note ?? '');
+
+  final List<StudyPassage> verses;
+  final TextEditingController days, title, note;
+
+  /// What is entered: null where the days are not a whole number,
+  /// else none ([taper] null) for no days.
+  ({TimelineTaper? taper})? read() {
+    final text = days.text.trim();
+    if (text.isEmpty || text == '0') return (taper: null);
+    final count = int.tryParse(text);
+    if (count == null || count < 1) return null;
+    return (
+      taper: TimelineTaper(
+        days: count,
+        title: title.text.trim(),
+        note: note.text.trim(),
+        verses: verses,
+      ),
+    );
+  }
+
+  void dispose() {
+    days.dispose();
+    title.dispose();
+    note.dispose();
+  }
+}
+
 class _TimeDraft {
   _TimeDraft(TimelineTime? time, {required bool calendar})
     : number = TextEditingController(
@@ -544,6 +580,9 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   late final TextEditingController _title, _date, _note, _amount, _offset;
   late final TextEditingController _category;
   late final _TimeDraft _start, _end;
+
+  /// The days leading up to the span and trailing after it.
+  late final _TaperDraft _lead, _trail;
   late bool _span, _byDuration, _sabbath, _counted;
 
   /// The part of its day an event falls in; null for the whole day.
@@ -680,6 +719,8 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     _note = TextEditingController(text: e.note);
     _verses = List.of(e.verses);
     _links = List.of(e.links);
+    _lead = _TaperDraft(e.lead);
+    _trail = _TaperDraft(e.trail);
     _anchorId = e.pin?.anchorId;
     _offsetUnit = e.pin?.offset.unit;
     _weekday = e.pin?.weekday;
@@ -693,6 +734,8 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     for (final c in [_title, _date, _note, _amount, _offset, _category]) {
       c.dispose();
     }
+    _lead.dispose();
+    _trail.dispose();
     _start.dispose();
     for (final c in _dayNotes.values) {
       c.dispose();
@@ -840,6 +883,16 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
         }
       }
     }
+    final tapers = _span && start?.day != null;
+    final lead = tapers ? _lead.read() : null;
+    final trail = tapers ? _trail.read() : null;
+    if (error == null && tapers) {
+      if (lead == null) {
+        error = 'Enter the days before it as a whole number.';
+      } else if (trail == null) {
+        error = 'Enter the days after it as a whole number.';
+      }
+    }
     if (error != null) {
       setState(() => _error = error);
       return;
@@ -862,6 +915,8 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
             dayNotes: _span
                 ? _dayNotesFor(_spanDays(start, end) ?? 0)
                 : const {},
+            lead: () => lead?.taper,
+            trail: () => trail?.taper,
           )
           .pinnedTo(pin),
     );
@@ -991,6 +1046,64 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
             ),
           ),
       ],
+    );
+  }
+
+  /// The days leading up to the span and trailing after it, folded away.
+  Widget _taperFields() {
+    Widget side(_TaperDraft draft, String which, String label) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            SizedBox(
+              width: 96,
+              child: TextField(
+                key: ValueKey('timeline-entry-$which-days'),
+                controller: draft.days,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: '$label (days)',
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                key: ValueKey('timeline-entry-$which-title'),
+                controller: draft.title,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  labelText: 'What they are',
+                ),
+              ),
+            ),
+          ],
+        ),
+        TextField(
+          key: ValueKey('timeline-entry-$which-note'),
+          controller: draft.note,
+          minLines: 1,
+          maxLines: 4,
+          decoration: const InputDecoration(isDense: true, labelText: 'Note'),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+    return ExpansionTile(
+      key: const ValueKey('timeline-entry-tapers'),
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.only(bottom: 8),
+      initiallyExpanded:
+          widget.initial.lead != null || widget.initial.trail != null,
+      leading: const Icon(Icons.compare_arrows),
+      title: const Text('Days before and after'),
+      subtitle: const Text(
+        'Drawn as wedges either side of it, as the way up to a feast and '
+        'home again; tapping one opens the span.',
+      ),
+      children: [side(_lead, 'lead', 'Before'), side(_trail, 'trail', 'After')],
     );
   }
 
@@ -1529,6 +1642,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                     onChanged: (on) => setState(() => _counted = on),
                   ),
                 if (_timeline.hasMonths) _dayNoteFields(theme),
+                if (_timeline.hasMonths) _taperFields(),
               ],
               const SizedBox(height: 12),
               TextField(
