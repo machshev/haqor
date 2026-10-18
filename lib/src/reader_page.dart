@@ -3556,13 +3556,14 @@ class _ReaderSessionState extends State<_ReaderSession>
           },
           onUpdateTimeline: (changed) async => _updateStudyTimeline(changed),
           // The verse being read is no clue to an entry added here.
-          onAddEntry: (span, at, {sabbath = false}) =>
+          onAddEntry: (span, at, {sabbath = false, within}) =>
               _createStudyTimelineEntry(
                 timeline.id,
                 span,
                 linkVerse: false,
                 at: at,
                 sabbath: sabbath,
+                within: within,
               ),
           onEditEntry: _editStudyTimelineEntry,
           onRemoveEntry: (entry) async => _removeStudyTimelineEntry(entry),
@@ -3583,6 +3584,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         initial: entry,
         creating: creating,
         timelines: workspace.timelines,
+        entries: workspace.timelineEntries,
         useEnglishBookNames: _englishBookNames,
         loadChapter: _loadStudyChapter,
       ),
@@ -3598,12 +3600,19 @@ class _ReaderSessionState extends State<_ReaderSession>
     StudyPassage? verse,
     TimelineTime? at,
     bool sabbath = false,
+    StudyTimelineEntry? within,
   }) => StudyTimelineEntry(
     id: DateTime.now().microsecondsSinceEpoch.toString(),
     title: sabbath ? 'High Sabbath' : '',
     sabbath: sabbath,
     timelineId: timelineId,
-    start: at ?? const TimelineTime(0),
+    start: at ?? within?.start ?? const TimelineTime(0),
+    spanId: within?.id,
+    offset: within == null
+        ? null
+        : _activeStudyWorkspace
+              ?.timelineById(timelineId)
+              ?.firstOffsetIn(within),
     end: span ? at ?? const TimelineTime(0) : null,
     verses: [
       if (verse != null)
@@ -3617,13 +3626,15 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   /// Adds an event or span to a timeline, linked to the verse being read
   /// unless [linkVerse] is false, starting [at] a day where one is chosen;
-  /// with [sabbath], a high Sabbath on that day.
+  /// with [sabbath], a high Sabbath on that day; or an event pinned into
+  /// the span [within].
   Future<void> _createStudyTimelineEntry(
     String timelineId,
     bool span, {
     bool linkVerse = true,
     TimelineTime? at,
     bool sabbath = false,
+    StudyTimelineEntry? within,
   }) => _askForStudyTimelineEntry(
     _newStudyTimelineEntry(
       timelineId,
@@ -3631,6 +3642,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       verse: linkVerse ? _currentStudyPassage : null,
       at: at,
       sabbath: sabbath,
+      within: within,
     ),
     creating: true,
   );

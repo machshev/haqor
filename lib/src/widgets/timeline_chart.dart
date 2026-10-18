@@ -703,7 +703,7 @@ typedef TimelineContents = ({
 });
 
 /// What an entry's details sheet was closed to do.
-enum _EntryChoice { edit, remove }
+enum _EntryChoice { edit, remove, addWithin }
 
 /// What a day's sheet in the calendar was closed to do, besides editing
 /// one of its entries.
@@ -754,12 +754,18 @@ class TimelinePage extends StatefulWidget {
 
   /// Edit the timeline in its editor, or save a change made here (its
   /// weekdays); add an event or (`span` true) a span to it, starting [at] a
-  /// day where one is chosen, or a high Sabbath ([sabbath] true) on one;
-  /// edit or remove an entry. The page reads the timeline again after
-  /// each. Without them the page only shows the timeline.
+  /// day where one is chosen, or a high Sabbath ([sabbath] true) on one,
+  /// or an event pinned into the span [within]; edit or remove an entry.
+  /// The page reads the timeline again after each. Without them the page
+  /// only shows the timeline.
   final Future<void> Function()? onEditTimeline;
   final Future<void> Function(StudyTimeline timeline)? onUpdateTimeline;
-  final Future<void> Function(bool span, TimelineTime? at, {bool sabbath})?
+  final Future<void> Function(
+    bool span,
+    TimelineTime? at, {
+    bool sabbath,
+    StudyTimelineEntry? within,
+  })?
   onAddEntry;
   final Future<void> Function(StudyTimelineEntry entry)? onEditEntry;
   final Future<void> Function(StudyTimelineEntry entry)? onRemoveEntry;
@@ -922,10 +928,32 @@ class _TimelinePageState extends State<TimelinePage> {
       '${bookDisplayName(passage.bookIndex, useEnglish: widget.useEnglishBookNames)} '
       '${passage.reference}';
 
+  /// Where a pinned event falls in its span: "Day 3 of Unleavened Bread",
+  /// or how far into it; null for one not pinned.
+  String? _pinLabel(StudyTimelineEntry entry) {
+    final offset = entry.offset;
+    final span = _entries.where((e) => e.id == entry.spanId).firstOrNull;
+    if (offset == null || span == null) return null;
+    final amount = formatTimelineNumber(offset.amount);
+    if (offset.unit == TimelineDurationUnit.days) {
+      return 'Day $amount of ${span.title}';
+    }
+    final unit = offset.unit == TimelineDurationUnit.units
+        ? _timeline.unit
+        : offset.unit.name;
+    return '$amount $unit into ${span.title}';
+  }
+
   Future<void> _show(StudyTimelineEntry entry) async {
     setState(() => _selectedId = entry.id);
     final edit = widget.onEditEntry;
     final remove = widget.onRemoveEntry;
+    final add = widget.onAddEntry;
+    final pin = _pinLabel(entry);
+    final pinned = [
+      for (final e in List.of(_entries)..sort(compareTimelineEntries))
+        if (e.spanId == entry.id) e,
+    ];
     final choice = await showModalBottomSheet<Object>(
       context: context,
       showDragHandle: true,
@@ -942,7 +970,7 @@ class _TimelinePageState extends State<TimelinePage> {
                 Text(entry.title, style: theme.textTheme.titleLarge),
                 const SizedBox(height: 4),
                 Text(
-                  timelineEntryTime(_timeline, entry),
+                  [timelineEntryTime(_timeline, entry), ?pin].join(' · '),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -968,7 +996,21 @@ class _TimelinePageState extends State<TimelinePage> {
                 ],
                 if (widget.entryDetails case final details?)
                   details(sheetContext, entry),
-                if (edit != null || remove != null) ...[
+                // A span's pinned events, each opening its own details.
+                if (pinned.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  for (final e in pinned)
+                    ListTile(
+                      key: ValueKey('timeline-pinned-${e.id}'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      leading: Icon(timelineEntryIcon(e)),
+                      title: Text(e.title),
+                      subtitle: Text(_pinLabel(e) ?? ''),
+                      onTap: () => Navigator.pop(sheetContext, e),
+                    ),
+                ],
+                if (edit != null || remove != null || add != null) ...[
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -990,6 +1032,14 @@ class _TimelinePageState extends State<TimelinePage> {
                         ),
                     ],
                   ),
+                  if (add != null && entry.isSpan)
+                    TextButton.icon(
+                      key: const ValueKey('timeline-add-within'),
+                      onPressed: () =>
+                          Navigator.pop(sheetContext, _EntryChoice.addWithin),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add event in this span'),
+                    ),
                 ],
               ],
             ),
@@ -1006,6 +1056,10 @@ class _TimelinePageState extends State<TimelinePage> {
         await _edit(() => edit!(entry));
       case _EntryChoice.remove:
         await _edit(() => remove!(entry));
+      case _EntryChoice.addWithin:
+        await _edit(() => add!(false, null, within: entry));
+      case StudyTimelineEntry pinned:
+        await _show(pinned);
     }
   }
 
@@ -1405,6 +1459,7 @@ class _TimelinePageState extends State<TimelinePage> {
                               subtitle: Text(
                                 [
                                   timelineEntryTime(_timeline, entry),
+                                  ?_pinLabel(entry),
                                   ...entry.verses.map(_reference),
                                 ].join(' · '),
                               ),

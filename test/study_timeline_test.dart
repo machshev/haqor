@@ -688,6 +688,74 @@ void main() {
     expect(kings.toJson().containsKey('monthNames'), isFalse);
   });
 
+  test('an event pinned into a span moves with it, and stays where it is '
+      'once the span is gone', () {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+    );
+    const unleavened = StudyTimelineEntry(
+      id: 'unleavened',
+      title: 'Unleavened Bread',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 15),
+      end: TimelineTime(0, month: 1, day: 21),
+      duration: TimelineDuration(7, TimelineDurationUnit.days),
+    );
+    const third = TimelineDuration(3, TimelineDurationUnit.days);
+    final wave = const StudyTimelineEntry(
+      id: 'wave',
+      title: 'Wave sheaf',
+      timelineId: 'feasts',
+      start: TimelineTime(0),
+    ).pinnedTo('unleavened', third);
+    var workspace = const StudyWorkspace(
+      id: 's',
+      name: 'Study',
+    ).putTimeline(feasts).putTimelineEntry(unleavened).putTimelineEntry(wave);
+    StudyTimelineEntry pinned() =>
+        workspace.timelineEntries.singleWhere((e) => e.id == 'wave');
+    // Day 1 is the span's first.
+    expect(pinned().start, const TimelineTime(0, month: 1, day: 17));
+    expect(
+      feasts.dayOfSpan(unleavened, const TimelineTime(0, month: 1, day: 17)),
+      3,
+    );
+    expect(
+      feasts.dayOfSpan(unleavened, const TimelineTime(0, month: 1, day: 22)),
+      isNull,
+    );
+
+    // Moving the span moves the event with it.
+    workspace = workspace.putTimelineEntry(
+      unleavened.withTime(
+        start: const TimelineTime(0, month: 1, day: 16),
+        end: null,
+        duration: unleavened.duration,
+      ),
+    );
+    expect(pinned().start, const TimelineTime(0, month: 1, day: 18));
+
+    // The pin is stored, and the event placed again on load.
+    final stored = decodeStudyWorkspaces(encodeStudyWorkspaces([workspace]));
+    final reloaded = stored.single.timelineEntries.singleWhere(
+      (e) => e.id == 'wave',
+    );
+    expect((reloaded.spanId, reloaded.offset), ('unleavened', third));
+    expect(reloaded.start, pinned().start);
+
+    // A span is never pinned, nor an event into itself.
+    expect(unleavened.pinnedTo('other', third).isValid, isFalse);
+    expect(wave.pinnedTo('wave', third).isValid, isFalse);
+
+    // With the span gone, the event stays put, unpinned.
+    workspace = workspace.removeTimelineEntry(unleavened);
+    expect(pinned().spanId, isNull);
+    expect(pinned().offset, isNull);
+    expect(pinned().start, const TimelineTime(0, month: 1, day: 18));
+  });
+
   test('a study without timelines stores none', () {
     final json = const StudyWorkspace(id: 's', name: 'Study').toJson();
     expect(json.containsKey('timelines'), isFalse);

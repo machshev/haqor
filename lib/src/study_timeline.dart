@@ -457,6 +457,38 @@ class StudyTimeline {
     return isAnnual && end != null && end.value != start.value ? null : end;
   }
 
+  /// Where an event pinned [offset] into [span] falls (see
+  /// [StudyTimelineEntry.spanId]): the span's start moved on by it, days
+  /// counted inclusively, so day 1 is the span's first. Null where the
+  /// offset cannot be counted from the span's start.
+  TimelineTime? placeInSpan(StudyTimelineEntry span, TimelineDuration offset) =>
+      addDuration(span.start, offset);
+
+  /// Where an event pinned into [span] starts out: its first day, or else
+  /// its start; null where nothing can be counted from its start.
+  TimelineDuration? firstOffsetIn(StudyTimelineEntry span) {
+    final units = durationUnitsFor(span.start);
+    if (units.contains(TimelineDurationUnit.days)) {
+      return const TimelineDuration(1, TimelineDurationUnit.days);
+    }
+    return units.isEmpty ? null : TimelineDuration(0, units.first);
+  }
+
+  /// Which day of [span] [time] falls on, 1 for its first, or null when it
+  /// is not a day of the span, or the span is not dated to the day.
+  int? dayOfSpan(StudyTimelineEntry span, TimelineTime time) {
+    if (span.start.day == null || time.day == null) return null;
+    final end = positionOf(span.last);
+    for (var n = 1; ; n++) {
+      final day = addDuration(
+        span.start,
+        TimelineDuration(n.toDouble(), TimelineDurationUnit.days),
+      );
+      if (day == null || positionOf(day) > end + 1e-9) return null;
+      if (day == time) return n;
+    }
+  }
+
   TimelineTime? _addDuration(TimelineTime start, TimelineDuration duration) {
     if (!duration.isValid || !fits(start)) return null;
     if (!durationUnitsFor(start).contains(duration.unit)) return null;
@@ -692,7 +724,9 @@ class StudyTimeline {
 /// timeline, which it lives directly in, with the verses it is linked to.
 /// A span may be given by its [duration], from which its end is worked
 /// out on its timeline (see [StudyTimeline.addDuration]). [date] is how the
-/// time is written where the scale alone would not say it ("c.").
+/// time is written where the scale alone would not say it ("c."). An
+/// event may be pinned into a span ([spanId]), [offset] from its start,
+/// moving with it.
 @immutable
 class StudyTimelineEntry {
   const StudyTimelineEntry({
@@ -707,6 +741,8 @@ class StudyTimelineEntry {
     this.note = '',
     this.sabbath = false,
     this.order = 0,
+    this.spanId,
+    this.offset,
     this.extra = const {},
   });
 
@@ -735,6 +771,13 @@ class StudyTimelineEntry {
   final bool sabbath;
   final int order;
 
+  /// The span on its timeline this event is pinned into, and how far into
+  /// it: [start] is then kept where [StudyTimeline.placeInSpan] puts it,
+  /// following the span as it moves. Both or neither are given, and only
+  /// for an event.
+  final String? spanId;
+  final TimelineDuration? offset;
+
   bool get isSpan => end != null;
   bool get isHighSabbath => sabbath && !isSpan;
   TimelineTime get last => end ?? start;
@@ -745,7 +788,30 @@ class StudyTimelineEntry {
       title.isNotEmpty &&
       start.isValid &&
       (end == null || (end!.isValid && end!.position() >= start.position())) &&
-      (duration == null || (end != null && duration!.isValid));
+      (duration == null || (end != null && duration!.isValid)) &&
+      (spanId == null) == (offset == null) &&
+      (spanId == null || (end == null && spanId != id && offset!.isValid));
+
+  /// Pinned [offset] into the span [spanId], or, given neither, unpinned;
+  /// the start is placed by the workspace (see
+  /// [StudyTimeline.placeInSpan]).
+  StudyTimelineEntry pinnedTo(String? spanId, TimelineDuration? offset) =>
+      StudyTimelineEntry(
+        extra: extra,
+        id: id,
+        title: title,
+        timelineId: timelineId,
+        start: start,
+        end: end,
+        duration: duration,
+        date: date,
+        verses: verses,
+        note: note,
+        sabbath: sabbath,
+        order: order,
+        spanId: spanId,
+        offset: offset,
+      );
 
   bool linksVerse(int book, int chapter, int verse) =>
       verses.any((passage) => passage.containsVerse(book, chapter, verse));
@@ -768,6 +834,8 @@ class StudyTimelineEntry {
     note: note,
     sabbath: sabbath,
     order: order,
+    spanId: spanId,
+    offset: offset,
   );
 
   /// The entry on [timeline], its end worked out again from its duration
@@ -803,6 +871,8 @@ class StudyTimelineEntry {
     note: note ?? this.note,
     sabbath: sabbath ?? this.sabbath,
     order: order ?? this.order,
+    spanId: spanId,
+    offset: offset,
   );
 
   Map<String, Object?> toJson() => {
@@ -833,6 +903,8 @@ class StudyTimelineEntry {
     if (note.isNotEmpty) 'note': note,
     if (sabbath) 'sabbath': true,
     'order': order,
+    if (spanId != null) 'span': spanId,
+    if (offset != null) 'offset': offset!.toJson(),
   };
 
   static StudyTimelineEntry? fromJson(Object? value) {
@@ -849,6 +921,11 @@ class StudyTimelineEntry {
         (end != null && end is! num)) {
       return null;
     }
+    // A pin needs both its span and its offset.
+    final span = value['span'];
+    final offset = span is String
+        ? TimelineDuration.fromJson(value['offset'])
+        : null;
     for (final key in ['startMonth', 'startDay', 'endMonth', 'endDay']) {
       if (value[key] != null && value[key] is! int) return null;
     }
@@ -869,6 +946,8 @@ class StudyTimelineEntry {
         'note',
         'sabbath',
         'order',
+        'span',
+        'offset',
       }),
       id: id,
       title: title,
@@ -897,6 +976,8 @@ class StudyTimelineEntry {
       note: value['note'] is String ? value['note'] as String : '',
       sabbath: value['sabbath'] == true,
       order: value['order'] is int ? value['order'] as int : 0,
+      spanId: offset == null ? null : span,
+      offset: offset,
     );
     return entry.isValid ? entry : null;
   }

@@ -1846,7 +1846,37 @@ class StudyWorkspace {
               : entry,
       ],
     );
-    return fitted._putTimeline(timeline);
+    return fitted._putTimeline(timeline)._placePins();
+  }
+
+  /// The workspace with each event pinned into a span placed there (see
+  /// [StudyTimeline.placeInSpan]), so that it moves with the span. One whose
+  /// span is gone, or no longer a span on its timeline, is unpinned where
+  /// it stands; one its offset cannot place in the span as it now stands
+  /// stays where it was, still pinned.
+  StudyWorkspace _placePins() {
+    if (!timelineEntries.any((e) => e.spanId != null)) return this;
+    final byId = {for (final e in timelineEntries) e.id: e};
+    StudyTimelineEntry placed(StudyTimelineEntry entry) {
+      final spanId = entry.spanId;
+      final offset = entry.offset;
+      if (spanId == null || offset == null) return entry;
+      final span = byId[spanId];
+      final timeline = timelineById(entry.timelineId);
+      if (timeline == null ||
+          span == null ||
+          !span.isSpan ||
+          span.timelineId != entry.timelineId) {
+        return entry.pinnedTo(null, null);
+      }
+      final start = timeline.placeInSpan(span, offset);
+      if (start == null || !timeline.fits(start) || start == entry.start) {
+        return entry;
+      }
+      return entry.withTime(start: start, end: null);
+    }
+
+    return copyWith(timelineEntries: timelineEntries.map(placed).toList());
   }
 
   /// [entry] with its times settled where [timeline] can place them (see
@@ -1956,12 +1986,14 @@ class StudyWorkspace {
           ? entry
           : entry.copyWith(order: nextOrder(entry.timelineId));
     }
-    return copyWith(timelineEntries: updated);
+    return copyWith(timelineEntries: updated)._placePins();
   }
 
+  /// Removes an entry; the events pinned into a span removed stay where
+  /// they are, unpinned.
   StudyWorkspace removeTimelineEntry(StudyTimelineEntry entry) => copyWith(
     timelineEntries: timelineEntries.where((e) => e.id != entry.id).toList(),
-  );
+  )._placePins();
 
   Map<String, Object?> toJson() => {
     ...extra,
@@ -2412,7 +2444,7 @@ class StudyWorkspace {
         'wordColor',
         'passageColor',
       }),
-    );
+    )._placePins();
   }
 }
 

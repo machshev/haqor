@@ -734,7 +734,7 @@ void main() {
                     calls.add('timeline');
                     timeline = timeline.copyWith(title: 'Kings of Israel');
                   },
-                  onAddEntry: (span, _, {sabbath = false}) async {
+                  onAddEntry: (span, _, {sabbath = false, within}) async {
                     calls.add('add ${span ? 'span' : 'event'}');
                     entries = [...entries, _reign];
                   },
@@ -785,6 +785,103 @@ void main() {
     expect(calls, ['timeline', 'add span', 'edit temple', 'remove temple']);
   });
 
+  testWidgets('an event is pinned into a span in the editor, and listed and '
+      'added from the span', (tester) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+    );
+    const unleavened = StudyTimelineEntry(
+      id: 'unleavened',
+      title: 'Unleavened Bread',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 15),
+      end: TimelineTime(0, month: 1, day: 21),
+    );
+    StudyTimelineEntry? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              saved = await showDialog<StudyTimelineEntry>(
+                context: context,
+                builder: (_) => StudyTimelineEntryEditor(
+                  initial: const StudyTimelineEntry(
+                    id: 'wave',
+                    title: 'Wave sheaf',
+                    timelineId: 'feasts',
+                    start: TimelineTime(0, month: 1, day: 17),
+                  ),
+                  creating: false,
+                  timelines: const [feasts],
+                  entries: const [unleavened],
+                  useEnglishBookNames: true,
+                  loadChapter: _chapter,
+                ),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('timeline-entry-in-span-feasts')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Unleavened Bread').last);
+    await tester.pumpAndSettle();
+    // Its day in the span is taken from when it was.
+    expect(find.text('3'), findsOneWidget);
+    expect(
+      find.text('Falls on 17 Nisan, moving with Unleavened Bread'),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('timeline-entry-offset')),
+      '10',
+    );
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    // Day 10 of seven still counts on from the start.
+    expect(saved?.spanId, 'unleavened');
+    expect(
+      saved?.offset,
+      const TimelineDuration(10, TimelineDurationUnit.days),
+    );
+    expect(saved?.start, const TimelineTime(0, month: 1, day: 24));
+
+    // The span lists it, and adds another in it.
+    final pinned = saved!;
+    StudyTimelineEntry? addedWithin;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TimelinePage(
+          timeline: feasts,
+          entries: [unleavened, pinned],
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+          reload: () => (timeline: feasts, entries: [unleavened, pinned]),
+          onAddEntry: (span, at, {sabbath = false, within}) async {
+            addedWithin = within;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('24 Nisan · Day 10 of Unleavened Bread'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('timeline-row-unleavened')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('timeline-pinned-wave')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('timeline-add-within')));
+    await tester.pumpAndSettle();
+    expect(addedWithin?.id, 'unleavened');
+  });
+
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
     tester,
   ) async {
@@ -815,7 +912,7 @@ void main() {
           initialCalendar: true,
           reload: () => (timeline: timeline, entries: entries),
           onUpdateTimeline: (changed) async => timeline = changed,
-          onAddEntry: (span, at, {sabbath = false}) async {
+          onAddEntry: (span, at, {sabbath = false, within}) async {
             added.add((at, sabbath));
             // As the reader would, once the editor is saved.
             entries = [
