@@ -1183,6 +1183,69 @@ void main() {
     expect(workspace.viewTimeline('m')!.colorOf(passover), isNotNull);
   });
 
+  test('shabbatons pinned to a feast hang directly beneath it', () {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+    );
+    const matzot = StudyTimelineEntry(
+      id: 'matzot',
+      title: 'Chag haMatzot',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 15),
+      end: TimelineTime(0, month: 1, day: 21),
+    );
+    StudyTimelineEntry star(String id, int day, {bool pinned = true}) {
+      final entry = StudyTimelineEntry(
+        id: id,
+        title: id,
+        timelineId: 'feasts',
+        start: TimelineTime(0, month: 1, day: day),
+        sabbath: true,
+      );
+      return pinned
+          ? entry.pinnedTo(
+              TimelinePin(
+                'matzot',
+                TimelineDuration(day - 14.0, TimelineDurationUnit.days),
+              ),
+            )
+          : entry;
+    }
+
+    final slots = packTimelineLanes(
+      feasts,
+      // The first day's star starts with the feast, and sorts before it.
+      [
+        star('first', 15),
+        matzot,
+        star('seventh', 21),
+        star('alone', 3, pinned: false),
+      ],
+      x: (p) => p * 10000,
+      width: (e) => e.isHighSabbath ? 12 : 100,
+    );
+    int lane(String id) => slots.singleWhere((s) => s.entry.id == id).lane;
+    // The star pinned to nothing keeps the first lane; the feast the next,
+    // its stars the one beneath.
+    expect(lane('alone'), 0);
+    expect(lane('matzot'), 1);
+    expect(lane('first'), 2);
+    expect(lane('seventh'), 2);
+    // With no star pinned to nothing, no lane is kept for them.
+    final pinnedOnly = packTimelineLanes(
+      feasts,
+      [star('first', 15), matzot],
+      x: (p) => p * 10000,
+      width: (e) => e.isHighSabbath ? 12 : 100,
+    );
+    expect(pinnedOnly.map((s) => (s.entry.id, s.lane)), [
+      ('matzot', 0),
+      ('first', 1),
+    ]);
+  });
+
   test('a study without timelines stores none', () {
     final json = const StudyWorkspace(id: 's', name: 'Study').toJson();
     expect(json.containsKey('timelines'), isFalse);

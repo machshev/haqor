@@ -77,10 +77,12 @@ typedef TimelineSlot = ({
 /// the first lane free [gap] before it. [x] places an axis position, and
 /// an entry's slot runs from where its reach starts (see
 /// [timelineEntryReach]): a span's start, an event's middle. [width] is
-/// the least room an entry's mark and label take from there. High
-/// Sabbaths, stars without labels, all share the first lane. An entry pinned
-/// to another (see [TimelinePin]) takes a lane below its anchor's, so that
-/// the events of a feast hang beneath it.
+/// the least room an entry's mark and label take from there. An entry
+/// pinned to another (see [TimelinePin]) takes a lane below its anchor's,
+/// so that the events of a feast hang beneath it, its shabbatons among
+/// them; an anchor is placed before what is pinned to it from its start.
+/// Shabbatons pinned to nothing above them, stars without labels, all
+/// share the first lane.
 List<TimelineSlot> packTimelineLanes(
   StudyTimeline timeline,
   List<StudyTimelineEntry> entries, {
@@ -89,20 +91,38 @@ List<TimelineSlot> packTimelineLanes(
   double gap = 8,
 }) {
   final sorted = List.of(entries)..sort(compareTimelineEntries);
-  final sabbaths = sorted.any((e) => e.isHighSabbath);
+  final byId = {for (final e in sorted) e.id: e};
+  double from(StudyTimelineEntry e) => timelineEntryReach(timeline, e).start;
+  // The anchor an entry hangs beneath: one placed before it, starting no
+  // later than it.
+  StudyTimelineEntry? anchorOf(StudyTimelineEntry e) =>
+      switch (byId[e.pin?.anchorId]) {
+        final anchor? when from(anchor) <= from(e) + 1e-9 => anchor,
+        _ => null,
+      };
+  final ordered = <StudyTimelineEntry>[];
+  final seen = Set<StudyTimelineEntry>.identity();
+  void visit(StudyTimelineEntry e) {
+    if (!seen.add(e)) return;
+    if (anchorOf(e) case final anchor?) visit(anchor);
+    ordered.add(e);
+  }
+
+  sorted.forEach(visit);
+  final sabbaths = sorted.any((e) => e.isHighSabbath && anchorOf(e) == null);
   final laneEnds = <double>[if (sabbaths) double.infinity];
   final slots = <TimelineSlot>[];
   final laneOf = <String, int>{};
-  for (final entry in sorted) {
+  for (final entry in ordered) {
     final reach = timelineEntryReach(timeline, entry);
     final left = x(reach.start);
     final right = math.max(x(reach.end), left + width(entry));
-    if (entry.isHighSabbath) {
+    final anchor = laneOf[anchorOf(entry)?.id];
+    if (entry.isHighSabbath && anchor == null) {
       slots.add((entry: entry, lane: 0, left: left, right: right));
       laneOf[entry.id] = 0;
       continue;
     }
-    final anchor = laneOf[entry.pin?.anchorId];
     var lane = laneEnds.indexWhere(
       (end) => end + gap <= left,
       anchor == null ? 0 : anchor + 1,
