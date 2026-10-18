@@ -505,6 +505,28 @@ class StudyTimeline {
     return days;
   }
 
+  /// Where [day] falls in the counted span [span] (see
+  /// [StudyTimelineEntry.isCounted]): its day, from 1, its week, from 1,
+  /// and its day within that week; null outside the span, or where the
+  /// span is not counted in days.
+  ({int day, int week, int dayOfWeek})? countIn(
+    StudyTimelineEntry span,
+    TimelineTime day,
+  ) {
+    if (!span.isCounted) return null;
+    final n = daysBetween(span.start, day);
+    final length = daysBetween(span.start, span.last);
+    if (n == null || length == null || n < 0 || n > length) return null;
+    return (day: n + 1, week: n ~/ 7 + 1, dayOfWeek: n % 7 + 1);
+  }
+
+  /// The days a span runs, its first and last among them; null where it
+  /// is not dated to the day.
+  int? daysIn(StudyTimelineEntry span) {
+    final days = daysBetween(span.start, span.last);
+    return days == null ? null : days + 1;
+  }
+
   /// Where an entry pinned by [pin] to [anchor] starts (see [TimelinePin]):
   /// counted in days from the anchor's first day, day 1 being that day, or
   /// else in months or years from its start; then moved on, given a
@@ -887,6 +909,7 @@ class StudyTimelineEntry {
     this.verses = const [],
     this.note = '',
     this.sabbath = false,
+    this.counted = false,
     this.order = 0,
     this.pin,
     this.extra = const {},
@@ -915,6 +938,10 @@ class StudyTimelineEntry {
   /// Whether this event is a high Sabbath: a feast day kept as a Sabbath,
   /// its day coloured as one in the calendar. Spans are not.
   final bool sabbath;
+
+  /// Whether a span's days and weeks are counted and numbered, as the
+  /// fifty days to Pentecost (Leviticus 23:15-16); see [isCounted].
+  final bool counted;
   final int order;
 
   /// The entry on its timeline it is pinned to: its [start] is then kept
@@ -924,6 +951,7 @@ class StudyTimelineEntry {
 
   bool get isSpan => end != null;
   bool get isHighSabbath => sabbath && !isSpan;
+  bool get isCounted => counted && isSpan;
   TimelineTime get last => end ?? start;
   String get key => 'timeline-entry-$id';
 
@@ -949,6 +977,7 @@ class StudyTimelineEntry {
     verses: verses,
     note: note,
     sabbath: sabbath,
+    counted: counted,
     order: order,
     pin: pin,
   );
@@ -973,6 +1002,7 @@ class StudyTimelineEntry {
     verses: verses,
     note: note,
     sabbath: sabbath,
+    counted: counted,
     order: order,
     pin: pin,
   );
@@ -996,6 +1026,7 @@ class StudyTimelineEntry {
     List<StudyPassage>? verses,
     String? note,
     bool? sabbath,
+    bool? counted,
     int? order,
   }) => StudyTimelineEntry(
     extra: extra,
@@ -1009,6 +1040,7 @@ class StudyTimelineEntry {
     verses: verses ?? this.verses,
     note: note ?? this.note,
     sabbath: sabbath ?? this.sabbath,
+    counted: counted ?? this.counted,
     order: order ?? this.order,
     pin: pin,
   );
@@ -1040,6 +1072,7 @@ class StudyTimelineEntry {
       ],
     if (note.isNotEmpty) 'note': note,
     if (sabbath) 'sabbath': true,
+    if (counted) 'counted': true,
     'order': order,
     if (pin != null) 'pin': pin!.toJson(),
   };
@@ -1084,6 +1117,7 @@ class StudyTimelineEntry {
         'verses',
         'note',
         'sabbath',
+        'counted',
         'order',
         'pin',
         'span',
@@ -1115,6 +1149,7 @@ class StudyTimelineEntry {
       ],
       note: value['note'] is String ? value['note'] as String : '',
       sabbath: value['sabbath'] == true,
+      counted: value['counted'] == true,
       order: value['order'] is int ? value['order'] as int : 0,
       pin: pin,
     );

@@ -85,7 +85,7 @@ class TimelineCalendar extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _Legend(scheme: scheme),
+              _Legend(scheme: scheme, counted: entries.any((e) => e.isCounted)),
               if (yearOnly.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -135,9 +135,12 @@ class TimelineCalendar extends StatelessWidget {
 }
 
 class _Legend extends StatelessWidget {
-  const _Legend({required this.scheme});
+  const _Legend({required this.scheme, this.counted = false});
 
   final ColorScheme scheme;
+
+  /// Whether a count runs in the year, its days numbered.
+  final bool counted;
 
   @override
   Widget build(BuildContext context) {
@@ -166,6 +169,11 @@ class _Legend extends StatelessWidget {
         swatch(scheme.tertiaryContainer, 'High Sabbath'),
         swatch(scheme.tertiary, 'Event', dot: true),
         swatch(scheme.primary, 'Span'),
+        if (counted)
+          Text(
+            '7  Day of a count',
+            style: style?.copyWith(color: scheme.primary),
+          ),
       ],
     );
   }
@@ -304,6 +312,10 @@ class _Month extends StatelessWidget {
           span.entry,
     ];
     final high = events.any((entry) => entry.isHighSabbath);
+    // Its number in a count running over it.
+    final count = [
+      for (final span in over) ?timeline.countIn(span, day),
+    ].firstOrNull;
     final sabbath = timeline.weekdayOf(day) == 7;
     final isSelected =
         selected != null &&
@@ -344,6 +356,20 @@ class _Month extends StatelessWidget {
                 ),
               ),
             ),
+            if (count != null)
+              Positioned(
+                top: 1,
+                left: 3,
+                child: Text(
+                  '${count.day}',
+                  key: ValueKey('calendar-count-${day.month}-${day.day}'),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 9,
+                    color: scheme.primary,
+                    fontWeight: count.dayOfWeek == 1 ? FontWeight.bold : null,
+                  ),
+                ),
+              ),
             if (dots.isNotEmpty)
               Align(
                 alignment: const Alignment(0, 0.55),

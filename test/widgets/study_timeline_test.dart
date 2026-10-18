@@ -902,6 +902,76 @@ void main() {
     expect(duplicated?.id, 'unleavened');
   });
 
+  testWidgets('a counted span numbers its days and weeks on the page and '
+      'the calendar', (tester) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+    );
+    // Fifty days, from 16 Nisan to 6 Sivan.
+    const count = StudyTimelineEntry(
+      id: 'count',
+      title: 'The count',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 16),
+      end: TimelineTime(0, month: 3, day: 6),
+      counted: true,
+    );
+    const pentecost = StudyTimelineEntry(
+      id: 'pentecost',
+      title: 'Pentecost',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 3, day: 6),
+    );
+    expect(feasts.daysIn(count), 50);
+    expect(feasts.countIn(count, const TimelineTime(0, month: 2, day: 1)), (
+      day: 16,
+      week: 3,
+      dayOfWeek: 2,
+    ));
+    expect(
+      feasts.countIn(count, const TimelineTime(0, month: 3, day: 7)),
+      isNull,
+    );
+    expect(StudyTimelineEntry.fromJson(count.toJson())?.isCounted, isTrue);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TimelinePage(
+          timeline: feasts,
+          entries: const [count, pentecost],
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('timeline-row-count')));
+    await tester.pumpAndSettle();
+    expect(find.text('Counted, 50 days: 7 weeks and 1 day'), findsOneWidget);
+    Navigator.of(tester.element(find.text('The count').last)).pop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('timeline-row-pentecost')));
+    await tester.pumpAndSettle();
+    expect(find.text('Day 50 of The count: week 8, day 1'), findsOneWidget);
+    Navigator.of(tester.element(find.text('Pentecost').last)).pop();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Show calendar'));
+    await tester.pumpAndSettle();
+    Text countOn(int month, int day) =>
+        tester.widget(find.byKey(ValueKey('calendar-count-$month-$day')));
+    expect(countOn(1, 16).data, '1');
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('calendar-count-3-6')),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(countOn(3, 6).data, '50');
+    expect(find.byKey(const ValueKey('calendar-count-3-7')), findsNothing);
+  });
+
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
     tester,
   ) async {

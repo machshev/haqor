@@ -362,6 +362,8 @@ class TimelineChart extends StatelessWidget {
                   4,
                   px(timelineEntryReach(timeline, slot.entry).end) - slot.left,
                 ),
+                countedDays: timeline.daysIn(slot.entry) ?? 0,
+                titleWidth: _textWidth(slot.entry.title, labelStyle),
                 selected: slot.entry.id == selectedId,
                 tooltip: slot.entry.isHighSabbath
                     ? '${slot.entry.title} · ${timelineEntryTime(timeline, slot.entry)}'
@@ -381,6 +383,8 @@ class _EntryMark extends StatelessWidget {
   const _EntryMark({
     required this.entry,
     required this.barWidth,
+    this.countedDays = 0,
+    this.titleWidth = 0,
     required this.selected,
     required this.tooltip,
     this.onTap,
@@ -388,6 +392,12 @@ class _EntryMark extends StatelessWidget {
 
   final StudyTimelineEntry entry;
   final double barWidth;
+
+  /// For a counted span (see [StudyTimelineEntry.isCounted]), its days, to
+  /// mark them and its weeks across its bar, clear of its title, which is
+  /// [titleWidth] wide.
+  final int countedDays;
+  final double titleWidth;
   final bool selected;
   final String tooltip;
   final VoidCallback? onTap;
@@ -429,6 +439,20 @@ class _EntryMark extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (entry.isCounted && countedDays > 0)
+                    SizedBox(
+                      width: barWidth,
+                      height: double.infinity,
+                      child: CustomPaint(
+                        painter: _CountPainter(
+                          days: countedDays,
+                          skip: titleWidth + 12,
+                          color: scheme.primary,
+                          labelStyle: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(color: scheme.onPrimaryContainer),
+                        ),
+                      ),
+                    ),
                   Padding(
                     padding: const EdgeInsetsDirectional.only(start: 6),
                     child: label,
@@ -466,6 +490,71 @@ class _EntryMark extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The days of a counted span across its bar: a faint mark between each
+/// two where there is room, a stronger one between its weeks, and each
+/// week's number where it fits clear of the title, [skip] pixels wide.
+class _CountPainter extends CustomPainter {
+  _CountPainter({
+    required this.days,
+    required this.skip,
+    required this.color,
+    required this.labelStyle,
+  });
+
+  final int days;
+  final double skip;
+  final Color color;
+  final TextStyle? labelStyle;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final day = size.width / days;
+    final faint = Paint()
+      ..color = color.withValues(alpha: 0.25)
+      ..strokeWidth = 1;
+    final strong = Paint()
+      ..color = color.withValues(alpha: 0.7)
+      ..strokeWidth = 1.5;
+    for (var n = 1; n < days; n++) {
+      final week = n % 7 == 0;
+      if (!week && day < 4) continue;
+      final x = n * day;
+      canvas.drawLine(
+        Offset(x, week ? 2 : size.height * 0.6),
+        Offset(x, size.height - 2),
+        week ? strong : faint,
+      );
+    }
+    final weeks = (days + 6) ~/ 7;
+    for (var w = 1; w <= weeks; w++) {
+      final left = (w - 1) * 7 * day;
+      final width = math.min(7, days - (w - 1) * 7) * day;
+      if (left < skip) continue;
+      final text = width >= 56 ? 'Week $w' : '$w';
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: labelStyle),
+        maxLines: 1,
+        textDirection: TextDirection.ltr,
+      )..layout();
+      if (painter.width + 4 > width) continue;
+      painter.paint(
+        canvas,
+        Offset(
+          left + (width - painter.width) / 2,
+          (size.height - painter.height) / 2,
+        ),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CountPainter old) =>
+      old.days != days ||
+      old.skip != skip ||
+      old.color != color ||
+      old.labelStyle != labelStyle;
 }
 
 class _AxisPainter extends CustomPainter {
@@ -970,6 +1059,29 @@ class _TimelinePageState extends State<TimelinePage> {
       '${bookDisplayName(passage.bookIndex, useEnglish: widget.useEnglishBookNames)} '
       '${passage.reference}';
 
+  /// Where [day] falls in each counted span over it: "Day 23 of the
+  /// count: week 4, day 2". [except] leaves out a span's own.
+  List<String> _counts(TimelineTime day, {String? except}) => [
+    for (final span in _entries)
+      if (span.id != except)
+        if (_timeline.countIn(span, day) case final c?)
+          'Day ${c.day} of ${span.title}: week ${c.week}, day ${c.dayOfWeek}',
+  ];
+
+  /// A counted span's length in days and in weeks: "50 days: 7 weeks and
+  /// 1 day"; null for one not counted.
+  String? _countedLength(StudyTimelineEntry span) {
+    final days = span.isCounted ? _timeline.daysIn(span) : null;
+    if (days == null) return null;
+    final weeks = days ~/ 7;
+    final rest = days % 7;
+    final parts = [
+      if (weeks > 0) '$weeks week${weeks == 1 ? '' : 's'}',
+      if (rest > 0) '$rest day${rest == 1 ? '' : 's'}',
+    ];
+    return 'Counted, $days day${days == 1 ? '' : 's'}: ${parts.join(' and ')}';
+  }
+
   Future<void> _show(StudyTimelineEntry entry) async {
     setState(() => _selectedId = entry.id);
     final edit = widget.onEditEntry;
@@ -1002,6 +1114,17 @@ class _TimelinePageState extends State<TimelinePage> {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                for (final line in [
+                  ?_countedLength(entry),
+                  if (entry.start.day != null)
+                    ..._counts(entry.start, except: entry.id),
+                ])
+                  Text(
+                    line,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
                 if (entry.note.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   MarkdownNote(entry.note),
@@ -1154,6 +1277,13 @@ class _TimelinePageState extends State<TimelinePage> {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                for (final line in _counts(day))
+                  Text(
+                    line,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 for (final entry in entries)
                   ListTile(

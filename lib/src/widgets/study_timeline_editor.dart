@@ -432,7 +432,7 @@ class StudyTimelineEntryEditor extends StatefulWidget {
 class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   late final TextEditingController _title, _date, _note, _amount, _offset;
   late final _TimeDraft _start, _end;
-  late bool _span, _byDuration, _sabbath;
+  late bool _span, _byDuration, _sabbath, _counted;
   late TimelineDurationUnit _durationUnit;
   late String _timelineId;
   late List<StudyPassage> _verses;
@@ -533,6 +533,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     _title = TextEditingController(text: e.title);
     _span = e.isSpan;
     _sabbath = e.sabbath;
+    _counted = e.counted;
     // A new entry starts empty, BC by default counting by era.
     // A day already chosen (from the calendar) is kept.
     _start = _TimeDraft(
@@ -727,6 +728,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
             verses: _verses,
             note: _note.text.trim(),
             sabbath: sabbath,
+            counted: _span && _counted && timeline.hasMonths,
           )
           .pinnedTo(pin),
     );
@@ -1212,6 +1214,19 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                   _durationFields(theme)
                 else
                   _time(_end, label: 'End', key: 'end'),
+                if (_timeline.hasMonths)
+                  SwitchListTile(
+                    key: const ValueKey('timeline-entry-counted'),
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.format_list_numbered),
+                    title: const Text('Count its days'),
+                    subtitle: const Text(
+                      'Numbers its days and weeks, as the fifty days to '
+                      'Pentecost are counted (Leviticus 23:15-16).',
+                    ),
+                    value: _counted,
+                    onChanged: (on) => setState(() => _counted = on),
+                  ),
               ],
               const SizedBox(height: 12),
               TextField(
