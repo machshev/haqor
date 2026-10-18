@@ -49,7 +49,9 @@ const _exodus = 1;
 const _leviticus = 2;
 const _numbers = 3;
 const _deuteronomy = 4;
+const _ezekiel = 13;
 const _mark = 40;
+const _john = 42;
 const _acts = 43;
 const _corinthians = 45;
 const _chag = 'Chag (pilgrimage)';
@@ -85,7 +87,8 @@ final _moadim = StandardTimeline(
         'weeks. Names are glossed, and verses rendered, literally. Each '
         'chag is a pilgrimage: "three times in the year shall all thy males '
         'appear before Yahweh thy God in the place which he shall choose" '
-        '(Deuteronomy 16:16).',
+        '(Deuteronomy 16:16); "I went with them to the house of God ... a '
+        'multitude keeping pilgrimage (chogeg)" (Psalm 42:4).',
   ),
   entries: [
     StudyTimelineEntry(
@@ -94,17 +97,29 @@ final _moadim = StandardTimeline(
       timelineId: '',
       start: const TimelineTime(0, month: 1, day: 14),
       part: TimelineDayPart.evening,
-      category: _qorban,
+      // Kept at the place of pilgrimage, the first of its days.
+      category: _chag,
       verses: [
         _ref(_leviticus, 23, 5),
         _ref(_exodus, 12, 6),
         _ref(_exodus, 12, 13),
         _ref(_numbers, 28, 16),
+        _ref(_exodus, 34, 25),
+        _ref(_deuteronomy, 16, 5, 7),
+        _ref(_ezekiel, 45, 21),
+        _ref(_john, 11, 55),
       ],
       note:
           '"In the first month, in the fourteenth of the month, between the '
           'evenings, a passing over (pesach) to Yahweh" (Leviticus 23:5); "I '
-          'will pass over (ufasachti) you" (Exodus 12:13).',
+          'will pass over (ufasachti) you" (Exodus 12:13). Part of the '
+          'pilgrimage: "the sacrifice of the pilgrimage of the passing over '
+          '(zevach chag hapesach)" (Exodus 34:25); "thou mayest not '
+          'sacrifice the pesach within any of thy gates, but at the place '
+          'which Yahweh thy God shall choose ... and thou shalt turn in the '
+          'morning and go to thy tents" (Deuteronomy 16:5-7); "the pesach, a '
+          'pilgrimage (chag) of seven days" (Ezekiel 45:21); "many went up to '
+          'Jerusalem out of the country before the pascha" (John 11:55).',
     ),
     StudyTimelineEntry(
       id: 'matzot',
