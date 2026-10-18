@@ -20,6 +20,25 @@ enum TimelineScale {
   annual,
 }
 
+/// The part of a day an event falls in. A day runs from sunset to sunset
+/// (Genesis 1:5, Leviticus 23:32): its night comes first, then its
+/// daytime, and its evening, "between the evenings" when the Passover was
+/// killed (Exodus 12:6), closes it.
+enum TimelineDayPart {
+  night('at night', 'Night', 0.25),
+  daytime('by day', 'Day', 0.7),
+  evening('at evening', 'Evening', 0.94);
+
+  const TimelineDayPart(this.phrase, this.label, this.fraction);
+
+  /// How it reads after a date: "14 Nisan, at evening".
+  final String phrase;
+  final String label;
+
+  /// Where in its day it stands, from the sunset that begins it.
+  final double fraction;
+}
+
 /// What a span's length is counted in.
 enum TimelineDurationUnit { years, months, days, units }
 
@@ -910,6 +929,7 @@ class StudyTimelineEntry {
     this.note = '',
     this.sabbath = false,
     this.counted = false,
+    this.part,
     this.order = 0,
     this.pin,
     this.extra = const {},
@@ -942,6 +962,13 @@ class StudyTimelineEntry {
   /// Whether a span's days and weeks are counted and numbered, as the
   /// fifty days to Pentecost (Leviticus 23:15-16); see [isCounted].
   final bool counted;
+
+  /// The part of its day an event falls in, where it is dated to the day;
+  /// null for the whole day.
+  final TimelineDayPart? part;
+
+  /// [part] where it means anything: an event dated to the day.
+  TimelineDayPart? get dayPart => isSpan || start.day == null ? null : part;
   final int order;
 
   /// The entry on its timeline it is pinned to: its [start] is then kept
@@ -978,6 +1005,7 @@ class StudyTimelineEntry {
     note: note,
     sabbath: sabbath,
     counted: counted,
+    part: part,
     order: order,
     pin: pin,
   );
@@ -1003,6 +1031,7 @@ class StudyTimelineEntry {
     note: note,
     sabbath: sabbath,
     counted: counted,
+    part: part,
     order: order,
     pin: pin,
   );
@@ -1027,6 +1056,7 @@ class StudyTimelineEntry {
     String? note,
     bool? sabbath,
     bool? counted,
+    TimelineDayPart? Function()? part,
     int? order,
   }) => StudyTimelineEntry(
     extra: extra,
@@ -1041,6 +1071,7 @@ class StudyTimelineEntry {
     note: note ?? this.note,
     sabbath: sabbath ?? this.sabbath,
     counted: counted ?? this.counted,
+    part: part == null ? this.part : part(),
     order: order ?? this.order,
     pin: pin,
   );
@@ -1073,6 +1104,7 @@ class StudyTimelineEntry {
     if (note.isNotEmpty) 'note': note,
     if (sabbath) 'sabbath': true,
     if (counted) 'counted': true,
+    if (part != null) 'part': part!.name,
     'order': order,
     if (pin != null) 'pin': pin!.toJson(),
   };
@@ -1118,6 +1150,7 @@ class StudyTimelineEntry {
         'note',
         'sabbath',
         'counted',
+        'part',
         'order',
         'pin',
         'span',
@@ -1150,6 +1183,9 @@ class StudyTimelineEntry {
       note: value['note'] is String ? value['note'] as String : '',
       sabbath: value['sabbath'] == true,
       counted: value['counted'] == true,
+      part: TimelineDayPart.values
+          .where((p) => p.name == value['part'])
+          .firstOrNull,
       order: value['order'] is int ? value['order'] as int : 0,
       pin: pin,
     );
@@ -1162,7 +1198,11 @@ int compareTimelineEntries(StudyTimelineEntry a, StudyTimelineEntry b) {
   final start = a.start.position().compareTo(b.start.position());
   if (start != 0) return start;
   final last = a.last.position().compareTo(b.last.position());
-  return last != 0 ? last : a.order.compareTo(b.order);
+  if (last != 0) return last;
+  // Within a day, night, then day, then evening; the whole day first.
+  final part = (a.dayPart?.index ?? -1).compareTo(b.dayPart?.index ?? -1);
+  if (part != 0) return part;
+  return a.order.compareTo(b.order);
 }
 
 /// The entries of [value] whose keys are not among [known].

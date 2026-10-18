@@ -43,13 +43,18 @@ import 'timeline_calendar.dart';
 
 /// The stretch of a timeline's axis [entry] covers, as positions: a span's
 /// from its start to the end of its last day (see [StudyTimeline.endOf]),
-/// and an event's the point in the middle of its day.
+/// and an event's the point in the middle of its day, or in the part of
+/// it it falls in (see [TimelineDayPart]).
 ({double start, double end}) timelineEntryReach(
   StudyTimeline timeline,
   StudyTimelineEntry entry,
 ) {
   if (!entry.isSpan) {
-    final at = timeline.centreOf(entry.start);
+    final part = entry.dayPart;
+    final from = timeline.positionOf(entry.start);
+    final at = part == null
+        ? timeline.centreOf(entry.start)
+        : from + part.fraction * (timeline.endOf(entry.start) - from);
     return (start: at, end: at);
   }
   return (
@@ -222,6 +227,40 @@ List<TimelineTick> timelineTicks(
   ];
 }
 
+/// The night halves, from sunset, of the days between the axis positions
+/// [start] and [end] of [timeline] (see [TimelineDayPart]); none off the
+/// year scales, or where there would be more than [most].
+List<({double from, double to})> timelineNights(
+  StudyTimeline timeline,
+  double start,
+  double end, {
+  int most = 4000,
+}) {
+  if (!timeline.hasMonths || end <= start) return const [];
+  double written(int position) =>
+      timeline.isCalendar && position <= 0 ? position - 1.0 : position * 1.0;
+  final years = timeline.isAnnual
+      ? const [0.0]
+      : [
+          for (var y = start.floor(); y <= end.ceil(); y++)
+            if (!timeline.isCalendar || written(y) != 0) written(y),
+        ];
+  final nights = <({double from, double to})>[];
+  for (final year in years) {
+    final first = TimelineTime(year, month: 1, day: 1);
+    if (!timeline.fits(first)) continue;
+    final base = timeline.positionOf(first);
+    final length = timeline.daysInYear(year);
+    for (var day = 0; day < length; day++) {
+      final from = base + day / length;
+      if (from + 1 / length < start || from > end) continue;
+      if (nights.length >= most) return const [];
+      nights.add((from: from, to: from + 0.5 / length));
+    }
+  }
+  return nights;
+}
+
 /// A label's width in [style].
 double _textWidth(String text, TextStyle? style) {
   final painter = TextPainter(
@@ -255,7 +294,9 @@ String timelineEntryTime(StudyTimeline timeline, StudyTimelineEntry entry) {
             '${timeline.formatTime(entry.end!)}'
             '${duration == null ? '' : ' (${timeline.formatDuration(duration)})'}'
       : timeline.formatTime(entry.start);
-  return entry.date.isEmpty ? time : '${entry.date} $time';
+  final part = entry.dayPart;
+  final when = part == null ? time : '$time, ${part.phrase}';
+  return entry.date.isEmpty ? when : '${entry.date} $when';
 }
 
 /// A timeline drawn to scale: spans as bars and events as dots, packed into
@@ -337,6 +378,17 @@ class TimelineChart extends StatelessWidget {
                 x: px,
                 axisY: axisY,
                 width: width,
+                // Days run from sunset: their nights shaded, zoomed in to them.
+                nights: timeline.hasMonths && pixelsPerUnit / 384 >= 10
+                    ? [
+                        for (final n in timelineNights(
+                          timeline,
+                          extent.start,
+                          extent.end,
+                        ))
+                          (from: px(n.from), to: px(n.to)),
+                      ]
+                    : const [],
                 guides: [
                   for (final slot in slots)
                     if (!slot.entry.isSpan)
@@ -566,6 +618,7 @@ class _AxisPainter extends CustomPainter {
     required this.axisY,
     required this.width,
     required this.guides,
+    this.nights = const [],
     required this.color,
     required this.labelStyle,
   });
@@ -574,6 +627,9 @@ class _AxisPainter extends CustomPainter {
   final double start, end, axisY, width;
   final double Function(double) x;
   final List<({double x, double top})> guides;
+
+  /// The nights to shade, in pixels across.
+  final List<({double from, double to})> nights;
   final Color color;
   final TextStyle? labelStyle;
 
@@ -585,6 +641,10 @@ class _AxisPainter extends CustomPainter {
     final guide = Paint()
       ..color = color.withValues(alpha: 0.35)
       ..strokeWidth = 1;
+    final night = Paint()..color = color.withValues(alpha: 0.08);
+    for (final n in nights) {
+      canvas.drawRect(Rect.fromLTRB(n.from, 0, n.to, axisY), night);
+    }
     for (final g in guides) {
       canvas.drawLine(Offset(g.x, g.top), Offset(g.x, axisY), guide);
     }
@@ -628,7 +688,8 @@ class _AxisPainter extends CustomPainter {
       old.axisY != axisY ||
       old.width != width ||
       old.color != color ||
-      old.guides.length != guides.length;
+      old.guides.length != guides.length ||
+      old.nights.length != nights.length;
 }
 
 /// A timeline fitted to the width it is given, small and without labels but

@@ -972,6 +972,82 @@ void main() {
     expect(find.byKey(const ValueKey('calendar-count-3-7')), findsNothing);
   });
 
+  testWidgets('an event falls in a part of its day, which runs from sunset', (
+    tester,
+  ) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+    );
+    const day14 = TimelineTime(0, month: 1, day: 14);
+    StudyTimelineEntry at(String id, TimelineDayPart? part) =>
+        StudyTimelineEntry(
+          id: id,
+          title: id,
+          timelineId: 'feasts',
+          start: day14,
+          part: part,
+        );
+    final evening = at('killed', TimelineDayPart.evening);
+    final night = at('night', TimelineDayPart.night);
+    final whole = at('whole', null);
+    // Night, then day, then evening, across the day's stretch.
+    final from = feasts.positionOf(day14);
+    final to = feasts.endOf(day14);
+    double point(StudyTimelineEntry e) => timelineEntryReach(feasts, e).start;
+    expect(point(night), inExclusiveRange(from, point(whole)));
+    expect(point(evening), inExclusiveRange(point(whole), to));
+    expect(
+      ([evening, whole, night]..sort(compareTimelineEntries)).map((e) => e.id),
+      ['whole', 'night', 'killed'],
+    );
+    expect(timelineEntryTime(feasts, evening), '14 Nisan, at evening');
+    expect(
+      StudyTimelineEntry.fromJson(evening.toJson())?.part,
+      TimelineDayPart.evening,
+    );
+    // A span, or a time without its day, has no part.
+    expect(evening.withTime(start: day14, end: day14).dayPart, isNull);
+    // Each of a year's days has its night, the first half.
+    final nights = timelineNights(feasts, 0, 1);
+    expect(nights, hasLength(354));
+    expect(nights.first.to - nights.first.from, closeTo(0.5 / 354, 1e-12));
+
+    StudyTimelineEntry? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              saved = await showDialog<StudyTimelineEntry>(
+                context: context,
+                builder: (_) => StudyTimelineEntryEditor(
+                  initial: whole,
+                  creating: false,
+                  timelines: const [feasts],
+                  useEnglishBookNames: true,
+                  loadChapter: _chapter,
+                ),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timeline-entry-part')),
+    );
+    await tester.tap(find.text('Evening'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(saved?.part, TimelineDayPart.evening);
+  });
+
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
     tester,
   ) async {

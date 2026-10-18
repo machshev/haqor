@@ -174,6 +174,7 @@ class _Legend extends StatelessWidget {
             '7  Day of a count',
             style: style?.copyWith(color: scheme.primary),
           ),
+        Text('Days run from sunset to sunset.', style: style),
       ],
     );
   }
@@ -322,7 +323,10 @@ class _Month extends StatelessWidget {
         selected!.month == day.month &&
         selected!.day == day.day &&
         inYear(selected!);
-    final titles = [...events, ...over].map((e) => e.title).toList();
+    final titles = [
+      for (final e in [...events, ...over])
+        e.dayPart == null ? e.title : '${e.title}, ${e.dayPart!.phrase}',
+    ];
     final cell = InkWell(
       key: ValueKey('calendar-day-${day.month}-${day.day}'),
       onTap: onTapDay == null ? null : () => onTapDay!(day),

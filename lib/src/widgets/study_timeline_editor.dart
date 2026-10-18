@@ -433,6 +433,9 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   late final TextEditingController _title, _date, _note, _amount, _offset;
   late final _TimeDraft _start, _end;
   late bool _span, _byDuration, _sabbath, _counted;
+
+  /// The part of its day an event falls in; null for the whole day.
+  TimelineDayPart? _part;
   late TimelineDurationUnit _durationUnit;
   late String _timelineId;
   late List<StudyPassage> _verses;
@@ -534,6 +537,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     _span = e.isSpan;
     _sabbath = e.sabbath;
     _counted = e.counted;
+    _part = e.part;
     // A new entry starts empty, BC by default counting by era.
     // A day already chosen (from the calendar) is kept.
     _start = _TimeDraft(
@@ -729,6 +733,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
             note: _note.text.trim(),
             sabbath: sabbath,
             counted: _span && _counted && timeline.hasMonths,
+            part: () => _span || start.day == null ? null : _part,
           )
           .pinnedTo(pin),
     );
@@ -1179,6 +1184,25 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                 _pinFields(theme, anchor)
               else
                 _time(_start, label: _span ? 'Start' : 'When', key: 'start'),
+              if (!_span && _timeline.hasMonths) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Part of the day, which runs from sunset',
+                  style: theme.textTheme.labelLarge,
+                ),
+                const SizedBox(height: 4),
+                SegmentedButton<TimelineDayPart?>(
+                  key: const ValueKey('timeline-entry-part'),
+                  showSelectedIcon: false,
+                  segments: [
+                    const ButtonSegment(value: null, label: Text('Whole')),
+                    for (final part in TimelineDayPart.values)
+                      ButtonSegment(value: part, label: Text(part.label)),
+                  ],
+                  selected: {_part},
+                  onSelectionChanged: (s) => setState(() => _part = s.single),
+                ),
+              ],
               if (!_span && _timeline.hasMonths)
                 SwitchListTile(
                   key: const ValueKey('timeline-entry-sabbath'),
