@@ -227,6 +227,69 @@ List<TimelineTick> timelineTicks(
   ];
 }
 
+/// The years, as written, whose stretch of the axis meets that from
+/// [start] to [end]: the one year of one year's calendar.
+List<double> timelineYearsBetween(
+  StudyTimeline timeline,
+  double start,
+  double end,
+) {
+  if (timeline.isAnnual) return const [0];
+  double written(int position) =>
+      timeline.isCalendar && position <= 0 ? position - 1.0 : position * 1.0;
+  return [
+    for (var y = start.floor(); y <= end.ceil(); y++)
+      if (timeline.fits(TimelineTime(written(y), month: 1, day: 1))) written(y),
+  ];
+}
+
+/// The seasons of the land (see [timelineSeasons]) in the years between
+/// the axis positions [start] and [end], each with where it runs; none off
+/// the year scales, or over more than [most] years.
+List<({TimelineSeason season, double start, double end})> timelineSeasonsIn(
+  StudyTimeline timeline,
+  double start,
+  double end, {
+  int most = 60,
+}) {
+  if (!timeline.hasMonths || end <= start) return const [];
+  final years = timelineYearsBetween(timeline, start, end);
+  if (years.length > most) return const [];
+  return [
+    for (final year in years)
+      for (final season in timelineSeasons)
+        if (season.inYear(timeline, year) case final at
+            when at.end > start && at.start < end)
+          (season: season, start: at.start, end: at.end),
+  ];
+}
+
+/// The new and full moons (see [timelineMoonOn]) between the axis
+/// positions [start] and [end]: where each day's middle falls, and whether
+/// the moon is full; none where there would be more than [most].
+List<({double at, bool full})> timelineMoons(
+  StudyTimeline timeline,
+  double start,
+  double end, {
+  int most = 2000,
+}) {
+  if (!timeline.hasMonths || end <= start) return const [];
+  final moons = <({double at, bool full})>[];
+  for (final year in timelineYearsBetween(timeline, start, end)) {
+    for (var month = 1; month <= timeline.monthsIn(year); month++) {
+      for (final day in const [1, 15]) {
+        final at = timeline.centreOf(
+          TimelineTime(year, month: month, day: day),
+        );
+        if (at < start || at > end) continue;
+        if (moons.length >= most) return const [];
+        moons.add((at: at, full: day == 15));
+      }
+    }
+  }
+  return moons;
+}
+
 /// The night halves, from sunset, of the days between the axis positions
 /// [start] and [end] of [timeline] (see [TimelineDayPart]); none off the
 /// year scales, or where there would be more than [most].
@@ -237,14 +300,7 @@ List<({double from, double to})> timelineNights(
   int most = 4000,
 }) {
   if (!timeline.hasMonths || end <= start) return const [];
-  double written(int position) =>
-      timeline.isCalendar && position <= 0 ? position - 1.0 : position * 1.0;
-  final years = timeline.isAnnual
-      ? const [0.0]
-      : [
-          for (var y = start.floor(); y <= end.ceil(); y++)
-            if (!timeline.isCalendar || written(y) != 0) written(y),
-        ];
+  final years = timelineYearsBetween(timeline, start, end);
   final nights = <({double from, double to})>[];
   for (final year in years) {
     final first = TimelineTime(year, month: 1, day: 1);
@@ -309,17 +365,23 @@ class TimelineChart extends StatelessWidget {
     required this.pixelsPerUnit,
     this.onTapEntry,
     this.selectedId,
+    this.seasons = false,
   });
 
   final StudyTimeline timeline;
   final List<StudyTimelineEntry> entries;
   final double pixelsPerUnit;
+
+  /// Whether to show the seasons of the land above the entries, and the
+  /// new and full moons on the axis, zoomed in to them.
+  final bool seasons;
   final ValueChanged<StudyTimelineEntry>? onTapEntry;
   final String? selectedId;
 
   static const padding = 24.0;
   static const laneHeight = 30.0;
   static const axisHeight = 36.0;
+  static const seasonHeight = 16.0;
   static const _dot = 10.0;
 
   /// How far an event's mark reaches back from its centre: half a dot,
@@ -362,8 +424,13 @@ class TimelineChart extends StatelessWidget {
       widthFor(timeline, entries, pixelsPerUnit),
       (width, slot) => math.max(width, slot.right + padding / 2),
     );
-    final height = lanes * laneHeight + axisHeight;
-    final axisY = lanes * laneHeight + 4;
+    final bands = seasons
+        ? timelineSeasonsIn(timeline, extent.start, extent.end)
+        : const <({TimelineSeason season, double start, double end})>[];
+    // The seasons take a row each for rain and harvest above the lanes.
+    final top = bands.isEmpty ? 0.0 : seasonHeight * 2 + 6;
+    final height = top + lanes * laneHeight + axisHeight;
+    final axisY = top + lanes * laneHeight + 4;
     return SizedBox(
       width: width,
       height: height,
@@ -389,10 +456,20 @@ class TimelineChart extends StatelessWidget {
                           (from: px(n.from), to: px(n.to)),
                       ]
                     : const [],
+                moons: seasons && pixelsPerUnit / 384 >= 6
+                    ? [
+                        for (final m in timelineMoons(
+                          timeline,
+                          extent.start,
+                          extent.end,
+                        ))
+                          (x: px(m.at), full: m.full),
+                      ]
+                    : const [],
                 guides: [
                   for (final slot in slots)
                     if (!slot.entry.isSpan)
-                      (x: slot.left, top: slot.lane * laneHeight + 15),
+                      (x: slot.left, top: top + slot.lane * laneHeight + 15),
                 ],
                 color: theme.colorScheme.outline,
                 labelStyle: labelStyle?.copyWith(
@@ -401,11 +478,23 @@ class TimelineChart extends StatelessWidget {
               ),
             ),
           ),
+          for (final band in bands)
+            Positioned(
+              left: px(band.start),
+              width: math.max(1, px(band.end) - px(band.start)),
+              top:
+                  2 +
+                  (band.season.kind == TimelineSeasonKind.rain
+                      ? 0
+                      : seasonHeight + 2),
+              height: seasonHeight,
+              child: _SeasonBand(season: band.season),
+            ),
           for (final slot in slots)
             Positioned(
               // An event's mark is centred on its time.
               left: slot.left - _inset(slot.entry),
-              top: slot.lane * laneHeight + 4,
+              top: top + slot.lane * laneHeight + 4,
               width: slot.right - slot.left + _inset(slot.entry),
               height: laneHeight - 8,
               child: _EntryMark(
@@ -426,6 +515,43 @@ class TimelineChart extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// A season of the land as a band across its stretch of the year, named
+/// where it fits, its verses in its tooltip.
+class _SeasonBand extends StatelessWidget {
+  const _SeasonBand({required this.season});
+
+  final TimelineSeason season;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = timelineSeasonColor(season.kind, theme.brightness);
+    return Tooltip(
+      message: '${season.name} · ${season.references}',
+      child: Container(
+        key: ValueKey('timeline-season-${season.name}'),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(3),
+          border: Border(left: BorderSide(color: color, width: 2)),
+        ),
+        alignment: AlignmentDirectional.centerStart,
+        child: Text(
+          season.name,
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+          softWrap: false,
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontSize: 10,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
       ),
     );
   }
@@ -619,6 +745,7 @@ class _AxisPainter extends CustomPainter {
     required this.width,
     required this.guides,
     this.nights = const [],
+    this.moons = const [],
     required this.color,
     required this.labelStyle,
   });
@@ -630,6 +757,9 @@ class _AxisPainter extends CustomPainter {
 
   /// The nights to shade, in pixels across.
   final List<({double from, double to})> nights;
+
+  /// The new and full moons to mark above the axis, in pixels across.
+  final List<({double x, bool full})> moons;
   final Color color;
   final TextStyle? labelStyle;
 
@@ -644,6 +774,15 @@ class _AxisPainter extends CustomPainter {
     final night = Paint()..color = color.withValues(alpha: 0.08);
     for (final n in nights) {
       canvas.drawRect(Rect.fromLTRB(n.from, 0, n.to, axisY), night);
+    }
+    final moonLine = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    final moonFill = Paint()..color = color;
+    for (final m in moons) {
+      final centre = Offset(m.x, axisY - 6);
+      canvas.drawCircle(centre, 3.5, m.full ? moonFill : moonLine);
     }
     for (final g in guides) {
       canvas.drawLine(Offset(g.x, g.top), Offset(g.x, axisY), guide);
@@ -689,7 +828,8 @@ class _AxisPainter extends CustomPainter {
       old.width != width ||
       old.color != color ||
       old.guides.length != guides.length ||
-      old.nights.length != nights.length;
+      old.nights.length != nights.length ||
+      old.moons.length != moons.length;
 }
 
 /// A timeline fitted to the width it is given, small and without labels but
@@ -1116,6 +1256,15 @@ class _TimelinePageState extends State<TimelinePage> {
     _fitTo((start: from, end: to), viewport, label: false);
   }
 
+  /// Shows or hides the seasons of the land, kept with the timeline where
+  /// it can be saved.
+  void _toggleSeasons() {
+    final changed = _timeline.copyWith(showSeasons: !_timeline.showSeasons);
+    setState(() => _timeline = changed);
+    final update = widget.onUpdateTimeline;
+    if (update != null) _edit(() => update(changed));
+  }
+
   String _reference(StudyPassage passage) =>
       '${bookDisplayName(passage.bookIndex, useEnglish: widget.useEnglishBookNames)} '
       '${passage.reference}';
@@ -1497,6 +1646,16 @@ class _TimelinePageState extends State<TimelinePage> {
             actions: [
               if (_timeline.hasMonths)
                 IconButton(
+                  tooltip: _timeline.showSeasons
+                      ? 'Hide seasons'
+                      : 'Show seasons',
+                  isSelected: _timeline.showSeasons,
+                  icon: const Icon(Icons.eco_outlined),
+                  selectedIcon: const Icon(Icons.eco),
+                  onPressed: _toggleSeasons,
+                ),
+              if (_timeline.hasMonths)
+                IconButton(
                   tooltip: _calendar ? 'Show timeline' : 'Show calendar',
                   icon: Icon(
                     _calendar ? Icons.timeline : Icons.calendar_month_outlined,
@@ -1646,6 +1805,7 @@ class _TimelinePageState extends State<TimelinePage> {
                                     timeline: _timeline,
                                     entries: entries,
                                     pixelsPerUnit: ppu,
+                                    seasons: _timeline.showSeasons,
                                     selectedId: _selectedId,
                                     onTapEntry: _show,
                                   ),

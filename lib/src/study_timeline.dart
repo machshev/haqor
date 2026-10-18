@@ -254,6 +254,7 @@ class StudyTimeline {
     this.monthNaming = TimelineMonthNaming.postExile,
     this.nisanWeekday = 1,
     this.weekYear,
+    this.showSeasons = false,
     this.note = '',
     this.parentId,
     this.order = 0,
@@ -284,6 +285,10 @@ class StudyTimeline {
   /// one (and always on one year's calendar), in every year.
   final int nisanWeekday;
   final double? weekYear;
+
+  /// Whether its views show the seasons of the land and the moon's phases
+  /// (see [timelineSeasons]).
+  final bool showSeasons;
   final String note;
   final String? parentId;
   final int order;
@@ -730,6 +735,7 @@ class StudyTimeline {
     TimelineMonthNaming? monthNaming,
     int? nisanWeekday,
     double? Function()? weekYear,
+    bool? showSeasons,
     String? note,
     String? Function()? parentId,
     int? order,
@@ -744,6 +750,7 @@ class StudyTimeline {
     monthNaming: monthNaming ?? this.monthNaming,
     nisanWeekday: nisanWeekday ?? this.nisanWeekday,
     weekYear: weekYear == null ? this.weekYear : weekYear(),
+    showSeasons: showSeasons ?? this.showSeasons,
     note: note ?? this.note,
     parentId: parentId == null ? this.parentId : parentId(),
     order: order ?? this.order,
@@ -761,6 +768,7 @@ class StudyTimeline {
       'monthNames': monthNaming.name,
     if (nisanWeekday != 1) 'nisanWeekday': nisanWeekday,
     if (weekYear != null) 'weekYear': _jsonNumber(weekYear!),
+    if (showSeasons) 'seasons': true,
     if (note.isNotEmpty) 'note': note,
     if (parentId != null) 'parent': parentId,
     'order': order,
@@ -789,6 +797,7 @@ class StudyTimeline {
         'monthNames',
         'nisanWeekday',
         'weekYear',
+        'seasons',
         'sabbaths',
         'note',
         'parent',
@@ -821,6 +830,7 @@ class StudyTimeline {
       weekYear: value['weekYear'] is num
           ? (value['weekYear'] as num).toDouble()
           : null,
+      showSeasons: value['seasons'] == true,
       note: value['note'] is String ? value['note'] as String : '',
       parentId: value['parent'] is String ? value['parent'] as String : null,
       order: value['order'] is int ? value['order'] as int : 0,
@@ -1210,4 +1220,124 @@ Map<String, Object?> timelineExtraKeys(Map value, Set<String> known) => {
   for (final entry in value.entries)
     if (entry.key is String && !known.contains(entry.key))
       entry.key as String: entry.value,
+};
+
+/// What a season of the land is: rain, or a stage of the farming year.
+enum TimelineSeasonKind { rain, harvest }
+
+/// A season of the land of Israel through the year, roughly, as Scripture
+/// marks it: [from] a month and day to [to] one (inclusive), or, without
+/// [to], to the year's end.
+@immutable
+class TimelineSeason {
+  const TimelineSeason(
+    this.name,
+    this.kind,
+    this.from,
+    this.to,
+    this.references,
+  );
+
+  final String name;
+  final TimelineSeasonKind kind;
+  final ({int month, int day}) from;
+  final ({int month, int day})? to;
+  final String references;
+
+  /// Where it runs in the year [value] of [timeline], as axis positions.
+  ({double start, double end}) inYear(StudyTimeline timeline, double value) {
+    final months = timeline.monthsIn(value);
+    final last = to ?? (month: months, day: 30);
+    final month = math.min(last.month, months);
+    return (
+      start: timeline.positionOf(
+        TimelineTime(value, month: from.month, day: from.day),
+      ),
+      end: timeline.endOf(
+        TimelineTime(
+          value,
+          month: month,
+          day: math.min(last.day, timeline.daysInMonth(value, month)),
+        ),
+      ),
+    );
+  }
+}
+
+/// The seasons of the land through the year, roughly: the early and the
+/// latter rain, and the farming year from the barley harvest at Passover
+/// to the sowing after the early rain.
+const timelineSeasons = [
+  TimelineSeason(
+    'Latter rain',
+    TimelineSeasonKind.rain,
+    (month: 1, day: 1),
+    (month: 1, day: 30),
+    'Deuteronomy 11:14; Joel 2:23; Jeremiah 5:24',
+  ),
+  TimelineSeason(
+    'Early rain',
+    TimelineSeasonKind.rain,
+    (month: 8, day: 1),
+    (month: 9, day: 30),
+    'Deuteronomy 11:14; Joel 2:23; James 5:7',
+  ),
+  TimelineSeason(
+    'Latter rain',
+    TimelineSeasonKind.rain,
+    (month: 12, day: 1),
+    null,
+    'Deuteronomy 11:14; Joel 2:23; Jeremiah 5:24',
+  ),
+  TimelineSeason(
+    'Barley harvest',
+    TimelineSeasonKind.harvest,
+    (month: 1, day: 15),
+    (month: 2, day: 15),
+    'Exodus 9:31-32; Ruth 1:22; 2 Samuel 21:9',
+  ),
+  TimelineSeason(
+    'Wheat harvest',
+    TimelineSeasonKind.harvest,
+    (month: 2, day: 16),
+    (month: 3, day: 30),
+    'Exodus 34:22; Ruth 2:23; 1 Samuel 12:17',
+  ),
+  TimelineSeason(
+    'Summer fruit',
+    TimelineSeasonKind.harvest,
+    (month: 4, day: 1),
+    (month: 5, day: 30),
+    'Amos 8:1-2; Jeremiah 40:10-12; 2 Samuel 16:1',
+  ),
+  TimelineSeason(
+    'Vintage',
+    TimelineSeasonKind.harvest,
+    (month: 6, day: 1),
+    (month: 6, day: 29),
+    'Leviticus 26:5; Judges 9:27',
+  ),
+  TimelineSeason(
+    'Ingathering',
+    TimelineSeasonKind.harvest,
+    (month: 7, day: 1),
+    (month: 7, day: 30),
+    'Exodus 23:16; Deuteronomy 16:13',
+  ),
+  TimelineSeason(
+    'Ploughing and sowing',
+    TimelineSeasonKind.harvest,
+    (month: 8, day: 1),
+    (month: 10, day: 29),
+    'Leviticus 26:5; Proverbs 20:4',
+  ),
+];
+
+/// The moon on [day] of a month: its start, the new moon, on the 1st, and
+/// the full moon on the 15th, when the Passover and Tabernacles begin;
+/// null on other days.
+String? timelineMoonOn(int day) => switch (day) {
+  1 => 'New moon',
+  15 => 'Full moon',
+  _ => null,
 };

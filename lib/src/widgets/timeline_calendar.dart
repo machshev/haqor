@@ -4,6 +4,18 @@ import 'package:flutter/material.dart';
 
 import '../study_workspace.dart';
 
+/// The colour a season of the land is shown in: blue for rain, gold for
+/// the farming year.
+Color timelineSeasonColor(TimelineSeasonKind kind, Brightness brightness) {
+  final dark = brightness == Brightness.dark;
+  return switch (kind) {
+    TimelineSeasonKind.rain =>
+      dark ? const Color(0xFF5B9BD5) : const Color(0xFF3A78B5),
+    TimelineSeasonKind.harvest =>
+      dark ? const Color(0xFFD9A93F) : const Color(0xFFB07D12),
+  };
+}
+
 /// A day of the week by name: "Day 3", or "Sabbath".
 String timelineWeekdayName(int weekday) =>
     weekday == 7 ? 'Sabbath' : 'Day $weekday';
@@ -175,6 +187,22 @@ class _Legend extends StatelessWidget {
             style: style?.copyWith(color: scheme.primary),
           ),
         Text('Days run from sunset to sunset.', style: style),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.circle_outlined,
+              size: 8,
+              color: scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
+            Text('New moon', style: style),
+            const SizedBox(width: 8),
+            Icon(Icons.circle, size: 8, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text('Full moon', style: style),
+          ],
+        ),
       ],
     );
   }
@@ -238,6 +266,7 @@ class _Month extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
+            if (timeline.showSeasons) _seasons(context),
             for (final entry in monthOnly)
               Text(
                 entry.title,
@@ -284,6 +313,57 @@ class _Month extends StatelessWidget {
     );
   }
 
+  /// The seasons of the land in this month, each named in its colour, its
+  /// verses in its tooltip.
+  Widget _seasons(BuildContext context) {
+    final theme = Theme.of(context);
+    final from = timeline.positionOf(TimelineTime(year, month: month, day: 1));
+    final to = timeline.endOf(
+      TimelineTime(year, month: month, day: timeline.daysInMonth(year, month)),
+    );
+    final seasons = <TimelineSeason>[];
+    for (final season in timelineSeasons) {
+      final at = season.inYear(timeline, year);
+      if (at.start < to &&
+          at.end > from &&
+          !seasons.any((s) => s.name == season.name)) {
+        seasons.add(season);
+      }
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Wrap(
+        spacing: 8,
+        children: [
+          for (final season in seasons)
+            Tooltip(
+              message: '${season.name} · ${season.references}',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    season.kind == TimelineSeasonKind.rain
+                        ? Icons.water_drop_outlined
+                        : Icons.grass,
+                    size: 12,
+                    color: timelineSeasonColor(season.kind, theme.brightness),
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    season.name,
+                    key: ValueKey('calendar-season-$month-${season.name}'),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: timelineSeasonColor(season.kind, theme.brightness),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _day(
     BuildContext context,
     TimelineTime day,
@@ -323,7 +403,9 @@ class _Month extends StatelessWidget {
         selected!.month == day.month &&
         selected!.day == day.day &&
         inYear(selected!);
+    final moon = timelineMoonOn(day.day!);
     final titles = [
+      ?moon,
       for (final e in [...events, ...over])
         e.dayPart == null ? e.title : '${e.title}, ${e.dayPart!.phrase}',
     ];
@@ -360,6 +442,17 @@ class _Month extends StatelessWidget {
                 ),
               ),
             ),
+            if (moon != null)
+              Positioned(
+                top: 3,
+                right: 3,
+                child: Icon(
+                  moon == 'Full moon' ? Icons.circle : Icons.circle_outlined,
+                  key: ValueKey('calendar-moon-${day.month}-${day.day}'),
+                  size: 7,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
             if (count != null)
               Positioned(
                 top: 1,

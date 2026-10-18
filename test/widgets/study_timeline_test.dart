@@ -1048,6 +1048,75 @@ void main() {
     expect(saved?.part, TimelineDayPart.evening);
   });
 
+  testWidgets('seasons of the land and the moons show on the timeline and '
+      'its calendar, kept with the timeline', (tester) async {
+    var feasts = const StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+    );
+    const passover = StudyTimelineEntry(
+      id: 'passover',
+      title: 'Passover',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 14),
+    );
+    // A year's seasons, each within it; and its new and full moons.
+    final bands = timelineSeasonsIn(feasts, 0, 1);
+    expect(bands.map((b) => b.season.name), contains('Barley harvest'));
+    for (final band in bands) {
+      expect(band.start, greaterThanOrEqualTo(0));
+      expect(band.end, lessThanOrEqualTo(1 + 1e-9));
+    }
+    expect(timelineMoons(feasts, 0, 1), hasLength(24));
+    expect(timelineMoons(feasts, 0, 1).where((m) => m.full), hasLength(12));
+    // The latter rain runs to the year's end, through Adar II in a leap
+    // year.
+    final leap = feasts.copyWith(leapMonths: TimelineLeapMonths.chosen);
+    final adar = timelineSeasons.firstWhere((s) => s.to == null);
+    expect(adar.inYear(leap, 0).end, closeTo(1, 1e-9));
+    expect(
+      StudyTimeline.fromJson(
+        feasts.copyWith(showSeasons: true).toJson(),
+      )?.showSeasons,
+      isTrue,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TimelinePage(
+          timeline: feasts,
+          entries: const [passover],
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+          reload: () => (timeline: feasts, entries: const [passover]),
+          onUpdateTimeline: (changed) async => feasts = changed,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('timeline-season-Barley harvest')),
+      findsNothing,
+    );
+    await tester.tap(find.byTooltip('Show seasons'));
+    await tester.pumpAndSettle();
+    expect(feasts.showSeasons, isTrue);
+    expect(
+      find.byKey(const ValueKey('timeline-season-Barley harvest')),
+      findsWidgets,
+    );
+
+    await tester.tap(find.byTooltip('Show calendar'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('calendar-season-1-Barley harvest')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('calendar-moon-1-15')), findsOneWidget);
+    expect(find.byKey(const ValueKey('calendar-moon-1-14')), findsNothing);
+  });
+
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
     tester,
   ) async {
