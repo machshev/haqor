@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -455,6 +456,89 @@ void main() {
     expect(saved?.title, 'Creation week');
     expect(saved?.scale, TimelineScale.units);
     expect(saved?.formatTime(const TimelineTime(3)), 'Day 3');
+  });
+
+  testWidgets("the timeline page fits to its entries, not a year's calendar, "
+      'and zooms into a stretch dragged across', (tester) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+    );
+    const trumpets = StudyTimelineEntry(
+      id: 'trumpets',
+      title: 'Trumpets',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 7, day: 1),
+    );
+    const booths = StudyTimelineEntry(
+      id: 'booths',
+      title: 'Booths',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 7, day: 15),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TimelinePage(
+          timeline: feasts,
+          entries: const [trumpets, booths],
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    double x(String id) =>
+        tester.getTopLeft(find.byKey(ValueKey('timeline-mark-$id'))).dx;
+    void expectFitted() {
+      // Both in view, a fortnight apart spread across most of it.
+      expect(x('trumpets'), inInclusiveRange(0, width));
+      expect(x('booths'), inInclusiveRange(0, width));
+      expect(x('booths') - x('trumpets'), greaterThan(width / 2));
+    }
+
+    expectFitted();
+    await tester.tap(find.byTooltip('Zoom out'));
+    await tester.pumpAndSettle();
+    expect(x('booths') - x('trumpets'), lessThan(width / 2));
+    await tester.tap(find.byTooltip('Fit to entries'));
+    await tester.pumpAndSettle();
+    expectFitted();
+
+    // A mouse drag over the first few days zooms into them.
+    final chart = tester.getRect(
+      find.byKey(const ValueKey('timeline-drag-zoom')),
+    );
+    final y = chart.bottom - 10;
+    final gesture = await tester.startGesture(
+      Offset(x('trumpets') - 4, y),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(20, 0));
+    await gesture.moveBy(Offset((x('booths') - x('trumpets')) / 3, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(x('trumpets'), inInclusiveRange(0, width));
+    expect(x('booths'), greaterThan(width));
+
+    // On touch, a drag scrolls, unless picking a stretch is turned on.
+    await tester.tap(find.byTooltip('Fit to entries'));
+    await tester.pumpAndSettle();
+    final before = x('booths') - x('trumpets');
+    await tester.dragFrom(Offset(x('trumpets'), y), const Offset(-150, 0));
+    await tester.pumpAndSettle();
+    expect(x('booths') - x('trumpets'), closeTo(before, 1));
+    await tester.tap(find.byTooltip('Fit to entries'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Drag across the timeline to zoom in'));
+    await tester.pump();
+    await tester.dragFrom(
+      Offset(x('trumpets') - 4, y),
+      Offset((x('booths') - x('trumpets')) / 3, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(x('booths'), greaterThan(width));
   });
 
   testWidgets('the timeline page draws entries and opens their verses', (

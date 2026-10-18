@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../bible_data.dart';
@@ -7,21 +8,37 @@ import '../study_workspace.dart';
 import 'markdown_note.dart';
 import 'timeline_calendar.dart';
 
-/// The stretch of a timeline's axis its entries cover (as positions, see
-/// [StudyTimeline.positionOf]), with a margin either side; a single point
-/// gets one unit either side, and one year's calendar its whole year.
+/// The stretch of a timeline's axis drawn (as positions, see
+/// [StudyTimeline.positionOf]): its entries' (see [timelineFocus]), but
+/// one year's calendar its whole year.
 ({double start, double end}) timelineExtent(
   StudyTimeline timeline,
   List<StudyTimelineEntry> entries,
 ) {
   // One year's calendar shows its whole year.
   if (entries.isEmpty || timeline.isAnnual) return (start: 0, end: 1);
+  return timelineFocus(timeline, entries);
+}
+
+/// The stretch of a timeline's axis its entries cover, with a margin either
+/// side; a single point gets one unit either side, or on one year's
+/// calendar half a month, and that calendar's stretch keeps within its year.
+({double start, double end}) timelineFocus(
+  StudyTimeline timeline,
+  List<StudyTimelineEntry> entries,
+) {
+  if (entries.isEmpty) return (start: 0, end: 1);
   final reaches = [for (final e in entries) timelineEntryReach(timeline, e)];
   final start = reaches.map((r) => r.start).reduce(math.min);
   final end = reaches.map((r) => r.end).reduce(math.max);
-  if (end - start < 1e-9) return (start: start - 1, end: end + 1);
-  final margin = (end - start) * 0.04;
-  return (start: start - margin, end: end + margin);
+  final margin = end - start < 1e-9
+      ? (timeline.isAnnual ? 1 / 24 : 1.0)
+      : (end - start) * 0.04;
+  if (!timeline.isAnnual) return (start: start - margin, end: end + margin);
+  return (
+    start: math.max(0.0, start - margin),
+    end: math.min(1.0, end + margin),
+  );
 }
 
 /// The stretch of a timeline's axis [entry] covers, as positions: a span's
@@ -756,8 +773,15 @@ class TimelinePage extends StatefulWidget {
 }
 
 class _TimelinePageState extends State<TimelinePage> {
-  /// Null until fitted to the screen's width on the first layout.
+  /// Null until fitted to the entries on the first layout.
   double? _pixelsPerUnit;
+
+  /// Whether a touch drag across the chart picks a stretch to zoom into,
+  /// rather than scrolling; a mouse drag always does.
+  bool _selecting = false;
+
+  /// The stretch being dragged across the chart, in its pixels.
+  ({double from, double to})? _drag;
   late String? _selectedId = widget.initialSelectedId;
   late StudyTimeline _timeline = widget.timeline;
   late List<StudyTimelineEntry> _entries = widget.entries;
@@ -812,24 +836,62 @@ class _TimelinePageState extends State<TimelinePage> {
     });
   }
 
-  /// The scale fitting every time into [width], leaving room after the last
-  /// for a label of its own (up to a third of the width).
-  double _fit(double width) {
-    final extent = timelineExtent(_timeline, _entries);
-    final label = math.min(width / 3, 140.0);
+  /// The scale fitting the stretch [window] into [width], leaving room
+  /// after it, where [label] is set, for a label of its own (up to a third
+  /// of the width).
+  double _scaleFor(
+    ({double start, double end}) window,
+    double width, {
+    bool label = true,
+  }) {
+    final room = label ? math.min(width / 3, 140.0) : 0.0;
     return math.max(
       1e-6,
-      (width - TimelineChart.padding * 2 - label) / (extent.end - extent.start),
+      (width - TimelineChart.padding * 2 - room) / (window.end - window.start),
     );
   }
 
+  /// The least scale zoomed out to: a quarter of the whole drawn timeline's
+  /// fitted into [width].
+  double _minScale(double width) =>
+      _scaleFor(timelineExtent(_timeline, _entries), width) / 4;
+
+  /// Zooms to the scale fitting [window] into [viewport], scrolled to it.
+  void _fitTo(
+    ({double start, double end}) window,
+    double viewport, {
+    bool label = true,
+  }) {
+    final next = _scaleFor(
+      window,
+      viewport,
+      label: label,
+    ).clamp(_minScale(viewport), 1e6);
+    final extent = timelineExtent(_timeline, _entries);
+    setState(() => _pixelsPerUnit = next);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_horizontal.hasClients) return;
+      final offset = (window.start - extent.start) * next;
+      _horizontal.jumpTo(
+        offset.clamp(0.0, _horizontal.position.maxScrollExtent),
+      );
+    });
+  }
+
+  /// Zooms to fit the timeline's entries into [viewport], not the whole of
+  /// one year's calendar.
+  void _fitEntries(double viewport) =>
+      _fitTo(timelineFocus(_timeline, _entries), viewport);
+
   void _zoom(double factor, double viewport) {
-    final current = _pixelsPerUnit ?? _fit(viewport);
+    final current =
+        _pixelsPerUnit ??
+        _scaleFor(timelineFocus(_timeline, _entries), viewport);
     // Keep the time at the middle of the view where it is.
     final middle =
         (_horizontal.hasClients ? _horizontal.offset : 0) + viewport / 2;
     final time = (middle - TimelineChart.padding) / current;
-    final next = (current * factor).clamp(_fit(viewport) / 4, 1e6);
+    final next = (current * factor).clamp(_minScale(viewport), 1e6);
     setState(() => _pixelsPerUnit = next);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_horizontal.hasClients) return;
@@ -838,6 +900,22 @@ class _TimelinePageState extends State<TimelinePage> {
         offset.clamp(0.0, _horizontal.position.maxScrollExtent),
       );
     });
+  }
+
+  /// Zooms into the stretch dragged across the chart drawn at [ppu], as
+  /// long as it is wider than a few pixels.
+  void _zoomToDrag(double ppu, double viewport) {
+    final drag = _drag;
+    setState(() {
+      _drag = null;
+      _selecting = false;
+    });
+    if (drag == null || (drag.to - drag.from).abs() < 8) return;
+    final extent = timelineExtent(_timeline, _entries);
+    double at(double x) => extent.start + (x - TimelineChart.padding) / ppu;
+    final from = at(math.min(drag.from, drag.to));
+    final to = at(math.max(drag.from, drag.to));
+    _fitTo((start: from, end: to), viewport, label: false);
   }
 
   String _reference(StudyPassage passage) =>
@@ -1109,7 +1187,15 @@ class _TimelinePageState extends State<TimelinePage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final viewport = constraints.maxWidth;
-        final ppu = _pixelsPerUnit ?? _fit(viewport);
+        final focus = timelineFocus(_timeline, entries);
+        final ppu = _pixelsPerUnit ?? _scaleFor(focus, viewport);
+        // Fitted first to the entries, scrolled to them on one year's
+        // calendar, which is drawn whole.
+        if (_pixelsPerUnit == null && !_calendar && entries.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _pixelsPerUnit == null) _fitEntries(viewport);
+          });
+        }
         return Scaffold(
           appBar: AppBar(
             title: Text(_timeline.title),
@@ -1120,7 +1206,11 @@ class _TimelinePageState extends State<TimelinePage> {
                   icon: Icon(
                     _calendar ? Icons.timeline : Icons.calendar_month_outlined,
                   ),
-                  onPressed: () => setState(() => _calendar = !_calendar),
+                  onPressed: () => setState(() {
+                    _calendar = !_calendar;
+                    // Back on the timeline, fitted again to its entries.
+                    _pixelsPerUnit = null;
+                  }),
                 ),
               if (!_calendar) ...[
                 IconButton(
@@ -1131,11 +1221,19 @@ class _TimelinePageState extends State<TimelinePage> {
                       : () => _zoom(1 / 1.5, viewport),
                 ),
                 IconButton(
-                  tooltip: 'Fit to width',
+                  tooltip: 'Fit to entries',
                   icon: const Icon(Icons.fit_screen_outlined),
                   onPressed: entries.isEmpty
                       ? null
-                      : () => setState(() => _pixelsPerUnit = null),
+                      : () => _fitEntries(viewport),
+                ),
+                IconButton(
+                  tooltip: 'Drag across the timeline to zoom in',
+                  isSelected: _selecting,
+                  icon: const Icon(Icons.highlight_alt),
+                  onPressed: entries.isEmpty
+                      ? null
+                      : () => setState(() => _selecting = !_selecting),
                 ),
                 IconButton(
                   tooltip: 'Zoom in',
@@ -1218,14 +1316,67 @@ class _TimelinePageState extends State<TimelinePage> {
                         child: SingleChildScrollView(
                           controller: _horizontal,
                           scrollDirection: Axis.horizontal,
+                          // Picking a stretch, a touch drag is the pick's.
+                          physics: _selecting
+                              ? const NeverScrollableScrollPhysics()
+                              : null,
                           padding: const EdgeInsets.only(top: 12),
                           child: SingleChildScrollView(
-                            child: TimelineChart(
-                              timeline: _timeline,
-                              entries: entries,
-                              pixelsPerUnit: ppu,
-                              selectedId: _selectedId,
-                              onTapEntry: _show,
+                            child: GestureDetector(
+                              key: const ValueKey('timeline-drag-zoom'),
+                              // A mouse drag doesn't scroll, so always picks.
+                              supportedDevices: _selecting
+                                  ? null
+                                  : const {PointerDeviceKind.mouse},
+                              dragStartBehavior: DragStartBehavior.down,
+                              onHorizontalDragStart: (d) => setState(
+                                () => _drag = (
+                                  from: d.localPosition.dx,
+                                  to: d.localPosition.dx,
+                                ),
+                              ),
+                              onHorizontalDragUpdate: (d) => setState(
+                                () => _drag = (
+                                  from: _drag?.from ?? d.localPosition.dx,
+                                  to: d.localPosition.dx,
+                                ),
+                              ),
+                              onHorizontalDragEnd: (_) =>
+                                  _zoomToDrag(ppu, viewport),
+                              onHorizontalDragCancel: () =>
+                                  setState(() => _drag = null),
+                              child: Stack(
+                                children: [
+                                  TimelineChart(
+                                    timeline: _timeline,
+                                    entries: entries,
+                                    pixelsPerUnit: ppu,
+                                    selectedId: _selectedId,
+                                    onTapEntry: _show,
+                                  ),
+                                  if (_drag case final drag?)
+                                    Positioned(
+                                      left: math.min(drag.from, drag.to),
+                                      width: (drag.to - drag.from).abs(),
+                                      top: 0,
+                                      bottom: 0,
+                                      child: IgnorePointer(
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            color: theme.colorScheme.primary
+                                                .withValues(alpha: 0.12),
+                                            border: Border.symmetric(
+                                              vertical: BorderSide(
+                                                color:
+                                                    theme.colorScheme.primary,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
