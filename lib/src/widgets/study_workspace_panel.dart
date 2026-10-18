@@ -57,6 +57,8 @@ class StudyWorkspacePanel extends StatelessWidget {
     this.onCreateTimeline,
     this.onEditTimeline,
     this.onDeleteTimeline,
+    this.onBuildOnTimeline,
+    this.onDetachTimeline,
     this.onOpenTimeline,
     this.onOpenTimelineCalendar,
     this.onCreateTimelineEntry,
@@ -124,6 +126,11 @@ class StudyWorkspacePanel extends StatelessWidget {
   final ValueChanged<String?>? onCreateTimeline;
   final ValueChanged<StudyTimeline>? onEditTimeline;
   final ValueChanged<StudyTimeline>? onDeleteTimeline;
+
+  /// Add a timeline built on one; make one linked to a timeline that comes
+  /// with the app the study's own.
+  final ValueChanged<StudyTimeline>? onBuildOnTimeline;
+  final ValueChanged<StudyTimeline>? onDetachTimeline;
   final ValueChanged<StudyTimeline>? onOpenTimeline;
 
   /// Opens a timeline with months as a calendar of its year.
@@ -820,6 +827,9 @@ class StudyWorkspacePanel extends StatelessWidget {
     final theme = Theme.of(context);
     final open = onOpenTimeline;
     final entries = workspace.entriesOf(timeline.id);
+    final base = timeline.baseId == null
+        ? null
+        : workspace.timelineById(timeline.baseId!);
     return Padding(
       key: ValueKey(item.key),
       padding: EdgeInsetsDirectional.only(start: depth * 12.0),
@@ -861,6 +871,16 @@ class StudyWorkspacePanel extends StatelessWidget {
                     entries: entries,
                     onTap: open == null ? null : () => open(timeline),
                   ),
+                  if (timeline.isStandard || base != null)
+                    Text(
+                      [
+                        if (timeline.isStandard) 'Comes with the app',
+                        if (base != null) 'Built on ${base.title}',
+                      ].join(' · '),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   if (timeline.note.isNotEmpty)
                     MarkdownNote(
                       timeline.note,
@@ -886,6 +906,10 @@ class StudyWorkspacePanel extends StatelessWidget {
                         open?.call(timeline);
                       case _TimelineAction.calendar:
                         onOpenTimelineCalendar?.call(timeline);
+                      case _TimelineAction.buildOn:
+                        onBuildOnTimeline?.call(timeline);
+                      case _TimelineAction.detach:
+                        onDetachTimeline?.call(timeline);
                       case _TimelineAction.addEvent:
                         onCreateTimelineEntry?.call(timeline.id, false);
                       case _TimelineAction.addSpan:
@@ -916,20 +940,39 @@ class StudyWorkspacePanel extends StatelessWidget {
                           title: Text('Open calendar'),
                         ),
                       ),
-                    PopupMenuItem(
-                      value: _TimelineAction.addEvent,
-                      child: ListTile(
-                        leading: Icon(Icons.radio_button_checked),
-                        title: Text('Add event'),
+                    if (onBuildOnTimeline != null)
+                      const PopupMenuItem(
+                        value: _TimelineAction.buildOn,
+                        child: ListTile(
+                          leading: Icon(Icons.layers_outlined),
+                          title: Text('Build a timeline on this'),
+                        ),
                       ),
-                    ),
-                    PopupMenuItem(
-                      value: _TimelineAction.addSpan,
-                      child: ListTile(
-                        leading: Icon(Icons.linear_scale),
-                        title: Text('Add span'),
+                    if (timeline.isStandard && onDetachTimeline != null)
+                      const PopupMenuItem(
+                        value: _TimelineAction.detach,
+                        child: ListTile(
+                          leading: Icon(Icons.call_split),
+                          title: Text("Make it the study's own"),
+                        ),
                       ),
-                    ),
+                    // One that comes with the app is built on, not added to.
+                    if (!timeline.isStandard) ...[
+                      const PopupMenuItem(
+                        value: _TimelineAction.addEvent,
+                        child: ListTile(
+                          leading: Icon(Icons.radio_button_checked),
+                          title: Text('Add event'),
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: _TimelineAction.addSpan,
+                        child: ListTile(
+                          leading: Icon(Icons.linear_scale),
+                          title: Text('Add span'),
+                        ),
+                      ),
+                    ],
                     PopupMenuItem(
                       value: _TimelineAction.addNote,
                       child: ListTile(
@@ -973,8 +1016,11 @@ class StudyWorkspacePanel extends StatelessWidget {
               ancestors: ancestors,
             ),
             if (workspace.itemsIn(timeline.id).isEmpty)
-              const _SectionEmpty(
-                text: 'Add events and spans from this menu, or from a verse.',
+              _SectionEmpty(
+                text: timeline.isStandard
+                    ? 'Its entries come with the app. Build a timeline on it '
+                          'from this menu to add your own.'
+                    : 'Add events and spans from this menu, or from a verse.',
               ),
           ],
         ),
@@ -2539,6 +2585,8 @@ enum _GroupAction {
 enum _TimelineAction {
   calendar,
   open,
+  buildOn,
+  detach,
   addEvent,
   addSpan,
   addNote,

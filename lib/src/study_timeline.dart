@@ -134,6 +134,12 @@ bool hebrewCycleLeapYear(int am) => (7 * am + 1) % 19 < 7;
 /// spring of the next, when its Adars fall, in this year of the world.
 const _anno = 3761;
 
+/// A calendar year as written: "AD 30", or "1446 BC" for one stored negative.
+String formatEraYear(double year) {
+  final number = formatTimelineNumber(year.abs());
+  return year < 0 ? '$number BC' : 'AD $number';
+}
+
 /// A number on a timeline's scale as written: whole numbers without a
 /// decimal point, others with at most two places.
 String formatTimelineNumber(double value) {

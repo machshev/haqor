@@ -95,6 +95,7 @@ class TimelineCalendar extends StatelessWidget {
     required this.year,
     this.onTapDay,
     this.selected,
+    this.faded = const {},
   });
 
   final StudyTimeline timeline;
@@ -104,6 +105,9 @@ class TimelineCalendar extends StatelessWidget {
   final double year;
   final ValueChanged<TimelineTime>? onTapDay;
   final TimelineTime? selected;
+
+  /// The entries drawn faded: those of the timelines it is built on.
+  final Set<String> faded;
 
   bool _inYear(TimelineTime time) => timeline.isAnnual || time.value == year;
 
@@ -167,6 +171,7 @@ class TimelineCalendar extends StatelessWidget {
                         inYear: _inYear,
                         onTapDay: onTapDay,
                         selected: selected,
+                        faded: faded,
                       ),
                     ),
                 ],
@@ -379,6 +384,7 @@ class _Month extends StatelessWidget {
     required this.inYear,
     required this.onTapDay,
     required this.selected,
+    required this.faded,
   });
 
   final StudyTimeline timeline;
@@ -388,6 +394,9 @@ class _Month extends StatelessWidget {
   final bool Function(TimelineTime time) inYear;
   final ValueChanged<TimelineTime>? onTapDay;
   final TimelineTime? selected;
+
+  /// The entries drawn faded: those of the timelines it is built on.
+  final Set<String> faded;
 
   @override
   Widget build(BuildContext context) {
@@ -538,17 +547,20 @@ class _Month extends StatelessWidget {
         }
       }
       lanes.add(
-        _SpanLane(
-          key: ValueKey('calendar-span-${span.entry.id}-$month-$row'),
-          timeline: timeline,
-          span: span.entry,
-          from: cols.first,
-          to: cols.last,
-          starts: beyond(span.days, firstDay, -1),
-          ends: beyond(span.days, lastDay, 1),
-          pinned: pinned,
-          dayAt: dayAt,
-          onTapDay: onTapDay,
+        Opacity(
+          opacity: faded.contains(span.entry.id) ? 0.45 : 1,
+          child: _SpanLane(
+            key: ValueKey('calendar-span-${span.entry.id}-$month-$row'),
+            timeline: timeline,
+            span: span.entry,
+            from: cols.first,
+            to: cols.last,
+            starts: beyond(span.days, firstDay, -1),
+            ends: beyond(span.days, lastDay, 1),
+            pinned: pinned,
+            dayAt: dayAt,
+            onTapDay: onTapDay,
+          ),
         ),
       );
     }
@@ -737,12 +749,15 @@ class _Month extends StatelessWidget {
                         height: 5,
                         margin: const EdgeInsets.symmetric(horizontal: 1),
                         decoration: BoxDecoration(
-                          color: timelineEntryColor(
-                            timeline,
-                            dot,
-                            theme.brightness,
-                            scheme.tertiary,
-                          ),
+                          color:
+                              timelineEntryColor(
+                                timeline,
+                                dot,
+                                theme.brightness,
+                                scheme.tertiary,
+                              ).withValues(
+                                alpha: faded.contains(dot.id) ? 0.45 : 1,
+                              ),
                           shape: BoxShape.circle,
                         ),
                       ),

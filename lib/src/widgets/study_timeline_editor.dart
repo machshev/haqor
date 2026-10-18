@@ -8,24 +8,30 @@ import 'markdown_note.dart';
 import 'timeline_chart.dart';
 
 /// Edits a timeline: its title, how it counts time (calendar years BC and
-/// AD, years of its own, or another unit) and what it calls them, and its
-/// note.
+/// AD, years of its own, or another unit) and what it calls them, which of
+/// [bases] it is built on, the year one year's calendar is set in, and its
+/// note. One linked to a standard timeline keeps its scale.
 class StudyTimelineEditor extends StatefulWidget {
   const StudyTimelineEditor({
     super.key,
     required this.initial,
     required this.creating,
+    this.bases = const [],
   });
 
   final StudyTimeline initial;
   final bool creating;
+
+  /// The study's timelines it may be built on, those of its scale offered.
+  final List<StudyTimeline> bases;
 
   @override
   State<StudyTimelineEditor> createState() => _StudyTimelineEditorState();
 }
 
 class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
-  late final TextEditingController _title, _unit, _note, _leapYears;
+  late final TextEditingController _title, _unit, _note, _leapYears, _year;
+  late String? _baseId = widget.initial.baseId;
   late TimelineScale _scale;
   late TimelineLeapMonths _leap;
   late TimelineMonthNaming _naming;
@@ -38,6 +44,9 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
     _title = TextEditingController(text: t.title);
     _unit = TextEditingController(text: t.unit);
     _note = TextEditingController(text: t.note);
+    _year = TextEditingController(
+      text: t.year == null ? '' : formatEraYear(t.year!),
+    );
     _scale = t.scale;
     _leap = t.leapMonths;
     _naming = t.monthNaming;
@@ -54,7 +63,7 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
 
   @override
   void dispose() {
-    for (final c in [_title, _unit, _note, _leapYears]) {
+    for (final c in [_title, _unit, _note, _leapYears, _year]) {
       c.dispose();
     }
     super.dispose();
@@ -110,12 +119,45 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
     return years;
   }
 
+  /// The timelines it may be built on: those of its scale, but itself.
+  List<StudyTimeline> get _bases => [
+    for (final t in widget.bases)
+      if (t.scale == _scale && t.id != widget.initial.id) t,
+  ];
+
+  /// The year one year's calendar is set in, as entered: null for none, or
+  /// with [_error] set where it cannot be read.
+  ({double? year, bool ok}) _readYear() {
+    final text = _year.text.trim();
+    if (_scale != TimelineScale.annual || text.isEmpty) {
+      return (year: null, ok: true);
+    }
+    final match = RegExp(
+      r'^(?:(AD|CE)\s*)?(\d+)\s*(BC|BCE|AD|CE)?$',
+      caseSensitive: false,
+    ).firstMatch(text);
+    final number = match == null ? null : int.tryParse(match.group(2)!);
+    final era = (match?.group(3) ?? match?.group(1))?.toUpperCase();
+    if (number == null || number == 0 || era == null) {
+      _error = 'Write the year with BC or AD, as AD 30.';
+      return (year: null, ok: false);
+    }
+    final bc = era == 'BC' || era == 'BCE';
+    return (year: (bc ? -number : number).toDouble(), ok: true);
+  }
+
   void _save() {
     final title = _title.text.trim();
     if (title.isEmpty) {
       setState(() => _error = 'Give the timeline a title.');
       return;
     }
+    final year = _readYear();
+    if (!year.ok) {
+      setState(() {});
+      return;
+    }
+    final baseId = _bases.any((t) => t.id == _baseId) ? _baseId : null;
     final leap = _scale == TimelineScale.annual
         ? (_leap == TimelineLeapMonths.none
               ? TimelineLeapMonths.none
@@ -145,6 +187,8 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
         monthNaming: _naming,
         leapYears: leapYears,
         note: _note.text.trim(),
+        baseId: () => baseId,
+        year: () => year.year,
       ),
     );
   }
@@ -174,7 +218,15 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
                 key: const ValueKey('timeline-scale'),
                 initialValue: _scale,
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Counts'),
+                decoration: InputDecoration(
+                  labelText: 'Counts',
+                  helperText: widget.initial.isStandard
+                      ? 'Linked to a timeline that comes with the app: its '
+                            'entries come from there. Build a timeline on it '
+                            'to add your own.'
+                      : null,
+                  helperMaxLines: 3,
+                ),
                 items: const [
                   DropdownMenuItem(
                     value: TimelineScale.calendar,
@@ -193,15 +245,61 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
                     child: Text('Another unit, such as days'),
                   ),
                 ],
-                onChanged: (scale) {
-                  if (scale != null) {
-                    setState(() {
-                      _scale = scale;
-                      _error = null;
-                    });
-                  }
-                },
+                onChanged: widget.initial.isStandard
+                    ? null
+                    : (scale) {
+                        if (scale != null) {
+                          setState(() {
+                            _scale = scale;
+                            _error = null;
+                          });
+                        }
+                      },
               ),
+              if (_bases.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String?>(
+                  key: ValueKey('timeline-base-${_scale.name}'),
+                  initialValue: _bases.any((t) => t.id == _baseId)
+                      ? _baseId
+                      : null,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Built on',
+                    helperText:
+                        'Its entries show beneath this one\'s, which may be '
+                        'pinned to them.',
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('Nothing: it stands alone'),
+                    ),
+                    for (final t in _bases)
+                      DropdownMenuItem(
+                        value: t.id,
+                        child: Text(t.title, overflow: TextOverflow.ellipsis),
+                      ),
+                  ],
+                  onChanged: (id) => setState(() => _baseId = id),
+                ),
+              ],
+              if (_scale == TimelineScale.annual) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  key: const ValueKey('timeline-year'),
+                  controller: _year,
+                  decoration: const InputDecoration(
+                    labelText: 'Set in the year (optional)',
+                    hintText: 'AD 30',
+                    helperText:
+                        'Which year its weeks are those of; set the day of '
+                        'the week its year begins on in its calendar.',
+                    helperMaxLines: 2,
+                  ),
+                  onChanged: (_) => setState(() => _error = null),
+                ),
+              ],
               if (_scale == TimelineScale.years ||
                   _scale == TimelineScale.units) ...[
                 const SizedBox(height: 12),
@@ -414,6 +512,7 @@ class StudyTimelineEntryEditor extends StatefulWidget {
     required this.loadChapter,
     this.entries = const [],
     this.loadBibleEntries,
+    this.anchorsFor,
   });
 
   final StudyTimelineEntry initial;
@@ -424,6 +523,11 @@ class StudyTimelineEntryEditor extends StatefulWidget {
   /// Loads the Bible timeline's events, to link to; without it, only the
   /// study's entries may be linked to.
   final Future<List<StudyTimelineEntry>> Function()? loadBibleEntries;
+
+  /// The entries one on the timeline [timelineId] may be pinned to: its
+  /// own and those of the timelines it is built on, as it places them;
+  /// without it, those of [entries] on that timeline.
+  final List<StudyTimelineEntry> Function(String timelineId)? anchorsFor;
   final bool creating;
 
   /// The timelines it may be on; the initial one must be among them.
@@ -462,7 +566,15 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   /// The entries on the chosen timeline it may be pinned to: any but
   /// itself and those pinned, however far down a chain, to it.
   List<StudyTimelineEntry> get _anchors {
-    final byId = {for (final e in widget.entries) e.id: e};
+    final candidates =
+        widget.anchorsFor?.call(_timelineId) ??
+        [
+          for (final e in widget.entries)
+            if (e.timelineId == _timelineId) e,
+        ];
+    final byId = {
+      for (final e in [...widget.entries, ...candidates]) e.id: e,
+    };
     bool pinnedToSelf(StudyTimelineEntry entry) {
       final seen = <String>{};
       for (var e = entry; e.pin != null && seen.add(e.id);) {
@@ -475,11 +587,8 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     }
 
     return [
-      for (final e in widget.entries)
-        if (e.timelineId == _timelineId &&
-            e.id != widget.initial.id &&
-            !pinnedToSelf(e))
-          e,
+      for (final e in candidates)
+        if (e.id != widget.initial.id && !pinnedToSelf(e)) e,
     ]..sort(compareTimelineEntries);
   }
 

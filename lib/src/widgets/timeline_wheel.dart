@@ -133,6 +133,7 @@ class TimelineWheel extends StatelessWidget {
     required this.year,
     this.selectedId,
     this.onTapEntry,
+    this.faded = const {},
   });
 
   final StudyTimeline timeline;
@@ -142,6 +143,9 @@ class TimelineWheel extends StatelessWidget {
   final double year;
   final String? selectedId;
   final ValueChanged<StudyTimelineEntry>? onTapEntry;
+
+  /// The entries drawn faded: those of the timelines it is built on.
+  final Set<String> faded;
 
   /// The entry at [point] on a wheel of [size], if any: an event's dot, or
   /// a span's arc.
@@ -250,6 +254,7 @@ class TimelineWheel extends StatelessWidget {
                 year: year,
                 marks: marks,
                 selectedId: selectedId,
+                faded: faded,
                 theme: theme,
               ),
             ),
@@ -266,6 +271,7 @@ class _WheelPainter extends CustomPainter {
     required this.year,
     required this.marks,
     required this.selectedId,
+    required this.faded,
     required this.theme,
   });
 
@@ -273,6 +279,7 @@ class _WheelPainter extends CustomPainter {
   final double year;
   final List<TimelineWheelMark> marks;
   final String? selectedId;
+  final Set<String> faded;
   final ThemeData theme;
 
   ColorScheme get scheme => theme.colorScheme;
@@ -374,14 +381,14 @@ class _WheelPainter extends CustomPainter {
         mark.entry,
         theme.brightness,
         scheme.primary,
-      );
+      ).withValues(alpha: faded.contains(mark.entry.id) ? 0.45 : 1);
       canvas.drawArc(
         Rect.fromCircle(center: centre, radius: r * mark.radius),
         angle(mark.from),
         angle(mark.to) - angle(mark.from),
         false,
         Paint()
-          ..color = color.withValues(alpha: selected ? 1 : 0.6)
+          ..color = color.withValues(alpha: color.a * (selected ? 1 : 0.6))
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
           ..strokeWidth = selected ? 9 : 7,
@@ -409,7 +416,7 @@ class _WheelPainter extends CustomPainter {
         mark.entry,
         theme.brightness,
         scheme.tertiary,
-      );
+      ).withValues(alpha: faded.contains(mark.entry.id) ? 0.45 : 1);
       final dot = timelineWheelPoint(centre, r * mark.radius, mark.from);
       final label = timelineWheelPoint(centre, r * mark.labelRadius, mark.from);
       canvas.drawLine(dot, label, leader);
@@ -529,5 +536,6 @@ class _WheelPainter extends CustomPainter {
       old.year != year ||
       old.marks != marks ||
       old.selectedId != selectedId ||
+      old.faded != faded ||
       old.theme != theme;
 }

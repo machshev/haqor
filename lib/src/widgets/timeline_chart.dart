@@ -376,6 +376,7 @@ class TimelineChart extends StatelessWidget {
     this.onTapEntry,
     this.selectedId,
     this.seasons = false,
+    this.faded = const {},
   });
 
   final StudyTimeline timeline;
@@ -385,6 +386,9 @@ class TimelineChart extends StatelessWidget {
   /// Whether to show the seasons of the land above the entries, and the
   /// new and full moons on the axis, zoomed in to them.
   final bool seasons;
+
+  /// The entries drawn faded: those of the timelines it is built on.
+  final Set<String> faded;
   final ValueChanged<StudyTimelineEntry>? onTapEntry;
   final String? selectedId;
 
@@ -507,28 +511,32 @@ class TimelineChart extends StatelessWidget {
               top: top + slot.lane * laneHeight + 4,
               width: slot.right - slot.left + _inset(slot.entry),
               height: laneHeight - 8,
-              child: _EntryMark(
-                entry: slot.entry,
-                barWidth: math.max(
-                  4,
-                  px(timelineEntryReach(timeline, slot.entry).end) - slot.left,
-                ),
-                color: switch (timeline.colorOf(slot.entry)) {
-                  final index? => timelineCategoryColor(
-                    index,
-                    theme.brightness,
+              child: Opacity(
+                opacity: faded.contains(slot.entry.id) ? 0.45 : 1,
+                child: _EntryMark(
+                  entry: slot.entry,
+                  barWidth: math.max(
+                    4,
+                    px(timelineEntryReach(timeline, slot.entry).end) -
+                        slot.left,
                   ),
-                  null => null,
-                },
-                countedDays: timeline.daysIn(slot.entry) ?? 0,
-                titleWidth: _textWidth(slot.entry.title, labelStyle),
-                selected: slot.entry.id == selectedId,
-                tooltip: slot.entry.isHighSabbath
-                    ? '${slot.entry.title} · ${timelineEntryTime(timeline, slot.entry)}'
-                    : timelineEntryTime(timeline, slot.entry),
-                onTap: onTapEntry == null
-                    ? null
-                    : () => onTapEntry!(slot.entry),
+                  color: switch (timeline.colorOf(slot.entry)) {
+                    final index? => timelineCategoryColor(
+                      index,
+                      theme.brightness,
+                    ),
+                    null => null,
+                  },
+                  countedDays: timeline.daysIn(slot.entry) ?? 0,
+                  titleWidth: _textWidth(slot.entry.title, labelStyle),
+                  selected: slot.entry.id == selectedId,
+                  tooltip: slot.entry.isHighSabbath
+                      ? '${slot.entry.title} · ${timelineEntryTime(timeline, slot.entry)}'
+                      : timelineEntryTime(timeline, slot.entry),
+                  onTap: onTapEntry == null
+                      ? null
+                      : () => onTapEntry!(slot.entry),
+                ),
               ),
             ),
         ],
@@ -1131,6 +1139,7 @@ class TimelinePage extends StatefulWidget {
     this.entryDetails,
     this.linksOf,
     this.onOpenLink,
+    this.baseTitles = const {},
   });
 
   final StudyTimeline timeline;
@@ -1177,6 +1186,10 @@ class TimelinePage extends StatefulWidget {
   final List<TimelineLinkView> Function(StudyTimelineEntry entry)? linksOf;
   final ValueChanged<TimelineLink>? onOpenLink;
 
+  /// The titles of the timelines it is built on, by id: their entries are
+  /// among [entries], shown faded beneath its own and not edited here.
+  final Map<String, String> baseTitles;
+
   /// More about an entry, shown in its details beneath its verses.
   final Widget Function(BuildContext sheetContext, StudyTimelineEntry entry)?
   entryDetails;
@@ -1205,6 +1218,12 @@ class _TimelinePageState extends State<TimelinePage> {
   bool _wheel = false;
 
   bool get _chart => !_calendar && !_wheel;
+
+  /// The entries of the timelines it is built on, drawn faded.
+  Set<String> get _faded => {
+    for (final e in _entries)
+      if (e.timelineId != _timeline.id) e.id,
+  };
 
   /// The categories whose entries are hidden from every view.
   final _hidden = <String>{};
@@ -1613,10 +1632,12 @@ class _TimelinePageState extends State<TimelinePage> {
 
   Future<void> _show(StudyTimelineEntry entry) async {
     setState(() => _selectedId = entry.id);
-    final edit = widget.onEditEntry;
-    final remove = widget.onRemoveEntry;
+    // One of a timeline it is built on is changed there, not here.
+    final own = entry.timelineId == _timeline.id;
+    final edit = own ? widget.onEditEntry : null;
+    final remove = own ? widget.onRemoveEntry : null;
     final add = widget.onAddEntry;
-    final duplicate = widget.onDuplicateEntry;
+    final duplicate = own ? widget.onDuplicateEntry : null;
     final links = widget.linksOf?.call(entry) ?? const [];
     final open = widget.onOpenLink;
     final pin = timelinePinLabel(_timeline, entry, _entries);
@@ -1638,6 +1659,14 @@ class _TimelinePageState extends State<TimelinePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(entry.title, style: theme.textTheme.titleLarge),
+                if (!own)
+                  Text(
+                    'From ${widget.baseTitles[entry.timelineId] ?? 'the timeline it is built on'}',
+                    key: const ValueKey('timeline-entry-from-base'),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 const SizedBox(height: 4),
                 Text(
                   [timelineEntryTime(_timeline, entry), ?pin].join(' · '),
@@ -1940,7 +1969,10 @@ class _TimelinePageState extends State<TimelinePage> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('1 Nisan falls on', style: theme.textTheme.bodyMedium),
+              Text(
+                '${timeline.formatDate(_year, 1, 1)} falls on',
+                style: theme.textTheme.bodyMedium,
+              ),
               const SizedBox(width: 8),
               DropdownButton<int>(
                 key: ValueKey('calendar-nisan-weekday-$_year'),
@@ -2000,7 +2032,11 @@ class _TimelinePageState extends State<TimelinePage> {
         }
         return Scaffold(
           appBar: AppBar(
-            title: Text(_timeline.title),
+            title: Text(
+              _timeline.year == null
+                  ? _timeline.title
+                  : '${_timeline.title} · ${formatEraYear(_timeline.year!)}',
+            ),
             actions: [
               if (_timeline.hasMonths)
                 IconButton(
@@ -2075,6 +2111,7 @@ class _TimelinePageState extends State<TimelinePage> {
                           entries: entries,
                           year: _year,
                           selectedId: _selectedId,
+                          faded: _faded,
                           onTapEntry: _show,
                         ),
                       ),
@@ -2091,6 +2128,7 @@ class _TimelinePageState extends State<TimelinePage> {
                           entries: entries,
                           year: _year,
                           selected: _selectedDay,
+                          faded: _faded,
                           onTapDay: _showDay,
                         ),
                       ),
@@ -2162,6 +2200,7 @@ class _TimelinePageState extends State<TimelinePage> {
                                           entries: entries,
                                           pixelsPerUnit: ppu,
                                           seasons: _timeline.showSeasons,
+                                          faded: _faded,
                                           selectedId: _selectedId,
                                           onTapEntry: _show,
                                         ),
@@ -2242,10 +2281,15 @@ class _TimelinePageState extends State<TimelinePage> {
                                       _entries,
                                     ),
                                     ...entry.verses.map(_reference),
+                                    if (widget.baseTitles[entry.timelineId]
+                                        case final base?)
+                                      'from $base',
                                   ].join(' · '),
                                 ),
                                 onTap: () => _show(entry),
-                                trailing: editEntry == null
+                                trailing:
+                                    editEntry == null ||
+                                        entry.timelineId != _timeline.id
                                     ? null
                                     : IconButton(
                                         tooltip: entry.isSpan

@@ -1655,6 +1655,162 @@ void main() {
     expect(tapped, const TimelineTime(0, month: 1, day: 19));
   });
 
+  testWidgets('a timeline built on the moʿadim shows them faded beneath its '
+      'own, and pins its own to them', (tester) async {
+    final standard = standardTimelineById('moadim')!;
+    var workspace = const StudyWorkspace(
+      id: 's',
+      name: 'Study',
+    ).addStandardTimeline(standard, id: 'm');
+    // The editor builds it on the moʿadim, set in a year.
+    StudyTimeline? created;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              created = await showDialog<StudyTimeline>(
+                context: context,
+                builder: (_) => StudyTimelineEditor(
+                  initial: const StudyTimeline(
+                    id: 'passion',
+                    title: '',
+                    scale: TimelineScale.annual,
+                  ),
+                  creating: true,
+                  bases: workspace.timelines,
+                ),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('timeline-title')),
+      'The last week',
+    );
+    await tester.tap(find.byKey(const ValueKey('timeline-base-annual')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(standard.template.title).last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('timeline-year')));
+    await tester.enterText(find.byKey(const ValueKey('timeline-year')), '33');
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Write the year with BC or AD, as AD 30.'),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('timeline-year')),
+      'AD 33',
+    );
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(created?.baseId, 'm');
+    expect(created?.year, 33);
+
+    // The entry editor offers the moʿadim to pin to.
+    workspace = workspace.putTimeline(created!);
+    StudyTimelineEntry? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              saved = await showDialog<StudyTimelineEntry>(
+                context: context,
+                builder: (_) => StudyTimelineEntryEditor(
+                  initial: const StudyTimelineEntry(
+                    id: 'risen',
+                    title: 'Raised',
+                    timelineId: 'passion',
+                    start: TimelineTime(0, month: 1, day: 1),
+                  ),
+                  creating: false,
+                  timelines: [created!],
+                  entries: workspace.timelineEntries,
+                  anchorsFor: workspace.viewOf,
+                  useEnglishBookNames: true,
+                  loadChapter: _chapter,
+                ),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('timeline-entry-pin-passion')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ʿOmer haTenufah (sheaf of the waving)').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('timeline-entry-offset')),
+      '1',
+    );
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(saved?.pin?.anchorId, 'm:omer');
+    workspace = workspace.putTimelineEntry(saved!);
+
+    // Its page: the moʿadim faded beneath, changed only where they are, but
+    // counted from.
+    StudyTimelineEntry? anchored;
+    final view = workspace.viewOf('passion');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TimelinePage(
+          timeline: workspace.viewTimeline('passion')!,
+          entries: view,
+          baseTitles: {'m': standard.template.title},
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+          reload: () =>
+              (timeline: workspace.viewTimeline('passion')!, entries: view),
+          onAddEntry: (span, at, {sabbath = false, anchor}) async =>
+              anchored = anchor,
+          onEditEntry: (_) async {},
+          onRemoveEntry: (_) async {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('The last week · AD 33'), findsOneWidget);
+    Opacity fade(String id) => tester.widget(
+      find
+          .ancestor(
+            of: find.byKey(ValueKey('timeline-mark-$id')),
+            matching: find.byType(Opacity),
+          )
+          .first,
+    );
+    expect(fade('m:pesach').opacity, 0.45);
+    expect(fade('risen').opacity, 1);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('timeline-row-m:omer')),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.byKey(const ValueKey('timeline-row-m:omer')));
+    await tester.pumpAndSettle();
+    expect(find.text('From ${standard.template.title}'), findsOneWidget);
+    expect(find.text('Edit event'), findsNothing);
+    expect(find.text('Remove'), findsNothing);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timeline-add-pinned')),
+    );
+    await tester.tap(find.byKey(const ValueKey('timeline-add-pinned')));
+    await tester.pumpAndSettle();
+    expect(anchored?.id, 'm:omer');
+  });
+
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
     tester,
   ) async {

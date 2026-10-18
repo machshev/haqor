@@ -3459,20 +3459,93 @@ class _ReaderSessionState extends State<_ReaderSession>
     required bool creating,
   }) => showDialog<StudyTimeline>(
     context: context,
-    builder: (_) => StudyTimelineEditor(initial: timeline, creating: creating),
+    builder: (_) => StudyTimelineEditor(
+      initial: timeline,
+      creating: creating,
+      bases: _activeStudyWorkspace?.timelines ?? const [],
+    ),
   );
 
-  /// Adds a timeline to the container [parentId], or the top, returning it.
-  Future<StudyTimeline?> _createStudyTimeline(String? parentId) async {
+  /// Asks whether to start a timeline afresh or to add one that comes with
+  /// the app: null for neither, else the standard timeline chosen, or
+  /// false for a new one.
+  Future<Object?> _askForTimelineKind() => showDialog<Object>(
+    context: context,
+    builder: (dialogContext) => SimpleDialog(
+      title: const Text('Add a timeline'),
+      children: [
+        SimpleDialogOption(
+          key: const ValueKey('timeline-kind-new'),
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const ListTile(
+            leading: Icon(Icons.timeline),
+            title: Text('New timeline'),
+            subtitle: Text('Of your own: calendar years, a year, or a unit.'),
+          ),
+        ),
+        for (final standard in standardTimelines)
+          SimpleDialogOption(
+            key: ValueKey('timeline-kind-${standard.id}'),
+            onPressed: () => Navigator.pop(dialogContext, standard),
+            child: ListTile(
+              leading: const Icon(Icons.event_note_outlined),
+              title: Text(standard.template.title),
+              subtitle: Text(
+                '${standard.description} Comes with the app; build on it.',
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+
+  /// Adds a timeline to the container [parentId], or the top, returning it:
+  /// with [offerStandard], perhaps one that comes with the app, linked;
+  /// given [base], one built on it, beside it.
+  Future<StudyTimeline?> _createStudyTimeline(
+    String? parentId, {
+    bool offerStandard = false,
+    StudyTimeline? base,
+  }) async {
     final workspace = await _ensureStudyWorkspace();
     if (workspace == null || !mounted) return null;
+    final id = DateTime.now().microsecondsSinceEpoch.toString();
+    if (offerStandard && standardTimelines.isNotEmpty) {
+      final kind = await _askForTimelineKind();
+      final latest = _activeStudyWorkspace;
+      if (kind == null || latest == null || !mounted) return null;
+      if (kind case final StandardTimeline standard) {
+        final added = latest.addStandardTimeline(
+          standard,
+          id: id,
+          parentId: parentId,
+        );
+        _replaceStudyWorkspace(added);
+        return added.timelineById(id);
+      }
+    }
     final created = await _askForStudyTimeline(
-      StudyTimeline(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        title: '',
-        scale: TimelineScale.calendar,
-        parentId: parentId,
-      ),
+      base == null
+          ? StudyTimeline(
+              id: id,
+              title: '',
+              scale: TimelineScale.calendar,
+              parentId: parentId,
+            )
+          : StudyTimeline(
+              id: id,
+              title: '',
+              scale: base.scale,
+              unit: base.unit,
+              leapMonths: base.leapMonths,
+              leapYears: base.leapYears,
+              monthNaming: base.monthNaming,
+              nisanWeekday: base.nisanWeekday,
+              weekYear: base.weekYear,
+              showSeasons: base.showSeasons,
+              baseId: base.id,
+              parentId: base.parentId,
+            ),
       creating: true,
     );
     final latest = _activeStudyWorkspace;
@@ -3486,6 +3559,20 @@ class _ReaderSessionState extends State<_ReaderSession>
     final workspace = _activeStudyWorkspace;
     if (edited == null || workspace == null || !mounted) return;
     _replaceStudyWorkspace(workspace.putTimeline(edited));
+  }
+
+  /// Adds a timeline built on [base], beside it.
+  Future<void> _buildOnStudyTimeline(StudyTimeline base) async {
+    await _createStudyTimeline(base.parentId, base: base);
+  }
+
+  /// Makes [timeline], linked to one that comes with the app, the study's
+  /// own, its entries copied in to be changed.
+  void _detachStudyTimeline(StudyTimeline timeline) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace != null) {
+      _replaceStudyWorkspace(workspace.detachStandardTimeline(timeline));
+    }
   }
 
   Future<void> _deleteStudyTimeline(StudyTimeline timeline) async {
@@ -3595,8 +3682,12 @@ class _ReaderSessionState extends State<_ReaderSession>
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => TimelinePage(
-          timeline: timeline,
-          entries: workspace.entriesOf(timeline.id),
+          timeline: workspace.viewTimeline(timeline.id) ?? timeline,
+          entries: workspace.viewOf(timeline.id),
+          baseTitles: {
+            for (final base in workspace.baseChainOf(timeline))
+              base.id: base.title,
+          },
           useEnglishBookNames: _englishBookNames,
           initialSelectedId: selectedId,
           showInitialSelected: showSelected && selectedId != null,
@@ -3611,31 +3702,35 @@ class _ReaderSessionState extends State<_ReaderSession>
           },
           reload: () {
             final workspace = _activeStudyWorkspace;
-            final current = workspace?.timelineById(timeline.id);
+            final current = workspace?.viewTimeline(timeline.id);
             if (workspace == null || current == null) return null;
-            return (
-              timeline: current,
-              entries: workspace.entriesOf(timeline.id),
-            );
+            return (timeline: current, entries: workspace.viewOf(timeline.id));
           },
           onEditTimeline: () async {
             final current = _activeStudyWorkspace?.timelineById(timeline.id);
             if (current != null) await _editStudyTimeline(current);
           },
           onUpdateTimeline: (changed) async => _updateStudyTimeline(changed),
-          // The verse being read is no clue to an entry added here.
-          onAddEntry: (span, at, {sabbath = false, anchor}) =>
-              _createStudyTimelineEntry(
-                timeline.id,
-                span,
-                linkVerse: false,
-                at: at,
-                sabbath: sabbath,
-                anchor: anchor,
-              ),
-          onEditEntry: _editStudyTimelineEntry,
-          onRemoveEntry: (entry) async => _removeStudyTimelineEntry(entry),
-          onDuplicateEntry: _duplicateStudyTimelineEntry,
+          // The verse being read is no clue to an entry added here. One
+          // that comes with the app is built on, not added to.
+          onAddEntry: timeline.isStandard
+              ? null
+              : (span, at, {sabbath = false, anchor}) =>
+                    _createStudyTimelineEntry(
+                      timeline.id,
+                      span,
+                      linkVerse: false,
+                      at: at,
+                      sabbath: sabbath,
+                      anchor: anchor,
+                    ),
+          onEditEntry: timeline.isStandard ? null : _editStudyTimelineEntry,
+          onRemoveEntry: timeline.isStandard
+              ? null
+              : (entry) async => _removeStudyTimelineEntry(entry),
+          onDuplicateEntry: timeline.isStandard
+              ? null
+              : _duplicateStudyTimelineEntry,
           linksOf: _timelineLinksOf,
           onOpenLink: _openTimelineLink,
         ),
@@ -3654,8 +3749,13 @@ class _ReaderSessionState extends State<_ReaderSession>
       builder: (_) => StudyTimelineEntryEditor(
         initial: entry,
         creating: creating,
-        timelines: workspace.timelines,
+        timelines: [
+          for (final t in workspace.timelines)
+            if (!t.isStandard) t,
+        ],
         entries: workspace.timelineEntries,
+        anchorsFor: (id) =>
+            _activeStudyWorkspace?.viewOf(id) ?? workspace.viewOf(id),
         loadBibleEntries: loadBibleTimelineEntries,
         useEnglishBookNames: _englishBookNames,
         loadChapter: _loadStudyChapter,
@@ -3741,7 +3841,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         break;
       }
     }
-    timeline ??= workspace.timelines.lastOrNull;
+    timeline ??= workspace.timelines.where((t) => !t.isStandard).lastOrNull;
     timeline ??= await _createStudyTimeline(null);
     if (timeline == null || !mounted) return;
     await _askForStudyTimelineEntry(
@@ -4193,7 +4293,7 @@ class _ReaderSessionState extends State<_ReaderSession>
               setSheetState(() {});
             },
             onCreateTimeline: (parentId) async {
-              await _createStudyTimeline(parentId);
+              await _createStudyTimeline(parentId, offerStandard: true);
               if (sheetContext.mounted) setSheetState(() {});
             },
             onEditTimeline: (timeline) async {
@@ -4203,6 +4303,14 @@ class _ReaderSessionState extends State<_ReaderSession>
             onDeleteTimeline: (timeline) async {
               await _deleteStudyTimeline(timeline);
               if (sheetContext.mounted) setSheetState(() {});
+            },
+            onBuildOnTimeline: (timeline) async {
+              await _buildOnStudyTimeline(timeline);
+              if (sheetContext.mounted) setSheetState(() {});
+            },
+            onDetachTimeline: (timeline) {
+              _detachStudyTimeline(timeline);
+              setSheetState(() {});
             },
             onOpenTimeline: (timeline) => _openStudyTimeline(
               timeline,
@@ -5323,9 +5431,12 @@ class _ReaderSessionState extends State<_ReaderSession>
           onOpenReader?.call();
         },
         onToggleTimelineMarkers: _toggleStudyTimelineMarkers,
-        onCreateTimeline: _createStudyTimeline,
+        onCreateTimeline: (parentId) =>
+            _createStudyTimeline(parentId, offerStandard: true),
         onEditTimeline: _editStudyTimeline,
         onDeleteTimeline: _deleteStudyTimeline,
+        onBuildOnTimeline: _buildOnStudyTimeline,
+        onDetachTimeline: _detachStudyTimeline,
         onOpenTimeline: (timeline) =>
             _openStudyTimeline(timeline, onOpenReader: onOpenReader),
         onOpenTimelineCalendar: (timeline) => _openStudyTimeline(
