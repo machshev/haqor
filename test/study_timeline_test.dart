@@ -1246,6 +1246,67 @@ void main() {
     ]);
   });
 
+  test('spans of one category that never overlap share a row of their own', () {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+    );
+    StudyTimelineEntry span(
+      String id,
+      int month,
+      int from,
+      int to, {
+      String category = 'Chag',
+    }) => StudyTimelineEntry(
+      id: id,
+      title: id,
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: month, day: from),
+      end: TimelineTime(0, month: month, day: to),
+      category: category,
+    );
+    const pesach = StudyTimelineEntry(
+      id: 'pesach',
+      title: 'pesach',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 14),
+    );
+    List<(String, int)> lanes(List<StudyTimelineEntry> entries) => [
+      for (final s in packTimelineLanes(
+        feasts,
+        entries,
+        x: (p) => p * 10000,
+        width: (e) => e.isSpan ? 4 : 10,
+      ))
+        (s.entry.id, s.lane),
+    ];
+    // Pesach would leave the first lane free for the feasts that follow;
+    // they keep a row of their own all the same, and the count, of no
+    // category, goes on in Pesach's after its mark.
+    expect(
+      lanes([
+        pesach,
+        span('matzot', 1, 15, 21),
+        span('count', 1, 16, 30, category: ''),
+        span('shavuot', 3, 6, 6),
+        span('sukkot', 7, 15, 21),
+      ]).toSet(),
+      {
+        ('matzot', 0),
+        ('shavuot', 0),
+        ('sukkot', 0),
+        ('pesach', 1),
+        ('count', 1),
+      },
+    );
+    // Overlapping, they pack as any others.
+    expect(lanes([span('a', 1, 1, 10), span('b', 1, 5, 20)]).toSet(), {
+      ('a', 0),
+      ('b', 1),
+    });
+  });
+
   test('a study without timelines stores none', () {
     final json = const StudyWorkspace(id: 's', name: 'Study').toJson();
     expect(json.containsKey('timelines'), isFalse);

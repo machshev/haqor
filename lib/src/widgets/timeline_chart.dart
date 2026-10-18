@@ -82,7 +82,8 @@ typedef TimelineSlot = ({
 /// so that the events of a feast hang beneath it, its shabbatons among
 /// them; an anchor is placed before what is pinned to it from its start.
 /// Shabbatons pinned to nothing above them, stars without labels, all
-/// share the first lane.
+/// share the first lane. Spans of one category that never overlap, as the
+/// three pilgrimages, share a lane of their own, which nothing else takes.
 List<TimelineSlot> packTimelineLanes(
   StudyTimeline timeline,
   List<StudyTimelineEntry> entries, {
@@ -111,12 +112,44 @@ List<TimelineSlot> packTimelineLanes(
   sorted.forEach(visit);
   final sabbaths = sorted.any((e) => e.isHighSabbath && anchorOf(e) == null);
   final laneEnds = <double>[if (sabbaths) double.infinity];
+  ({double left, double right}) extent(StudyTimelineEntry e) {
+    final reach = timelineEntryReach(timeline, e);
+    final left = x(reach.start);
+    return (left: left, right: math.max(x(reach.end), left + width(e)));
+  }
+
+  // A row for each category of two or more spans, none overlapping.
+  final byCategory = <String, List<StudyTimelineEntry>>{};
+  for (final e in ordered) {
+    if (e.isSpan && e.category.isNotEmpty) {
+      (byCategory[e.category] ??= []).add(e);
+    }
+  }
+  final rows = <String, int>{};
+  for (final MapEntry(key: category, value: spans) in byCategory.entries) {
+    if (spans.length < 2) continue;
+    final at = spans.map(extent).toList()
+      ..sort((a, b) => a.left.compareTo(b.left));
+    var apart = true;
+    for (var i = 1; i < at.length && apart; i++) {
+      apart = at[i - 1].right + gap <= at[i].left;
+    }
+    if (!apart) continue;
+    rows[category] = laneEnds.length;
+    // Kept for them: never free to anything else.
+    laneEnds.add(double.infinity);
+  }
   final slots = <TimelineSlot>[];
   final laneOf = <String, int>{};
   for (final entry in ordered) {
-    final reach = timelineEntryReach(timeline, entry);
-    final left = x(reach.start);
-    final right = math.max(x(reach.end), left + width(entry));
+    final (:left, :right) = extent(entry);
+    if (entry.isSpan) {
+      if (rows[entry.category] case final row?) {
+        laneOf[entry.id] = row;
+        slots.add((entry: entry, lane: row, left: left, right: right));
+        continue;
+      }
+    }
     final anchor = laneOf[anchorOf(entry)?.id];
     if (entry.isHighSabbath && anchor == null) {
       slots.add((entry: entry, lane: 0, left: left, right: right));
