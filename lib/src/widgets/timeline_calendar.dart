@@ -438,8 +438,14 @@ class _Month extends StatelessWidget {
     final moon = timelineMoonOn(day.day!);
     final titles = [
       ?moon,
-      for (final e in [...events, ...over])
+      for (final e in events)
         e.dayPart == null ? e.title : '${e.title}, ${e.dayPart!.phrase}',
+      // A span by name, with its note for the day.
+      for (final span in over)
+        switch (span.dayNotes[timeline.dayIn(span, day)]) {
+          final note? => '${span.title}: $note',
+          null => span.title,
+        },
     ];
     final cell = InkWell(
       key: ValueKey('calendar-day-${day.month}-${day.day}'),

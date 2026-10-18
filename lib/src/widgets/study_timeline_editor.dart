@@ -576,6 +576,9 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
       c.dispose();
     }
     _start.dispose();
+    for (final c in _dayNotes.values) {
+      c.dispose();
+    }
     _end.dispose();
     super.dispose();
   }
@@ -737,6 +740,9 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
             counted: _span && _counted && timeline.hasMonths,
             part: () => _span || start.day == null ? null : _part,
             category: _category.text.trim(),
+            dayNotes: _span
+                ? _dayNotesFor(_spanDays(start, end) ?? 0)
+                : const {},
           )
           .pinnedTo(pin),
     );
@@ -761,6 +767,85 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   }
 
   void _changed() => setState(() => _error = null);
+
+  /// The notes for a span's days, by day, as entered so far.
+  final _dayNotes = <int, TextEditingController>{};
+
+  TextEditingController _dayNote(int day) => _dayNotes.putIfAbsent(
+    day,
+    () => TextEditingController(text: widget.initial.dayNotes[day] ?? ''),
+  );
+
+  /// The notes entered for the first [days] days.
+  Map<int, String> _dayNotesFor(int days) => {
+    for (var day = 1; day <= days; day++)
+      if (_dayNote(day).text.trim() case final note when note.isNotEmpty)
+        day: note,
+  };
+
+  /// The days a span from [start] to [end] runs, where both are days and
+  /// it runs no more than a season: those its notes may be given for.
+  int? _spanDays(TimelineTime? start, TimelineTime? end) {
+    if (start == null || end == null) return null;
+    final days = _timeline.daysBetween(start, end);
+    return days == null || days < 0 || days >= 120 ? null : days + 1;
+  }
+
+  /// The span's start and end as entered so far: its start where it is
+  /// pinned, and its end from its duration or as entered.
+  ({TimelineTime? start, TimelineTime? end}) get _draftSpan {
+    final anchor = _anchor;
+    final pin = anchor == null ? null : _pin;
+    final start = anchor == null
+        ? _read(_start)
+        : pin == null || !pin.isValid
+        ? null
+        : _timeline.placePin(anchor, pin);
+    final duration = _duration;
+    final end = !_byDuration
+        ? _read(_end)
+        : start == null || duration == null
+        ? null
+        : _timeline.addDuration(start, duration);
+    return (start: start, end: end);
+  }
+
+  /// A field for the note on each of the span's days, folded away.
+  Widget _dayNoteFields(ThemeData theme) {
+    final span = _draftSpan;
+    final days = _spanDays(span.start, span.end);
+    if (days == null) return const SizedBox.shrink();
+    return ExpansionTile(
+      key: const ValueKey('timeline-entry-day-notes'),
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.only(bottom: 8),
+      initiallyExpanded: widget.initial.dayNotes.isNotEmpty,
+      leading: const Icon(Icons.view_day_outlined),
+      title: const Text('Notes for each day'),
+      subtitle: const Text(
+        'What each day holds, as the offerings of each day of Tabernacles '
+        '(Numbers 29); a note starting with a number is drawn to scale.',
+      ),
+      children: [
+        for (var day = 1; day <= days; day++)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: TextField(
+              key: ValueKey('timeline-entry-day-note-$day'),
+              controller: _dayNote(day),
+              decoration: InputDecoration(
+                isDense: true,
+                labelText: [
+                  'Day $day',
+                  if (_timeline.addDays(span.start!, day - 1) case final date?)
+                    _timeline.formatTime(date),
+                ].join(' · '),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 
   Widget _time(_TimeDraft draft, {required String label, required String key}) {
     final timeline = _timeline;
@@ -1296,6 +1381,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                     value: _counted,
                     onChanged: (on) => setState(() => _counted = on),
                   ),
+                if (_timeline.hasMonths) _dayNoteFields(theme),
               ],
               const SizedBox(height: 12),
               TextField(

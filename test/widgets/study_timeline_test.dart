@@ -1309,6 +1309,120 @@ void main() {
     expect(saved?.category, 'Pilgrim feast');
   });
 
+  testWidgets("a span's days take notes, entered in the editor and shown "
+      'day by day', (tester) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+    );
+    const tabernacles = StudyTimelineEntry(
+      id: 'tabernacles',
+      title: 'Tabernacles',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 7, day: 15),
+      end: TimelineTime(0, month: 7, day: 21),
+    );
+    expect(
+      feasts.dayIn(tabernacles, const TimelineTime(0, month: 7, day: 17)),
+      3,
+    );
+    expect(
+      feasts.dayIn(tabernacles, const TimelineTime(0, month: 7, day: 22)),
+      isNull,
+    );
+    StudyTimelineEntry? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              saved = await showDialog<StudyTimelineEntry>(
+                context: context,
+                builder: (_) => StudyTimelineEntryEditor(
+                  initial: tabernacles,
+                  creating: false,
+                  timelines: const [feasts],
+                  useEnglishBookNames: true,
+                  loadChapter: _chapter,
+                ),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timeline-entry-day-notes')),
+    );
+    await tester.tap(find.text('Notes for each day'));
+    await tester.pumpAndSettle();
+    // Seven days, from 15 Tishri.
+    expect(find.text('Day 1 · 15 Tishri'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('timeline-entry-day-note-7')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('timeline-entry-day-note-8')),
+      findsNothing,
+    );
+    for (var day = 1; day <= 7; day++) {
+      final field = find.byKey(ValueKey('timeline-entry-day-note-$day'));
+      await tester.ensureVisible(field);
+      await tester.enterText(field, '${14 - day} bulls');
+    }
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(saved?.dayNotes[1], '13 bulls');
+    expect(saved?.dayNotes[7], '7 bulls');
+    expect(
+      StudyTimelineEntry.fromJson(saved!.toJson())?.dayNotes,
+      saved!.dayNotes,
+    );
+
+    final noted = saved!;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TimelinePage(
+          timeline: feasts,
+          entries: [noted],
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('timeline-row-tabernacles')));
+    await tester.pumpAndSettle();
+    expect(find.text('Day by day'), findsOneWidget);
+    expect(find.text('Day 3 · 17 Tishri'), findsOneWidget);
+    expect(find.text('11 bulls'), findsOneWidget);
+    // Each day's bar is drawn to its number of bulls.
+    final first = tester.getSize(
+      find.descendant(
+        of: find.byKey(const ValueKey('timeline-day-note-1')),
+        matching: find.byType(FractionallySizedBox),
+      ),
+    );
+    expect(first.width, greaterThan(0));
+    Navigator.of(tester.element(find.text('Day by day'))).pop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Show calendar'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('calendar-day-7-17')),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.byKey(const ValueKey('calendar-day-7-17')));
+    await tester.pumpAndSettle();
+    expect(find.text('Tabernacles, day 3: 11 bulls'), findsOneWidget);
+  });
+
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
     tester,
   ) async {

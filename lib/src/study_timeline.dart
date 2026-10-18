@@ -573,6 +573,15 @@ class StudyTimeline {
     return (day: n + 1, week: n ~/ 7 + 1, dayOfWeek: n % 7 + 1);
   }
 
+  /// Which day of [span] [day] is, 1 for its first; null outside it, or
+  /// where either is not dated to the day.
+  int? dayIn(StudyTimelineEntry span, TimelineTime day) {
+    final n = daysBetween(span.start, day);
+    final length = daysBetween(span.start, span.last);
+    if (n == null || length == null || n < 0 || n > length) return null;
+    return n + 1;
+  }
+
   /// The days a span runs, its first and last among them; null where it
   /// is not dated to the day.
   int? daysIn(StudyTimelineEntry span) {
@@ -979,6 +988,7 @@ class StudyTimelineEntry {
     this.counted = false,
     this.part,
     this.category = '',
+    this.dayNotes = const {},
     this.order = 0,
     this.pin,
     this.extra = const {},
@@ -1021,6 +1031,10 @@ class StudyTimelineEntry {
   /// [StudyTimeline.categoryColors]); empty for none.
   final String category;
 
+  /// A span's notes for its days, by day from 1 for its first: the
+  /// offerings of each day of Tabernacles (Numbers 29:12-38).
+  final Map<int, String> dayNotes;
+
   /// [part] where it means anything: an event dated to the day.
   TimelineDayPart? get dayPart => isSpan || start.day == null ? null : part;
   final int order;
@@ -1061,6 +1075,7 @@ class StudyTimelineEntry {
     counted: counted,
     part: part,
     category: category,
+    dayNotes: dayNotes,
     order: order,
     pin: pin,
   );
@@ -1088,6 +1103,7 @@ class StudyTimelineEntry {
     counted: counted,
     part: part,
     category: category,
+    dayNotes: dayNotes,
     order: order,
     pin: pin,
   );
@@ -1114,6 +1130,7 @@ class StudyTimelineEntry {
     bool? counted,
     TimelineDayPart? Function()? part,
     String? category,
+    Map<int, String>? dayNotes,
     int? order,
   }) => StudyTimelineEntry(
     extra: extra,
@@ -1130,6 +1147,7 @@ class StudyTimelineEntry {
     counted: counted ?? this.counted,
     part: part == null ? this.part : part(),
     category: category ?? this.category,
+    dayNotes: dayNotes ?? this.dayNotes,
     order: order ?? this.order,
     pin: pin,
   );
@@ -1164,6 +1182,11 @@ class StudyTimelineEntry {
     if (counted) 'counted': true,
     if (part != null) 'part': part!.name,
     if (category.isNotEmpty) 'category': category,
+    if (dayNotes.isNotEmpty)
+      'days': {
+        for (final day in dayNotes.keys.toList()..sort())
+          '$day': dayNotes[day],
+      },
     'order': order,
     if (pin != null) 'pin': pin!.toJson(),
   };
@@ -1211,6 +1234,7 @@ class StudyTimelineEntry {
         'counted',
         'part',
         'category',
+        'days',
         'order',
         'pin',
         'span',
@@ -1249,6 +1273,15 @@ class StudyTimelineEntry {
       category: value['category'] is String
           ? (value['category'] as String).trim()
           : '',
+      dayNotes: {
+        if (value['days'] case final Map days)
+          for (final MapEntry(:key, :value) in days.entries)
+            if (key is String &&
+                (int.tryParse(key) ?? 0) >= 1 &&
+                value is String &&
+                value.trim().isNotEmpty)
+              int.parse(key): value.trim(),
+      },
       order: value['order'] is int ? value['order'] as int : 0,
       pin: pin,
     );
