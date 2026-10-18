@@ -44,6 +44,7 @@ StudyPassage _ref(int book, int chapter, int verse, [int? endVerse]) =>
       endVerse: endVerse,
     );
 
+const _genesis = 0;
 const _exodus = 1;
 const _leviticus = 2;
 const _numbers = 3;
@@ -236,7 +237,7 @@ final _moadim = StandardTimeline(
     ),
     StudyTimelineEntry(
       id: 'kippurim',
-      title: 'Yom haKippurim (day of atonements)',
+      title: 'Yom haKippurim (day of the coverings)',
       timelineId: '',
       start: const TimelineTime(0, month: 7, day: 10),
       category: _qodesh,
@@ -244,11 +245,14 @@ final _moadim = StandardTimeline(
         _ref(_leviticus, 23, 26, 32),
         _ref(_leviticus, 16, 29, 34),
         _ref(_numbers, 29, 7, 11),
+        _ref(_genesis, 6, 14),
       ],
       note:
           '"On the tenth day of this seventh month there shall be yom '
           'hakippurim: ... ye shall afflict your souls" (Leviticus 23:27); a '
-          'shabbat shabbaton, "from even unto even" (Leviticus 23:32).',
+          'shabbat shabbaton, "from even unto even" (Leviticus 23:32). '
+          'Kippurim is plural, from kaphar, to cover: the ark was "pitched" '
+          '(kaphar) "with pitch" (kopher, Genesis 6:14).',
     ),
     StudyTimelineEntry(
       id: 'kippurim-shabbaton',
