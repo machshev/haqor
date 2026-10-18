@@ -1561,6 +1561,88 @@ void main() {
     expect(opened, const TimelineLink(bibleTimelineId, '412'));
   });
 
+  testWidgets('the calendar draws a span across its weeks, its pinned '
+      'events beneath it', (tester) async {
+    // 1 Nisan on the 4th day of the week: the feast runs from a 4th day
+    // into the next week.
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+      nisanWeekday: 4,
+    );
+    const unleavened = StudyTimelineEntry(
+      id: 'unleavened',
+      title: 'Unleavened Bread',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 15),
+      end: TimelineTime(0, month: 1, day: 21),
+    );
+    const passover = StudyTimelineEntry(
+      id: 'passover',
+      title: 'Passover',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 14),
+    );
+    final wave =
+        const StudyTimelineEntry(
+          id: 'wave',
+          title: 'Wave sheaf',
+          timelineId: 'feasts',
+          start: TimelineTime(0, month: 1, day: 19),
+        ).pinnedTo(
+          const TimelinePin(
+            'unleavened',
+            TimelineDuration(5, TimelineDurationUnit.days),
+          ),
+        );
+    TimelineTime? tapped;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TimelineCalendar(
+            timeline: feasts,
+            entries: [passover, unleavened, wave],
+            year: 0,
+            onTapDay: (day) => tapped = day,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // A bar in each of the two weeks it runs in, and none in others.
+    final bars = find.byWidgetPredicate(
+      (w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith(
+            'calendar-span-unleavened-1-',
+          ),
+    );
+    expect(bars, findsNWidgets(2));
+    // The wave sheaf beneath the bar on its day, not a dot in its cell.
+    final pinned = find.byKey(
+      const ValueKey('calendar-pinned-unleavened-wave'),
+    );
+    expect(pinned, findsOneWidget);
+    expect(
+      tester.getCenter(pinned).dx,
+      closeTo(
+        tester.getCenter(find.byKey(const ValueKey('calendar-day-1-19'))).dx,
+        2,
+      ),
+    );
+    expect(
+      tester.getTopLeft(pinned).dy,
+      greaterThan(
+        tester
+            .getBottomLeft(find.byKey(const ValueKey('calendar-day-1-19')))
+            .dy,
+      ),
+    );
+    await tester.tap(pinned);
+    expect(tapped, const TimelineTime(0, month: 1, day: 19));
+  });
+
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
     tester,
   ) async {

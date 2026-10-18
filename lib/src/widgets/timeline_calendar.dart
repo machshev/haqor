@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../study_workspace.dart';
+import 'timeline_chart.dart';
 
 /// The colours a timeline's categories may take (see
 /// [StudyTimeline.categoryColors]), by name, each for light and for dark.
@@ -240,6 +241,135 @@ class _Legend extends StatelessWidget {
   }
 }
 
+/// A span's bar across its days in one week of the calendar, columns
+/// [from] to [to], rounded where it [starts] and [ends], and named; and
+/// beneath it the events pinned to it, by column, each a dot in its colour
+/// with its title. Tapping one taps its day.
+class _SpanLane extends StatelessWidget {
+  const _SpanLane({
+    super.key,
+    required this.timeline,
+    required this.span,
+    required this.from,
+    required this.to,
+    required this.starts,
+    required this.ends,
+    required this.pinned,
+    required this.dayAt,
+    required this.onTapDay,
+  });
+
+  final StudyTimeline timeline;
+  final StudyTimelineEntry span;
+  final int from, to;
+  final bool starts, ends;
+  final Map<int, List<StudyTimelineEntry>> pinned;
+  final TimelineTime? Function(int col) dayAt;
+  final ValueChanged<TimelineTime>? onTapDay;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final color = timelineEntryColor(
+      timeline,
+      span,
+      theme.brightness,
+      scheme.primary,
+    );
+    final small = theme.textTheme.labelSmall?.copyWith(fontSize: 9);
+    const radius = Radius.circular(4);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth / 7;
+        return SizedBox(
+          height: pinned.isEmpty ? 17 : 33,
+          child: Stack(
+            children: [
+              Positioned(
+                left: from * width + 1,
+                width: (to - from + 1) * width - 2,
+                top: 2,
+                height: 14,
+                child: Tooltip(
+                  message:
+                      '${span.title} · ${timelineEntryTime(timeline, span)}',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    alignment: AlignmentDirectional.centerStart,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.22),
+                      border: Border.all(color: color.withValues(alpha: 0.7)),
+                      borderRadius: BorderRadius.horizontal(
+                        left: starts ? radius : Radius.zero,
+                        right: ends ? radius : Radius.zero,
+                      ),
+                    ),
+                    child: Text(
+                      span.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: small?.copyWith(color: scheme.onSurface),
+                    ),
+                  ),
+                ),
+              ),
+              for (final MapEntry(key: col, value: events) in pinned.entries)
+                Positioned(
+                  left: col * width,
+                  width: width,
+                  top: 18,
+                  height: 14,
+                  child: Tooltip(
+                    message: [
+                      for (final e in events)
+                        '${e.title} · ${timelinePinLabel(timeline, e, [span, e]) ?? timelineEntryTime(timeline, e)}',
+                    ].join('\n'),
+                    child: InkWell(
+                      key: ValueKey(
+                        'calendar-pinned-${span.id}-${events.first.id}',
+                      ),
+                      onTap: onTapDay == null || dayAt(col) == null
+                          ? null
+                          : () => onTapDay!(dayAt(col)!),
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 2),
+                          Container(
+                            width: 5,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: timelineEntryColor(
+                                timeline,
+                                events.first,
+                                theme.brightness,
+                                scheme.tertiary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          Expanded(
+                            child: Text(
+                              events.map((e) => e.title).join(', '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: small,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _Month extends StatelessWidget {
   const _Month({
     required this.timeline,
@@ -328,7 +458,7 @@ class _Month extends StatelessWidget {
                   ),
               ],
             ),
-            for (var row = 0; row * 7 < cells.length; row++)
+            for (var row = 0; row * 7 < cells.length; row++) ...[
               Row(
                 children: [
                   for (var col = 0; col < 7; col++)
@@ -339,10 +469,90 @@ class _Month extends StatelessWidget {
                     ),
                 ],
               ),
+              ..._spanLanes(context, row, first, days, spans),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  /// Beneath the week [row] of the month, which begins on the weekday
+  /// [first] and has [days] days, a bar for each span over its days, named,
+  /// and beneath the bar the events pinned to the span (see [TimelinePin])
+  /// on their days: the days of a feast with what falls on them.
+  List<Widget> _spanLanes(
+    BuildContext context,
+    int row,
+    int first,
+    int days,
+    List<({StudyTimelineEntry entry, ({double first, double last}) days})>
+    spans,
+  ) {
+    TimelineTime? dayAt(int col) {
+      final day = row * 7 + col - (first - 1) + 1;
+      return day >= 1 && day <= days
+          ? TimelineTime(year, month: month, day: day)
+          : null;
+    }
+
+    bool covers(({double first, double last}) span, TimelineTime day) {
+      final at = timeline.positionOf(day);
+      return at >= span.first - 1e-9 && at <= span.last + 1e-9;
+    }
+
+    // Whether the span stops before the day [step] days on from [day].
+    bool beyond(
+      ({double first, double last}) span,
+      TimelineTime day,
+      int step,
+    ) {
+      final next = timeline.addDays(day, step);
+      return next == null || !covers(span, next);
+    }
+
+    final lanes = <Widget>[];
+    for (final span in List.of(
+      spans,
+    )..sort((a, b) => compareTimelineEntries(a.entry, b.entry))) {
+      final cols = [
+        for (var col = 0; col < 7; col++)
+          if (dayAt(col) case final day? when covers(span.days, day)) col,
+      ];
+      if (cols.isEmpty) continue;
+      final firstDay = dayAt(cols.first)!;
+      final lastDay = dayAt(cols.last)!;
+      // Its events on these days, gathered by day.
+      final pinned = <int, List<StudyTimelineEntry>>{};
+      for (final entry in entries) {
+        if (entry.isSpan ||
+            entry.pin?.anchorId != span.entry.id ||
+            !inYear(entry.start) ||
+            entry.start.month != month) {
+          continue;
+        }
+        for (final col in cols) {
+          if (dayAt(col)!.day == entry.start.day) {
+            (pinned[col] ??= []).add(entry);
+          }
+        }
+      }
+      lanes.add(
+        _SpanLane(
+          key: ValueKey('calendar-span-${span.entry.id}-$month-$row'),
+          timeline: timeline,
+          span: span.entry,
+          from: cols.first,
+          to: cols.last,
+          starts: beyond(span.days, firstDay, -1),
+          ends: beyond(span.days, lastDay, 1),
+          pinned: pinned,
+          dayAt: dayAt,
+          onTapDay: onTapDay,
+        ),
+      );
+    }
+    return lanes;
   }
 
   /// The seasons of the land in this month, each named in its colour, its
@@ -413,16 +623,19 @@ class _Month extends StatelessWidget {
             inYear(entry.start))
           entry,
     ];
-    // A high Sabbath shows in its day's colour, not as a dot.
-    final dots = [
-      for (final entry in events)
-        if (!entry.isHighSabbath) entry,
-    ];
     final over = [
       for (final span in spans)
         if (position >= span.days.first - 1e-9 &&
             position <= span.days.last + 1e-9)
           span.entry,
+    ];
+    // A high Sabbath shows in its day's colour, not as a dot, and an event
+    // pinned to a span over its day beneath that span's bar.
+    final dots = [
+      for (final entry in events)
+        if (!entry.isHighSabbath &&
+            !over.any((span) => span.id == entry.pin?.anchorId))
+          entry,
     ];
     final high = events.any((entry) => entry.isHighSabbath);
     // Its number in a count running over it.
@@ -527,21 +740,6 @@ class _Month extends StatelessWidget {
                         ),
                       ),
                   ],
-                ),
-              ),
-            if (over.isNotEmpty)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 2,
-                child: Container(
-                  height: 3,
-                  color: timelineEntryColor(
-                    timeline,
-                    over.first,
-                    theme.brightness,
-                    scheme.primary,
-                  ).withValues(alpha: 0.7),
                 ),
               ),
           ],
