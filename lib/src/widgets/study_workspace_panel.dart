@@ -343,7 +343,7 @@ class StudyWorkspacePanel extends StatelessWidget {
     base: (groupId: target.groupId, index: targetIndex, depth: depth),
     row: target,
     onMoveItem: onMoveItem,
-    child: child,
+    child: _PlainListTiles(child: child),
   );
 
   String _itemLabel(StudyItem item) => switch (item.type) {
@@ -609,13 +609,16 @@ class StudyWorkspacePanel extends StatelessWidget {
           ),
         ),
         children: [
-          ..._itemsAt(
-            context,
-            workspace,
-            group.id,
-            depth: depth + 1,
-            ancestors: ancestors,
-          ),
+          ...[
+            for (final child in _itemsAt(
+              context,
+              workspace,
+              group.id,
+              depth: depth + 1,
+              ancestors: ancestors,
+            ))
+              _PlainListTiles(child: child),
+          ],
           if (workspace.itemsIn(group.id).isEmpty)
             const _SectionEmpty(text: 'This group is empty.'),
         ],
@@ -797,13 +800,16 @@ class StudyWorkspacePanel extends StatelessWidget {
             ),
           ),
           children: [
-            ..._itemsAt(
-              context,
-              workspace,
-              section.id,
-              depth: depth + 1,
-              ancestors: ancestors,
-            ),
+            ...[
+              for (final child in _itemsAt(
+                context,
+                workspace,
+                section.id,
+                depth: depth + 1,
+                ancestors: ancestors,
+              ))
+                _PlainListTiles(child: child),
+            ],
             if (workspace.itemsIn(section.id).isEmpty)
               const _SectionEmpty(
                 text: 'Add section headings, notes or passages here.',
@@ -1008,13 +1014,16 @@ class StudyWorkspacePanel extends StatelessWidget {
             ),
           ),
           children: [
-            ..._itemsAt(
-              context,
-              workspace,
-              timeline.id,
-              depth: depth + 1,
-              ancestors: ancestors,
-            ),
+            ...[
+              for (final child in _itemsAt(
+                context,
+                workspace,
+                timeline.id,
+                depth: depth + 1,
+                ancestors: ancestors,
+              ))
+                _PlainListTiles(child: child),
+            ],
             if (workspace.itemsIn(timeline.id).isEmpty)
               _SectionEmpty(
                 text: timeline.isStandard
@@ -1142,9 +1151,7 @@ class StudyWorkspacePanel extends StatelessWidget {
   }) => ListTile(
     key: ValueKey('passage-${passage.locationKey}'),
     dense: true,
-    titleAlignment: passage.note.isEmpty
-        ? ListTileTitleAlignment.center
-        : ListTileTitleAlignment.top,
+    titleAlignment: ListTileTitleAlignment.top,
     minTileHeight: 32,
     minVerticalPadding: 0,
     contentPadding: EdgeInsetsDirectional.only(
@@ -1245,9 +1252,7 @@ class StudyWorkspacePanel extends StatelessWidget {
     return ListTile(
       key: ValueKey(word.key),
       dense: true,
-      titleAlignment: subtitle == null
-          ? ListTileTitleAlignment.center
-          : ListTileTitleAlignment.top,
+      titleAlignment: ListTileTitleAlignment.top,
       minTileHeight: 32,
       minVerticalPadding: 0,
       contentPadding: EdgeInsetsDirectional.only(
@@ -1398,9 +1403,7 @@ class StudyWorkspacePanel extends StatelessWidget {
     return ListTile(
       key: ValueKey(link.key),
       dense: true,
-      titleAlignment: subtitle == null
-          ? ListTileTitleAlignment.center
-          : ListTileTitleAlignment.top,
+      titleAlignment: ListTileTitleAlignment.top,
       minTileHeight: 32,
       minVerticalPadding: 0,
       contentPadding: EdgeInsetsDirectional.only(
@@ -1487,9 +1490,7 @@ class StudyWorkspacePanel extends StatelessWidget {
     return ListTile(
       key: ValueKey(name.key),
       dense: true,
-      titleAlignment: subtitle == null
-          ? ListTileTitleAlignment.center
-          : ListTileTitleAlignment.top,
+      titleAlignment: ListTileTitleAlignment.top,
       minTileHeight: 32,
       minVerticalPadding: 0,
       contentPadding: EdgeInsetsDirectional.only(
@@ -1580,6 +1581,7 @@ class StudyWorkspacePanel extends StatelessWidget {
   }) => ListTile(
     key: ValueKey('note-${note.id}'),
     dense: true,
+    titleAlignment: ListTileTitleAlignment.top,
     minTileHeight: 32,
     minVerticalPadding: 0,
     contentPadding: EdgeInsetsDirectional.only(
@@ -2334,9 +2336,17 @@ class _OutlineExpansion extends StatefulWidget {
     builder: (context) {
       final scope = context
           .dependOnInheritedWidgetOfExactType<_OutlineExpansionScope>();
-      return build(
-        PageStorageKey((id, scope?.generation ?? 0)),
-        scope?.expanded ?? true,
+      // Its arrow and menu at the top of its title, however tall, as every
+      // item's icons are; its items and menus keep the theme around it.
+      return _OuterListTileTheme(
+        data: ListTileTheme.of(context),
+        child: ListTileTheme.merge(
+          titleAlignment: ListTileTitleAlignment.top,
+          child: build(
+            PageStorageKey((id, scope?.generation ?? 0)),
+            scope?.expanded ?? true,
+          ),
+        ),
       );
     },
   );
@@ -2361,6 +2371,35 @@ class _OutlineExpansionState extends State<_OutlineExpansion> {
     expanded: _expanded,
     child: widget.child,
   );
+}
+
+/// The list tile theme around an expandable outline tile, which sets its
+/// own to align its arrow and menu at the top: for [_PlainListTiles] to
+/// restore within it.
+class _OuterListTileTheme extends InheritedWidget {
+  const _OuterListTileTheme({required this.data, required super.child});
+
+  final ListTileThemeData data;
+
+  @override
+  bool updateShouldNotify(_OuterListTileTheme old) => old.data != data;
+}
+
+/// [child] in the list tile theme around the expandable outline tile it
+/// is within, if any: its items, and its menus, as anywhere else.
+class _PlainListTiles extends StatelessWidget {
+  const _PlainListTiles({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final outer = context
+        .dependOnInheritedWidgetOfExactType<_OuterListTileTheme>();
+    return outer == null
+        ? child
+        : ListTileTheme(data: outer.data, child: child);
+  }
 }
 
 class _OutlineExpansionScope extends InheritedWidget {
