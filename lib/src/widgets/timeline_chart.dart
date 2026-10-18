@@ -450,24 +450,30 @@ class TimelineChart extends StatelessWidget {
     final extent = timelineExtent(timeline, entries);
     double px(double position) =>
         padding + (position - extent.start) * pixelsPerUnit;
+    // Packed by their marks alone, to keep to as few lanes as may be; each
+    // label then takes what room its lane leaves it.
     final slots = packTimelineLanes(
       timeline,
       entries,
       x: px,
       width: (e) => e.isHighSabbath
           ? _dot + 2
-          : (e.isSpan ? 6 : _dot + 4) +
-                _textWidth(e.title, labelStyle) +
-                4 +
-                (groups.containsKey(e.id) ? _GroupToggle.width : 0),
+          : e.isSpan
+          ? 4
+          : _dot,
+      gap: _gap,
     );
+    final labels = _labelsFor(slots, labelStyle);
     final lanes = slots.isEmpty
         ? 1
         : slots.map((s) => s.lane).reduce(math.max) + 1;
     // Room too for the labels running past the last time.
     final width = slots.fold(
       widthFor(timeline, entries, pixelsPerUnit),
-      (width, slot) => math.max(width, slot.right + padding / 2),
+      (width, slot) => math.max(
+        width,
+        slot.left + labels[slot.entry.id]!.width + padding / 2,
+      ),
     );
     final bands = seasons
         ? timelineSeasonsIn(timeline, extent.start, extent.end)
@@ -536,55 +542,128 @@ class TimelineChart extends StatelessWidget {
               child: _SeasonBand(season: band.season),
             ),
           for (final slot in slots)
-            Positioned(
-              // An event's mark is centred on its time.
-              left: slot.left - _inset(slot.entry),
-              top: top + slot.lane * laneHeight + 4,
-              width: slot.right - slot.left + _inset(slot.entry),
-              height: laneHeight - 8,
-              child: Opacity(
-                opacity: faded.contains(slot.entry.id) ? 0.45 : 1,
-                child: _EntryMark(
-                  entry: slot.entry,
-                  barWidth: math.max(
-                    4,
-                    px(timelineEntryReach(timeline, slot.entry).end) -
-                        slot.left,
+            if (labels[slot.entry.id]! case final label)
+              Positioned(
+                // An event's mark is centred on its time.
+                left: slot.left - _inset(slot.entry),
+                top: top + slot.lane * laneHeight + 4,
+                width: label.width + _inset(slot.entry),
+                height: laneHeight - 8,
+                child: Opacity(
+                  opacity: faded.contains(slot.entry.id) ? 0.45 : 1,
+                  child: _EntryMark(
+                    entry: slot.entry,
+                    barWidth: math.max(
+                      4,
+                      px(timelineEntryReach(timeline, slot.entry).end) -
+                          slot.left,
+                    ),
+                    color: switch (timeline.colorOf(slot.entry)) {
+                      final index? => timelineCategoryColor(
+                        index,
+                        theme.brightness,
+                      ),
+                      null => null,
+                    },
+                    countedDays: timeline.daysIn(slot.entry) ?? 0,
+                    titleWidth: label.title,
+                    showTitle: label.title > 0,
+                    selected: slot.entry.id == selectedId,
+                    // Its title too where the label doesn't show it whole.
+                    tooltip: slot.entry.isHighSabbath || !label.whole
+                        ? '${slot.entry.title} · ${timelineEntryTime(timeline, slot.entry)}'
+                        : timelineEntryTime(timeline, slot.entry),
+                    onTap: onTapEntry == null
+                        ? null
+                        : () => onTapEntry!(slot.entry),
+                    group: switch (groups[slot.entry.id]) {
+                      final group? when label.group => _GroupToggle(
+                        key: ValueKey('timeline-group-${slot.entry.id}'),
+                        count: group.count,
+                        open: group.open,
+                        dense: true,
+                        onPressed: onToggleGroup == null
+                            ? null
+                            : () => onToggleGroup!(slot.entry),
+                      ),
+                      _ => null,
+                    },
                   ),
-                  color: switch (timeline.colorOf(slot.entry)) {
-                    final index? => timelineCategoryColor(
-                      index,
-                      theme.brightness,
-                    ),
-                    null => null,
-                  },
-                  countedDays: timeline.daysIn(slot.entry) ?? 0,
-                  titleWidth: _textWidth(slot.entry.title, labelStyle),
-                  selected: slot.entry.id == selectedId,
-                  tooltip: slot.entry.isHighSabbath
-                      ? '${slot.entry.title} · ${timelineEntryTime(timeline, slot.entry)}'
-                      : timelineEntryTime(timeline, slot.entry),
-                  onTap: onTapEntry == null
-                      ? null
-                      : () => onTapEntry!(slot.entry),
-                  group: switch (groups[slot.entry.id]) {
-                    final group? => _GroupToggle(
-                      key: ValueKey('timeline-group-${slot.entry.id}'),
-                      count: group.count,
-                      open: group.open,
-                      dense: true,
-                      onPressed: onToggleGroup == null
-                          ? null
-                          : () => onToggleGroup!(slot.entry),
-                    ),
-                    null => null,
-                  },
                 ),
               ),
-            ),
         ],
       ),
     );
+  }
+
+  /// The least gap between two marks in a lane.
+  static const _gap = 8.0;
+
+  /// The narrowest a title is cut to before it is left out altogether.
+  static const _leastTitle = 28.0;
+
+  /// How each slot's label fits the room its lane leaves it, up to the
+  /// next mark in the lane, by entry id: the [width] its mark and label
+  /// take from its time, the [title]'s width shown (0 where left out),
+  /// whether it is [whole], and whether a span's button for the entries
+  /// grouped under it shows. Zoomed out, labels are cut short or left
+  /// out; zoomed in, they show whole.
+  Map<String, ({double width, double title, bool whole, bool group})>
+  _labelsFor(List<TimelineSlot> slots, TextStyle? style) {
+    final next = <String, double>{};
+    final byLane = <int, List<TimelineSlot>>{};
+    for (final slot in slots) {
+      (byLane[slot.lane] ??= []).add(slot);
+    }
+    for (final lane in byLane.values) {
+      lane.sort((a, b) => a.left.compareTo(b.left));
+      for (var i = 0; i + 1 < lane.length; i++) {
+        final after = lane[i + 1];
+        next[lane[i].entry.id] = after.left - _inset(after.entry) - _gap;
+      }
+    }
+    return {
+      for (final slot in slots)
+        slot.entry.id: () {
+          final entry = slot.entry;
+          final mark = slot.right - slot.left;
+          if (entry.isHighSabbath) {
+            return (width: mark, title: 0.0, whole: false, group: false);
+          }
+          final room = (next[entry.id] ?? double.infinity) - slot.left;
+          final lead = entry.isSpan ? 6.0 : _dot + 4;
+          final title = _textWidth(entry.title, style);
+          final button = groups.containsKey(entry.id)
+              ? _GroupToggle.width
+              : 0.0;
+          final full = lead + title + 4 + button;
+          if (room >= full) {
+            return (
+              width: math.max(mark, full),
+              title: title,
+              whole: true,
+              group: true,
+            );
+          }
+          final cut = room - lead - 4 - button;
+          if (cut >= _leastTitle) {
+            return (
+              width: math.max(mark, room),
+              title: cut,
+              whole: false,
+              group: true,
+            );
+          }
+          // A span's button alone, where there is room for it.
+          final group = button > 0 && room >= lead + button;
+          return (
+            width: group ? math.max(mark, room) : mark,
+            title: 0.0,
+            whole: false,
+            group: group,
+          );
+        }(),
+    };
   }
 }
 
@@ -631,6 +710,7 @@ class _EntryMark extends StatelessWidget {
     required this.barWidth,
     this.countedDays = 0,
     this.titleWidth = 0,
+    this.showTitle = true,
     this.color,
     required this.selected,
     required this.tooltip,
@@ -640,6 +720,10 @@ class _EntryMark extends StatelessWidget {
 
   final StudyTimelineEntry entry;
   final double barWidth;
+
+  /// Whether its title shows beside it, cut short where its label has too
+  /// little room; left out, it is in [tooltip].
+  final bool showTitle;
 
   /// For a span with entries grouped under it, the button after its title
   /// that shows or hides them.
@@ -670,7 +754,7 @@ class _EntryMark extends StatelessWidget {
       entry.title,
       maxLines: 1,
       softWrap: false,
-      overflow: TextOverflow.visible,
+      overflow: TextOverflow.ellipsis,
       style: style,
     );
     return Tooltip(
@@ -716,12 +800,15 @@ class _EntryMark extends StatelessWidget {
                     ),
                   Padding(
                     padding: const EdgeInsetsDirectional.only(start: 6),
-                    child: group == null
-                        ? label
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [label, const SizedBox(width: 4), group!],
-                          ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (showTitle) Flexible(child: label),
+                        if (showTitle && group != null)
+                          const SizedBox(width: 4),
+                        ?group,
+                      ],
+                    ),
                   ),
                 ],
               )
@@ -747,7 +834,7 @@ class _EntryMark extends StatelessWidget {
                       ),
                     ),
                   // A high Sabbath's title is in its tooltip alone.
-                  if (!entry.isHighSabbath) ...[
+                  if (!entry.isHighSabbath && showTitle) ...[
                     const SizedBox(width: 4),
                     Flexible(child: label),
                   ],
