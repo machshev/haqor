@@ -1815,6 +1815,62 @@ void main() {
     expect(anchored?.id, 'm:omer');
   });
 
+  testWidgets('a shabbaton is drawn as its whole day, the height of the '
+      'chart, behind the rest', (tester) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+    );
+    const day15 = TimelineTime(0, month: 1, day: 15);
+    const shabbaton = StudyTimelineEntry(
+      id: 'first',
+      title: 'Miqra qodesh',
+      timelineId: 'feasts',
+      start: day15,
+      sabbath: true,
+    );
+    const pesach = StudyTimelineEntry(
+      id: 'pesach',
+      title: 'Pesach',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 14),
+    );
+    StudyTimelineEntry? tapped;
+    const ppu = 354 * 40.0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: TimelineChart(
+              timeline: feasts,
+              entries: const [pesach, shabbaton],
+              pixelsPerUnit: ppu,
+              onTapEntry: (e) => tapped = e,
+            ),
+          ),
+        ),
+      ),
+    );
+    final chart = tester.getRect(find.byType(TimelineChart));
+    final block = tester.getRect(
+      find.byKey(const ValueKey('timeline-mark-first')),
+    );
+    // Its day, sundown to sundown: 40 pixels a day here.
+    expect(block.width, closeTo(40, 0.5));
+    expect(
+      block.left - chart.left,
+      closeTo(TimelineChart.padding + feasts.positionOf(day15) * ppu, 0.5),
+    );
+    // From the top down to the axis, taking no lane: Pesach alone has one.
+    expect(block.top, chart.top);
+    expect(chart.height, TimelineChart.laneHeight + TimelineChart.axisHeight);
+    expect(block.height, greaterThan(TimelineChart.laneHeight));
+    await tester.tapAt(Offset(block.center.dx, block.bottom - 4));
+    expect(tapped?.id, 'first');
+  });
+
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
     tester,
   ) async {

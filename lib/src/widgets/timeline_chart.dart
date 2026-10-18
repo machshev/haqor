@@ -455,6 +455,11 @@ class TimelineChart extends StatelessWidget {
     final extent = timelineExtent(timeline, entries);
     double px(double position) =>
         padding + (position - extent.start) * pixelsPerUnit;
+    // A shabbaton dated to its day is drawn as that day, behind the rest.
+    final shabbatons = [
+      for (final e in entries)
+        if (_isDayBlock(e)) e,
+    ];
     final clusters = _clusters(px);
     final clustered = {
       for (final events in clusters.values)
@@ -466,7 +471,7 @@ class TimelineChart extends StatelessWidget {
       timeline,
       [
         for (final e in entries)
-          if (!clustered.contains(e.id)) e,
+          if (!clustered.contains(e.id) && !_isDayBlock(e)) e,
         for (final MapEntry(:key, :value) in clusters.entries)
           _clusterEntry(key, value),
       ],
@@ -544,6 +549,26 @@ class TimelineChart extends StatelessWidget {
               ),
             ),
           ),
+          // Each shabbaton its whole day, sundown to sundown, top to axis.
+          for (final day in shabbatons)
+            if ((
+                  from: px(timeline.positionOf(day.start)),
+                  to: px(timeline.endOf(day.start)),
+                )
+                case final at)
+              Positioned(
+                left: at.from,
+                width: math.max(2, at.to - at.from),
+                top: 0,
+                height: axisY,
+                child: _ShabbatonBlock(
+                  entry: day,
+                  selected: day.id == selectedId,
+                  faded: faded.contains(day.id),
+                  tooltip: '${day.title} · ${timelineEntryTime(timeline, day)}',
+                  onTap: onTapEntry == null ? null : () => onTapEntry!(day),
+                ),
+              ),
           for (final band in bands)
             Positioned(
               left: px(band.start),
@@ -640,6 +665,11 @@ class TimelineChart extends StatelessWidget {
   /// together, placed by [px], that more than [mostStacked] would stack,
   /// each such run by the id of its mark (see [_clusterEntry]): from each
   /// event, those starting within a dot and a gap of it.
+  /// Whether [entry] is a shabbaton dated to its day, drawn as the whole
+  /// of that day rather than as a mark in a lane.
+  bool _isDayBlock(StudyTimelineEntry entry) =>
+      entry.isHighSabbath && timeline.hasMonths && entry.start.day != null;
+
   Map<String, List<StudyTimelineEntry>> _clusters(
     double Function(double position) px,
   ) {
@@ -784,6 +814,75 @@ class _SeasonBand extends StatelessWidget {
           style: theme.textTheme.labelSmall?.copyWith(
             fontSize: 10,
             color: theme.colorScheme.onSurface,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A shabbaton as its whole day, from the sundown that begins it to the
+/// next, shaded the height of the chart behind its entries, as the
+/// calendar shades it; named at its top where it is wide enough.
+class _ShabbatonBlock extends StatelessWidget {
+  const _ShabbatonBlock({
+    required this.entry,
+    required this.selected,
+    required this.faded,
+    required this.tooltip,
+    this.onTap,
+  });
+
+  final StudyTimelineEntry entry;
+  final bool selected, faded;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        key: ValueKey('timeline-mark-${entry.id}'),
+        onTap: onTap,
+        child: LayoutBuilder(
+          builder: (context, constraints) => DecoratedBox(
+            decoration: BoxDecoration(
+              color: scheme.tertiaryContainer.withValues(
+                alpha: faded ? 0.3 : 0.6,
+              ),
+              border: Border.symmetric(
+                vertical: BorderSide(
+                  color: selected
+                      ? scheme.onSurface
+                      : scheme.tertiary.withValues(alpha: faded ? 0.25 : 0.5),
+                  width: selected ? 2 : 1,
+                ),
+              ),
+            ),
+            child: constraints.maxWidth < 56
+                ? const SizedBox.expand()
+                : Align(
+                    alignment: Alignment.topCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(3, 2, 3, 0),
+                      child: Text(
+                        entry.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontSize: 9,
+                          fontWeight: selected ? FontWeight.bold : null,
+                          color: scheme.onTertiaryContainer.withValues(
+                            alpha: faded ? 0.6 : 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
           ),
         ),
       ),
