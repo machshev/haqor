@@ -703,11 +703,50 @@ typedef TimelineContents = ({
 });
 
 /// What an entry's details sheet was closed to do.
-enum _EntryChoice { edit, remove, addWithin }
+enum _EntryChoice { edit, remove, duplicate, addPinned }
 
 /// What a day's sheet in the calendar was closed to do, besides editing
 /// one of its entries.
 enum _DayChoice { add, addSabbath }
+
+/// Where a pinned entry falls from its anchor: "Day 3 of Unleavened Bread",
+/// "Day 50 counting from the wave sheaf", "2 days before Passover", "the
+/// 1st day of the week from Day 2 of Unleavened Bread", "3 months after
+/// the reign starts"; null for one not pinned, or whose anchor is not
+/// among [entries].
+String? timelinePinLabel(
+  StudyTimeline timeline,
+  StudyTimelineEntry entry,
+  List<StudyTimelineEntry> entries,
+) {
+  final pin = entry.pin;
+  if (pin == null) return null;
+  final anchor = entries.where((e) => e.id == pin.anchorId).firstOrNull;
+  if (anchor == null) return null;
+  final amount = pin.offset.amount;
+  if (!pin.isDays) {
+    final unit = pin.offset.unit == TimelineDurationUnit.units
+        ? timeline.unit
+        : pin.offset.unit.name;
+    return amount == 0
+        ? 'At the start of ${anchor.title}'
+        : '${formatTimelineNumber(amount)} $unit after ${anchor.title} '
+              'starts';
+  }
+  final day = amount.round();
+  final count = day >= 1
+      ? anchor.isSpan
+            ? 'Day $day of ${anchor.title}'
+            : day == 1
+            ? 'The day of ${anchor.title}'
+            : 'Day $day counting from ${anchor.title}'
+      : '${1 - day} day${day == 0 ? '' : 's'} before ${anchor.title}';
+  final weekday = pin.weekday;
+  return weekday == null
+      ? count
+      : 'The first ${timelineWeekdayLabel(weekday)} from '
+            '${count[0].toLowerCase()}${count.substring(1)}';
+}
 
 /// The full view of a timeline: drawn to scale, zoomable and scrollable,
 /// with its entries listed beneath. An entry opens its details, from which
@@ -731,6 +770,7 @@ class TimelinePage extends StatefulWidget {
     this.onAddEntry,
     this.onEditEntry,
     this.onRemoveEntry,
+    this.onDuplicateEntry,
     this.entryDetails,
   });
 
@@ -755,20 +795,22 @@ class TimelinePage extends StatefulWidget {
   /// Edit the timeline in its editor, or save a change made here (its
   /// weekdays); add an event or (`span` true) a span to it, starting [at] a
   /// day where one is chosen, or a high Sabbath ([sabbath] true) on one,
-  /// or an event pinned into the span [within]; edit or remove an entry.
-  /// The page reads the timeline again after each. Without them the page
-  /// only shows the timeline.
+  /// or an event pinned to the entry [anchor]; edit, remove or duplicate
+  /// an entry, a copy to set beside it another reading of its time. The
+  /// page reads the timeline again after each. Without them the page only
+  /// shows the timeline.
   final Future<void> Function()? onEditTimeline;
   final Future<void> Function(StudyTimeline timeline)? onUpdateTimeline;
   final Future<void> Function(
     bool span,
     TimelineTime? at, {
     bool sabbath,
-    StudyTimelineEntry? within,
+    StudyTimelineEntry? anchor,
   })?
   onAddEntry;
   final Future<void> Function(StudyTimelineEntry entry)? onEditEntry;
   final Future<void> Function(StudyTimelineEntry entry)? onRemoveEntry;
+  final Future<void> Function(StudyTimelineEntry entry)? onDuplicateEntry;
 
   /// More about an entry, shown in its details beneath its verses.
   final Widget Function(BuildContext sheetContext, StudyTimelineEntry entry)?
@@ -928,31 +970,16 @@ class _TimelinePageState extends State<TimelinePage> {
       '${bookDisplayName(passage.bookIndex, useEnglish: widget.useEnglishBookNames)} '
       '${passage.reference}';
 
-  /// Where a pinned event falls in its span: "Day 3 of Unleavened Bread",
-  /// or how far into it; null for one not pinned.
-  String? _pinLabel(StudyTimelineEntry entry) {
-    final offset = entry.offset;
-    final span = _entries.where((e) => e.id == entry.spanId).firstOrNull;
-    if (offset == null || span == null) return null;
-    final amount = formatTimelineNumber(offset.amount);
-    if (offset.unit == TimelineDurationUnit.days) {
-      return 'Day $amount of ${span.title}';
-    }
-    final unit = offset.unit == TimelineDurationUnit.units
-        ? _timeline.unit
-        : offset.unit.name;
-    return '$amount $unit into ${span.title}';
-  }
-
   Future<void> _show(StudyTimelineEntry entry) async {
     setState(() => _selectedId = entry.id);
     final edit = widget.onEditEntry;
     final remove = widget.onRemoveEntry;
     final add = widget.onAddEntry;
-    final pin = _pinLabel(entry);
+    final duplicate = widget.onDuplicateEntry;
+    final pin = timelinePinLabel(_timeline, entry, _entries);
     final pinned = [
       for (final e in List.of(_entries)..sort(compareTimelineEntries))
-        if (e.spanId == entry.id) e,
+        if (e.pin?.anchorId == entry.id) e,
     ];
     final choice = await showModalBottomSheet<Object>(
       context: context,
@@ -996,7 +1023,7 @@ class _TimelinePageState extends State<TimelinePage> {
                 ],
                 if (widget.entryDetails case final details?)
                   details(sheetContext, entry),
-                // A span's pinned events, each opening its own details.
+                // The entries pinned to it, each opening its own details.
                 if (pinned.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   for (final e in pinned)
@@ -1006,13 +1033,18 @@ class _TimelinePageState extends State<TimelinePage> {
                       dense: true,
                       leading: Icon(timelineEntryIcon(e)),
                       title: Text(e.title),
-                      subtitle: Text(_pinLabel(e) ?? ''),
+                      subtitle: Text(
+                        timelinePinLabel(_timeline, e, _entries) ?? '',
+                      ),
                       onTap: () => Navigator.pop(sheetContext, e),
                     ),
                 ],
-                if (edit != null || remove != null || add != null) ...[
+                if (edit != null ||
+                    remove != null ||
+                    add != null ||
+                    duplicate != null) ...[
                   const SizedBox(height: 12),
-                  Row(
+                  Wrap(
                     children: [
                       if (edit != null)
                         TextButton.icon(
@@ -1030,16 +1062,32 @@ class _TimelinePageState extends State<TimelinePage> {
                           icon: const Icon(Icons.delete_outline),
                           label: const Text('Remove'),
                         ),
+                      if (duplicate != null)
+                        TextButton.icon(
+                          key: const ValueKey('timeline-duplicate'),
+                          onPressed: () => Navigator.pop(
+                            sheetContext,
+                            _EntryChoice.duplicate,
+                          ),
+                          icon: const Icon(Icons.copy_outlined),
+                          label: const Text('Duplicate'),
+                        ),
+                      if (add != null)
+                        TextButton.icon(
+                          key: const ValueKey('timeline-add-pinned'),
+                          onPressed: () => Navigator.pop(
+                            sheetContext,
+                            _EntryChoice.addPinned,
+                          ),
+                          icon: const Icon(Icons.push_pin_outlined),
+                          label: Text(
+                            entry.isSpan
+                                ? 'Add event in this span'
+                                : 'Add event counted from this',
+                          ),
+                        ),
                     ],
                   ),
-                  if (add != null && entry.isSpan)
-                    TextButton.icon(
-                      key: const ValueKey('timeline-add-within'),
-                      onPressed: () =>
-                          Navigator.pop(sheetContext, _EntryChoice.addWithin),
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add event in this span'),
-                    ),
                 ],
               ],
             ),
@@ -1056,8 +1104,10 @@ class _TimelinePageState extends State<TimelinePage> {
         await _edit(() => edit!(entry));
       case _EntryChoice.remove:
         await _edit(() => remove!(entry));
-      case _EntryChoice.addWithin:
-        await _edit(() => add!(false, null, within: entry));
+      case _EntryChoice.duplicate:
+        await _edit(() => duplicate!(entry));
+      case _EntryChoice.addPinned:
+        await _edit(() => add!(false, null, anchor: entry));
       case StudyTimelineEntry pinned:
         await _show(pinned);
     }
@@ -1459,7 +1509,7 @@ class _TimelinePageState extends State<TimelinePage> {
                               subtitle: Text(
                                 [
                                   timelineEntryTime(_timeline, entry),
-                                  ?_pinLabel(entry),
+                                  ?timelinePinLabel(_timeline, entry, _entries),
                                   ...entry.verses.map(_reference),
                                 ].join(' · '),
                               ),

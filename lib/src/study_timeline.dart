@@ -71,6 +71,11 @@ String ordinal(int n) {
   return '$n$suffix';
 }
 
+/// A day of the week as a name in a sentence: "1st day of the week", or
+/// "Sabbath" for the 7th.
+String timelineWeekdayLabel(int weekday) =>
+    weekday == 7 ? 'Sabbath' : '${ordinal(weekday)} day of the week';
+
 /// The months of the Bible's year, from Nisan (Abib), its first month. They
 /// are lunar: 30 and 29 days by turns, Nisan's 30, a year of 354 days. In a
 /// leap year Adar becomes Adar I, of 30 days, and Adar II follows as a
@@ -97,8 +102,10 @@ const _mostDays = 30;
 
 /// The days of a twelve-month year before [month] begins: 29 for each month
 /// before it, and one more for each of those (Nisan, Sivan, …) of 30. The
-/// same holds for every month up to Adar I in a leap year.
-int _daysBefore(int month) => (month - 1) * 29 + month ~/ 2;
+/// same holds for every month up to Adar I in a leap year, and Adar II
+/// follows Adar I's 30.
+int _daysBefore(int month) =>
+    (month - 1) * 29 + month ~/ 2 + (month == 13 ? 1 : 0);
 
 /// Whether the Hebrew year [am] (anno mundi) has a second Adar in the fixed
 /// 19-year cycle.
@@ -457,36 +464,114 @@ class StudyTimeline {
     return isAnnual && end != null && end.value != start.value ? null : end;
   }
 
-  /// Where an event pinned [offset] into [span] falls (see
-  /// [StudyTimelineEntry.spanId]): the span's start moved on by it, days
-  /// counted inclusively, so day 1 is the span's first. Null where the
-  /// offset cannot be counted from the span's start.
-  TimelineTime? placeInSpan(StudyTimelineEntry span, TimelineDuration offset) =>
-      addDuration(span.start, offset);
-
-  /// Where an event pinned into [span] starts out: its first day, or else
-  /// its start; null where nothing can be counted from its start.
-  TimelineDuration? firstOffsetIn(StudyTimelineEntry span) {
-    final units = durationUnitsFor(span.start);
-    if (units.contains(TimelineDurationUnit.days)) {
-      return const TimelineDuration(1, TimelineDurationUnit.days);
+  /// The day [n] days after [time] (before it, for [n] negative), or null
+  /// when [time] is not a day of this timeline, or, on one year's calendar,
+  /// the day falls outside the year.
+  TimelineTime? addDays(TimelineTime time, int n) {
+    if (!hasMonths || time.day == null || !fits(time)) return null;
+    var year = _astronomical(time.value);
+    var day = _daysBefore(time.month!) + time.day! - 1 + n;
+    while (day < 0) {
+      year--;
+      day += daysInYear(_written(year));
     }
-    return units.isEmpty ? null : TimelineDuration(0, units.first);
+    while (day >= daysInYear(_written(year))) {
+      day -= daysInYear(_written(year));
+      year++;
+    }
+    final value = _written(year);
+    if (isAnnual && value != 0) return null;
+    var month = 1;
+    while (day >= daysInMonth(value, month)) {
+      day -= daysInMonth(value, month);
+      month++;
+    }
+    return TimelineTime(value, month: month, day: day + 1);
   }
 
-  /// Which day of [span] [time] falls on, 1 for its first, or null when it
-  /// is not a day of the span, or the span is not dated to the day.
-  int? dayOfSpan(StudyTimelineEntry span, TimelineTime time) {
-    if (span.start.day == null || time.day == null) return null;
-    final end = positionOf(span.last);
-    for (var n = 1; ; n++) {
-      final day = addDuration(
-        span.start,
-        TimelineDuration(n.toDouble(), TimelineDurationUnit.days),
-      );
-      if (day == null || positionOf(day) > end + 1e-9) return null;
-      if (day == time) return n;
+  /// The days from [from] to [to]: 0 for the same day, negative where [to]
+  /// comes first; null unless both are days of this timeline.
+  int? daysBetween(TimelineTime from, TimelineTime to) {
+    if (!hasMonths || from.day == null || to.day == null) return null;
+    if (!fits(from) || !fits(to)) return null;
+    var days =
+        _daysBefore(to.month!) + to.day! - _daysBefore(from.month!) - from.day!;
+    final a = _astronomical(from.value);
+    final b = _astronomical(to.value);
+    for (var year = math.min(a, b); year < math.max(a, b); year++) {
+      final length = daysInYear(_written(year));
+      days += a < b ? length : -length;
     }
+    return days;
+  }
+
+  /// Where an entry pinned by [pin] to [anchor] starts (see [TimelinePin]):
+  /// counted in days from the anchor's first day, day 1 being that day, or
+  /// else in months or years from its start; then moved on, given a
+  /// weekday, to the first such day. Null where it cannot be counted.
+  TimelineTime? placePin(StudyTimelineEntry anchor, TimelinePin pin) {
+    final offset = pin.offset;
+    var at = offset.unit == TimelineDurationUnit.days
+        ? addDays(anchor.start, offset.amount.round() - 1)
+        : addDuration(anchor.start, offset);
+    final weekday = pin.weekday;
+    if (at == null || weekday == null) return at;
+    for (var i = 0; i < 7; i++) {
+      if (weekdayOf(at!) == weekday) return at;
+      at = addDays(at, 1);
+      if (at == null) return null;
+    }
+    return null;
+  }
+
+  /// How an entry pinned to [anchor] starts out: on its first day, or else
+  /// at its start; null where nothing can be counted from its start.
+  TimelinePin? firstPinTo(StudyTimelineEntry anchor) {
+    final units = durationUnitsFor(anchor.start);
+    if (units.contains(TimelineDurationUnit.days)) {
+      return TimelinePin(
+        anchor.id,
+        const TimelineDuration(1, TimelineDurationUnit.days),
+      );
+    }
+    return units.isEmpty
+        ? null
+        : TimelinePin(anchor.id, TimelineDuration(0, units.first));
+  }
+
+  /// [entry] moved to start at [start], a span keeping its length: its
+  /// end worked out again from its duration, or moved as many days (or, by
+  /// years alone, years) as its start. Null where it cannot be moved so.
+  StudyTimelineEntry? moveEntry(StudyTimelineEntry entry, TimelineTime start) {
+    final end = entry.end;
+    if (end == null) return entry.withTime(start: start, end: null);
+    final duration = entry.duration;
+    if (duration != null) {
+      return entry
+          .withTime(start: start, end: end, duration: duration)
+          .fittedTo(this);
+    }
+    final days = daysBetween(entry.start, start);
+    final TimelineTime? moved;
+    if (days != null && end.day != null) {
+      moved = addDays(end, days);
+    } else if (start.month == null &&
+        entry.start.month == null &&
+        end.month == null &&
+        countsYears) {
+      moved = TimelineTime(
+        _written(
+          _astronomical(end.value) +
+              _astronomical(start.value) -
+              _astronomical(entry.start.value),
+        ),
+      );
+    } else if (!hasMonths) {
+      moved = TimelineTime(end.value + start.value - entry.start.value);
+    } else {
+      moved = null;
+    }
+    return moved == null ? null : entry.withTime(start: start, end: moved);
   }
 
   TimelineTime? _addDuration(TimelineTime start, TimelineDuration duration) {
@@ -720,13 +805,75 @@ class StudyTimeline {
   ];
 }
 
+/// How an entry is pinned to another on its timeline, the [anchorId], so
+/// that it moves with it: [offset] from the anchor's start. Days are
+/// counted as Scripture counts them, inclusively: day 1 is the anchor's
+/// own (first) day, 2 the next, 0 the day before, as Pentecost is the 50th
+/// day counting from the wave sheaf (Leviticus 23:15-16). Months and years
+/// count on from the start, from 0. Given a [weekday] (1 to 6, or 7 for
+/// the Sabbath), it falls on the first such day on or after that day: the
+/// morrow after the Sabbath.
+@immutable
+class TimelinePin {
+  const TimelinePin(this.anchorId, this.offset, {this.weekday});
+
+  final String anchorId;
+  final TimelineDuration offset;
+  final int? weekday;
+
+  bool get isDays => offset.unit == TimelineDurationUnit.days;
+
+  bool get isValid =>
+      anchorId.isNotEmpty &&
+      offset.amount.isFinite &&
+      (offset.unit == TimelineDurationUnit.units ||
+          offset.amount == offset.amount.roundToDouble()) &&
+      (isDays || offset.amount >= 0) &&
+      (weekday == null || (isDays && weekday! >= 1 && weekday! <= 7));
+
+  Map<String, Object?> toJson() => {
+    'anchor': anchorId,
+    'offset': offset.toJson(),
+    if (weekday != null) 'weekday': weekday,
+  };
+
+  static TimelinePin? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final anchor = value['anchor'];
+    final offset = value['offset'];
+    final weekday = value['weekday'];
+    if (anchor is! String || offset is! Map) return null;
+    if (weekday != null && weekday is! int) return null;
+    final amount = offset['amount'];
+    final unit = TimelineDurationUnit.values
+        .where((u) => u.name == offset['unit'])
+        .firstOrNull;
+    if (amount is! num || unit == null) return null;
+    final pin = TimelinePin(
+      anchor,
+      TimelineDuration(amount.toDouble(), unit),
+      weekday: weekday as int?,
+    );
+    return pin.isValid ? pin : null;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is TimelinePin &&
+      other.anchorId == anchorId &&
+      other.offset == offset &&
+      other.weekday == weekday;
+
+  @override
+  int get hashCode => Object.hash(anchorId, offset, weekday);
+}
+
 /// An event (a point in time) or a span (from [start] to [end]) on a
 /// timeline, which it lives directly in, with the verses it is linked to.
 /// A span may be given by its [duration], from which its end is worked
 /// out on its timeline (see [StudyTimeline.addDuration]). [date] is how the
-/// time is written where the scale alone would not say it ("c."). An
-/// event may be pinned into a span ([spanId]), [offset] from its start,
-/// moving with it.
+/// time is written where the scale alone would not say it ("c."). It
+/// may be pinned to another entry ([pin]), moving with it.
 @immutable
 class StudyTimelineEntry {
   const StudyTimelineEntry({
@@ -741,8 +888,7 @@ class StudyTimelineEntry {
     this.note = '',
     this.sabbath = false,
     this.order = 0,
-    this.spanId,
-    this.offset,
+    this.pin,
     this.extra = const {},
   });
 
@@ -771,12 +917,10 @@ class StudyTimelineEntry {
   final bool sabbath;
   final int order;
 
-  /// The span on its timeline this event is pinned into, and how far into
-  /// it: [start] is then kept where [StudyTimeline.placeInSpan] puts it,
-  /// following the span as it moves. Both or neither are given, and only
-  /// for an event.
-  final String? spanId;
-  final TimelineDuration? offset;
+  /// The entry on its timeline it is pinned to: its [start] is then kept
+  /// where [StudyTimeline.placePin] puts it, following the anchor as it
+  /// moves.
+  final TimelinePin? pin;
 
   bool get isSpan => end != null;
   bool get isHighSabbath => sabbath && !isSpan;
@@ -789,29 +933,25 @@ class StudyTimelineEntry {
       start.isValid &&
       (end == null || (end!.isValid && end!.position() >= start.position())) &&
       (duration == null || (end != null && duration!.isValid)) &&
-      (spanId == null) == (offset == null) &&
-      (spanId == null || (end == null && spanId != id && offset!.isValid));
+      (pin == null || (pin!.isValid && pin!.anchorId != id));
 
-  /// Pinned [offset] into the span [spanId], or, given neither, unpinned;
-  /// the start is placed by the workspace (see
-  /// [StudyTimeline.placeInSpan]).
-  StudyTimelineEntry pinnedTo(String? spanId, TimelineDuration? offset) =>
-      StudyTimelineEntry(
-        extra: extra,
-        id: id,
-        title: title,
-        timelineId: timelineId,
-        start: start,
-        end: end,
-        duration: duration,
-        date: date,
-        verses: verses,
-        note: note,
-        sabbath: sabbath,
-        order: order,
-        spanId: spanId,
-        offset: offset,
-      );
+  /// Pinned by [pin], or, given none, unpinned; the start is placed by
+  /// the workspace (see [StudyTimeline.placePin]).
+  StudyTimelineEntry pinnedTo(TimelinePin? pin) => StudyTimelineEntry(
+    extra: extra,
+    id: id,
+    title: title,
+    timelineId: timelineId,
+    start: start,
+    end: end,
+    duration: duration,
+    date: date,
+    verses: verses,
+    note: note,
+    sabbath: sabbath,
+    order: order,
+    pin: pin,
+  );
 
   bool linksVerse(int book, int chapter, int verse) =>
       verses.any((passage) => passage.containsVerse(book, chapter, verse));
@@ -834,8 +974,7 @@ class StudyTimelineEntry {
     note: note,
     sabbath: sabbath,
     order: order,
-    spanId: spanId,
-    offset: offset,
+    pin: pin,
   );
 
   /// The entry on [timeline], its end worked out again from its duration
@@ -871,8 +1010,7 @@ class StudyTimelineEntry {
     note: note ?? this.note,
     sabbath: sabbath ?? this.sabbath,
     order: order ?? this.order,
-    spanId: spanId,
-    offset: offset,
+    pin: pin,
   );
 
   Map<String, Object?> toJson() => {
@@ -903,8 +1041,7 @@ class StudyTimelineEntry {
     if (note.isNotEmpty) 'note': note,
     if (sabbath) 'sabbath': true,
     'order': order,
-    if (spanId != null) 'span': spanId,
-    if (offset != null) 'offset': offset!.toJson(),
+    if (pin != null) 'pin': pin!.toJson(),
   };
 
   static StudyTimelineEntry? fromJson(Object? value) {
@@ -921,11 +1058,13 @@ class StudyTimelineEntry {
         (end != null && end is! num)) {
       return null;
     }
-    // A pin needs both its span and its offset.
-    final span = value['span'];
-    final offset = span is String
-        ? TimelineDuration.fromJson(value['offset'])
-        : null;
+    // A pin was first kept as a span and an offset into it.
+    final pin =
+        TimelinePin.fromJson(value['pin']) ??
+        TimelinePin.fromJson({
+          'anchor': value['span'],
+          'offset': value['offset'],
+        });
     for (final key in ['startMonth', 'startDay', 'endMonth', 'endDay']) {
       if (value[key] != null && value[key] is! int) return null;
     }
@@ -946,6 +1085,7 @@ class StudyTimelineEntry {
         'note',
         'sabbath',
         'order',
+        'pin',
         'span',
         'offset',
       }),
@@ -976,8 +1116,7 @@ class StudyTimelineEntry {
       note: value['note'] is String ? value['note'] as String : '',
       sabbath: value['sabbath'] == true,
       order: value['order'] is int ? value['order'] as int : 0,
-      spanId: offset == null ? null : span,
-      offset: offset,
+      pin: pin,
     );
     return entry.isValid ? entry : null;
   }

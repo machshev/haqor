@@ -734,7 +734,7 @@ void main() {
                     calls.add('timeline');
                     timeline = timeline.copyWith(title: 'Kings of Israel');
                   },
-                  onAddEntry: (span, _, {sabbath = false, within}) async {
+                  onAddEntry: (span, _, {sabbath = false, anchor}) async {
                     calls.add('add ${span ? 'span' : 'event'}');
                     entries = [...entries, _reign];
                   },
@@ -829,9 +829,7 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('timeline-entry-in-span-feasts')),
-    );
+    await tester.tap(find.byKey(const ValueKey('timeline-entry-pin-feasts')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Unleavened Bread').last);
     await tester.pumpAndSettle();
@@ -845,19 +843,32 @@ void main() {
       find.byKey(const ValueKey('timeline-entry-offset')),
       '10',
     );
+    // Then moved on to the Sabbath after.
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timeline-entry-weekday')),
+    );
+    await tester.tap(find.byKey(const ValueKey('timeline-entry-weekday')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('The first Sabbath from it').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
-    // Day 10 of seven still counts on from the start.
-    expect(saved?.spanId, 'unleavened');
+    // Day 10 of seven still counts on from the start, to 24 Nisan, a 3rd
+    // day of the week; the Sabbath after is the 28th.
     expect(
-      saved?.offset,
-      const TimelineDuration(10, TimelineDurationUnit.days),
+      saved?.pin,
+      const TimelinePin(
+        'unleavened',
+        TimelineDuration(10, TimelineDurationUnit.days),
+        weekday: 7,
+      ),
     );
-    expect(saved?.start, const TimelineTime(0, month: 1, day: 24));
+    expect(saved?.start, const TimelineTime(0, month: 1, day: 28));
 
     // The span lists it, and adds another in it.
     final pinned = saved!;
-    StudyTimelineEntry? addedWithin;
+    StudyTimelineEntry? addedTo;
+    StudyTimelineEntry? duplicated;
     await tester.pumpWidget(
       MaterialApp(
         home: TimelinePage(
@@ -866,20 +877,29 @@ void main() {
           useEnglishBookNames: true,
           onOpenPassage: (_) {},
           reload: () => (timeline: feasts, entries: [unleavened, pinned]),
-          onAddEntry: (span, at, {sabbath = false, within}) async {
-            addedWithin = within;
+          onAddEntry: (span, at, {sabbath = false, anchor}) async {
+            addedTo = anchor;
           },
+          onDuplicateEntry: (entry) async => duplicated = entry,
         ),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('24 Nisan · Day 10 of Unleavened Bread'), findsOneWidget);
+    expect(
+      find.text('28 Nisan · The first Sabbath from day 10 of Unleavened Bread'),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const ValueKey('timeline-row-unleavened')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('timeline-pinned-wave')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('timeline-add-within')));
+    await tester.tap(find.byKey(const ValueKey('timeline-add-pinned')));
     await tester.pumpAndSettle();
-    expect(addedWithin?.id, 'unleavened');
+    expect(addedTo?.id, 'unleavened');
+    await tester.tap(find.byKey(const ValueKey('timeline-row-unleavened')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('timeline-duplicate')));
+    await tester.pumpAndSettle();
+    expect(duplicated?.id, 'unleavened');
   });
 
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
@@ -912,7 +932,7 @@ void main() {
           initialCalendar: true,
           reload: () => (timeline: timeline, entries: entries),
           onUpdateTimeline: (changed) async => timeline = changed,
-          onAddEntry: (span, at, {sabbath = false, within}) async {
+          onAddEntry: (span, at, {sabbath = false, anchor}) async {
             added.add((at, sabbath));
             // As the reader would, once the editor is saved.
             entries = [

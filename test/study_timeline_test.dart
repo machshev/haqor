@@ -688,72 +688,217 @@ void main() {
     expect(kings.toJson().containsKey('monthNames'), isFalse);
   });
 
-  test('an event pinned into a span moves with it, and stays where it is '
-      'once the span is gone', () {
+  test('pins chain the feasts from Passover, counted in days and moved on '
+      'to a weekday, and each moves with what it is pinned to', () {
+    // 15 Nisan falls on the 4th day of the week.
     const feasts = StudyTimeline(
       id: 'feasts',
       title: 'Feasts',
       scale: TimelineScale.annual,
+      nisanWeekday: 4,
     );
-    const unleavened = StudyTimelineEntry(
-      id: 'unleavened',
-      title: 'Unleavened Bread',
+    TimelineTime nisan(int day) => TimelineTime(0, month: 1, day: day);
+    TimelineTime sivan(int day) => TimelineTime(0, month: 3, day: day);
+    const passover = StudyTimelineEntry(
+      id: 'passover',
+      title: 'Passover',
       timelineId: 'feasts',
-      start: TimelineTime(0, month: 1, day: 15),
-      end: TimelineTime(0, month: 1, day: 21),
-      duration: TimelineDuration(7, TimelineDurationUnit.days),
+      start: TimelineTime(0, month: 1, day: 14),
     );
-    const third = TimelineDuration(3, TimelineDurationUnit.days);
+    // The morrow of Passover, for seven days.
+    final unleavened =
+        const StudyTimelineEntry(
+          id: 'unleavened',
+          title: 'Unleavened Bread',
+          timelineId: 'feasts',
+          start: TimelineTime(0, month: 1, day: 1),
+          end: TimelineTime(0, month: 1, day: 7),
+          duration: TimelineDuration(7, TimelineDurationUnit.days),
+        ).pinnedTo(
+          const TimelinePin(
+            'passover',
+            TimelineDuration(2, TimelineDurationUnit.days),
+          ),
+        );
+    // The morrow after the Sabbath, read as the first day of the week in
+    // the feast.
+    const wavePin = TimelinePin(
+      'unleavened',
+      TimelineDuration(2, TimelineDurationUnit.days),
+      weekday: 1,
+    );
     final wave = const StudyTimelineEntry(
       id: 'wave',
       title: 'Wave sheaf',
       timelineId: 'feasts',
-      start: TimelineTime(0),
-    ).pinnedTo('unleavened', third);
-    var workspace = const StudyWorkspace(
-      id: 's',
-      name: 'Study',
-    ).putTimeline(feasts).putTimelineEntry(unleavened).putTimelineEntry(wave);
-    StudyTimelineEntry pinned() =>
-        workspace.timelineEntries.singleWhere((e) => e.id == 'wave');
-    // Day 1 is the span's first.
-    expect(pinned().start, const TimelineTime(0, month: 1, day: 17));
-    expect(
-      feasts.dayOfSpan(unleavened, const TimelineTime(0, month: 1, day: 17)),
-      3,
-    );
-    expect(
-      feasts.dayOfSpan(unleavened, const TimelineTime(0, month: 1, day: 22)),
-      isNull,
-    );
+      start: TimelineTime(0, month: 1, day: 1),
+    ).pinnedTo(wavePin);
+    // The fiftieth day, counting from the wave sheaf.
+    final pentecost =
+        const StudyTimelineEntry(
+          id: 'pentecost',
+          title: 'Pentecost',
+          timelineId: 'feasts',
+          start: TimelineTime(0, month: 1, day: 1),
+        ).pinnedTo(
+          const TimelinePin(
+            'wave',
+            TimelineDuration(50, TimelineDurationUnit.days),
+          ),
+        );
+    // The count between, a span with a plain end, keeps its length.
+    final omer =
+        const StudyTimelineEntry(
+          id: 'omer',
+          title: 'The count',
+          timelineId: 'feasts',
+          start: TimelineTime(0, month: 1, day: 19),
+          end: TimelineTime(0, month: 3, day: 8),
+        ).pinnedTo(
+          const TimelinePin(
+            'wave',
+            TimelineDuration(1, TimelineDurationUnit.days),
+          ),
+        );
+    // Pinned the day before.
+    final preparation =
+        const StudyTimelineEntry(
+          id: 'preparation',
+          title: 'Preparation',
+          timelineId: 'feasts',
+          start: TimelineTime(0, month: 1, day: 1),
+        ).pinnedTo(
+          const TimelinePin(
+            'passover',
+            TimelineDuration(0, TimelineDurationUnit.days),
+          ),
+        );
+    var workspace = const StudyWorkspace(id: 's', name: 'Study')
+        .putTimeline(feasts)
+        .putTimelineEntry(passover)
+        .putTimelineEntry(unleavened)
+        .putTimelineEntry(wave)
+        .putTimelineEntry(pentecost)
+        .putTimelineEntry(omer)
+        .putTimelineEntry(preparation);
+    StudyTimelineEntry entry(String id) =>
+        workspace.timelineEntries.singleWhere((e) => e.id == id);
 
-    // Moving the span moves the event with it.
+    expect(entry('unleavened').start, nisan(15));
+    expect(entry('unleavened').end, nisan(21));
+    expect(entry('preparation').start, nisan(13));
+    expect(feasts.weekdayOf(nisan(15)), 4);
+    expect(entry('wave').start, nisan(19));
+    expect(feasts.weekdayOf(nisan(19)), 1);
+    expect(entry('pentecost').start, sivan(9));
+    expect(feasts.weekdayOf(sivan(9)), 1);
+    expect(entry('omer').end, sivan(8));
+
+    // Passover moves a week on, and the chain with it.
     workspace = workspace.putTimelineEntry(
-      unleavened.withTime(
-        start: const TimelineTime(0, month: 1, day: 16),
-        end: null,
-        duration: unleavened.duration,
-      ),
+      passover.withTime(start: nisan(20), end: null),
     );
-    expect(pinned().start, const TimelineTime(0, month: 1, day: 18));
+    expect(entry('unleavened').start, nisan(21));
+    expect(entry('unleavened').end, nisan(27));
+    expect(entry('wave').start, nisan(26));
+    expect(entry('pentecost').start, sivan(16));
+    expect(entry('omer').start, nisan(26));
+    expect(entry('omer').end, sivan(15));
 
-    // The pin is stored, and the event placed again on load.
+    // The pins are stored, and placed again on load.
     final stored = decodeStudyWorkspaces(encodeStudyWorkspaces([workspace]));
     final reloaded = stored.single.timelineEntries.singleWhere(
       (e) => e.id == 'wave',
     );
-    expect((reloaded.spanId, reloaded.offset), ('unleavened', third));
-    expect(reloaded.start, pinned().start);
+    expect(reloaded.pin, wavePin);
+    expect(reloaded.start, nisan(26));
 
-    // A span is never pinned, nor an event into itself.
-    expect(unleavened.pinnedTo('other', third).isValid, isFalse);
-    expect(wave.pinnedTo('wave', third).isValid, isFalse);
+    // Nothing is pinned to itself.
+    expect(
+      passover
+          .pinnedTo(
+            const TimelinePin(
+              'passover',
+              TimelineDuration(1, TimelineDurationUnit.days),
+            ),
+          )
+          .isValid,
+      isFalse,
+    );
+    // A weekday is for days alone.
+    expect(
+      const TimelinePin(
+        'passover',
+        TimelineDuration(1, TimelineDurationUnit.months),
+        weekday: 1,
+      ).isValid,
+      isFalse,
+    );
 
-    // With the span gone, the event stays put, unpinned.
-    workspace = workspace.removeTimelineEntry(unleavened);
-    expect(pinned().spanId, isNull);
-    expect(pinned().offset, isNull);
-    expect(pinned().start, const TimelineTime(0, month: 1, day: 18));
+    // With Passover gone, what was pinned to it stays put, unpinned, and
+    // the rest of the chain still holds to it.
+    workspace = workspace.removeTimelineEntry(passover);
+    expect(entry('unleavened').pin, isNull);
+    expect(entry('unleavened').start, nisan(21));
+    expect(entry('preparation').pin, isNull);
+    expect(entry('wave').pin, wavePin);
+  });
+
+  test('a circle of pins is broken on load', () {
+    final workspace = StudyWorkspace.fromJson({
+      'id': 's',
+      'name': 'Study',
+      'timelines': [
+        {'id': 'feasts', 'title': 'Feasts', 'scale': 'annual'},
+      ],
+      'timelineEntries': [
+        for (final (id, anchor) in [('a', 'b'), ('b', 'a')])
+          {
+            'id': id,
+            'title': id,
+            'timeline': 'feasts',
+            'start': 0,
+            'startMonth': 1,
+            'startDay': 1,
+            'pin': {
+              'anchor': anchor,
+              'offset': {'amount': 2, 'unit': 'days'},
+            },
+          },
+      ],
+    })!;
+    expect(workspace.timelineEntries.where((e) => e.pin == null), isNotEmpty);
+  });
+
+  test('days are counted across years, and Adar II follows Adar I', () {
+    const leap = StudyTimeline(
+      id: 'k',
+      title: 'Kings',
+      scale: TimelineScale.calendar,
+      leapMonths: TimelineLeapMonths.chosen,
+      leapYears: {-966},
+    );
+    const adar1 = TimelineTime(-966, month: 12, day: 30);
+    const adar2 = TimelineTime(-966, month: 13, day: 1);
+    expect(leap.positionOf(adar2), greaterThan(leap.positionOf(adar1)));
+    expect(leap.addDays(adar1, 1), adar2);
+    expect(leap.daysBetween(adar1, adar2), 1);
+    // Across the turn of a year, both ways: -966 is a leap year of 384.
+    const nisan1 = TimelineTime(-966, month: 1, day: 1);
+    const next = TimelineTime(-965, month: 1, day: 1);
+    expect(leap.daysBetween(nisan1, next), 384);
+    expect(leap.addDays(next, -384), nisan1);
+    expect(
+      leap.addDays(nisan1, -1),
+      const TimelineTime(-967, month: 12, day: 29),
+    );
+    // One year's calendar keeps within its year.
+    const feasts = StudyTimeline(
+      id: 'f',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+    );
+    expect(feasts.addDays(const TimelineTime(0, month: 1, day: 1), -1), isNull);
   });
 
   test('a study without timelines stores none', () {

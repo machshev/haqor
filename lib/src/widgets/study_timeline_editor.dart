@@ -400,8 +400,8 @@ class _TimeDraft {
 /// Edits an event or a span: its title, which timeline it is on, its time
 /// (a point, or a start and either an end or a duration) on that timeline's
 /// scale, how the date is written, the verses it is linked to and its note.
-/// An event may instead be pinned into one of [entries]' spans, a day (or
-/// other offset) into it.
+/// It may instead be pinned to another of [entries], a day (or other
+/// offset) from it, so that it moves with it.
 class StudyTimelineEntryEditor extends StatefulWidget {
   const StudyTimelineEntryEditor({
     super.key,
@@ -415,8 +415,7 @@ class StudyTimelineEntryEditor extends StatefulWidget {
 
   final StudyTimelineEntry initial;
 
-  /// The entries already on the timelines, among them the spans an event
-  /// may be pinned into.
+  /// The entries already on the timelines, which it may be pinned to.
   final List<StudyTimelineEntry> entries;
   final bool creating;
 
@@ -439,29 +438,47 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   late List<StudyPassage> _verses;
   String? _error;
 
-  /// The span the event is pinned into, and the unit its offset is in.
-  String? _spanId;
+  /// The entry it is pinned to, the unit its offset is in, and the day of
+  /// the week it is moved on to, if any.
+  String? _anchorId;
   TimelineDurationUnit? _offsetUnit;
+  int? _weekday;
 
   StudyTimeline get _timeline =>
       widget.timelines.firstWhere((t) => t.id == _timelineId);
 
-  /// The spans on the chosen timeline an event may be pinned into.
-  List<StudyTimelineEntry> get _spans => [
-    for (final e in widget.entries)
-      if (e.isSpan && e.timelineId == _timelineId && e.id != widget.initial.id)
-        e,
-  ]..sort(compareTimelineEntries);
+  /// The entries on the chosen timeline it may be pinned to: any but
+  /// itself and those pinned, however far down a chain, to it.
+  List<StudyTimelineEntry> get _anchors {
+    final byId = {for (final e in widget.entries) e.id: e};
+    bool pinnedToSelf(StudyTimelineEntry entry) {
+      final seen = <String>{};
+      for (var e = entry; e.pin != null && seen.add(e.id);) {
+        if (e.pin!.anchorId == widget.initial.id) return true;
+        final next = byId[e.pin!.anchorId];
+        if (next == null) return false;
+        e = next;
+      }
+      return false;
+    }
 
-  /// The span the event is pinned into, if it is an event and the span is
-  /// on its timeline.
-  StudyTimelineEntry? get _pinSpan =>
-      _span ? null : _spans.where((s) => s.id == _spanId).firstOrNull;
+    return [
+      for (final e in widget.entries)
+        if (e.timelineId == _timelineId &&
+            e.id != widget.initial.id &&
+            !pinnedToSelf(e))
+          e,
+    ]..sort(compareTimelineEntries);
+  }
 
-  /// The units an offset into [span] may be in: days where it starts on a
-  /// day, else whatever its start allows.
-  List<TimelineDurationUnit> _offsetUnits(StudyTimelineEntry span) {
-    final units = _timeline.durationUnitsFor(span.start);
+  /// The entry it is pinned to, where that is on its timeline.
+  StudyTimelineEntry? get _anchor =>
+      _anchors.where((s) => s.id == _anchorId).firstOrNull;
+
+  /// The units an offset from [anchor] may be in: days where it starts on
+  /// a day, else whatever its start allows.
+  List<TimelineDurationUnit> _offsetUnits(StudyTimelineEntry anchor) {
+    final units = _timeline.durationUnitsFor(anchor.start);
     return units.contains(TimelineDurationUnit.days)
         ? [
             TimelineDurationUnit.days,
@@ -470,36 +487,41 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
         : units;
   }
 
-  TimelineDurationUnit? _offsetUnitFor(StudyTimelineEntry span) {
-    final units = _offsetUnits(span);
+  TimelineDurationUnit? _offsetUnitFor(StudyTimelineEntry anchor) {
+    final units = _offsetUnits(anchor);
     return units.contains(_offsetUnit) ? _offsetUnit : units.firstOrNull;
   }
 
-  /// The offset into the pinned span entered so far.
-  TimelineDuration? get _pinOffset {
-    final span = _pinSpan;
+  /// The pin entered so far.
+  TimelinePin? get _pin {
+    final anchor = _anchor;
     final amount = double.tryParse(_offset.text.trim());
-    if (span == null || amount == null) return null;
-    final unit = _offsetUnitFor(span);
-    return unit == null ? null : TimelineDuration(amount, unit);
+    if (anchor == null || amount == null) return null;
+    final unit = _offsetUnitFor(anchor);
+    if (unit == null) return null;
+    return TimelinePin(
+      anchor.id,
+      TimelineDuration(amount, unit),
+      weekday: unit == TimelineDurationUnit.days ? _weekday : null,
+    );
   }
 
-  /// Pins the event into the span [id], or none, its day in the span taken
-  /// from the time entered so far where it falls in it.
-  void _pin(String? id) => setState(() {
-    _spanId = id;
+  /// Pins it to the entry [id], or none, its day counted from the time
+  /// entered so far.
+  void _pinTo(String? id) => setState(() {
+    _anchorId = id;
     _error = null;
-    final span = _pinSpan;
-    if (span == null) return;
-    final first = _timeline.firstOffsetIn(span);
+    final anchor = _anchor;
+    if (anchor == null) return;
+    final first = _timeline.firstPinTo(anchor);
     final at = _read(_start);
-    final day = at == null ? null : _timeline.dayOfSpan(span, at);
-    _offsetUnit = first?.unit;
-    _offset.text = day != null
-        ? '$day'
+    final days = at == null ? null : _timeline.daysBetween(anchor.start, at);
+    _offsetUnit = first?.offset.unit;
+    _offset.text = days != null && first?.isDays == true
+        ? '${days + 1}'
         : first == null
         ? ''
-        : formatTimelineNumber(first.amount);
+        : formatTimelineNumber(first.offset.amount);
   });
 
   @override
@@ -533,10 +555,11 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     _date = TextEditingController(text: e.date);
     _note = TextEditingController(text: e.note);
     _verses = List.of(e.verses);
-    _spanId = e.spanId;
-    _offsetUnit = e.offset?.unit;
+    _anchorId = e.pin?.anchorId;
+    _offsetUnit = e.pin?.offset.unit;
+    _weekday = e.pin?.weekday;
     _offset = TextEditingController(
-      text: e.offset == null ? '' : formatTimelineNumber(e.offset!.amount),
+      text: e.pin == null ? '' : formatTimelineNumber(e.pin!.offset.amount),
     );
   }
 
@@ -631,22 +654,25 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   void _save() {
     final title = _title.text.trim();
     final timeline = _timeline;
-    final pin = _pinSpan;
-    final offset = pin == null ? null : _pinOffset;
-    final start = pin == null
+    final anchor = _anchor;
+    final pin = anchor == null ? null : _pin;
+    final start = anchor == null
         ? _read(_start)
-        : offset == null || !offset.isValid
+        : pin == null || !pin.isValid
         ? null
-        : timeline.placeInSpan(pin, offset);
+        : timeline.placePin(anchor, pin);
     TimelineTime? end;
     TimelineDuration? duration;
     String? error;
     if (title.isEmpty) {
       error = _span ? 'Give the span a title.' : 'Give the event a title.';
-    } else if (pin != null && start == null) {
-      error = _offsetUnitFor(pin) == TimelineDurationUnit.days
-          ? 'Enter which day of the span it falls on.'
-          : 'Enter how far into the span it falls.';
+    } else if (anchor != null && start == null) {
+      error = _offsetUnitFor(anchor) != TimelineDurationUnit.days
+          ? 'Enter how long after ${anchor.title} it falls, in whole '
+                'numbers.'
+          : timeline.isAnnual
+          ? 'Enter a day, counting from ${anchor.title}, within the year.'
+          : 'Enter a day, counting from ${anchor.title}.';
     } else if (start == null) {
       error = _span ? 'Enter when it starts.' : 'Enter when it happens.';
     } else {
@@ -702,7 +728,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
             note: _note.text.trim(),
             sabbath: sabbath,
           )
-          .pinnedTo(pin?.id, offset),
+          .pinnedTo(pin),
     );
   }
 
@@ -923,17 +949,18 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     );
   }
 
-  /// How far into [span] the event falls: which day of it, or else how
-  /// long after it starts; and where that puts it.
-  Widget _offsetFields(ThemeData theme, StudyTimelineEntry span) {
+  /// How far from [anchor] it falls: which day counting from it, perhaps
+  /// moved on to a day of the week, or else how long after it starts; and
+  /// where that puts it.
+  Widget _pinFields(ThemeData theme, StudyTimelineEntry anchor) {
     final timeline = _timeline;
-    final units = _offsetUnits(span);
-    final unit = _offsetUnitFor(span);
+    final units = _offsetUnits(anchor);
+    final unit = _offsetUnitFor(anchor);
     final days = unit == TimelineDurationUnit.days;
-    final offset = _pinOffset;
-    final at = offset == null || !offset.isValid
+    final pin = _pin;
+    final at = pin == null || !pin.isValid
         ? null
-        : timeline.placeInSpan(span, offset);
+        : timeline.placePin(anchor, pin);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -946,10 +973,21 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                 controller: _offset,
                 keyboardType: TextInputType.numberWithOptions(
                   decimal: !timeline.hasMonths,
+                  signed: days,
                 ),
                 decoration: InputDecoration(
-                  labelText: days ? 'Day of the span' : 'Into the span',
-                  helperText: days ? "Day 1 is the span's first." : null,
+                  labelText: days
+                      ? anchor.isSpan
+                            ? 'Day of the span'
+                            : 'Day, counting from it'
+                      : 'After it starts',
+                  helperText: days
+                      ? anchor.isSpan
+                            ? "Day 1 is the span's first; 0 the day before."
+                            : 'Day 1 is its own day, 2 the next; 0 the day '
+                                  'before.'
+                      : null,
+                  helperMaxLines: 2,
                   suffixText: days || timeline.hasMonths
                       ? null
                       : timeline.unit.isEmpty
@@ -964,7 +1002,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
               SizedBox(
                 width: 120,
                 child: DropdownButtonFormField<TimelineDurationUnit>(
-                  key: ValueKey('timeline-entry-offset-unit-${span.id}'),
+                  key: ValueKey('timeline-entry-offset-unit-${anchor.id}'),
                   initialValue: unit,
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'In'),
@@ -981,13 +1019,43 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
             ],
           ],
         ),
+        if (days) ...[
+          const SizedBox(height: 12),
+          DropdownButtonFormField<int?>(
+            key: const ValueKey('timeline-entry-weekday'),
+            initialValue: _weekday,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Then on',
+              helperText:
+                  'Moves it on to the first such day: the morrow after '
+                  'the Sabbath is the first day of the week.',
+              helperMaxLines: 2,
+            ),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('That day')),
+              for (var weekday = 1; weekday <= 7; weekday++)
+                DropdownMenuItem(
+                  value: weekday,
+                  child: Text(
+                    'The first ${timelineWeekdayLabel(weekday)} from it',
+                  ),
+                ),
+            ],
+            onChanged: (weekday) => setState(() {
+              _weekday = weekday;
+              _error = null;
+            }),
+          ),
+        ],
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(
             at == null
-                ? '${span.title} starts ${timeline.formatTime(span.start)}'
-                : 'Falls on ${timeline.formatTime(at)}, moving with '
-                      '${span.title}',
+                ? '${anchor.title} starts ${timeline.formatTime(anchor.start)}'
+                : '${_span ? 'Starts' : 'Falls on'} '
+                      '${timeline.formatTime(at)}, moving with '
+                      '${anchor.title}',
             key: const ValueKey('timeline-entry-offset-time'),
             style: theme.textTheme.bodyMedium,
           ),
@@ -1065,29 +1133,48 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                 ),
               ],
               const SizedBox(height: 12),
-              if (!_span && _spans.isNotEmpty) ...[
+              if (_anchors.isNotEmpty) ...[
                 DropdownButtonFormField<String?>(
-                  key: ValueKey('timeline-entry-in-span-$_timelineId'),
-                  initialValue: _pinSpan?.id,
+                  key: ValueKey('timeline-entry-pin-$_timelineId'),
+                  initialValue: _anchor?.id,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'In a span'),
+                  decoration: const InputDecoration(
+                    labelText: 'Pinned to',
+                    helperText: 'Pinned, it moves with what it is pinned to.',
+                  ),
                   items: [
                     const DropdownMenuItem(
                       value: null,
-                      child: Text('Not in a span'),
+                      child: Text('Not pinned: a time of its own'),
                     ),
-                    for (final s in _spans)
+                    for (final s in _anchors)
                       DropdownMenuItem(
                         value: s.id,
-                        child: Text(s.title, overflow: TextOverflow.ellipsis),
+                        child: Row(
+                          children: [
+                            Icon(
+                              s.isSpan
+                                  ? Icons.linear_scale
+                                  : Icons.radio_button_checked,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                s.title,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                   ],
-                  onChanged: _pin,
+                  onChanged: _pinTo,
                 ),
                 const SizedBox(height: 12),
               ],
-              if (_pinSpan case final pin?)
-                _offsetFields(theme, pin)
+              if (_anchor case final anchor?)
+                _pinFields(theme, anchor)
               else
                 _time(_start, label: _span ? 'Start' : 'When', key: 'start'),
               if (!_span && _timeline.hasMonths)

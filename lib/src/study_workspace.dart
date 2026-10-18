@@ -1849,34 +1849,44 @@ class StudyWorkspace {
     return fitted._putTimeline(timeline)._placePins();
   }
 
-  /// The workspace with each event pinned into a span placed there (see
-  /// [StudyTimeline.placeInSpan]), so that it moves with the span. One whose
-  /// span is gone, or no longer a span on its timeline, is unpinned where
-  /// it stands; one its offset cannot place in the span as it now stands
-  /// stays where it was, still pinned.
+  /// The workspace with each pinned entry placed where its pin puts it (see
+  /// [StudyTimeline.placePin]), so that it moves with its anchor, and so on
+  /// down a chain of pins: Pentecost counted from the wave sheaf, itself
+  /// pinned into Unleavened Bread. One whose anchor is gone, or on another
+  /// timeline, or that is caught in a circle of pins, is unpinned where it
+  /// stands; one its pin cannot place as its anchor now stands stays where
+  /// it was, still pinned.
   StudyWorkspace _placePins() {
-    if (!timelineEntries.any((e) => e.spanId != null)) return this;
+    if (!timelineEntries.any((e) => e.pin != null)) return this;
     final byId = {for (final e in timelineEntries) e.id: e};
-    StudyTimelineEntry placed(StudyTimelineEntry entry) {
-      final spanId = entry.spanId;
-      final offset = entry.offset;
-      if (spanId == null || offset == null) return entry;
-      final span = byId[spanId];
+    final placed = <String, StudyTimelineEntry>{};
+    final placing = <String>{};
+    StudyTimelineEntry place(StudyTimelineEntry entry) {
+      if (placed[entry.id] case final done?) return done;
+      final pin = entry.pin;
+      if (pin == null) return placed[entry.id] = entry;
       final timeline = timelineById(entry.timelineId);
+      final raw = byId[pin.anchorId];
       if (timeline == null ||
-          span == null ||
-          !span.isSpan ||
-          span.timelineId != entry.timelineId) {
-        return entry.pinnedTo(null, null);
+          raw == null ||
+          raw.timelineId != entry.timelineId ||
+          !placing.add(entry.id)) {
+        return placed[entry.id] = entry.pinnedTo(null);
       }
-      final start = timeline.placeInSpan(span, offset);
-      if (start == null || !timeline.fits(start) || start == entry.start) {
-        return entry;
-      }
-      return entry.withTime(start: start, end: null);
+      final anchor = place(raw);
+      placing.remove(entry.id);
+      // Unpinned meanwhile, as the circle closed on it.
+      if (placed[entry.id] case final done?) return done;
+      final start = timeline.placePin(anchor, pin);
+      final moved = start == null || !timeline.fits(start)
+          ? null
+          : start == entry.start
+          ? entry
+          : timeline.moveEntry(entry, start);
+      return placed[entry.id] = moved != null && moved.isValid ? moved : entry;
     }
 
-    return copyWith(timelineEntries: timelineEntries.map(placed).toList());
+    return copyWith(timelineEntries: timelineEntries.map(place).toList());
   }
 
   /// [entry] with its times settled where [timeline] can place them (see
@@ -1989,8 +1999,7 @@ class StudyWorkspace {
     return copyWith(timelineEntries: updated)._placePins();
   }
 
-  /// Removes an entry; the events pinned into a span removed stay where
-  /// they are, unpinned.
+  /// Removes an entry; those pinned to it stay where they are, unpinned.
   StudyWorkspace removeTimelineEntry(StudyTimelineEntry entry) => copyWith(
     timelineEntries: timelineEntries.where((e) => e.id != entry.id).toList(),
   )._placePins();

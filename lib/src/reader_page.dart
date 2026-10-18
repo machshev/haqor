@@ -3556,17 +3556,18 @@ class _ReaderSessionState extends State<_ReaderSession>
           },
           onUpdateTimeline: (changed) async => _updateStudyTimeline(changed),
           // The verse being read is no clue to an entry added here.
-          onAddEntry: (span, at, {sabbath = false, within}) =>
+          onAddEntry: (span, at, {sabbath = false, anchor}) =>
               _createStudyTimelineEntry(
                 timeline.id,
                 span,
                 linkVerse: false,
                 at: at,
                 sabbath: sabbath,
-                within: within,
+                anchor: anchor,
               ),
           onEditEntry: _editStudyTimelineEntry,
           onRemoveEntry: (entry) async => _removeStudyTimelineEntry(entry),
+          onDuplicateEntry: _duplicateStudyTimelineEntry,
         ),
       ),
     );
@@ -3600,19 +3601,16 @@ class _ReaderSessionState extends State<_ReaderSession>
     StudyPassage? verse,
     TimelineTime? at,
     bool sabbath = false,
-    StudyTimelineEntry? within,
+    StudyTimelineEntry? anchor,
   }) => StudyTimelineEntry(
     id: DateTime.now().microsecondsSinceEpoch.toString(),
     title: sabbath ? 'High Sabbath' : '',
     sabbath: sabbath,
     timelineId: timelineId,
-    start: at ?? within?.start ?? const TimelineTime(0),
-    spanId: within?.id,
-    offset: within == null
+    start: at ?? anchor?.start ?? const TimelineTime(0),
+    pin: anchor == null
         ? null
-        : _activeStudyWorkspace
-              ?.timelineById(timelineId)
-              ?.firstOffsetIn(within),
+        : _activeStudyWorkspace?.timelineById(timelineId)?.firstPinTo(anchor),
     end: span ? at ?? const TimelineTime(0) : null,
     verses: [
       if (verse != null)
@@ -3627,14 +3625,14 @@ class _ReaderSessionState extends State<_ReaderSession>
   /// Adds an event or span to a timeline, linked to the verse being read
   /// unless [linkVerse] is false, starting [at] a day where one is chosen;
   /// with [sabbath], a high Sabbath on that day; or an event pinned into
-  /// the span [within].
+  /// the entry [anchor].
   Future<void> _createStudyTimelineEntry(
     String timelineId,
     bool span, {
     bool linkVerse = true,
     TimelineTime? at,
     bool sabbath = false,
-    StudyTimelineEntry? within,
+    StudyTimelineEntry? anchor,
   }) => _askForStudyTimelineEntry(
     _newStudyTimelineEntry(
       timelineId,
@@ -3642,7 +3640,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       verse: linkVerse ? _currentStudyPassage : null,
       at: at,
       sabbath: sabbath,
-      within: within,
+      anchor: anchor,
     ),
     creating: true,
   );
@@ -3693,6 +3691,20 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   Future<void> _editStudyTimelineEntry(StudyTimelineEntry entry) =>
       _askForStudyTimelineEntry(entry, creating: false);
+
+  /// Adds a copy of [entry] beside it, to set out another reading of its
+  /// time, and opens it to edit.
+  Future<void> _duplicateStudyTimelineEntry(StudyTimelineEntry entry) async {
+    final workspace = _activeStudyWorkspace;
+    final copy = StudyTimelineEntry.fromJson({
+      ...entry.toJson(),
+      'id': DateTime.now().microsecondsSinceEpoch.toString(),
+      'title': '${entry.title} (copy)',
+    });
+    if (workspace == null || copy == null) return;
+    _replaceStudyWorkspace(workspace.putTimelineEntry(copy));
+    await _editStudyTimelineEntry(copy);
+  }
 
   void _removeStudyTimelineEntry(StudyTimelineEntry entry) {
     final workspace = _activeStudyWorkspace;
