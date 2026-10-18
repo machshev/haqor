@@ -1798,8 +1798,10 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).last,
     );
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('timeline-row-m:omer')),
+    // Midway, the whole row within the page.
+    await Scrollable.ensureVisible(
+      tester.element(find.byKey(const ValueKey('timeline-row-m:omer'))),
+      alignment: 0.5,
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('timeline-row-m:omer')));

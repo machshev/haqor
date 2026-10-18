@@ -49,6 +49,9 @@ const _exodus = 1;
 const _leviticus = 2;
 const _numbers = 3;
 const _deuteronomy = 4;
+const _kings1 = 9;
+const _psalms = 26;
+const _ezra = 35;
 const _ezekiel = 13;
 const _nehemiah = 36;
 const _chronicles2 = 38;
@@ -59,6 +62,7 @@ const _acts = 43;
 const _corinthians = 45;
 const _chag = 'Chag (pilgrimage)';
 const _before = 'Penei Yahweh (before Yahweh)';
+const _derekh = 'Derekh (the way)';
 const _qodesh = 'Miqra qodesh (a calling of holiness)';
 const _qorban = 'Qorban (a bringing near)';
 
@@ -80,7 +84,7 @@ final _moadim = StandardTimeline(
     scale: TimelineScale.annual,
     monthNaming: TimelineMonthNaming.numbered,
     showSeasons: true,
-    categoryColors: {_before: 5, _chag: 0, _qodesh: 3, _qorban: 2},
+    categoryColors: {_before: 5, _derekh: 6, _chag: 0, _qodesh: 3, _qorban: 2},
     note:
         'מוֹעֲדֵי יְהוָה, "the appointed times of Yahweh, which ye shall call '
         'callings of holiness" (Leviticus 23:2, 4), dated as the text dates '
@@ -462,5 +466,127 @@ final _moadim = StandardTimeline(
       pin: const TimelinePin('atzeret', TimelineDuration(1, _day)),
       verses: [_ref(_leviticus, 23, 39)],
     ),
+    ..._ways,
   ],
 );
+
+/// The days on the way to and from each of the three times, from Galilee,
+/// as the family of Luke 2:41-44 went up from Nazareth. The text gives no
+/// count of days for it: [_wayDays] is reckoned from Abraham's way from
+/// Beersheba to the place, seen "on the third day" (Genesis 22:4), Galilee
+/// lying further off.
+const _wayDays = 4.0;
+
+const _wayNote =
+    'The text gives no count of days for the way: four from Galilee '
+    'is reckoned from Abraham\'s, who went from Beersheba (Genesis 22:19) '
+    'and "on the third day lifted up his eyes, and saw the place afar off" '
+    '(Genesis 22:4); Judah lay nearer, Dan further. "Three times in the '
+    'year shall all thy males appear before Yahweh thy God" (Deuteronomy '
+    '16:16); "neither shall any man desire thy land, when thou goest up to '
+    'appear before Yahweh thy God three times in the year" (Exodus 34:24). '
+    '"If the way (hadderekh) be too long for thee ... the place too far '
+    'from thee" (Deuteronomy 14:24); "it is too much for you to go up to '
+    'Jerusalem" (1 Kings 12:28). One "in a way far off (bederekh '
+    'rechoqah)" kept the pesach in the second month (Numbers 9:10-11).';
+
+/// The way up to the time [n], and home from it, which lasts [days].
+List<StudyTimelineEntry> _way(
+  int n,
+  String ordinal,
+  (TimelineTime, TimelineTime) up,
+  (TimelineTime, TimelineTime) home,
+  int days, {
+  required List<StudyPassage> upVerses,
+  required List<StudyPassage> homeVerses,
+  required String upNote,
+  required String homeNote,
+}) {
+  final anchor = 'before-$n';
+  return [
+    StudyTimelineEntry(
+      id: 'up-$n',
+      title: 'Maʿalah (going up) to the $ordinal time',
+      timelineId: '',
+      start: up.$1,
+      end: up.$2,
+      duration: const TimelineDuration(_wayDays, _day),
+      category: _derekh,
+      pin: TimelinePin(anchor, const TimelineDuration(1 - _wayDays, _day)),
+      verses: [...upVerses, _ref(_genesis, 22, 4), _ref(_deuteronomy, 14, 24)],
+      note: '$upNote $_wayNote',
+    ),
+    StudyTimelineEntry(
+      id: 'home-$n',
+      title: 'Leʾohalekha (to thy tents) from the $ordinal time',
+      timelineId: '',
+      start: home.$1,
+      end: home.$2,
+      duration: const TimelineDuration(_wayDays, _day),
+      category: _derekh,
+      pin: TimelinePin(anchor, TimelineDuration(days + 1.0, _day)),
+      verses: [...homeVerses, _ref(_genesis, 22, 4)],
+      note: '$homeNote $_wayNote',
+    ),
+  ];
+}
+
+TimelineTime _date(int month, int day) =>
+    TimelineTime(0, month: month, day: day);
+
+final _ways = [
+  ..._way(
+    1,
+    '1st',
+    (_date(1, 10), _date(1, 13)),
+    (_date(1, 22), _date(1, 25)),
+    8,
+    upVerses: [
+      _ref(_john, 11, 55),
+      _ref(_luke, 2, 41, 42),
+      _ref(_numbers, 9, 10),
+    ],
+    homeVerses: [_ref(_luke, 2, 43, 44)],
+    upNote:
+        '"Many went up out of the country to Jerusalem before the pascha, to '
+        'purify themselves" (John 11:55): one unclean by the dead was so '
+        'seven days (Numbers 19:11-12), and came up the sooner.',
+    homeNote:
+        '"And having fulfilled the days, as they returned ... supposing him '
+        'to have been in the company, they went a day\'s journey" (Luke '
+        '2:43-44).',
+  ),
+  ..._way(
+    2,
+    '2nd',
+    (_date(3, 2), _date(3, 5)),
+    (_date(3, 7), _date(3, 10)),
+    1,
+    upVerses: [_ref(_psalms, 84, 5, 7), _ref(_exodus, 34, 22)],
+    homeVerses: [_ref(_exodus, 34, 22)],
+    upNote:
+        'In the wheat harvest (Exodus 34:22), for the one day: "blessed is '
+        'the man whose strength is in thee, the highways in their heart ... '
+        'they go from strength to strength, he appeareth before God in Zion" '
+        '(Psalm 84:5, 7).',
+    homeNote: 'Back to the wheat harvest (Exodus 34:22).',
+  ),
+  ..._way(
+    3,
+    '3rd',
+    (_date(7, 11), _date(7, 14)),
+    (_date(7, 23), _date(7, 26)),
+    8,
+    upVerses: [_ref(_psalms, 122, 1, 4), _ref(_ezra, 7, 9)],
+    homeVerses: [_ref(_kings1, 8, 66), _ref(_chronicles2, 7, 10)],
+    upNote:
+        '"Our feet shall stand within thy gates, O Jerusalem ... whither the '
+        'tribes go up (ʿalu), the tribes of Yah" (Psalm 122:2, 4); the '
+        'going up (hammaʿalah) from Babylon took from the first of the first '
+        'month to the first of the fifth (Ezra 7:9).',
+    homeNote:
+        '"On the twenty-third day of the seventh month he sent the people '
+        'away to their tents (leʾohaleihem)" (2 Chronicles 7:10); "they went '
+        'unto their tents joyful and glad of heart" (1 Kings 8:66).',
+  ),
+];

@@ -1051,6 +1051,14 @@ void main() {
     );
     expect(entry(entries, 'moadim-1:sukkot').start, day(7, 15));
     expect(entry(entries, 'moadim-1:before-3').end, day(7, 22));
+    // The way up ends the day before each time, the way home starts the
+    // day after it.
+    expect(entry(entries, 'moadim-1:up-1').start, day(1, 10));
+    expect(entry(entries, 'moadim-1:up-1').end, day(1, 13));
+    expect(entry(entries, 'moadim-1:home-1').start, day(1, 22));
+    expect(entry(entries, 'moadim-1:up-2').end, day(3, 8));
+    expect(entry(entries, 'moadim-1:home-2').start, day(3, 10));
+    expect(entry(entries, 'moadim-1:home-3').end, day(7, 26));
     // Nothing is added to it: it is built on.
     expect(
       workspace
