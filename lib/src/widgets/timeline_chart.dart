@@ -759,6 +759,7 @@ class TimelineChart extends StatelessWidget {
                       null => null,
                     },
                     countedDays: timeline.daysIn(slot.entry) ?? 0,
+                    label: label.text,
                     titleWidth: label.title,
                     showTitle: label.title > 0,
                     selected:
@@ -878,7 +879,10 @@ class TimelineChart extends StatelessWidget {
   /// whether it is [whole], and whether a span's button for the entries
   /// grouped under it shows. Zoomed out, labels are cut short or left
   /// out; zoomed in, they show whole.
-  Map<String, ({double width, double title, bool whole, bool group})>
+  Map<
+    String,
+    ({double width, String text, double title, bool whole, bool group})
+  >
   _labelsFor(
     List<TimelineSlot> slots,
     TextStyle? style,
@@ -904,20 +908,33 @@ class TimelineChart extends StatelessWidget {
           final entry = slot.entry;
           final mark = slot.right - slot.left;
           if (entry.isHighSabbath) {
-            return (width: mark, title: 0.0, whole: false, group: false);
+            return (
+              width: mark,
+              text: entry.title,
+              title: 0.0,
+              whole: false,
+              group: false,
+            );
           }
           final room = (next[entry.id] ?? double.infinity) - slot.left;
           final lead = entry.isSpan ? 6.0 : _dot + 4;
-          final title = _textWidth(entry.title, style);
           final button = groups.containsKey(entry.id)
               ? _GroupToggle.width
               : 0.0;
+          // Its title where it fits, or it is chosen; its short title else.
+          final long = _textWidth(entry.title, style);
+          final text =
+              room >= lead + long + 4 + button || entry.id == selectedId
+              ? entry.title
+              : entry.shortLabel;
+          final title = text == entry.title ? long : _textWidth(text, style);
           final full = lead + title + 4 + button;
           if (room >= full) {
             return (
               width: math.max(mark, full),
+              text: text,
               title: title,
-              whole: true,
+              whole: text == entry.title,
               group: true,
             );
           }
@@ -925,6 +942,7 @@ class TimelineChart extends StatelessWidget {
           if (cut >= _leastTitle) {
             return (
               width: math.max(mark, room),
+              text: text,
               title: cut,
               whole: false,
               group: true,
@@ -934,6 +952,7 @@ class TimelineChart extends StatelessWidget {
           final group = button > 0 && room >= lead + button;
           return (
             width: group ? math.max(mark, room) : mark,
+            text: text,
             title: 0.0,
             whole: false,
             group: group,
@@ -1159,6 +1178,7 @@ class _ShabbatonBlock extends StatelessWidget {
 class _EntryMark extends StatelessWidget {
   const _EntryMark({
     required this.entry,
+    required this.label,
     required this.barWidth,
     this.countedDays = 0,
     this.titleWidth = 0,
@@ -1172,6 +1192,9 @@ class _EntryMark extends StatelessWidget {
   });
 
   final StudyTimelineEntry entry;
+
+  /// The title it shows: its own, or its short one.
+  final String label;
   final double barWidth;
 
   /// Whether its title shows beside it, cut short where its label has too
@@ -1207,8 +1230,8 @@ class _EntryMark extends StatelessWidget {
     final style = Theme.of(context).textTheme.bodySmall?.copyWith(
       fontWeight: selected ? FontWeight.bold : null,
     );
-    final label = Text(
-      entry.title,
+    final text = Text(
+      label,
       maxLines: 1,
       softWrap: false,
       overflow: TextOverflow.ellipsis,
@@ -1260,7 +1283,7 @@ class _EntryMark extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (showTitle) Flexible(child: label),
+                        if (showTitle) Flexible(child: text),
                         if (showTitle && group != null)
                           const SizedBox(width: 4),
                         ?group,
@@ -1302,7 +1325,7 @@ class _EntryMark extends StatelessWidget {
                   // A high Sabbath's title is in its tooltip alone.
                   if (!entry.isHighSabbath && showTitle) ...[
                     const SizedBox(width: 4),
-                    Flexible(child: label),
+                    Flexible(child: text),
                   ],
                 ],
               ),

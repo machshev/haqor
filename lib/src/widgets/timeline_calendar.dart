@@ -311,7 +311,7 @@ class _SpanLane extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      span.title,
+                      span.shortLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: small?.copyWith(color: scheme.onSurface),

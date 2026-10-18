@@ -578,7 +578,7 @@ class StudyTimelineEntryEditor extends StatefulWidget {
 
 class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   late final TextEditingController _title, _date, _note, _amount, _offset;
-  late final TextEditingController _category;
+  late final TextEditingController _category, _shortTitle;
   late final _TimeDraft _start, _end;
 
   /// The days leading up to the span and trailing after it.
@@ -691,6 +691,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     _timelineId = e.timelineId;
     final calendar = _timeline.isCalendar;
     _title = TextEditingController(text: e.title);
+    _shortTitle = TextEditingController(text: e.shortTitle);
     _span = e.isSpan;
     _sabbath = e.sabbath;
     _counted = e.counted;
@@ -731,7 +732,15 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
 
   @override
   void dispose() {
-    for (final c in [_title, _date, _note, _amount, _offset, _category]) {
+    for (final c in [
+      _title,
+      _date,
+      _note,
+      _amount,
+      _offset,
+      _category,
+      _shortTitle,
+    ]) {
       c.dispose();
     }
     _lead.dispose();
@@ -903,6 +912,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
           .withTime(start: start!, end: end, duration: duration)
           .copyWith(
             title: title,
+            shortTitle: _shortTitle.text.trim(),
             timelineId: _timelineId,
             date: _date.text.trim(),
             verses: _verses,
@@ -1507,6 +1517,14 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                   labelText: _span ? 'Span title' : 'Event title',
                 ),
                 onChanged: (_) => _changed(),
+              ),
+              TextField(
+                key: const ValueKey('timeline-entry-short-title'),
+                controller: _shortTitle,
+                decoration: const InputDecoration(
+                  labelText: 'Short title (optional)',
+                  hintText: 'Shown where the title will not fit',
+                ),
               ),
               const SizedBox(height: 12),
               _categoryField(theme),

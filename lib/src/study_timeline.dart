@@ -1079,6 +1079,7 @@ class StudyTimelineEntry {
     required this.start,
     this.end,
     this.duration,
+    this.shortTitle = '',
     this.date = '',
     this.verses = const [],
     this.note = '',
@@ -1101,6 +1102,14 @@ class StudyTimelineEntry {
 
   final String id;
   final String title;
+
+  /// A short form of [title], shown on a drawn timeline where the title
+  /// will not fit; empty for none.
+  final String shortTitle;
+
+  /// [shortTitle], or [title] where it has none.
+  String get shortLabel => shortTitle.isEmpty ? title : shortTitle;
+
   final String timelineId;
   final TimelineTime start;
 
@@ -1176,6 +1185,7 @@ class StudyTimelineEntry {
     extra: extra,
     id: id,
     title: title,
+    shortTitle: shortTitle,
     timelineId: timelineId,
     start: start,
     end: end,
@@ -1207,6 +1217,7 @@ class StudyTimelineEntry {
     extra: extra,
     id: id,
     title: title,
+    shortTitle: shortTitle,
     timelineId: timelineId,
     start: start,
     end: end,
@@ -1240,6 +1251,7 @@ class StudyTimelineEntry {
 
   StudyTimelineEntry copyWith({
     String? title,
+    String? shortTitle,
     String? timelineId,
     String? date,
     List<StudyPassage>? verses,
@@ -1257,6 +1269,7 @@ class StudyTimelineEntry {
     extra: extra,
     id: id,
     title: title ?? this.title,
+    shortTitle: shortTitle ?? this.shortTitle,
     timelineId: timelineId ?? this.timelineId,
     start: start,
     end: end,
@@ -1281,6 +1294,7 @@ class StudyTimelineEntry {
     'id': id,
     'title': title,
     'timeline': timelineId,
+    if (shortTitle.isNotEmpty) 'short': shortTitle,
     'start': _jsonNumber(start.value),
     if (start.month != null) 'startMonth': start.month,
     if (start.day != null) 'startDay': start.day,
@@ -1333,6 +1347,7 @@ class StudyTimelineEntry {
     final entry = StudyTimelineEntry(
       extra: timelineExtraKeys(value, const {
         'id',
+        'short',
         'title',
         'timeline',
         'start',
@@ -1360,6 +1375,9 @@ class StudyTimelineEntry {
       }),
       id: id,
       title: title,
+      shortTitle: value['short'] is String
+          ? (value['short'] as String).trim()
+          : '',
       timelineId: timelineId,
       start: TimelineTime(
         start.toDouble(),

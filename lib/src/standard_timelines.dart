@@ -104,6 +104,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'before-1',
       title: 'Penei Yahweh (before Yahweh): 1st time',
+      shortTitle: 'Penei Yahweh, 1st',
       timelineId: '',
       start: const TimelineTime(0, month: 1, day: 14),
       end: const TimelineTime(0, month: 1, day: 21),
@@ -138,6 +139,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'pesach',
       title: 'Pesach (the passing over)',
+      shortTitle: 'Pesach',
       timelineId: '',
       start: const TimelineTime(0, month: 1, day: 14),
       part: TimelineDayPart.evening,
@@ -172,6 +174,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'matzot',
       title: 'Chag haMatzot (pilgrimage of the unleavened)',
+      shortTitle: 'Chag haMatzot',
       timelineId: '',
       start: const TimelineTime(0, month: 1, day: 15),
       end: const TimelineTime(0, month: 1, day: 21),
@@ -192,6 +195,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'matzot-1',
       title: 'Miqra qodesh (1st day of Matzot)',
+      shortTitle: 'Miqra qodesh',
       timelineId: '',
       start: const TimelineTime(0, month: 1, day: 15),
       sabbath: true,
@@ -205,6 +209,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'matzot-7',
       title: 'Miqra qodesh (7th day of Matzot)',
+      shortTitle: 'Miqra qodesh',
       timelineId: '',
       start: const TimelineTime(0, month: 1, day: 21),
       sabbath: true,
@@ -218,6 +223,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'omer',
       title: 'ʿOmer haTenufah (sheaf of the waving)',
+      shortTitle: 'ʿOmer',
       timelineId: '',
       start: const TimelineTime(0, month: 1, day: 16),
       category: _qorban,
@@ -241,6 +247,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'count',
       title: 'Sheva shabbatot temimot (seven complete sabbaths)',
+      shortTitle: 'Sheva shabbatot',
       timelineId: '',
       start: const TimelineTime(0, month: 1, day: 16),
       end: const TimelineTime(0, month: 3, day: 6),
@@ -258,6 +265,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'before-2',
       title: 'Penei Yahweh (before Yahweh): 2nd time',
+      shortTitle: 'Penei Yahweh, 2nd',
       timelineId: '',
       start: const TimelineTime(0, month: 3, day: 6),
       end: const TimelineTime(0, month: 3, day: 6),
@@ -284,6 +292,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'shavuot',
       title: 'Chag Shavuot (pilgrimage of weeks)',
+      shortTitle: 'Chag Shavuot',
       timelineId: '',
       start: const TimelineTime(0, month: 3, day: 6),
       // A span of its one day, to stand with the other pilgrimages.
@@ -309,6 +318,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'shavuot-qodesh',
       title: 'Miqra qodesh (Shavuot)',
+      shortTitle: 'Miqra qodesh',
       timelineId: '',
       start: const TimelineTime(0, month: 3, day: 6),
       sabbath: true,
@@ -323,6 +333,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'teruah',
       title: 'Yom Teruah (day of the shout and blast)',
+      shortTitle: 'Yom Teruah',
       timelineId: '',
       start: const TimelineTime(0, month: 7, day: 1),
       category: _qodesh,
@@ -342,6 +353,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'teruah-shabbaton',
       title: 'Shabbaton (a ceasing, Yom Teruah)',
+      shortTitle: 'Shabbaton',
       timelineId: '',
       start: const TimelineTime(0, month: 7, day: 1),
       sabbath: true,
@@ -352,6 +364,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'kippurim',
       title: 'Yom haKippurim (day of the coverings)',
+      shortTitle: 'Yom haKippurim',
       timelineId: '',
       start: const TimelineTime(0, month: 7, day: 10),
       category: _qodesh,
@@ -373,6 +386,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'kippurim-shabbaton',
       title: 'Shabbat shabbaton (a ceasing of ceasing, Yom haKippurim)',
+      shortTitle: 'Shabbat shabbaton',
       timelineId: '',
       start: const TimelineTime(0, month: 7, day: 10),
       sabbath: true,
@@ -383,6 +397,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'before-3',
       title: 'Penei Yahweh (before Yahweh): 3rd time',
+      shortTitle: 'Penei Yahweh, 3rd',
       timelineId: '',
       start: const TimelineTime(0, month: 7, day: 15),
       end: const TimelineTime(0, month: 7, day: 22),
@@ -408,6 +423,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'sukkot',
       title: 'Chag haSukkot (pilgrimage of the booths)',
+      shortTitle: 'Chag haSukkot',
       timelineId: '',
       start: const TimelineTime(0, month: 7, day: 15),
       end: const TimelineTime(0, month: 7, day: 21),
@@ -436,6 +452,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'sukkot-1',
       title: 'Shabbaton (a ceasing, 1st day of Sukkot)',
+      shortTitle: 'Shabbaton',
       timelineId: '',
       start: const TimelineTime(0, month: 7, day: 15),
       sabbath: true,
@@ -446,6 +463,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'atzeret',
       title: 'Shemini ʿAtzeret (the eighth, a restraint)',
+      shortTitle: 'Shemini ʿAtzeret',
       timelineId: '',
       start: const TimelineTime(0, month: 7, day: 22),
       category: _qodesh,
@@ -464,6 +482,7 @@ final _moadim = StandardTimeline(
     StudyTimelineEntry(
       id: 'atzeret-shabbaton',
       title: 'Shabbaton (a ceasing, the eighth day)',
+      shortTitle: 'Shabbaton',
       timelineId: '',
       start: const TimelineTime(0, month: 7, day: 22),
       sabbath: true,

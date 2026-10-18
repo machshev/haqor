@@ -395,7 +395,7 @@ class _WheelPainter extends CustomPainter {
       );
       _label(
         canvas,
-        mark.entry.title,
+        mark.entry.shortLabel,
         centre,
         r * (mark.radius - 0.035),
         mark.from,
@@ -445,7 +445,7 @@ class _WheelPainter extends CustomPainter {
       }
       _label(
         canvas,
-        mark.entry.title,
+        mark.entry.shortLabel,
         centre,
         r * mark.labelRadius,
         mark.from,

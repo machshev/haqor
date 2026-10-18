@@ -381,6 +381,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('2 · Iyyar').last);
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Duration'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Duration'));
     await tester.pumpAndSettle();
     // With a month but no day the length may be in years or months.
@@ -2157,5 +2159,52 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(trailing);
     expect(tapped?.id, 'sukkot');
+  });
+  testWidgets('an entry shows its short title where its title will not fit, '
+      'and its title zoomed in or chosen', (tester) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+    );
+    const pesach = StudyTimelineEntry(
+      id: 'pesach',
+      title: 'Pesach (the passing over)',
+      shortTitle: 'Pesach',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 14),
+    );
+    const matzot = StudyTimelineEntry(
+      id: 'matzot',
+      title: 'Matzot',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 17),
+    );
+    expect(StudyTimelineEntry.fromJson(pesach.toJson())?.shortTitle, 'Pesach');
+    Future<void> chart(double ppu, {String? selected}) => tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: TimelineChart(
+              timeline: feasts,
+              entries: const [pesach, matzot],
+              pixelsPerUnit: ppu,
+              selectedId: selected,
+            ),
+          ),
+        ),
+      ),
+    );
+    // Three days apart at 30 pixels a day: too close for the title.
+    await chart(354 * 30.0);
+    expect(find.text('Pesach'), findsOneWidget);
+    expect(find.text('Pesach (the passing over)'), findsNothing);
+    // Chosen, its title, cut short as need be.
+    await chart(354 * 30.0, selected: 'pesach');
+    expect(find.text('Pesach (the passing over)'), findsOneWidget);
+    // Zoomed in, there is room for it.
+    await chart(354 * 200.0);
+    expect(find.text('Pesach (the passing over)'), findsOneWidget);
   });
 }
