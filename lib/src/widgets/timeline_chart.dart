@@ -596,6 +596,13 @@ class TimelineChart extends StatelessWidget {
                 height: axisY,
                 child: _ShabbatonBlock(
                   entry: day,
+                  color: switch (timeline.colorOf(day)) {
+                    final index? => timelineCategoryColor(
+                      index,
+                      theme.brightness,
+                    ),
+                    null => null,
+                  },
                   selected: day.id == selectedId,
                   faded: faded.contains(day.id),
                   tooltip: '${day.title} · ${timelineEntryTime(timeline, day)}',
@@ -863,10 +870,14 @@ class _ShabbatonBlock extends StatelessWidget {
     required this.selected,
     required this.faded,
     required this.tooltip,
+    this.color,
     this.onTap,
   });
 
   final StudyTimelineEntry entry;
+
+  /// Its category's colour, else the theme's shabbaton shade.
+  final Color? color;
   final bool selected, faded;
   final String tooltip;
   final VoidCallback? onTap;
@@ -875,6 +886,10 @@ class _ShabbatonBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final fill = color == null
+        ? scheme.tertiaryContainer.withValues(alpha: faded ? 0.3 : 0.6)
+        : color!.withValues(alpha: faded ? 0.1 : 0.22);
+    final ink = color == null ? scheme.onTertiaryContainer : scheme.onSurface;
     return Tooltip(
       message: tooltip,
       child: InkWell(
@@ -883,14 +898,14 @@ class _ShabbatonBlock extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) => DecoratedBox(
             decoration: BoxDecoration(
-              color: scheme.tertiaryContainer.withValues(
-                alpha: faded ? 0.3 : 0.6,
-              ),
+              color: fill,
               border: Border.symmetric(
                 vertical: BorderSide(
                   color: selected
                       ? scheme.onSurface
-                      : scheme.tertiary.withValues(alpha: faded ? 0.25 : 0.5),
+                      : (color ?? scheme.tertiary).withValues(
+                          alpha: faded ? 0.25 : 0.6,
+                        ),
                   width: selected ? 2 : 1,
                 ),
               ),
@@ -909,9 +924,7 @@ class _ShabbatonBlock extends StatelessWidget {
                         style: theme.textTheme.labelSmall?.copyWith(
                           fontSize: 9,
                           fontWeight: selected ? FontWeight.bold : null,
-                          color: scheme.onTertiaryContainer.withValues(
-                            alpha: faded ? 0.6 : 1,
-                          ),
+                          color: ink.withValues(alpha: faded ? 0.6 : 1),
                         ),
                       ),
                     ),

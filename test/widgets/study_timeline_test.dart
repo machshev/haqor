@@ -1871,6 +1871,54 @@ void main() {
     expect(tapped?.id, 'first');
   });
 
+  testWidgets('a shabbaton is shaded in its category\'s colour', (
+    tester,
+  ) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+      categoryColors: {'Qodesh': 3},
+    );
+    const shabbaton = StudyTimelineEntry(
+      id: 'first',
+      title: 'Miqra qodesh',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 15),
+      sabbath: true,
+      category: 'Qodesh',
+    );
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: TimelineChart(
+              timeline: feasts,
+              entries: [shabbaton],
+              pixelsPerUnit: 354 * 40.0,
+            ),
+          ),
+        ),
+      ),
+    );
+    final box = tester.widget<DecoratedBox>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('timeline-mark-first')),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    final decoration = box.decoration as BoxDecoration;
+    final colour = timelineCategoryColor(3, Brightness.light);
+    expect(decoration.color?.withValues(alpha: 1), colour);
+    expect(
+      (decoration.border! as Border).left.color.withValues(alpha: 1),
+      colour,
+    );
+  });
+
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
     tester,
   ) async {
