@@ -1798,6 +1798,10 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).last,
     );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timeline-row-m:omer')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('timeline-row-m:omer')));
     await tester.pumpAndSettle();
     expect(find.text('From ${standard.template.title}'), findsOneWidget);
@@ -1903,7 +1907,7 @@ void main() {
     // Its day now lists it, with its note, and offers no second one.
     await tester.tap(find.byKey(const ValueKey('calendar-day-1-15')));
     await tester.pumpAndSettle();
-    expect(find.text('High Sabbath · Sabbath'), findsOneWidget);
+    expect(find.text('Shabbaton · Sabbath'), findsOneWidget);
     expect(find.text('First day of Unleavened Bread'), findsOneWidget);
     expect(find.textContaining('No servile work'), findsOneWidget);
     expect(find.byKey(const ValueKey('calendar-high-sabbath')), findsNothing);
@@ -1969,13 +1973,10 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('timeline-entry-sabbath')));
     await tester.pumpAndSettle();
-    expect(find.text('New high Sabbath'), findsOneWidget);
+    expect(find.text('New shabbaton'), findsOneWidget);
     await tester.tap(find.text('Add'));
     await tester.pumpAndSettle();
-    expect(
-      find.text('A high Sabbath needs its month and day.'),
-      findsOneWidget,
-    );
+    expect(find.text('A shabbaton needs its month and day.'), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey('timeline-entry-start-month-12')),
     );

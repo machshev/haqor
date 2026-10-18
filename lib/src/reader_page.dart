@@ -3775,7 +3775,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     StudyTimelineEntry? anchor,
   }) => StudyTimelineEntry(
     id: DateTime.now().microsecondsSinceEpoch.toString(),
-    title: sabbath ? 'High Sabbath' : '',
+    title: sabbath ? 'Shabbaton' : '',
     sabbath: sabbath,
     timelineId: timelineId,
     start: at ?? anchor?.start ?? const TimelineTime(0),

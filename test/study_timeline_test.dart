@@ -639,8 +639,8 @@ void main() {
     );
     final sabbaths = workspace.entriesOf('feasts');
     expect(sabbaths.map((e) => (e.title, e.start, e.isHighSabbath)), [
-      ('High Sabbath', const TimelineTime(0, month: 1, day: 15), true),
-      ('High Sabbath', const TimelineTime(0, month: 7, day: 10), true),
+      ('Shabbaton', const TimelineTime(0, month: 1, day: 15), true),
+      ('Shabbaton', const TimelineTime(0, month: 7, day: 10), true),
     ]);
     // Loading again keeps them once.
     final again = decodeStudyWorkspaces(encodeStudyWorkspaces([workspace]));
@@ -1155,6 +1155,32 @@ void main() {
     expect(stored('risen').pin, isNull);
     expect(stored('risen').start, day(1, 19));
     expect(stored('ascended').pin, isNotNull);
+  });
+
+  test('a timeline linked before its standard renamed its categories is '
+      'coloured as the standard now is', () {
+    final standard = standardTimelineById('moadim')!;
+    final workspace = StudyWorkspace.fromJson({
+      'id': 's',
+      'name': 'Study',
+      'timelines': [
+        {
+          'id': 'm',
+          'title': 'Moʿadim',
+          'scale': 'annual',
+          'standard': 'moadim',
+          'categories': {'Chag (feast)': 5},
+        },
+      ],
+    })!;
+    final colours = workspace.viewTimeline('m')!.categoryColors;
+    for (final category in standard.template.categoryColors.keys) {
+      expect(colours, contains(category));
+    }
+    final passover = workspace
+        .entriesOf('m')
+        .firstWhere((e) => e.id == 'm:pesach');
+    expect(workspace.viewTimeline('m')!.colorOf(passover), isNotNull);
   });
 
   test('a study without timelines stores none', () {

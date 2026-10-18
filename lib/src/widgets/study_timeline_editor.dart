@@ -808,7 +808,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     }
     final sabbath = _sabbath && !_span && timeline.hasMonths;
     if (error == null && sabbath && start!.day == null) {
-      error = 'A high Sabbath needs its month and day.';
+      error = 'A shabbaton needs its month and day.';
     }
     if (error == null && _span) {
       if (_byDuration) {
@@ -1353,7 +1353,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     return AlertDialog(
       title: Text(
         _sabbath && !_span && _timeline.hasMonths
-            ? (widget.creating ? 'New high Sabbath' : 'Edit high Sabbath')
+            ? (widget.creating ? 'New shabbaton' : 'Edit shabbaton')
             : widget.creating
             ? 'New timeline $noun'
             : 'Edit $noun',
@@ -1485,10 +1485,10 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                   key: const ValueKey('timeline-entry-sabbath'),
                   contentPadding: EdgeInsets.zero,
                   secondary: const Icon(Icons.star_outline),
-                  title: const Text('High Sabbath'),
+                  title: const Text('Shabbaton (a ceasing)'),
                   subtitle: const Text(
-                    'A feast day kept as a Sabbath, coloured as one in the '
-                    'calendar.',
+                    'A day of ceasing besides the Sabbath, as the 1st of the '
+                    '7th month (Leviticus 23:24), coloured in the calendar.',
                   ),
                   value: _sabbath,
                   onChanged: (on) => setState(() {

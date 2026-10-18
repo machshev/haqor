@@ -1501,7 +1501,7 @@ const timelineSeasons = [
     'Exodus 34:22; Ruth 2:23; 1 Samuel 12:17',
   ),
   TimelineSeason(
-    'Qayits (summer fruit)',
+    'Qayits (summer)',
     TimelineSeasonKind.harvest,
     (month: 4, day: 1),
     (month: 5, day: 30),
@@ -1522,7 +1522,7 @@ const timelineSeasons = [
     'Exodus 23:16; Deuteronomy 16:13',
   ),
   TimelineSeason(
-    'Charish and zeraʿ (ploughing and sowing)',
+    'Charish and zeraʿ (ploughing and seed)',
     TimelineSeasonKind.harvest,
     (month: 8, day: 1),
     (month: 10, day: 29),

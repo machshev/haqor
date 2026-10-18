@@ -2001,16 +2001,22 @@ class StudyWorkspace {
 
   /// [timelineId] as its view shows it: with the colours of the categories
   /// of the timelines it is built on, where it has none of its own for
-  /// them.
+  /// them. One linked to a standard timeline is coloured as the
+  /// standard is, where it has kept no colour of its own.
   StudyTimeline? viewTimeline(String timelineId) {
     final timeline = timelineById(timelineId);
     if (timeline == null) return null;
+    // One linked to a standard timeline has its colours for the categories
+    // it has now, whatever it kept when added.
+    Map<String, int> colours(StudyTimeline t) => {
+      ...?standardTimelineById(t.standardId)?.template.categoryColors,
+      ...t.categoryColors,
+    };
     final chain = baseChainOf(timeline);
-    if (chain.isEmpty) return timeline;
     return timeline.copyWith(
       categoryColors: {
-        for (final base in chain.reversed) ...base.categoryColors,
-        ...timeline.categoryColors,
+        for (final base in chain.reversed) ...colours(base),
+        ...colours(timeline),
       },
     );
   }
@@ -2387,8 +2393,8 @@ class StudyWorkspace {
                   entryIds.add(entry.id))
             settled.fittedTo(timeline) ?? settled,
     ];
-    // High Sabbaths were once kept on their timeline by date alone; each
-    // becomes a high Sabbath event there.
+    // Shabbatons were once kept on their timeline by date alone; each
+    // becomes a shabbaton event there.
     for (final raw
         in value['timelines'] is List ? value['timelines'] as List : const []) {
       final timeline = raw is Map ? timelineOf[raw['id']] : null;
@@ -2402,7 +2408,7 @@ class StudyWorkspace {
         timelineEntries.add(
           StudyTimelineEntry(
             id: id,
-            title: 'High Sabbath',
+            title: 'Shabbaton',
             timelineId: timeline.id,
             start: start,
             sabbath: true,

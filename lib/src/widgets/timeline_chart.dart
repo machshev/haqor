@@ -344,11 +344,11 @@ IconData timelineEntryIcon(StudyTimelineEntry entry) => entry.isSpan
     ? Icons.star
     : Icons.radio_button_checked;
 
-/// What an entry is called: "Span", "Event" or "High Sabbath".
+/// What an entry is called: "Span", "Event" or "Shabbaton".
 String timelineEntryKind(StudyTimelineEntry entry) => entry.isSpan
     ? 'Span'
     : entry.isHighSabbath
-    ? 'High Sabbath'
+    ? 'Shabbaton'
     : 'Event';
 
 /// How an entry's time reads: its date as written, or else its time on the
@@ -2093,7 +2093,7 @@ class _TimelinePageState extends State<TimelinePage> {
                 ),
                 Text(
                   high
-                      ? 'High Sabbath · ${timelineWeekdayName(weekday)}'
+                      ? 'Shabbaton · ${timelineWeekdayName(weekday)}'
                       : timelineWeekdayName(weekday),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -2129,7 +2129,7 @@ class _TimelinePageState extends State<TimelinePage> {
                     onPressed: () =>
                         Navigator.pop(sheetContext, _DayChoice.addSabbath),
                     icon: const Icon(Icons.star_outline),
-                    label: const Text('Keep as a high Sabbath'),
+                    label: const Text('Keep as a shabbaton'),
                   ),
                 if (add != null)
                   TextButton.icon(

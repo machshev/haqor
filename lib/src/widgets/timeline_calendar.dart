@@ -216,7 +216,7 @@ class _Legend extends StatelessWidget {
       runSpacing: 4,
       children: [
         swatch(scheme.secondaryContainer, 'Sabbath'),
-        swatch(scheme.tertiaryContainer, 'High Sabbath'),
+        swatch(scheme.tertiaryContainer, 'Shabbaton (a ceasing)'),
         swatch(scheme.tertiary, 'Event', dot: true),
         swatch(scheme.primary, 'Span'),
         if (counted)
@@ -648,7 +648,7 @@ class _Month extends StatelessWidget {
             position <= span.days.last + 1e-9)
           span.entry,
     ];
-    // A high Sabbath shows in its day's colour, not as a dot, and an event
+    // A shabbaton shows in its day's colour, not as a dot, and an event
     // pinned to a span over its day beneath that span's bar.
     final dots = [
       for (final entry in events)
