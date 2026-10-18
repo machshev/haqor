@@ -1039,6 +1039,18 @@ void main() {
     expect(moadim.weekdayOf(day(3, 9)), 1);
     expect(entry(entries, 'moadim-1:count').end, day(3, 9));
     expect(entry(entries, 'moadim-1:atzeret').start, day(7, 22));
+    // The three times before Yahweh hold their feasts; the second goes
+    // with the count.
+    expect(entry(entries, 'moadim-1:pesach').start, day(1, 14));
+    expect(entry(entries, 'moadim-1:matzot').start, day(1, 15));
+    expect(entry(entries, 'moadim-1:before-1').end, day(1, 21));
+    expect(entry(entries, 'moadim-1:before-2').start, day(3, 9));
+    expect(
+      entry(entries, 'moadim-1:shavuot').pin?.anchorId,
+      'moadim-1:before-2',
+    );
+    expect(entry(entries, 'moadim-1:sukkot').start, day(7, 15));
+    expect(entry(entries, 'moadim-1:before-3').end, day(7, 22));
     // Nothing is added to it: it is built on.
     expect(
       workspace

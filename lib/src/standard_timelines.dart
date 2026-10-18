@@ -50,11 +50,15 @@ const _leviticus = 2;
 const _numbers = 3;
 const _deuteronomy = 4;
 const _ezekiel = 13;
+const _nehemiah = 36;
+const _chronicles2 = 38;
 const _mark = 40;
+const _luke = 41;
 const _john = 42;
 const _acts = 43;
 const _corinthians = 45;
 const _chag = 'Chag (pilgrimage)';
+const _before = 'Penei Yahweh (before Yahweh)';
 const _qodesh = 'Miqra qodesh (a calling of holiness)';
 const _qorban = 'Qorban (a bringing near)';
 
@@ -76,7 +80,7 @@ final _moadim = StandardTimeline(
     scale: TimelineScale.annual,
     monthNaming: TimelineMonthNaming.numbered,
     showSeasons: true,
-    categoryColors: {_chag: 0, _qodesh: 3, _qorban: 2},
+    categoryColors: {_before: 5, _chag: 0, _qodesh: 3, _qorban: 2},
     note:
         'מוֹעֲדֵי יְהוָה, "the appointed times of Yahweh, which ye shall call '
         'callings of holiness" (Leviticus 23:2, 4), dated as the text dates '
@@ -88,15 +92,51 @@ final _moadim = StandardTimeline(
         'chag is a pilgrimage: "three times in the year shall all thy males '
         'appear before Yahweh thy God in the place which he shall choose" '
         '(Deuteronomy 16:16); "I went with them to the house of God ... a '
-        'multitude keeping pilgrimage (chogeg)" (Psalm 42:4).',
+        'multitude keeping pilgrimage (chogeg)" (Psalm 42:4). The three '
+        'times before Yahweh are shown as the days spent at the place, the '
+        'feasts of each pinned to it; the seven sabbaths run from the first '
+        'to the second.',
   ),
   entries: [
+    StudyTimelineEntry(
+      id: 'before-1',
+      title: 'Penei Yahweh (before Yahweh): 1st time',
+      timelineId: '',
+      start: const TimelineTime(0, month: 1, day: 14),
+      end: const TimelineTime(0, month: 1, day: 21),
+      duration: const TimelineDuration(8, _day),
+      category: _before,
+      verses: [
+        _ref(_deuteronomy, 16, 16),
+        _ref(_exodus, 23, 17),
+        _ref(_deuteronomy, 16, 5, 8),
+        _ref(_chronicles2, 30, 21),
+        _ref(_chronicles2, 35, 17),
+        _ref(_luke, 2, 41, 43),
+        _ref(_john, 11, 55),
+      ],
+      note:
+          '"Three times (shalosh peʿamim) in the year shall all thy males '
+          'appear before Yahweh thy God in the place which he shall choose: '
+          'in the chag of the matzot, and in the chag of the shavuot, and in '
+          'the chag of the sukkot" (Deuteronomy 16:16). The first, from '
+          'the pesach, sacrificed "at the place which Yahweh thy God shall '
+          'choose" (Deuteronomy 16:5-6), through the seven days of the '
+          'matzot: "they kept the chag of the matzot seven days" (2 '
+          'Chronicles 35:17); "his parents went to Jerusalem every year at '
+          'the pilgrimage of the pascha ... and having fulfilled the days, '
+          'as they returned" (Luke 2:41, 43). "Thou shalt turn in the '
+          'morning and go to thy tents" (Deuteronomy 16:7) follows the '
+          'pesach, before the six days of matzot and the ʿatzeret of the '
+          'seventh (Deuteronomy 16:8).',
+    ),
     StudyTimelineEntry(
       id: 'pesach',
       title: 'Pesach (the passing over)',
       timelineId: '',
       start: const TimelineTime(0, month: 1, day: 14),
       part: TimelineDayPart.evening,
+      pin: const TimelinePin('before-1', TimelineDuration(1, _day)),
       // A single day, kept where the pilgrims came up for Chag haMatzot, and
       // named with it, but not a chag of its own.
       category: _qorban,
@@ -132,6 +172,7 @@ final _moadim = StandardTimeline(
       end: const TimelineTime(0, month: 1, day: 21),
       duration: const TimelineDuration(7, _day),
       category: _chag,
+      pin: const TimelinePin('before-1', TimelineDuration(2, _day)),
       verses: [
         _ref(_leviticus, 23, 6, 8),
         _ref(_exodus, 12, 15, 20),
@@ -210,6 +251,30 @@ final _moadim = StandardTimeline(
           '(Leviticus 23:15-16).',
     ),
     StudyTimelineEntry(
+      id: 'before-2',
+      title: 'Penei Yahweh (before Yahweh): 2nd time',
+      timelineId: '',
+      start: const TimelineTime(0, month: 3, day: 6),
+      end: const TimelineTime(0, month: 3, day: 6),
+      duration: const TimelineDuration(1, _day),
+      category: _before,
+      pin: const TimelinePin('omer', TimelineDuration(50, _day)),
+      verses: [
+        _ref(_deuteronomy, 16, 16),
+        _ref(_deuteronomy, 16, 11),
+        _ref(_acts, 2, 1, 5),
+        _ref(_acts, 20, 16),
+      ],
+      note:
+          'The second of the three times, the fiftieth day, the one day the '
+          'text gives: "thou shalt rejoice before Yahweh thy God ... in the '
+          'place which Yahweh thy God shall choose" (Deuteronomy 16:11); '
+          '"there were dwelling at Jerusalem Jews, devout men, out of every '
+          'nation under heaven" (Acts 2:5); "he hastened, if it were possible '
+          'for him, to be at Jerusalem the day of the fiftieth" (Acts '
+          '20:16).',
+    ),
+    StudyTimelineEntry(
       id: 'shavuot',
       title: 'Chag Shavuot (pilgrimage of weeks)',
       timelineId: '',
@@ -218,7 +283,7 @@ final _moadim = StandardTimeline(
       end: const TimelineTime(0, month: 3, day: 6),
       duration: const TimelineDuration(1, _day),
       category: _chag,
-      pin: const TimelinePin('omer', TimelineDuration(50, _day)),
+      pin: const TimelinePin('before-2', TimelineDuration(1, _day)),
       verses: [
         _ref(_leviticus, 23, 15, 21),
         _ref(_exodus, 34, 22),
@@ -309,6 +374,29 @@ final _moadim = StandardTimeline(
       verses: [_ref(_leviticus, 23, 32)],
     ),
     StudyTimelineEntry(
+      id: 'before-3',
+      title: 'Penei Yahweh (before Yahweh): 3rd time',
+      timelineId: '',
+      start: const TimelineTime(0, month: 7, day: 15),
+      end: const TimelineTime(0, month: 7, day: 22),
+      duration: const TimelineDuration(8, _day),
+      category: _before,
+      verses: [
+        _ref(_deuteronomy, 16, 15, 16),
+        _ref(_chronicles2, 7, 8, 10),
+        _ref(_nehemiah, 8, 18),
+      ],
+      note:
+          'The third of the three times, the seven days of the sukkot and '
+          'the eighth: "seven days shalt thou keep pilgrimage to Yahweh thy '
+          'God in the place which Yahweh shall choose" (Deuteronomy 16:15); '
+          '"they kept the chag seven days, and on the eighth day an '
+          'ʿatzeret, according to the judgment" (Nehemiah 8:18); "and in the '
+          'eighth day they made an ʿatzeret ... and on the twenty-third day '
+          'of the seventh month he sent the people away to their tents" (2 '
+          'Chronicles 7:9-10).',
+    ),
+    StudyTimelineEntry(
       id: 'sukkot',
       title: 'Chag haSukkot (pilgrimage of the booths)',
       timelineId: '',
@@ -316,6 +404,7 @@ final _moadim = StandardTimeline(
       end: const TimelineTime(0, month: 7, day: 21),
       duration: const TimelineDuration(7, _day),
       category: _chag,
+      pin: const TimelinePin('before-3', TimelineDuration(1, _day)),
       dayNotes: const {
         1: '13 bulls, 2 rams, 14 lambs (Numbers 29:13)',
         2: '12 bulls, 2 rams, 14 lambs (Numbers 29:17)',
@@ -351,7 +440,7 @@ final _moadim = StandardTimeline(
       timelineId: '',
       start: const TimelineTime(0, month: 7, day: 22),
       category: _qodesh,
-      pin: const TimelinePin('sukkot', TimelineDuration(8, _day)),
+      pin: const TimelinePin('before-3', TimelineDuration(8, _day)),
       verses: [
         _ref(_leviticus, 23, 36),
         _ref(_leviticus, 23, 39),
