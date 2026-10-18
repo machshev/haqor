@@ -1009,6 +1009,154 @@ void main() {
     expect(lane('wave'), 1);
   });
 
+  test('a study links the standard moʿadim, and builds on them a timeline '
+      'of its own, placed on its own weeks', () {
+    final standard = standardTimelineById('moadim')!;
+    var workspace = const StudyWorkspace(
+      id: 's',
+      name: 'Study',
+    ).addStandardTimeline(standard, id: 'moadim-1');
+    final linked = workspace.timelineById('moadim-1')!;
+    expect(linked.isStandard, isTrue);
+    expect(linked.monthNaming, TimelineMonthNaming.numbered);
+    // Its entries come from the standard, made its own.
+    final own = workspace.entriesOf('moadim-1');
+    expect(own, hasLength(standard.entries.length));
+    expect(own.every((e) => e.timelineId == 'moadim-1'), isTrue);
+    expect(workspace.timelineEntries, isEmpty);
+    TimelineTime day(int month, int day) =>
+        TimelineTime(0, month: month, day: day);
+    StudyTimelineEntry entry(List<StudyTimelineEntry> entries, String id) =>
+        entries.singleWhere((e) => e.id == id);
+    // With the 1st of the 1st month on the 4th day of the week, the 15th
+    // is too: the ʿomer is waved on the 19th, the first day of the week,
+    // and Shavuot is the fiftieth day, the first day of the week again.
+    workspace = workspace.putTimeline(linked.copyWith(nisanWeekday: 4));
+    var entries = workspace.entriesOf('moadim-1');
+    expect(entry(entries, 'moadim-1:omer').start, day(1, 19));
+    expect(entry(entries, 'moadim-1:shavuot').start, day(3, 9));
+    final moadim = workspace.timelineById('moadim-1')!;
+    expect(moadim.weekdayOf(day(3, 9)), 1);
+    expect(entry(entries, 'moadim-1:count').end, day(3, 9));
+    expect(entry(entries, 'moadim-1:atzeret').start, day(7, 22));
+    // Nothing is added to it: it is built on.
+    expect(
+      workspace
+          .putTimelineEntry(
+            const StudyTimelineEntry(
+              id: 'x',
+              title: 'x',
+              timelineId: 'moadim-1',
+              start: TimelineTime(0, month: 1, day: 1),
+            ),
+          )
+          .timelineEntries,
+      isEmpty,
+    );
+
+    // A timeline built on it, set in a year whose 15th of the 1st month
+    // falls on the 6th day: there the ʿomer falls on the 17th.
+    const passion = StudyTimeline(
+      id: 'passion',
+      title: 'Last week',
+      scale: TimelineScale.annual,
+      baseId: 'moadim-1',
+      nisanWeekday: 6,
+      year: 30,
+    );
+    expect(StudyTimeline.fromJson(passion.toJson())?.baseId, 'moadim-1');
+    expect(StudyTimeline.fromJson(passion.toJson())?.year, 30);
+    final risen =
+        const StudyTimelineEntry(
+          id: 'risen',
+          title: 'Raised',
+          timelineId: 'passion',
+          start: TimelineTime(0, month: 1, day: 1),
+        ).pinnedTo(
+          const TimelinePin(
+            'moadim-1:omer',
+            TimelineDuration(1, TimelineDurationUnit.days),
+          ),
+        );
+    final ascended =
+        const StudyTimelineEntry(
+          id: 'ascended',
+          title: 'Taken up',
+          timelineId: 'passion',
+          start: TimelineTime(0, month: 1, day: 1),
+        ).pinnedTo(
+          const TimelinePin(
+            'risen',
+            TimelineDuration(40, TimelineDurationUnit.days),
+          ),
+        );
+    final spirit =
+        const StudyTimelineEntry(
+          id: 'spirit',
+          title: 'The Spirit poured out',
+          timelineId: 'passion',
+          start: TimelineTime(0, month: 1, day: 1),
+        ).pinnedTo(
+          const TimelinePin(
+            'moadim-1:shavuot',
+            TimelineDuration(1, TimelineDurationUnit.days),
+          ),
+        );
+    workspace = workspace
+        .putTimeline(passion)
+        .putTimelineEntry(risen)
+        .putTimelineEntry(ascended)
+        .putTimelineEntry(spirit);
+    StudyTimelineEntry stored(String id) =>
+        workspace.timelineEntries.singleWhere((e) => e.id == id);
+    expect(stored('risen').start, day(1, 17));
+    expect(stored('ascended').start, day(2, 26));
+    expect(stored('spirit').start, day(3, 7));
+    expect(passion.weekdayOf(day(3, 7)), 1);
+    // Its view holds the base's entries, on its own weeks, beneath its own.
+    final view = workspace.viewOf('passion');
+    expect(entry(view, 'moadim-1:omer').start, day(1, 17));
+    expect(entry(view, 'moadim-1:omer').timelineId, 'moadim-1');
+    expect(entry(view, 'risen').timelineId, 'passion');
+    // The base's colours, for its categories.
+    expect(
+      workspace.viewTimeline('passion')?.categoryColors,
+      standard.template.categoryColors,
+    );
+    // Its weeks moved, its events and the base's beneath them move too.
+    workspace = workspace.putTimeline(passion.copyWith(nisanWeekday: 4));
+    expect(stored('risen').start, day(1, 19));
+    expect(stored('spirit').start, day(3, 9));
+
+    // Never built on itself, round a circle.
+    final circle = workspace.putTimeline(
+      workspace.timelineById('moadim-1')!.copyWith(baseId: () => 'passion'),
+    );
+    expect(circle.timelineById('moadim-1')?.baseId, isNull);
+
+    // Made the study's own, the standard's entries are copied in, and what
+    // is built on them still holds.
+    final detached = workspace.detachStandardTimeline(
+      workspace.timelineById('moadim-1')!,
+    );
+    expect(detached.timelineById('moadim-1')?.isStandard, isFalse);
+    expect(
+      detached.timelineEntries.where((e) => e.timelineId == 'moadim-1'),
+      hasLength(standard.entries.length),
+    );
+    expect(
+      detached.timelineEntries.singleWhere((e) => e.id == 'risen').pin,
+      isNotNull,
+    );
+
+    // The base gone, what stood on it stands alone, where it was.
+    workspace = workspace.removeTimeline(workspace.timelineById('moadim-1')!);
+    expect(workspace.timelineById('passion')?.baseId, isNull);
+    expect(stored('risen').pin, isNull);
+    expect(stored('risen').start, day(1, 19));
+    expect(stored('ascended').pin, isNotNull);
+  });
+
   test('a study without timelines stores none', () {
     final json = const StudyWorkspace(id: 's', name: 'Study').toJson();
     expect(json.containsKey('timelines'), isFalse);

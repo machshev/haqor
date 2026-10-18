@@ -1003,7 +1003,10 @@ void main() {
       ([evening, whole, night]..sort(compareTimelineEntries)).map((e) => e.id),
       ['whole', 'night', 'killed'],
     );
-    expect(timelineEntryTime(feasts, evening), '14 Nisan, at evening');
+    expect(
+      timelineEntryTime(feasts, evening),
+      '14 Nisan, between the evenings',
+    );
     expect(
       StudyTimelineEntry.fromJson(evening.toJson())?.part,
       TimelineDayPart.evening,
@@ -1064,7 +1067,10 @@ void main() {
     );
     // A year's seasons, each within it; and its new and full moons.
     final bands = timelineSeasonsIn(feasts, 0, 1);
-    expect(bands.map((b) => b.season.name), contains('Barley harvest'));
+    expect(
+      bands.map((b) => b.season.name),
+      contains('Qetsir seʿorim (barley harvest)'),
+    );
     for (final band in bands) {
       expect(band.start, greaterThanOrEqualTo(0));
       expect(band.end, lessThanOrEqualTo(1 + 1e-9));
@@ -1097,21 +1103,27 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey('timeline-season-Barley harvest')),
+      find.byKey(
+        const ValueKey('timeline-season-Qetsir seʿorim (barley harvest)'),
+      ),
       findsNothing,
     );
     await tester.tap(find.byTooltip('Show seasons'));
     await tester.pumpAndSettle();
     expect(feasts.showSeasons, isTrue);
     expect(
-      find.byKey(const ValueKey('timeline-season-Barley harvest')),
+      find.byKey(
+        const ValueKey('timeline-season-Qetsir seʿorim (barley harvest)'),
+      ),
       findsWidgets,
     );
 
     await tester.tap(find.byTooltip('Show calendar'));
     await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey('calendar-season-1-Barley harvest')),
+      find.byKey(
+        const ValueKey('calendar-season-1-Qetsir seʿorim (barley harvest)'),
+      ),
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('calendar-moon-1-15')), findsOneWidget);
@@ -1206,7 +1218,7 @@ void main() {
     );
     await tester.pump();
     expect(
-      find.textContaining('Barley harvest · Exodus 9:31-32'),
+      find.textContaining('Qetsir seʿorim (barley harvest) · Exodus 9:31-32'),
       findsOneWidget,
     );
   });

@@ -5,8 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'surface.dart';
 import 'bible_data.dart';
+import 'standard_timelines.dart';
 import 'study_timeline.dart';
 
+export 'standard_timelines.dart';
 export 'study_timeline.dart';
 
 const studyWorkspacesKey = 'study_workspaces_v1';
@@ -1154,9 +1156,15 @@ class StudyWorkspace {
   }
 
   /// A timeline's events and spans, in time order.
-  List<StudyTimelineEntry> entriesOf(String timelineId) =>
-      timelineEntries.where((e) => e.timelineId == timelineId).toList()
-        ..sort(compareTimelineEntries);
+  /// One linked to a standard timeline has that one's, placed on its weeks.
+  List<StudyTimelineEntry> entriesOf(String timelineId) {
+    final timeline = timelineById(timelineId);
+    final entries = timeline != null && timeline.isStandard
+        ? _resolve(timeline)
+        : timelineEntries;
+    return entries.where((e) => e.timelineId == timelineId).toList()
+      ..sort(compareTimelineEntries);
+  }
 
   /// The entries linked to the entry [entryId] on the timeline [timelineId],
   /// perhaps the Bible timeline ([bibleTimelineId]), in time order.
@@ -1848,6 +1856,18 @@ class StudyWorkspace {
   /// are worked out again on its scale; one whose duration no longer fits
   /// (the scale no longer counts years) keeps its end as a plain end.
   StudyWorkspace putTimeline(StudyTimeline timeline) {
+    // Built only on another of its scale, and never round in a circle.
+    final baseId = timeline.baseId;
+    if (baseId != null) {
+      var at = timelineById(baseId);
+      final seen = <String>{};
+      var sound = at != null && at.scale == timeline.scale;
+      while (sound && at != null && seen.add(at.id)) {
+        if (at.id == timeline.id) sound = false;
+        at = at.baseId == null ? null : timelineById(at.baseId!);
+      }
+      if (!sound) timeline = timeline.copyWith(baseId: () => null);
+    }
     final fitted = copyWith(
       timelineEntries: [
         for (final entry in timelineEntries)
@@ -1862,26 +1882,96 @@ class StudyWorkspace {
 
   /// The workspace with each pinned entry placed where its pin puts it (see
   /// [StudyTimeline.placePin]), so that it moves with its anchor, and so on
-  /// down a chain of pins: Pentecost counted from the wave sheaf, itself
-  /// pinned into Unleavened Bread. One whose anchor is gone, or on another
-  /// timeline, or that is caught in a circle of pins, is unpinned where it
-  /// stands; one its pin cannot place as its anchor now stands stays where
-  /// it was, still pinned.
+  /// down a chain of pins: Shavuot counted from the ʿomer, itself pinned
+  /// into Chag haMatzot. An anchor may be on the timeline's own, or on one
+  /// it is built on (see [StudyTimeline.baseId]), placed on its own weeks.
+  /// One whose anchor is gone, or out of reach, or that is caught in a
+  /// circle of pins, is unpinned where it stands; one its pin cannot place
+  /// as its anchor now stands stays where it was, still pinned.
   StudyWorkspace _placePins() {
     if (!timelineEntries.any((e) => e.pin != null)) return this;
-    final byId = {for (final e in timelineEntries) e.id: e};
+    final placed = <String, StudyTimelineEntry>{};
+    for (final timeline in timelines) {
+      if (timeline.isStandard ||
+          !timelineEntries.any(
+            (e) => e.timelineId == timeline.id && e.pin != null,
+          )) {
+        continue;
+      }
+      for (final entry in _resolve(timeline)) {
+        if (entry.timelineId == timeline.id) placed[entry.id] = entry;
+      }
+    }
+    return copyWith(
+      timelineEntries: [for (final e in timelineEntries) placed[e.id] ?? e],
+    );
+  }
+
+  /// The timelines [timeline] is built on, nearest first: those of its
+  /// scale, stopping at a circle.
+  List<StudyTimeline> baseChainOf(StudyTimeline timeline) {
+    final chain = <StudyTimeline>[];
+    final seen = {timeline.id};
+    for (var id = timeline.baseId; id != null; id = chain.last.baseId) {
+      final base = timelineById(id);
+      if (base == null || base.scale != timeline.scale || !seen.add(id)) break;
+      chain.add(base);
+    }
+    return chain;
+  }
+
+  /// [timeline]'s own entries as stored, or, linked to a standard timeline,
+  /// that one's, made its own: their ids, and their pins' anchors, prefixed
+  /// with its id.
+  List<StudyTimelineEntry> _ownEntries(StudyTimeline timeline) {
+    final standard = standardTimelineById(timeline.standardId);
+    if (standard == null) {
+      return [
+        for (final e in timelineEntries)
+          if (e.timelineId == timeline.id) e,
+      ];
+    }
+    String own(String id) => '${timeline.id}:$id';
+    return [
+      for (final e in standard.entries)
+        StudyTimelineEntry.fromJson({
+          ...e.toJson(),
+          'id': own(e.id),
+          'timeline': timeline.id,
+          if (e.pin case final pin?)
+            'pin': TimelinePin(
+              own(pin.anchorId),
+              pin.offset,
+              weekday: pin.weekday,
+            ).toJson(),
+        })!,
+    ];
+  }
+
+  /// [timeline]'s entries and those of the timelines it is built on, each
+  /// pinned one placed on [timeline]'s weeks (see [_placeAll]).
+  List<StudyTimelineEntry> _resolve(StudyTimeline timeline) =>
+      _placeAll(timeline, [
+        for (final base in baseChainOf(timeline).reversed) ..._ownEntries(base),
+        ..._ownEntries(timeline),
+      ]);
+
+  /// [entries] with each pinned one placed on [timeline] where its pin puts
+  /// it, anchors among [entries] placed first; one whose anchor is not
+  /// among them, or caught in a circle, unpinned where it stands.
+  static List<StudyTimelineEntry> _placeAll(
+    StudyTimeline timeline,
+    List<StudyTimelineEntry> entries,
+  ) {
+    final byId = {for (final e in entries) e.id: e};
     final placed = <String, StudyTimelineEntry>{};
     final placing = <String>{};
     StudyTimelineEntry place(StudyTimelineEntry entry) {
       if (placed[entry.id] case final done?) return done;
       final pin = entry.pin;
       if (pin == null) return placed[entry.id] = entry;
-      final timeline = timelineById(entry.timelineId);
       final raw = byId[pin.anchorId];
-      if (timeline == null ||
-          raw == null ||
-          raw.timelineId != entry.timelineId ||
-          !placing.add(entry.id)) {
+      if (raw == null || !placing.add(entry.id)) {
         return placed[entry.id] = entry.pinnedTo(null);
       }
       final anchor = place(raw);
@@ -1897,7 +1987,65 @@ class StudyWorkspace {
       return placed[entry.id] = moved != null && moved.isValid ? moved : entry;
     }
 
-    return copyWith(timelineEntries: timelineEntries.map(place).toList());
+    return entries.map(place).toList();
+  }
+
+  /// What [timelineId] shows: its own entries with those of the timelines
+  /// it is built on, those beneath (their [StudyTimelineEntry.timelineId]
+  /// another's), all placed on its weeks, in time order.
+  List<StudyTimelineEntry> viewOf(String timelineId) {
+    final timeline = timelineById(timelineId);
+    if (timeline == null) return const [];
+    return _resolve(timeline)..sort(compareTimelineEntries);
+  }
+
+  /// [timelineId] as its view shows it: with the colours of the categories
+  /// of the timelines it is built on, where it has none of its own for
+  /// them.
+  StudyTimeline? viewTimeline(String timelineId) {
+    final timeline = timelineById(timelineId);
+    if (timeline == null) return null;
+    final chain = baseChainOf(timeline);
+    if (chain.isEmpty) return timeline;
+    return timeline.copyWith(
+      categoryColors: {
+        for (final base in chain.reversed) ...base.categoryColors,
+        ...timeline.categoryColors,
+      },
+    );
+  }
+
+  /// Adds a timeline linked to the standard timeline [standard] (see
+  /// [StudyTimeline.standardId]), [id] in the container [parentId].
+  StudyWorkspace addStandardTimeline(
+    StandardTimeline standard, {
+    required String id,
+    String? parentId,
+  }) => putTimeline(
+    StudyTimeline.fromJson({
+      ...standard.template.toJson(),
+      'id': id,
+      'standard': standard.id,
+      'parent': ?parentId,
+    })!,
+  );
+
+  /// [timeline], linked to a standard timeline, made the study's own: its
+  /// entries copied in to be changed as any others, no longer following
+  /// the standard's.
+  StudyWorkspace detachStandardTimeline(StudyTimeline timeline) {
+    if (!timeline.isStandard) return this;
+    final entries = _ownEntries(timeline);
+    return copyWith(
+      timelines: [
+        for (final t in timelines)
+          t.id == timeline.id ? t.copyWith(standardId: () => null) : t,
+      ],
+      timelineEntries: [
+        ...timelineEntries,
+        for (final (i, e) in entries.indexed) e.copyWith(order: i),
+      ],
+    )._placePins();
   }
 
   /// [entry] with its times settled where [timeline] can place them (see
@@ -1951,7 +2099,11 @@ class StudyWorkspace {
       timelines: [
         for (final candidate in timelines)
           if (candidate.id != timeline.id)
-            candidate.copyWith(parentId: () => reparent(candidate.parentId)),
+            candidate.copyWith(
+              parentId: () => reparent(candidate.parentId),
+              // Those built on it now stand alone.
+              baseId: candidate.baseId == timeline.id ? () => null : null,
+            ),
       ],
       timelineEntries: [
         for (final entry in timelineEntries)
@@ -1993,17 +2145,18 @@ class StudyWorkspace {
         for (final name in names)
           name.copyWith(groupId: () => reparent(name.groupId)),
       ],
-    );
+    )._placePins();
   }
 
   /// Adds or replaces an entry. It must be valid and in a timeline; one
-  /// moved to another timeline lands last there.
+  /// moved to another timeline lands last there. One on a timeline linked to a
+  /// standard one is refused: that timeline is built on, not changed.
   ///
   /// A span given by its duration has its end worked out on the timeline;
   /// one whose duration does not fit it is refused.
   StudyWorkspace putTimelineEntry(StudyTimelineEntry entry) {
     final timeline = timelineById(entry.timelineId);
-    if (timeline == null) return this;
+    if (timeline == null || timeline.isStandard) return this;
     final fitted = _settled(entry, timeline).fittedTo(timeline);
     if (fitted == null || !fitted.isValid) return this;
     entry = fitted;

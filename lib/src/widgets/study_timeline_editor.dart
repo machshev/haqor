@@ -861,7 +861,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
       leading: const Icon(Icons.view_day_outlined),
       title: const Text('Notes for each day'),
       subtitle: const Text(
-        'What each day holds, as the offerings of each day of Tabernacles '
+        'What each day holds, as the offerings of each day of Chag haSukkot '
         '(Numbers 29); a note starting with a number is drawn to scale.',
       ),
       children: [
@@ -1414,7 +1414,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                     title: const Text('Count its days'),
                     subtitle: const Text(
                       'Numbers its days and weeks, as the fifty days to '
-                      'Pentecost are counted (Leviticus 23:15-16).',
+                      'Shavuot are counted (Leviticus 23:15-16).',
                     ),
                     value: _counted,
                     onChanged: (on) => setState(() => _counted = on),

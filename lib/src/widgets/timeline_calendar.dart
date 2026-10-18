@@ -591,11 +591,18 @@ class _Month extends StatelessWidget {
                     color: timelineSeasonColor(season.kind, theme.brightness),
                   ),
                   const SizedBox(width: 2),
-                  Text(
-                    season.name,
-                    key: ValueKey('calendar-season-$month-${season.name}'),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: timelineSeasonColor(season.kind, theme.brightness),
+                  Flexible(
+                    child: Text(
+                      season.name,
+                      key: ValueKey('calendar-season-$month-${season.name}'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: timelineSeasonColor(
+                          season.kind,
+                          theme.brightness,
+                        ),
+                      ),
                     ),
                   ),
                 ],

@@ -27,7 +27,7 @@ enum TimelineScale {
 enum TimelineDayPart {
   night('at night', 'Night', 0.25),
   daytime('by day', 'Day', 0.7),
-  evening('at evening', 'Evening', 0.94);
+  evening('between the evenings', 'Evening', 0.94);
 
   const TimelineDayPart(this.phrase, this.label, this.fraction);
 
@@ -256,6 +256,9 @@ class StudyTimeline {
     this.weekYear,
     this.showSeasons = false,
     this.categoryColors = const {},
+    this.standardId,
+    this.baseId,
+    this.year,
     this.note = '',
     this.parentId,
     this.order = 0,
@@ -295,6 +298,21 @@ class StudyTimeline {
   /// into the palette of category colours; given one as an entry first
   /// takes it (see [withCategory]).
   final Map<String, int> categoryColors;
+
+  /// The standard timeline it is linked to (see [StandardTimeline]): its
+  /// entries come from there, and are not changed here.
+  final String? standardId;
+
+  /// The timeline it is built on, one of the same scale in the study: that
+  /// one's entries show beneath its own, and its own may be pinned to them,
+  /// placed on this timeline's weeks.
+  final String? baseId;
+
+  /// The year one year's calendar is set in, as written (BC negative), to
+  /// say which year its weeks are those of; null for any year.
+  final double? year;
+
+  bool get isStandard => standardId != null;
 
   /// The colour [entry] is shown in, as an index into the palette of
   /// category colours; null for one without a category.
@@ -776,6 +794,9 @@ class StudyTimeline {
     double? Function()? weekYear,
     bool? showSeasons,
     Map<String, int>? categoryColors,
+    String? Function()? standardId,
+    String? Function()? baseId,
+    double? Function()? year,
     String? note,
     String? Function()? parentId,
     int? order,
@@ -792,6 +813,9 @@ class StudyTimeline {
     weekYear: weekYear == null ? this.weekYear : weekYear(),
     showSeasons: showSeasons ?? this.showSeasons,
     categoryColors: categoryColors ?? this.categoryColors,
+    standardId: standardId == null ? this.standardId : standardId(),
+    baseId: baseId == null ? this.baseId : baseId(),
+    year: year == null ? this.year : year(),
     note: note ?? this.note,
     parentId: parentId == null ? this.parentId : parentId(),
     order: order ?? this.order,
@@ -811,6 +835,9 @@ class StudyTimeline {
     if (weekYear != null) 'weekYear': _jsonNumber(weekYear!),
     if (showSeasons) 'seasons': true,
     if (categoryColors.isNotEmpty) 'categories': categoryColors,
+    if (standardId != null) 'standard': standardId,
+    if (baseId != null) 'base': baseId,
+    if (year != null) 'year': _jsonNumber(year!),
     if (note.isNotEmpty) 'note': note,
     if (parentId != null) 'parent': parentId,
     'order': order,
@@ -841,6 +868,9 @@ class StudyTimeline {
         'weekYear',
         'seasons',
         'categories',
+        'standard',
+        'base',
+        'year',
         'sabbaths',
         'note',
         'parent',
@@ -874,6 +904,13 @@ class StudyTimeline {
           ? (value['weekYear'] as num).toDouble()
           : null,
       showSeasons: value['seasons'] == true,
+      standardId: value['standard'] is String
+          ? value['standard'] as String
+          : null,
+      baseId: value['base'] is String ? value['base'] as String : null,
+      year: value['year'] is num && value['year'] != 0
+          ? (value['year'] as num).toDouble()
+          : null,
       categoryColors: {
         if (value['categories'] case final Map categories)
           for (final MapEntry(:key, :value) in categories.entries)
@@ -1423,67 +1460,67 @@ class TimelineSeason {
 /// to the sowing after the early rain.
 const timelineSeasons = [
   TimelineSeason(
-    'Latter rain',
+    'Malqosh (latter rain)',
     TimelineSeasonKind.rain,
     (month: 1, day: 1),
     (month: 1, day: 30),
     'Deuteronomy 11:14; Joel 2:23; Jeremiah 5:24',
   ),
   TimelineSeason(
-    'Early rain',
+    'Yoreh (early rain)',
     TimelineSeasonKind.rain,
     (month: 8, day: 1),
     (month: 9, day: 30),
     'Deuteronomy 11:14; Joel 2:23; James 5:7',
   ),
   TimelineSeason(
-    'Latter rain',
+    'Malqosh (latter rain)',
     TimelineSeasonKind.rain,
     (month: 12, day: 1),
     null,
     'Deuteronomy 11:14; Joel 2:23; Jeremiah 5:24',
   ),
   TimelineSeason(
-    'Barley harvest',
+    'Qetsir seʿorim (barley harvest)',
     TimelineSeasonKind.harvest,
     (month: 1, day: 15),
     (month: 2, day: 15),
     'Exodus 9:31-32; Ruth 1:22; 2 Samuel 21:9',
   ),
   TimelineSeason(
-    'Wheat harvest',
+    'Qetsir chittim (wheat harvest)',
     TimelineSeasonKind.harvest,
     (month: 2, day: 16),
     (month: 3, day: 30),
     'Exodus 34:22; Ruth 2:23; 1 Samuel 12:17',
   ),
   TimelineSeason(
-    'Summer fruit',
+    'Qayits (summer fruit)',
     TimelineSeasonKind.harvest,
     (month: 4, day: 1),
     (month: 5, day: 30),
     'Amos 8:1-2; Jeremiah 40:10-12; 2 Samuel 16:1',
   ),
   TimelineSeason(
-    'Vintage',
+    'Batsir (vintage)',
     TimelineSeasonKind.harvest,
     (month: 6, day: 1),
     (month: 6, day: 29),
     'Leviticus 26:5; Judges 9:27',
   ),
   TimelineSeason(
-    'Ingathering',
+    'ʾAsif (ingathering)',
     TimelineSeasonKind.harvest,
     (month: 7, day: 1),
     (month: 7, day: 30),
     'Exodus 23:16; Deuteronomy 16:13',
   ),
   TimelineSeason(
-    'Ploughing and sowing',
+    'Charish and zeraʿ (ploughing and sowing)',
     TimelineSeasonKind.harvest,
     (month: 8, day: 1),
     (month: 10, day: 29),
-    'Leviticus 26:5; Proverbs 20:4',
+    'Genesis 45:6; Leviticus 26:5; Proverbs 20:4',
   ),
 ];
 
