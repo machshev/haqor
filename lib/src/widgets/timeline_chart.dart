@@ -78,7 +78,9 @@ typedef TimelineSlot = ({
 /// an entry's slot runs from where its reach starts (see
 /// [timelineEntryReach]): a span's start, an event's middle. [width] is
 /// the least room an entry's mark and label take from there. High
-/// Sabbaths, stars without labels, all share the first lane.
+/// Sabbaths, stars without labels, all share the first lane. An entry pinned
+/// to another (see [TimelinePin]) takes a lane below its anchor's, so that
+/// the events of a feast hang beneath it.
 List<TimelineSlot> packTimelineLanes(
   StudyTimeline timeline,
   List<StudyTimelineEntry> entries, {
@@ -90,21 +92,28 @@ List<TimelineSlot> packTimelineLanes(
   final sabbaths = sorted.any((e) => e.isHighSabbath);
   final laneEnds = <double>[if (sabbaths) double.infinity];
   final slots = <TimelineSlot>[];
+  final laneOf = <String, int>{};
   for (final entry in sorted) {
     final reach = timelineEntryReach(timeline, entry);
     final left = x(reach.start);
     final right = math.max(x(reach.end), left + width(entry));
     if (entry.isHighSabbath) {
       slots.add((entry: entry, lane: 0, left: left, right: right));
+      laneOf[entry.id] = 0;
       continue;
     }
-    var lane = laneEnds.indexWhere((end) => end + gap <= left);
+    final anchor = laneOf[entry.pin?.anchorId];
+    var lane = laneEnds.indexWhere(
+      (end) => end + gap <= left,
+      anchor == null ? 0 : anchor + 1,
+    );
     if (lane < 0) {
       lane = laneEnds.length;
       laneEnds.add(right);
     } else {
       laneEnds[lane] = right;
     }
+    laneOf[entry.id] = lane;
     slots.add((entry: entry, lane: lane, left: left, right: right));
   }
   return slots;
@@ -1040,6 +1049,16 @@ typedef TimelineContents = ({
   List<StudyTimelineEntry> entries,
 });
 
+/// A link as an entry's sheet shows it (see [TimelineLink]): where it
+/// leads, by the entry's title and its timeline's, and whether it was made
+/// from that end ([back]).
+typedef TimelineLinkView = ({
+  TimelineLink link,
+  String title,
+  String timelineTitle,
+  bool back,
+});
+
 /// What an entry's details sheet was closed to do.
 enum _EntryChoice { edit, remove, duplicate, addPinned }
 
@@ -1110,6 +1129,8 @@ class TimelinePage extends StatefulWidget {
     this.onRemoveEntry,
     this.onDuplicateEntry,
     this.entryDetails,
+    this.linksOf,
+    this.onOpenLink,
   });
 
   final StudyTimeline timeline;
@@ -1149,6 +1170,12 @@ class TimelinePage extends StatefulWidget {
   final Future<void> Function(StudyTimelineEntry entry)? onEditEntry;
   final Future<void> Function(StudyTimelineEntry entry)? onRemoveEntry;
   final Future<void> Function(StudyTimelineEntry entry)? onDuplicateEntry;
+
+  /// The links an entry has to entries on other timelines (or its own), and
+  /// they to it, shown in its details; and how one opens, its timeline
+  /// opened on its entry.
+  final List<TimelineLinkView> Function(StudyTimelineEntry entry)? linksOf;
+  final ValueChanged<TimelineLink>? onOpenLink;
 
   /// More about an entry, shown in its details beneath its verses.
   final Widget Function(BuildContext sheetContext, StudyTimelineEntry entry)?
@@ -1590,6 +1617,8 @@ class _TimelinePageState extends State<TimelinePage> {
     final remove = widget.onRemoveEntry;
     final add = widget.onAddEntry;
     final duplicate = widget.onDuplicateEntry;
+    final links = widget.linksOf?.call(entry) ?? const [];
+    final open = widget.onOpenLink;
     final pin = timelinePinLabel(_timeline, entry, _entries);
     final pinned = [
       for (final e in List.of(_entries)..sort(compareTimelineEntries))
@@ -1649,6 +1678,34 @@ class _TimelinePageState extends State<TimelinePage> {
                   ),
                 ],
                 if (entry.dayNotes.isNotEmpty) _dayNotes(theme, entry),
+                if (links.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text('Linked', style: theme.textTheme.labelLarge),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final view in links)
+                        ActionChip(
+                          key: ValueKey(
+                            'timeline-link-${view.link.timelineId}-'
+                            '${view.link.entryId}',
+                          ),
+                          avatar: Icon(
+                            view.back ? Icons.call_received : Icons.link,
+                          ),
+                          label: Text('${view.title} · ${view.timelineTitle}'),
+                          tooltip: view.back
+                              ? 'Links here from ${view.timelineTitle}'
+                              : null,
+                          onPressed: open == null
+                              ? null
+                              : () => Navigator.pop(sheetContext, view.link),
+                        ),
+                    ],
+                  ),
+                ],
                 if (widget.entryDetails case final details?)
                   details(sheetContext, entry),
                 // The entries pinned to it, each opening its own details.
@@ -1738,6 +1795,8 @@ class _TimelinePageState extends State<TimelinePage> {
         await _edit(() => add!(false, null, anchor: entry));
       case StudyTimelineEntry pinned:
         await _show(pinned);
+      case TimelineLink link:
+        open?.call(link);
     }
   }
 

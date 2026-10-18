@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:haqor/src/study_workspace.dart';
+import 'package:haqor/src/widgets/timeline_chart.dart';
 
 void main() {
   const kings = StudyTimeline(
@@ -899,6 +900,113 @@ void main() {
       scale: TimelineScale.annual,
     );
     expect(feasts.addDays(const TimelineTime(0, month: 1, day: 1), -1), isNull);
+  });
+
+  test('links lead between timelines, found from either end, and go with '
+      'what they lead to', () {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+    );
+    const passion = StudyTimeline(
+      id: 'passion',
+      title: 'Passion week',
+      scale: TimelineScale.calendar,
+    );
+    const cross = StudyTimelineEntry(
+      id: 'cross',
+      title: 'Crucifixion',
+      timelineId: 'passion',
+      start: TimelineTime(30, month: 1, day: 14),
+    );
+    final passover =
+        const StudyTimelineEntry(
+          id: 'passover',
+          title: 'Passover',
+          timelineId: 'feasts',
+          start: TimelineTime(0, month: 1, day: 14),
+        ).copyWith(
+          links: const [
+            TimelineLink('passion', 'cross', title: 'Crucifixion'),
+            TimelineLink(bibleTimelineId, '412', title: 'The Last Supper'),
+          ],
+        );
+    expect(
+      StudyTimelineEntry.fromJson(passover.toJson())?.links,
+      passover.links,
+    );
+    var workspace = const StudyWorkspace(id: 's', name: 'Study')
+        .putTimeline(feasts)
+        .putTimeline(passion)
+        .putTimelineEntry(cross)
+        .putTimelineEntry(passover);
+    expect(workspace.entriesLinkedTo('passion', 'cross').map((e) => e.id), [
+      'passover',
+    ]);
+    expect(workspace.entriesLinkedTo(bibleTimelineId, '412').map((e) => e.id), [
+      'passover',
+    ]);
+    StudyTimelineEntry stored() =>
+        workspace.timelineEntries.singleWhere((e) => e.id == 'passover');
+    // The crucifixion gone, the link to it goes; the Bible's stays.
+    workspace = workspace.removeTimelineEntry(cross);
+    expect(stored().links.map((l) => l.entryId), ['412']);
+    // So with a whole timeline.
+    workspace = workspace
+        .putTimelineEntry(cross)
+        .putTimelineEntry(
+          stored().copyWith(
+            links: [...stored().links, const TimelineLink('passion', 'cross')],
+          ),
+        )
+        .removeTimeline(passion);
+    expect(stored().links.map((l) => l.entryId), ['412']);
+  });
+
+  test('an entry pinned to another takes a lane below it', () {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts',
+      scale: TimelineScale.annual,
+    );
+    const unleavened = StudyTimelineEntry(
+      id: 'unleavened',
+      title: 'Unleavened Bread',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 15),
+      end: TimelineTime(0, month: 1, day: 21),
+    );
+    const before = StudyTimelineEntry(
+      id: 'before',
+      title: 'Before',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 1),
+      end: TimelineTime(0, month: 1, day: 10),
+    );
+    final wave =
+        const StudyTimelineEntry(
+          id: 'wave',
+          title: 'Wave',
+          timelineId: 'feasts',
+          start: TimelineTime(0, month: 3, day: 1),
+        ).pinnedTo(
+          const TimelinePin(
+            'unleavened',
+            TimelineDuration(2, TimelineDurationUnit.days),
+          ),
+        );
+    // The wave sheaf, well after the feast, would fit in its lane, but
+    // hangs beneath it.
+    final slots = packTimelineLanes(
+      feasts,
+      [before, unleavened, wave],
+      x: (p) => p * 1000,
+      width: (_) => 10,
+    );
+    int lane(String id) => slots.singleWhere((s) => s.entry.id == id).lane;
+    expect(lane('unleavened'), 0);
+    expect(lane('wave'), 1);
   });
 
   test('a study without timelines stores none', () {

@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../study_workspace.dart';
+import 'bible_timeline_page.dart';
 import 'markdown_note.dart';
+import 'timeline_chart.dart';
 
 /// Edits a timeline: its title, how it counts time (calendar years BC and
 /// AD, years of its own, or another unit) and what it calls them, and its
@@ -411,12 +413,17 @@ class StudyTimelineEntryEditor extends StatefulWidget {
     required this.useEnglishBookNames,
     required this.loadChapter,
     this.entries = const [],
+    this.loadBibleEntries,
   });
 
   final StudyTimelineEntry initial;
 
   /// The entries already on the timelines, which it may be pinned to.
   final List<StudyTimelineEntry> entries;
+
+  /// Loads the Bible timeline's events, to link to; without it, only the
+  /// study's entries may be linked to.
+  final Future<List<StudyTimelineEntry>> Function()? loadBibleEntries;
   final bool creating;
 
   /// The timelines it may be on; the initial one must be among them.
@@ -440,6 +447,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   late TimelineDurationUnit _durationUnit;
   late String _timelineId;
   late List<StudyPassage> _verses;
+  late List<TimelineLink> _links;
   String? _error;
 
   /// The entry it is pinned to, the unit its offset is in, and the day of
@@ -562,6 +570,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     _category = TextEditingController(text: e.category);
     _note = TextEditingController(text: e.note);
     _verses = List.of(e.verses);
+    _links = List.of(e.links);
     _anchorId = e.pin?.anchorId;
     _offsetUnit = e.pin?.offset.unit;
     _weekday = e.pin?.weekday;
@@ -740,6 +749,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
             counted: _span && _counted && timeline.hasMonths,
             part: () => _span || start.day == null ? null : _part,
             category: _category.text.trim(),
+            links: _links,
             dayNotes: _span
                 ? _dayNotesFor(_spanDays(start, end) ?? 0)
                 : const {},
@@ -767,6 +777,34 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
   }
 
   void _changed() => setState(() => _error = null);
+
+  /// A link as it reads: the entry's title and its timeline's.
+  String _linkLabel(TimelineLink link) {
+    final entry = widget.entries.where((e) => link.leadsTo(e)).firstOrNull;
+    final timeline = link.timelineId == bibleTimelineId
+        ? bibleTimeline
+        : widget.timelines.where((t) => t.id == link.timelineId).firstOrNull;
+    final title = entry?.title ?? link.title;
+    return timeline == null ? title : '$title · ${timeline.title}';
+  }
+
+  /// Links it to an entry picked on a study's timeline or the Bible's.
+  Future<void> _addLink() async {
+    final picked = await showDialog<TimelineLink>(
+      context: context,
+      builder: (_) => StudyTimelineLinkDialog(
+        timelines: widget.timelines,
+        entries: widget.entries,
+        exceptId: widget.initial.id,
+        initialTimelineId: _timelineId,
+        loadBibleEntries: widget.loadBibleEntries,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (!_links.contains(picked)) _links.add(picked);
+    });
+  }
 
   /// The notes for a span's days, by day, as entered so far.
   final _dayNotes = <int, TextEditingController>{};
@@ -1417,6 +1455,29 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                 ],
               ),
               const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              Text('Linked entries', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  for (final link in _links)
+                    InputChip(
+                      avatar: const Icon(Icons.link),
+                      label: Text(_linkLabel(link)),
+                      onDeleted: () => setState(() => _links.remove(link)),
+                    ),
+                  TextButton.icon(
+                    key: const ValueKey('timeline-entry-add-link'),
+                    onPressed: _addLink,
+                    icon: const Icon(Icons.link),
+                    label: const Text('Link to an entry'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               MarkdownNoteField(controller: _note, label: 'Note', minLines: 2),
               if (_error != null)
                 Padding(
@@ -1438,6 +1499,156 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
         FilledButton(
           onPressed: _save,
           child: Text(widget.creating ? 'Add' : 'Save'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Chooses an entry to link to (see [TimelineLink]): on one of the study's
+/// [timelines], or, given [loadBibleEntries], on the Bible timeline, found
+/// by its title. [exceptId] is the entry being linked, not offered.
+class StudyTimelineLinkDialog extends StatefulWidget {
+  const StudyTimelineLinkDialog({
+    super.key,
+    required this.timelines,
+    required this.entries,
+    required this.exceptId,
+    this.initialTimelineId,
+    this.loadBibleEntries,
+  });
+
+  final List<StudyTimeline> timelines;
+  final List<StudyTimelineEntry> entries;
+  final String exceptId;
+
+  /// The timeline to look on first: another than this, where it has
+  /// entries.
+  final String? initialTimelineId;
+  final Future<List<StudyTimelineEntry>> Function()? loadBibleEntries;
+
+  @override
+  State<StudyTimelineLinkDialog> createState() =>
+      _StudyTimelineLinkDialogState();
+}
+
+class _StudyTimelineLinkDialogState extends State<StudyTimelineLinkDialog> {
+  late final List<StudyTimeline> _sources = [
+    for (final t in widget.timelines)
+      if (widget.entries.any(
+        (e) => e.timelineId == t.id && e.id != widget.exceptId,
+      ))
+        t,
+    if (widget.loadBibleEntries != null) bibleTimeline,
+  ];
+  late String? _sourceId =
+      (_sources.where((t) => t.id != widget.initialTimelineId).firstOrNull ??
+              _sources.firstOrNull)
+          ?.id;
+  Future<List<StudyTimelineEntry>>? _bible;
+  String _query = '';
+
+  StudyTimeline? get _source =>
+      _sources.where((t) => t.id == _sourceId).firstOrNull;
+
+  Widget _list(StudyTimeline source, List<StudyTimelineEntry> entries) {
+    final query = _query.trim().toLowerCase();
+    final shown = [
+      for (final e in entries)
+        if (e.id != widget.exceptId &&
+            (query.isEmpty || e.title.toLowerCase().contains(query)))
+          e,
+    ];
+    if (shown.isEmpty) {
+      return const Center(child: Text('Nothing found.'));
+    }
+    return ListView.builder(
+      itemCount: shown.length,
+      itemBuilder: (context, i) {
+        final entry = shown[i];
+        return ListTile(
+          key: ValueKey('timeline-link-choice-${entry.id}'),
+          dense: true,
+          leading: Icon(timelineEntryIcon(entry)),
+          title: Text(entry.title),
+          subtitle: Text(timelineEntryTime(source, entry)),
+          onTap: () => Navigator.pop(
+            context,
+            TimelineLink(source.id, entry.id, title: entry.title),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final source = _source;
+    return AlertDialog(
+      title: const Text('Link to an entry'),
+      content: SizedBox(
+        width: 480,
+        height: 440,
+        child: source == null
+            ? const Center(child: Text('There is nothing else to link to.'))
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DropdownButtonFormField<String>(
+                    key: const ValueKey('timeline-link-source'),
+                    initialValue: source.id,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Timeline'),
+                    items: [
+                      for (final t in _sources)
+                        DropdownMenuItem(
+                          value: t.id,
+                          child: Text(t.title, overflow: TextOverflow.ellipsis),
+                        ),
+                    ],
+                    onChanged: (id) => setState(() => _sourceId = id),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    key: const ValueKey('timeline-link-search'),
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Find by title',
+                    ),
+                    onChanged: (text) => setState(() => _query = text),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: source.id == bibleTimelineId
+                        ? FutureBuilder<List<StudyTimelineEntry>>(
+                            future: _bible ??= widget.loadBibleEntries!(),
+                            builder: (context, snapshot) => snapshot.hasError
+                                ? const Center(
+                                    child: Text(
+                                      'The Bible timeline could not be read.',
+                                    ),
+                                  )
+                                : snapshot.data == null
+                                ? const Center(
+                                    child: CircularProgressIndicator(),
+                                  )
+                                : _list(source, snapshot.data!),
+                          )
+                        : _list(
+                            source,
+                            [
+                              for (final e in widget.entries)
+                                if (e.timelineId == source.id) e,
+                            ]..sort(compareTimelineEntries),
+                          ),
+                  ),
+                ],
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
         ),
       ],
     );

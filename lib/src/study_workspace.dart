@@ -1158,6 +1158,17 @@ class StudyWorkspace {
       timelineEntries.where((e) => e.timelineId == timelineId).toList()
         ..sort(compareTimelineEntries);
 
+  /// The entries linked to the entry [entryId] on the timeline [timelineId],
+  /// perhaps the Bible timeline ([bibleTimelineId]), in time order.
+  List<StudyTimelineEntry> entriesLinkedTo(String timelineId, String entryId) =>
+      [
+        for (final e in timelineEntries)
+          if (e.links.any(
+            (link) => link.timelineId == timelineId && link.entryId == entryId,
+          ))
+            e,
+      ]..sort(compareTimelineEntries);
+
   /// The timeline entries linked to a verse: each timeline's in time order,
   /// the timelines in their stored order.
   List<StudyTimelineEntry> timelineEntriesAt(
@@ -1931,7 +1942,8 @@ class StudyWorkspace {
   }
 
   /// Delete a timeline with its events and spans, which mean nothing outside
-  /// it. Any other items it held move up to its parent.
+  /// it. Any other items it held move up to its parent. Links to its entries
+  /// from other timelines go with them.
   StudyWorkspace removeTimeline(StudyTimeline timeline) {
     final parentId = timeline.parentId;
     String? reparent(String? id) => id == timeline.id ? parentId : id;
@@ -1943,7 +1955,15 @@ class StudyWorkspace {
       ],
       timelineEntries: [
         for (final entry in timelineEntries)
-          if (entry.timelineId != timeline.id) entry,
+          if (entry.timelineId != timeline.id)
+            entry.links.any((link) => link.timelineId == timeline.id)
+                ? entry.copyWith(
+                    links: [
+                      for (final link in entry.links)
+                        if (link.timelineId != timeline.id) link,
+                    ],
+                  )
+                : entry,
       ],
       sections: [
         for (final section in sections)
@@ -2004,9 +2024,21 @@ class StudyWorkspace {
         : placed._putTimeline(coloured);
   }
 
-  /// Removes an entry; those pinned to it stay where they are, unpinned.
+  /// Removes an entry; those pinned to it stay where they are, unpinned,
+  /// and those linked to it lose the link.
   StudyWorkspace removeTimelineEntry(StudyTimelineEntry entry) => copyWith(
-    timelineEntries: timelineEntries.where((e) => e.id != entry.id).toList(),
+    timelineEntries: [
+      for (final e in timelineEntries)
+        if (e.id != entry.id)
+          e.links.any((link) => link.leadsTo(entry))
+              ? e.copyWith(
+                  links: [
+                    for (final link in e.links)
+                      if (!link.leadsTo(entry)) link,
+                  ],
+                )
+              : e,
+    ],
   )._placePins();
 
   Map<String, Object?> toJson() => {

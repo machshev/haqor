@@ -11,7 +11,7 @@ import 'timeline_chart.dart';
 /// The timeline the Bible's events are shown on: calendar years, from the
 /// creation in 4004 BC.
 const bibleTimeline = StudyTimeline(
-  id: 'bible-timeline',
+  id: bibleTimelineId,
   title: 'Bible timeline',
   scale: TimelineScale.calendar,
   note:
@@ -68,6 +68,38 @@ StudyTimelineEntry _entry(BibleEventEntry event, int order) {
   );
 }
 
+/// The id of the next request for the Bible's events, so that each page
+/// and loader knows its answer.
+int _nextRequestId = 1;
+
+/// Asks for the Bible's events, as entries of [bibleTimeline]: for linking
+/// a study's entries to them (see [TimelineLink]). [sendRequest] stands in
+/// for the signal to Rust, for tests.
+Future<List<StudyTimelineEntry>> loadBibleTimelineEntries({
+  void Function(GetBibleEvents)? sendRequest,
+}) async {
+  final id = _nextRequestId++;
+  final answer = Completer<List<BibleEventEntry>>();
+  final sub = BibleEvents.rustSignalStream.listen((pack) {
+    if (pack.message.requestId == id && !answer.isCompleted) {
+      answer.complete(pack.message.events);
+    }
+  });
+  try {
+    final request = GetBibleEvents(requestId: id);
+    if (sendRequest != null) {
+      sendRequest(request);
+    } else {
+      request.sendSignalToRust();
+    }
+    return bibleTimelineEntries(
+      await answer.future.timeout(const Duration(seconds: 30)),
+    );
+  } finally {
+    await sub.cancel();
+  }
+}
+
 /// The events of the Bible on a timeline, from the creation: drawn to
 /// scale, listed beneath, each opening its verses in the reader and the
 /// people and places taking part.
@@ -82,7 +114,14 @@ class BibleTimelinePage extends StatefulWidget {
     this.bookmarks,
     this.initialEventId,
     this.sendRequest,
+    this.linksOf,
+    this.onOpenLink,
   });
+
+  /// The links to its events from a study's timelines, and how one opens
+  /// (see [TimelinePage.linksOf]).
+  final List<TimelineLinkView> Function(StudyTimelineEntry entry)? linksOf;
+  final ValueChanged<TimelineLink>? onOpenLink;
 
   /// The event to open on, its details shown.
   final String? initialEventId;
@@ -113,6 +152,8 @@ class BibleTimelinePage extends StatefulWidget {
     void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
     NameBookmarks? bookmarks,
     void Function(GetBibleEvents)? sendRequest,
+    List<TimelineLinkView> Function(StudyTimelineEntry entry)? linksOf,
+    ValueChanged<TimelineLink>? onOpenLink,
   }) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => BibleTimelinePage(
@@ -124,6 +165,8 @@ class BibleTimelinePage extends StatefulWidget {
         onNavigateToPassage: onNavigateToPassage,
         bookmarks: bookmarks,
         sendRequest: sendRequest,
+        linksOf: linksOf,
+        onOpenLink: onOpenLink,
       ),
     ),
   );
@@ -141,7 +184,6 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
     widget.onNtGreekChanged?.call(greek);
   }
 
-  static int _nextRequestId = 1;
   StreamSubscription<RustSignalPack<BibleEvents>>? _sub;
   int? _requestId;
   List<BibleEventEntry>? _events;
@@ -273,6 +315,8 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
       onOpenPassage: (passage) =>
           navigate?.call(passage.bookIndex, passage.chapter, passage.verse),
       entryDetails: _details,
+      linksOf: widget.linksOf,
+      onOpenLink: widget.onOpenLink,
     );
   }
 }

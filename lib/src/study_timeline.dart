@@ -318,6 +318,7 @@ class StudyTimeline {
       },
     );
   }
+
   final String note;
   final String? parentId;
   final int order;
@@ -903,6 +904,60 @@ class StudyTimeline {
   ];
 }
 
+/// The id of the Bible timeline, of the Bible's own events, that a study's
+/// entries may link to (see [TimelineLink]).
+const bibleTimelineId = 'bible-timeline';
+
+/// A link from an entry to another, on another timeline or its own: a
+/// study's timeline, or the Bible timeline ([bibleTimelineId]). Passover
+/// on a timeline of the feasts may link to the crucifixion on the Bible
+/// timeline. [title] is the other's title when linked, shown where it
+/// cannot be read.
+@immutable
+class TimelineLink {
+  const TimelineLink(this.timelineId, this.entryId, {this.title = ''});
+
+  final String timelineId;
+  final String entryId;
+  final String title;
+
+  bool get isValid => timelineId.isNotEmpty && entryId.isNotEmpty;
+
+  /// Whether it links to [entry].
+  bool leadsTo(StudyTimelineEntry entry) =>
+      timelineId == entry.timelineId && entryId == entry.id;
+
+  Map<String, Object?> toJson() => {
+    'timeline': timelineId,
+    'entry': entryId,
+    if (title.isNotEmpty) 'title': title,
+  };
+
+  static TimelineLink? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final timeline = value['timeline'];
+    final entry = value['entry'];
+    final title = value['title'];
+    if (timeline is! String || entry is! String) return null;
+    final link = TimelineLink(
+      timeline,
+      entry,
+      title: title is String ? title : '',
+    );
+    return link.isValid ? link : null;
+  }
+
+  /// Links are the same where they lead to the same entry.
+  @override
+  bool operator ==(Object other) =>
+      other is TimelineLink &&
+      other.timelineId == timelineId &&
+      other.entryId == entryId;
+
+  @override
+  int get hashCode => Object.hash(timelineId, entryId);
+}
+
 /// How an entry is pinned to another on its timeline, the [anchorId], so
 /// that it moves with it: [offset] from the anchor's start. Days are
 /// counted as Scripture counts them, inclusively: day 1 is the anchor's
@@ -989,6 +1044,7 @@ class StudyTimelineEntry {
     this.part,
     this.category = '',
     this.dayNotes = const {},
+    this.links = const [],
     this.order = 0,
     this.pin,
     this.extra = const {},
@@ -1035,6 +1091,9 @@ class StudyTimelineEntry {
   /// offerings of each day of Tabernacles (Numbers 29:12-38).
   final Map<int, String> dayNotes;
 
+  /// The entries, on other timelines or its own, it is linked to.
+  final List<TimelineLink> links;
+
   /// [part] where it means anything: an event dated to the day.
   TimelineDayPart? get dayPart => isSpan || start.day == null ? null : part;
   final int order;
@@ -1076,6 +1135,7 @@ class StudyTimelineEntry {
     part: part,
     category: category,
     dayNotes: dayNotes,
+    links: links,
     order: order,
     pin: pin,
   );
@@ -1104,6 +1164,7 @@ class StudyTimelineEntry {
     part: part,
     category: category,
     dayNotes: dayNotes,
+    links: links,
     order: order,
     pin: pin,
   );
@@ -1131,6 +1192,7 @@ class StudyTimelineEntry {
     TimelineDayPart? Function()? part,
     String? category,
     Map<int, String>? dayNotes,
+    List<TimelineLink>? links,
     int? order,
   }) => StudyTimelineEntry(
     extra: extra,
@@ -1148,6 +1210,7 @@ class StudyTimelineEntry {
     part: part == null ? this.part : part(),
     category: category ?? this.category,
     dayNotes: dayNotes ?? this.dayNotes,
+    links: links ?? this.links,
     order: order ?? this.order,
     pin: pin,
   );
@@ -1184,9 +1247,9 @@ class StudyTimelineEntry {
     if (category.isNotEmpty) 'category': category,
     if (dayNotes.isNotEmpty)
       'days': {
-        for (final day in dayNotes.keys.toList()..sort())
-          '$day': dayNotes[day],
+        for (final day in dayNotes.keys.toList()..sort()) '$day': dayNotes[day],
       },
+    if (links.isNotEmpty) 'links': [for (final link in links) link.toJson()],
     'order': order,
     if (pin != null) 'pin': pin!.toJson(),
   };
@@ -1235,6 +1298,7 @@ class StudyTimelineEntry {
         'part',
         'category',
         'days',
+        'links',
         'order',
         'pin',
         'span',
@@ -1282,6 +1346,10 @@ class StudyTimelineEntry {
                 value.trim().isNotEmpty)
               int.parse(key): value.trim(),
       },
+      links: [
+        if (value['links'] is List)
+          for (final raw in value['links'] as List) ?TimelineLink.fromJson(raw),
+      ],
       order: value['order'] is int ? value['order'] as int : 0,
       pin: pin,
     );

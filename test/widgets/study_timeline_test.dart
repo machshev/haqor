@@ -1423,6 +1423,144 @@ void main() {
     expect(find.text('Tabernacles, day 3: 11 bulls'), findsOneWidget);
   });
 
+  testWidgets('an entry links to one on another timeline or the Bible '
+      "timeline, picked in the editor, and its sheet opens it", (tester) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+    );
+    const passion = StudyTimeline(
+      id: 'passion',
+      title: 'Passion week',
+      scale: TimelineScale.calendar,
+    );
+    const cross = StudyTimelineEntry(
+      id: 'cross',
+      title: 'Crucifixion',
+      timelineId: 'passion',
+      start: TimelineTime(30, month: 1, day: 14),
+    );
+    const passover = StudyTimelineEntry(
+      id: 'passover',
+      title: 'Passover',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 14),
+    );
+    var loads = 0;
+    StudyTimelineEntry? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              saved = await showDialog<StudyTimelineEntry>(
+                context: context,
+                builder: (_) => StudyTimelineEntryEditor(
+                  initial: passover,
+                  creating: false,
+                  timelines: const [feasts, passion],
+                  entries: const [passover, cross],
+                  useEnglishBookNames: true,
+                  loadChapter: _chapter,
+                  loadBibleEntries: () async {
+                    loads++;
+                    return const [
+                      StudyTimelineEntry(
+                        id: '412',
+                        title: 'The Last Supper',
+                        timelineId: bibleTimelineId,
+                        start: TimelineTime(30),
+                      ),
+                      StudyTimelineEntry(
+                        id: '7',
+                        title: 'The Flood',
+                        timelineId: bibleTimelineId,
+                        start: TimelineTime(-2348),
+                      ),
+                    ];
+                  },
+                ),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    // The other timeline is offered first.
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timeline-entry-add-link')),
+    );
+    await tester.tap(find.byKey(const ValueKey('timeline-entry-add-link')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('timeline-link-choice-cross')));
+    await tester.pumpAndSettle();
+    expect(find.text('Crucifixion · Passion week'), findsOneWidget);
+    // Then the Bible's, read only when chosen, found by title.
+    expect(loads, 0);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timeline-entry-add-link')),
+    );
+    await tester.tap(find.byKey(const ValueKey('timeline-entry-add-link')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('timeline-link-source')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bible timeline').last);
+    await tester.pumpAndSettle();
+    expect(loads, 1);
+    await tester.enterText(
+      find.byKey(const ValueKey('timeline-link-search')),
+      'supper',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('The Flood'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('timeline-link-choice-412')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(saved?.links, const [
+      TimelineLink('passion', 'cross'),
+      TimelineLink(bibleTimelineId, '412'),
+    ]);
+    expect(saved?.links.last.title, 'The Last Supper');
+
+    // Its sheet lists the links, and opens one tapped.
+    TimelineLink? opened;
+    final linked = saved!;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TimelinePage(
+          timeline: feasts,
+          entries: [linked],
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+          linksOf: (entry) => [
+            for (final link in entry.links)
+              (
+                link: link,
+                title: link.title,
+                timelineTitle: link.timelineId,
+                back: false,
+              ),
+          ],
+          onOpenLink: (link) => opened = link,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('timeline-row-passover')));
+    await tester.pumpAndSettle();
+    expect(find.text('Linked'), findsOneWidget);
+    await tester.tap(
+      find.byKey(ValueKey('timeline-link-$bibleTimelineId-412')),
+    );
+    await tester.pumpAndSettle();
+    expect(opened, const TimelineLink(bibleTimelineId, '412'));
+  });
+
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
     tester,
   ) async {

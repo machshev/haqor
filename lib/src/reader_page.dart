@@ -3515,11 +3515,78 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
   }
 
+  /// The links [entry] has to entries on other timelines (or its own),
+  /// and those that link to it, as its sheet shows them.
+  List<TimelineLinkView> _timelineLinksOf(StudyTimelineEntry entry) {
+    final workspace = _activeStudyWorkspace;
+    if (workspace == null) return const [];
+    String timelineTitle(String id) => id == bibleTimelineId
+        ? bibleTimeline.title
+        : workspace.timelineById(id)?.title ?? '';
+    // The entry as now stored, the page's copy perhaps older.
+    final stored = workspace.timelineEntries
+        .where((e) => e.id == entry.id && e.timelineId == entry.timelineId)
+        .firstOrNull;
+    final forward = [
+      for (final link in (stored ?? entry).links)
+        (
+          link: link,
+          title:
+              workspace.timelineEntries
+                  .where(link.leadsTo)
+                  .firstOrNull
+                  ?.title ??
+              link.title,
+          timelineTitle: timelineTitle(link.timelineId),
+          back: false,
+        ),
+    ];
+    return [
+      ...forward,
+      for (final e in workspace.entriesLinkedTo(entry.timelineId, entry.id))
+        if (!forward.any((f) => f.link.leadsTo(e)))
+          (
+            link: TimelineLink(e.timelineId, e.id, title: e.title),
+            title: e.title,
+            timelineTitle: timelineTitle(e.timelineId),
+            back: true,
+          ),
+    ];
+  }
+
+  /// Opens the timeline [link] leads to, on its entry.
+  void _openTimelineLink(TimelineLink link) {
+    if (link.timelineId == bibleTimelineId) {
+      _openBibleTimeline(initialEventId: link.entryId);
+      return;
+    }
+    final timeline = _activeStudyWorkspace?.timelineById(link.timelineId);
+    if (timeline == null) return;
+    _openStudyTimeline(timeline, selectedId: link.entryId, showSelected: true);
+  }
+
+  /// Opens the Bible timeline, on [initialEventId]'s event if given.
+  void _openBibleTimeline({String? initialEventId}) => BibleTimelinePage.open(
+    context,
+    initialEventId: initialEventId,
+    useEnglishBookNames: _englishBookNames,
+    ntSyriac: _ntSyriac,
+    ntGreek: _ntGreek,
+    onNtGreekChanged: _setNtGreek,
+    bookmarks: _nameBookmarks,
+    onNavigateToPassage: (book, chapter, verse) =>
+        _navigateTo(book, chapter, verse: verse),
+    linksOf: _timelineLinksOf,
+    onOpenLink: _openTimelineLink,
+  );
+
   /// Opens a timeline's full view; its verses open in the reader, and then
-  /// [onOpenReader] brings the reader forward.
+  /// [onOpenReader] brings the reader forward. [selectedId]'s entry is
+  /// picked out, and with [showSelected], its details shown.
   void _openStudyTimeline(
     StudyTimeline timeline, {
     String? selectedId,
+    bool showSelected = false,
     bool calendar = false,
     VoidCallback? onOpenReader,
   }) {
@@ -3532,6 +3599,7 @@ class _ReaderSessionState extends State<_ReaderSession>
           entries: workspace.entriesOf(timeline.id),
           useEnglishBookNames: _englishBookNames,
           initialSelectedId: selectedId,
+          showInitialSelected: showSelected && selectedId != null,
           initialCalendar: calendar,
           onOpenPassage: (passage) {
             _navigateTo(
@@ -3568,6 +3636,8 @@ class _ReaderSessionState extends State<_ReaderSession>
           onEditEntry: _editStudyTimelineEntry,
           onRemoveEntry: (entry) async => _removeStudyTimelineEntry(entry),
           onDuplicateEntry: _duplicateStudyTimelineEntry,
+          linksOf: _timelineLinksOf,
+          onOpenLink: _openTimelineLink,
         ),
       ),
     );
@@ -3586,6 +3656,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         creating: creating,
         timelines: workspace.timelines,
         entries: workspace.timelineEntries,
+        loadBibleEntries: loadBibleTimelineEntries,
         useEnglishBookNames: _englishBookNames,
         loadChapter: _loadStudyChapter,
       ),
@@ -5324,16 +5395,7 @@ class _ReaderSessionState extends State<_ReaderSession>
               _navigateTo(book, chapter, verse: verse),
         );
       case _ReaderMenuAction.timeline:
-        BibleTimelinePage.open(
-          context,
-          useEnglishBookNames: _englishBookNames,
-          ntSyriac: _ntSyriac,
-          ntGreek: _ntGreek,
-          onNtGreekChanged: _setNtGreek,
-          bookmarks: _nameBookmarks,
-          onNavigateToPassage: (book, chapter, verse) =>
-              _navigateTo(book, chapter, verse: verse),
-        );
+        _openBibleTimeline();
       case _ReaderMenuAction.prophecy:
         ProphecyPage.open(
           context,
