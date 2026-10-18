@@ -399,6 +399,7 @@ class TimelineChart extends StatelessWidget {
     this.faded = const {},
     this.groups = const {},
     this.onToggleGroup,
+    this.onTapCluster,
   });
 
   final StudyTimeline timeline;
@@ -410,6 +411,10 @@ class TimelineChart extends StatelessWidget {
   /// button after its title to show or hide them, by [onToggleGroup].
   final Map<String, ({int count, bool open})> groups;
   final ValueChanged<StudyTimelineEntry>? onToggleGroup;
+
+  /// Opens a run of events drawn as one mark, more than [mostStacked]
+  /// stacked so close together; given them in time order.
+  final ValueChanged<List<StudyTimelineEntry>>? onTapCluster;
 
   /// Whether to show the seasons of the land above the entries, and the
   /// new and full moons on the axis, zoomed in to them.
@@ -450,11 +455,21 @@ class TimelineChart extends StatelessWidget {
     final extent = timelineExtent(timeline, entries);
     double px(double position) =>
         padding + (position - extent.start) * pixelsPerUnit;
+    final clusters = _clusters(px);
+    final clustered = {
+      for (final events in clusters.values)
+        for (final e in events) e.id,
+    };
     // Packed by their marks alone, to keep to as few lanes as may be; each
     // label then takes what room its lane leaves it.
     final slots = packTimelineLanes(
       timeline,
-      entries,
+      [
+        for (final e in entries)
+          if (!clustered.contains(e.id)) e,
+        for (final MapEntry(:key, :value) in clusters.entries)
+          _clusterEntry(key, value),
+      ],
       x: px,
       width: (e) => e.isHighSabbath
           ? _dot + 2
@@ -568,14 +583,32 @@ class TimelineChart extends StatelessWidget {
                     countedDays: timeline.daysIn(slot.entry) ?? 0,
                     titleWidth: label.title,
                     showTitle: label.title > 0,
-                    selected: slot.entry.id == selectedId,
-                    // Its title too where the label doesn't show it whole.
-                    tooltip: slot.entry.isHighSabbath || !label.whole
-                        ? '${slot.entry.title} · ${timelineEntryTime(timeline, slot.entry)}'
-                        : timelineEntryTime(timeline, slot.entry),
-                    onTap: onTapEntry == null
-                        ? null
-                        : () => onTapEntry!(slot.entry),
+                    selected:
+                        slot.entry.id == selectedId ||
+                        (clusters[slot.entry.id]?.any(
+                              (e) => e.id == selectedId,
+                            ) ??
+                            false),
+                    stacked: clusters[slot.entry.id]?.length ?? 0,
+                    tooltip: switch (clusters[slot.entry.id]) {
+                      // The events it stands for, as many as are short.
+                      final events? => [
+                        for (final e in events.take(8)) e.title,
+                        if (events.length > 8) '… ${events.length - 8} more',
+                      ].join('\n'),
+                      // Its title too where the label doesn't show it whole.
+                      null when slot.entry.isHighSabbath || !label.whole =>
+                        '${slot.entry.title} · ${timelineEntryTime(timeline, slot.entry)}',
+                      null => timelineEntryTime(timeline, slot.entry),
+                    },
+                    onTap: switch (clusters[slot.entry.id]) {
+                      final events? when onTapCluster != null =>
+                        () => onTapCluster!(events),
+                      null when onTapEntry != null => () => onTapEntry!(
+                        slot.entry,
+                      ),
+                      _ => null,
+                    },
                     group: switch (groups[slot.entry.id]) {
                       final group? when label.group => _GroupToggle(
                         key: ValueKey('timeline-group-${slot.entry.id}'),
@@ -598,6 +631,60 @@ class TimelineChart extends StatelessWidget {
 
   /// The least gap between two marks in a lane.
   static const _gap = 8.0;
+
+  /// The most events stacked one above another at a time before they are
+  /// drawn as one mark, with their number.
+  static const mostStacked = 5;
+
+  /// The events (not spans or high Sabbaths) whose dots fall so close
+  /// together, placed by [px], that more than [mostStacked] would stack,
+  /// each such run by the id of its mark (see [_clusterEntry]): from each
+  /// event, those starting within a dot and a gap of it.
+  Map<String, List<StudyTimelineEntry>> _clusters(
+    double Function(double position) px,
+  ) {
+    final points = [
+      for (final e in entries)
+        if (!e.isSpan && !e.isHighSabbath)
+          (entry: e, x: px(timelineEntryReach(timeline, e).start)),
+    ]..sort((a, b) => a.x.compareTo(b.x));
+    final clusters = <String, List<StudyTimelineEntry>>{};
+    var i = 0;
+    while (i < points.length) {
+      var j = i;
+      while (j < points.length && points[j].x - points[i].x < _dot + _gap) {
+        j++;
+      }
+      if (j - i > mostStacked) {
+        final run = [for (final p in points.sublist(i, j)) p.entry]
+          ..sort(compareTimelineEntries);
+        clusters['cluster-${run.first.id}'] = run;
+        i = j;
+      } else {
+        i++;
+      }
+    }
+    return clusters;
+  }
+
+  /// The mark standing for the run of [events] clustered as [id]: at the
+  /// first's time, called by their kind and number, "Births ×11", where they
+  /// share a category, else "7 events".
+  StudyTimelineEntry _clusterEntry(String id, List<StudyTimelineEntry> events) {
+    final first = events.first;
+    final categories = {for (final e in events) e.category};
+    final category = categories.length == 1 ? categories.single : '';
+    return StudyTimelineEntry(
+      id: id,
+      title: category.isEmpty
+          ? '${events.length} events'
+          : '$category ×${events.length}',
+      timelineId: timeline.id,
+      start: first.start,
+      part: first.part,
+      category: category,
+    );
+  }
 
   /// The narrowest a title is cut to before it is left out altogether.
   static const _leastTitle = 28.0;
@@ -711,6 +798,7 @@ class _EntryMark extends StatelessWidget {
     this.countedDays = 0,
     this.titleWidth = 0,
     this.showTitle = true,
+    this.stacked = 0,
     this.color,
     required this.selected,
     required this.tooltip,
@@ -724,6 +812,10 @@ class _EntryMark extends StatelessWidget {
   /// Whether its title shows beside it, cut short where its label has too
   /// little room; left out, it is in [tooltip].
   final bool showTitle;
+
+  /// For a mark standing for several events stacked too close together
+  /// (see [TimelineChart.mostStacked]), how many; 0 for one entry.
+  final int stacked;
 
   /// For a span with entries grouped under it, the button after its title
   /// that shows or hides them.
@@ -830,6 +922,15 @@ class _EntryMark extends StatelessWidget {
                         color: dot,
                         border: selected
                             ? Border.all(color: scheme.onSurface, width: 2)
+                            : null,
+                        // Several events as one, a halo round its dot.
+                        boxShadow: stacked > 0
+                            ? [
+                                BoxShadow(
+                                  color: dot.withValues(alpha: 0.35),
+                                  spreadRadius: 3,
+                                ),
+                              ]
                             : null,
                       ),
                     ),
@@ -2165,6 +2266,89 @@ class _TimelinePageState extends State<TimelinePage> {
     }
   }
 
+  /// The width the chart was last laid out in, to zoom within.
+  double _viewport = 0;
+
+  /// A run of events drawn as one mark (see [TimelineChart.onTapCluster]):
+  /// each listed, opening its details, and a way to zoom in until they
+  /// stand apart.
+  Future<void> _showCluster(List<StudyTimelineEntry> events) async {
+    final choice = await showModalBottomSheet<Object>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${events.length} events',
+                  style: theme.textTheme.titleLarge,
+                ),
+                Text(
+                  [
+                    timelineEntryTime(_timeline, events.first),
+                    if (events.last.start != events.first.start)
+                      timelineEntryTime(_timeline, events.last),
+                  ].join(' – '),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                TextButton.icon(
+                  key: const ValueKey('timeline-cluster-zoom'),
+                  onPressed: () => Navigator.pop(sheetContext, true),
+                  icon: const Icon(Icons.zoom_in),
+                  label: const Text('Zoom in to these'),
+                ),
+                for (final e in events)
+                  ListTile(
+                    key: ValueKey('timeline-cluster-row-${e.id}'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    leading: Icon(
+                      timelineEntryIcon(e),
+                      color: timelineEntryColor(
+                        _timeline,
+                        e,
+                        theme.brightness,
+                        theme.colorScheme.tertiary,
+                      ),
+                    ),
+                    title: Text(e.title),
+                    subtitle: Text(timelineEntryTime(_timeline, e)),
+                    onTap: () => Navigator.pop(sheetContext, e),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case StudyTimelineEntry entry:
+        await _show(entry);
+      case true:
+        // Wide enough that a dot and a gap between each two fit.
+        final reaches = [
+          for (final e in events) timelineEntryReach(_timeline, e).start,
+        ];
+        final from = reaches.reduce(math.min);
+        final to = reaches.reduce(math.max);
+        final margin = math.max(
+          (to - from) / 2,
+          _timeline.hasMonths ? 15 / 354 : 0.5,
+        );
+        _fitTo((start: from - margin, end: to + margin), _viewport);
+    }
+  }
+
   /// A day of the calendar: its entries (among them any high Sabbath), and,
   /// given the callbacks, ways to keep it as a high Sabbath, an event of its
   /// own with a title and notes, or to add another event on it.
@@ -2359,7 +2543,7 @@ class _TimelinePageState extends State<TimelinePage> {
     final editTimeline = widget.onEditTimeline;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final viewport = constraints.maxWidth;
+        final viewport = _viewport = constraints.maxWidth;
         final focus = timelineFocus(_timeline, entries);
         final ppu = _pixelsPerUnit ?? _scaleFor(focus, viewport);
         // Fitted first to the entries, scrolled to them on one year's
@@ -2566,6 +2750,7 @@ class _TimelinePageState extends State<TimelinePage> {
                                               ),
                                           },
                                           onToggleGroup: _toggleGroup,
+                                          onTapCluster: _showCluster,
                                         ),
                                         if (_drag case final drag?)
                                           Positioned(

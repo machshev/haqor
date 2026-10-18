@@ -324,4 +324,69 @@ void _groupingTests() {
     expect(find.byKey(const ValueKey('timeline-row-23')), findsOneWidget);
     expect(find.byKey(const ValueKey('timeline-row-7')), findsNothing);
   });
+
+  testWidgets('more than five events stacked at a time are drawn as one', (
+    tester,
+  ) async {
+    final requests = <GetBibleEvents>[];
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(home: BibleTimelinePage(sendRequest: requests.add)),
+    );
+    final sons = [
+      for (final (i, son) in [
+        'Reuben',
+        'Simeon',
+        'Levi',
+        'Judah',
+        'Dan',
+        'Naphtali',
+        'Gad',
+      ].indexed)
+        _event(60 + i, 'Birth of $son', -1758 + i ~/ 4),
+    ];
+    assignRustSignal['BibleEvents']!(
+      BibleEvents(
+        requestId: requests.single.requestId,
+        events: [
+          _event(1, 'Creation of all things', -4004),
+          ...sons,
+          _event(400, 'Paul arrives at Rome', 60),
+        ],
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+
+    // Drawn as one mark, though each is still listed.
+    final mark = find.byKey(const ValueKey('timeline-mark-cluster-60'));
+    expect(mark, findsOneWidget);
+    expect(find.text('Births ×7'), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-mark-61')), findsNothing);
+    expect(find.byKey(const ValueKey('timeline-mark-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-row-61')), findsOneWidget);
+
+    // Opened, it lists them, each opening its details.
+    await tester.tap(mark);
+    await tester.pumpAndSettle();
+    expect(find.text('7 events'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('timeline-cluster-row-63')));
+    await tester.pumpAndSettle();
+    expect(find.text('Birth of Judah'), findsWidgets);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    // Zoomed in to them, they stand apart.
+    await tester.tap(mark);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('timeline-cluster-zoom')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('timeline-mark-cluster-60')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('timeline-mark-61')), findsOneWidget);
+  });
 }
