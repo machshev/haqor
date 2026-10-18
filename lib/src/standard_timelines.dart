@@ -97,8 +97,9 @@ final _moadim = StandardTimeline(
       timelineId: '',
       start: const TimelineTime(0, month: 1, day: 14),
       part: TimelineDayPart.evening,
-      // Kept at the place of pilgrimage, the first of its days.
-      category: _chag,
+      // A single day, kept where the pilgrims came up for Chag haMatzot, and
+      // named with it, but not a chag of its own.
+      category: _qorban,
       verses: [
         _ref(_leviticus, 23, 5),
         _ref(_exodus, 12, 6),
@@ -112,14 +113,16 @@ final _moadim = StandardTimeline(
       note:
           '"In the first month, in the fourteenth of the month, between the '
           'evenings, a passing over (pesach) to Yahweh" (Leviticus 23:5); "I '
-          'will pass over (ufasachti) you" (Exodus 12:13). Part of the '
-          'pilgrimage: "the sacrifice of the pilgrimage of the passing over '
-          '(zevach chag hapesach)" (Exodus 34:25); "thou mayest not '
-          'sacrifice the pesach within any of thy gates, but at the place '
-          'which Yahweh thy God shall choose ... and thou shalt turn in the '
-          'morning and go to thy tents" (Deuteronomy 16:5-7); "the pesach, a '
-          'pilgrimage (chag) of seven days" (Ezekiel 45:21); "many went up to '
-          'Jerusalem out of the country before the pascha" (John 11:55).',
+          'will pass over (ufasachti) you" (Exodus 12:13). A single day, '
+          'kept where the pilgrims came up, the evening before Chag '
+          'haMatzot: "thou mayest not sacrifice the pesach within any of thy '
+          'gates, but at the place which Yahweh thy God shall choose ... and '
+          'thou shalt turn in the morning and go to thy tents" (Deuteronomy '
+          '16:5-7); "many went up to Jerusalem out of the country before the '
+          'pascha" (John 11:55). Named with the pilgrimage that follows it: '
+          '"the sacrifice of the pilgrimage of the passing over (zevach chag '
+          'hapesach)" (Exodus 34:25); "the pesach, a pilgrimage of seven '
+          'days" (Ezekiel 45:21), the seven those of Matzot.',
     ),
     StudyTimelineEntry(
       id: 'matzot',
@@ -211,6 +214,9 @@ final _moadim = StandardTimeline(
       title: 'Chag Shavuot (pilgrimage of weeks)',
       timelineId: '',
       start: const TimelineTime(0, month: 3, day: 6),
+      // A span of its one day, to stand with the other pilgrimages.
+      end: const TimelineTime(0, month: 3, day: 6),
+      duration: const TimelineDuration(1, _day),
       category: _chag,
       pin: const TimelinePin('omer', TimelineDuration(50, _day)),
       verses: [
