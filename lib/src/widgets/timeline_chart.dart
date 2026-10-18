@@ -7,6 +7,7 @@ import '../bible_data.dart';
 import '../study_workspace.dart';
 import 'markdown_note.dart';
 import 'timeline_calendar.dart';
+import 'timeline_wheel.dart';
 
 /// The stretch of a timeline's axis drawn (as positions, see
 /// [StudyTimeline.positionOf]): its entries' (see [timelineFocus]), but
@@ -1124,6 +1125,20 @@ class _TimelinePageState extends State<TimelinePage> {
   late StudyTimeline _timeline = widget.timeline;
   late List<StudyTimelineEntry> _entries = widget.entries;
   late bool _calendar = widget.initialCalendar && widget.timeline.hasMonths;
+
+  /// Whether the year is shown as a wheel (see [TimelineWheel]), rather
+  /// than the timeline or the calendar.
+  bool _wheel = false;
+
+  bool get _chart => !_calendar && !_wheel;
+
+  /// Shows the timeline drawn to scale, fitted again to its entries; the
+  /// calendar ([calendar] true); or the year's wheel ([wheel] true).
+  void _showView({bool calendar = false, bool wheel = false}) => setState(() {
+    _calendar = calendar;
+    _wheel = wheel;
+    _pixelsPerUnit = null;
+  });
   late double _year = _firstYear();
   TimelineTime? _selectedDay;
   final _horizontal = ScrollController();
@@ -1254,6 +1269,45 @@ class _TimelinePageState extends State<TimelinePage> {
     final from = at(math.min(drag.from, drag.to));
     final to = at(math.max(drag.from, drag.to));
     _fitTo((start: from, end: to), viewport, label: false);
+  }
+
+  /// The controls over the chart: zoom out, fit to the entries, pick a
+  /// stretch to zoom into by dragging, and zoom in.
+  Widget _zoomBar(double viewport) {
+    Widget button(
+      String tooltip,
+      IconData icon,
+      VoidCallback onPressed, {
+      bool? selected,
+    }) => IconButton(
+      tooltip: tooltip,
+      icon: Icon(icon, size: 20),
+      isSelected: selected,
+      visualDensity: VisualDensity.compact,
+      onPressed: onPressed,
+    );
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 1,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          button('Zoom out', Icons.zoom_out, () => _zoom(1 / 1.5, viewport)),
+          button(
+            'Fit to entries',
+            Icons.fit_screen_outlined,
+            () => _fitEntries(viewport),
+          ),
+          button(
+            'Drag across the timeline to zoom in',
+            Icons.highlight_alt,
+            () => setState(() => _selecting = !_selecting),
+            selected: _selecting,
+          ),
+          button('Zoom in', Icons.zoom_in, () => _zoom(1.5, viewport)),
+        ],
+      ),
+    );
   }
 
   /// Shows or hides the seasons of the land, kept with the timeline where
@@ -1635,7 +1689,7 @@ class _TimelinePageState extends State<TimelinePage> {
         final ppu = _pixelsPerUnit ?? _scaleFor(focus, viewport);
         // Fitted first to the entries, scrolled to them on one year's
         // calendar, which is drawn whole.
-        if (_pixelsPerUnit == null && !_calendar && entries.isNotEmpty) {
+        if (_pixelsPerUnit == null && _chart && entries.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && _pixelsPerUnit == null) _fitEntries(viewport);
           });
@@ -1654,48 +1708,25 @@ class _TimelinePageState extends State<TimelinePage> {
                   selectedIcon: const Icon(Icons.eco),
                   onPressed: _toggleSeasons,
                 ),
-              if (_timeline.hasMonths)
-                IconButton(
-                  tooltip: _calendar ? 'Show timeline' : 'Show calendar',
-                  icon: Icon(
-                    _calendar ? Icons.timeline : Icons.calendar_month_outlined,
+              if (_timeline.hasMonths) ...[
+                if (!_chart)
+                  IconButton(
+                    tooltip: 'Show timeline',
+                    icon: const Icon(Icons.timeline),
+                    onPressed: _showView,
                   ),
-                  onPressed: () => setState(() {
-                    _calendar = !_calendar;
-                    // Back on the timeline, fitted again to its entries.
-                    _pixelsPerUnit = null;
-                  }),
-                ),
-              if (!_calendar) ...[
-                IconButton(
-                  tooltip: 'Zoom out',
-                  icon: const Icon(Icons.zoom_out),
-                  onPressed: entries.isEmpty
-                      ? null
-                      : () => _zoom(1 / 1.5, viewport),
-                ),
-                IconButton(
-                  tooltip: 'Fit to entries',
-                  icon: const Icon(Icons.fit_screen_outlined),
-                  onPressed: entries.isEmpty
-                      ? null
-                      : () => _fitEntries(viewport),
-                ),
-                IconButton(
-                  tooltip: 'Drag across the timeline to zoom in',
-                  isSelected: _selecting,
-                  icon: const Icon(Icons.highlight_alt),
-                  onPressed: entries.isEmpty
-                      ? null
-                      : () => setState(() => _selecting = !_selecting),
-                ),
-                IconButton(
-                  tooltip: 'Zoom in',
-                  icon: const Icon(Icons.zoom_in),
-                  onPressed: entries.isEmpty
-                      ? null
-                      : () => _zoom(1.5, viewport),
-                ),
+                if (!_calendar)
+                  IconButton(
+                    tooltip: 'Show calendar',
+                    icon: const Icon(Icons.calendar_month_outlined),
+                    onPressed: () => _showView(calendar: true),
+                  ),
+                if (!_wheel)
+                  IconButton(
+                    tooltip: 'Show year wheel',
+                    icon: const Icon(Icons.donut_large),
+                    onPressed: () => _showView(wheel: true),
+                  ),
               ],
               if (add != null)
                 PopupMenuButton<bool>(
@@ -1727,7 +1758,23 @@ class _TimelinePageState extends State<TimelinePage> {
                 ),
             ],
           ),
-          body: _calendar && _timeline.hasMonths
+          body: _wheel && _timeline.hasMonths
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _calendarBar(theme),
+                    Expanded(
+                      child: TimelineWheel(
+                        timeline: _timeline,
+                        entries: entries,
+                        year: _year,
+                        selectedId: _selectedId,
+                        onTapEntry: _show,
+                      ),
+                    ),
+                  ],
+                )
+              : _calendar && _timeline.hasMonths
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -1765,76 +1812,87 @@ class _TimelinePageState extends State<TimelinePage> {
                       constraints: BoxConstraints(
                         maxHeight: constraints.maxHeight * 0.55,
                       ),
-                      child: Scrollbar(
-                        controller: _horizontal,
-                        child: SingleChildScrollView(
-                          controller: _horizontal,
-                          scrollDirection: Axis.horizontal,
-                          // Picking a stretch, a touch drag is the pick's.
-                          physics: _selecting
-                              ? const NeverScrollableScrollPhysics()
-                              : null,
-                          padding: const EdgeInsets.only(top: 12),
-                          child: SingleChildScrollView(
-                            child: GestureDetector(
-                              key: const ValueKey('timeline-drag-zoom'),
-                              // A mouse drag doesn't scroll, so always picks.
-                              supportedDevices: _selecting
-                                  ? null
-                                  : const {PointerDeviceKind.mouse},
-                              dragStartBehavior: DragStartBehavior.down,
-                              onHorizontalDragStart: (d) => setState(
-                                () => _drag = (
-                                  from: d.localPosition.dx,
-                                  to: d.localPosition.dx,
-                                ),
-                              ),
-                              onHorizontalDragUpdate: (d) => setState(
-                                () => _drag = (
-                                  from: _drag?.from ?? d.localPosition.dx,
-                                  to: d.localPosition.dx,
-                                ),
-                              ),
-                              onHorizontalDragEnd: (_) =>
-                                  _zoomToDrag(ppu, viewport),
-                              onHorizontalDragCancel: () =>
-                                  setState(() => _drag = null),
-                              child: Stack(
-                                children: [
-                                  TimelineChart(
-                                    timeline: _timeline,
-                                    entries: entries,
-                                    pixelsPerUnit: ppu,
-                                    seasons: _timeline.showSeasons,
-                                    selectedId: _selectedId,
-                                    onTapEntry: _show,
+                      child: Stack(
+                        children: [
+                          Scrollbar(
+                            controller: _horizontal,
+                            child: SingleChildScrollView(
+                              controller: _horizontal,
+                              scrollDirection: Axis.horizontal,
+                              // Picking a stretch, a touch drag is the pick's.
+                              physics: _selecting
+                                  ? const NeverScrollableScrollPhysics()
+                                  : null,
+                              // Room above for the controls over the chart.
+                              padding: const EdgeInsets.only(top: 48),
+                              child: SingleChildScrollView(
+                                child: GestureDetector(
+                                  key: const ValueKey('timeline-drag-zoom'),
+                                  // A mouse drag doesn't scroll, so always picks.
+                                  supportedDevices: _selecting
+                                      ? null
+                                      : const {PointerDeviceKind.mouse},
+                                  dragStartBehavior: DragStartBehavior.down,
+                                  onHorizontalDragStart: (d) => setState(
+                                    () => _drag = (
+                                      from: d.localPosition.dx,
+                                      to: d.localPosition.dx,
+                                    ),
                                   ),
-                                  if (_drag case final drag?)
-                                    Positioned(
-                                      left: math.min(drag.from, drag.to),
-                                      width: (drag.to - drag.from).abs(),
-                                      top: 0,
-                                      bottom: 0,
-                                      child: IgnorePointer(
-                                        child: DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            color: theme.colorScheme.primary
-                                                .withValues(alpha: 0.12),
-                                            border: Border.symmetric(
-                                              vertical: BorderSide(
-                                                color:
-                                                    theme.colorScheme.primary,
+                                  onHorizontalDragUpdate: (d) => setState(
+                                    () => _drag = (
+                                      from: _drag?.from ?? d.localPosition.dx,
+                                      to: d.localPosition.dx,
+                                    ),
+                                  ),
+                                  onHorizontalDragEnd: (_) =>
+                                      _zoomToDrag(ppu, viewport),
+                                  onHorizontalDragCancel: () =>
+                                      setState(() => _drag = null),
+                                  child: Stack(
+                                    children: [
+                                      TimelineChart(
+                                        timeline: _timeline,
+                                        entries: entries,
+                                        pixelsPerUnit: ppu,
+                                        seasons: _timeline.showSeasons,
+                                        selectedId: _selectedId,
+                                        onTapEntry: _show,
+                                      ),
+                                      if (_drag case final drag?)
+                                        Positioned(
+                                          left: math.min(drag.from, drag.to),
+                                          width: (drag.to - drag.from).abs(),
+                                          top: 0,
+                                          bottom: 0,
+                                          child: IgnorePointer(
+                                            child: DecoratedBox(
+                                              decoration: BoxDecoration(
+                                                color: theme.colorScheme.primary
+                                                    .withValues(alpha: 0.12),
+                                                border: Border.symmetric(
+                                                  vertical: BorderSide(
+                                                    color: theme
+                                                        .colorScheme
+                                                        .primary,
+                                                  ),
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    ),
-                                ],
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                          Positioned(
+                            top: 0,
+                            right: 8,
+                            child: _zoomBar(viewport),
+                          ),
+                        ],
                       ),
                     ),
                     const Divider(height: 1),

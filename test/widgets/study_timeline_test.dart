@@ -8,6 +8,7 @@ import 'package:haqor/src/widgets/study_timeline_editor.dart';
 import 'package:haqor/src/widgets/study_workspace_panel.dart';
 import 'package:haqor/src/widgets/timeline_calendar.dart';
 import 'package:haqor/src/widgets/timeline_chart.dart';
+import 'package:haqor/src/widgets/timeline_wheel.dart';
 
 const _timeline = StudyTimeline(
   id: 'kings',
@@ -1115,6 +1116,99 @@ void main() {
     );
     expect(find.byKey(const ValueKey('calendar-moon-1-15')), findsOneWidget);
     expect(find.byKey(const ValueKey('calendar-moon-1-14')), findsNothing);
+  });
+
+  testWidgets('the year wheel sets the feasts round the year, and opens '
+      'one tapped', (tester) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+      showSeasons: true,
+    );
+    StudyTimelineEntry event(String id, int month, int day) =>
+        StudyTimelineEntry(
+          id: id,
+          title: id,
+          timelineId: 'feasts',
+          start: TimelineTime(0, month: month, day: day),
+        );
+    final passover = event('Passover', 1, 14);
+    final firstDay = event('First day', 1, 15);
+    final trumpets = event('Trumpets', 7, 1);
+    const unleavened = StudyTimelineEntry(
+      id: 'unleavened',
+      title: 'Unleavened Bread',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 1, day: 15),
+      end: TimelineTime(0, month: 1, day: 21),
+    );
+    const tabernacles = StudyTimelineEntry(
+      id: 'tabernacles',
+      title: 'Tabernacles',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 7, day: 15),
+      end: TimelineTime(0, month: 7, day: 21),
+    );
+    final entries = [passover, firstDay, trumpets, unleavened, tabernacles];
+    final marks = timelineWheelMarks(feasts, entries, 0);
+    TimelineWheelMark mark(String id) =>
+        marks.singleWhere((m) => m.entry.id == id);
+    // Trumpets stands about half the year round from Passover.
+    expect(mark('Trumpets').from - mark('Passover').from, closeTo(0.5, 0.05));
+    // Events a day apart take rings of labels of their own.
+    expect(mark('First day').labelRadius, isNot(mark('Passover').labelRadius));
+    // Spans apart round the wheel share a ring of arcs.
+    expect(mark('unleavened').radius, mark('tabernacles').radius);
+    expect(mark('unleavened').to, greaterThan(mark('unleavened').from));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TimelinePage(
+          timeline: feasts,
+          entries: entries,
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Show year wheel'));
+    await tester.pumpAndSettle();
+    final wheel = tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey('timeline-wheel')),
+        matching: find.byType(CustomPaint),
+      ),
+    );
+    final radius = wheel.shortestSide / 2;
+    Offset at(TimelineWheelMark m) =>
+        timelineWheelPoint(wheel.center, m.radius * radius, m.from);
+    await tester.tapAt(at(mark('Trumpets')));
+    await tester.pumpAndSettle();
+    expect(find.text('1 Tishri'), findsOneWidget);
+    Navigator.of(tester.element(find.text('1 Tishri'))).pop();
+    await tester.pumpAndSettle();
+    await tester.tapAt(
+      timelineWheelPoint(
+        wheel.center,
+        mark('tabernacles').radius * radius,
+        (mark('tabernacles').from + mark('tabernacles').to) / 2,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('15 Tishri – 21 Tishri'), findsOneWidget);
+    Navigator.of(tester.element(find.text('15 Tishri – 21 Tishri'))).pop();
+    await tester.pumpAndSettle();
+    // A season tapped says what it is: the barley harvest on 1 Iyyar.
+    await tester.tapAt(
+      timelineWheelPoint(wheel.center, 0.8 * radius, 30 / 354),
+    );
+    await tester.pump();
+    expect(
+      find.textContaining('Barley harvest · Exodus 9:31-32'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('the calendar shows Sabbaths and adds high Sabbath events', (
