@@ -100,8 +100,8 @@ to create a GitHub Release.
 - `.github/workflows/databases.yml` obtains the single validated `haqor.db`
   from the matching `haqor-core` release, verifies its SHA-256 manifest and
   core commit, and shares it with platform jobs as the `assets-db` artifact.
-  Older core releases, including the current pinned `0.9.10`, have no release
-  asset and use the legacy generation fallback. Wait for the core publish
+  Core releases before `0.9.11` have no release asset and use the legacy
+  generation fallback. Wait for the core publish
   workflow to finish before bumping the app's core dependency to a new tag.
 - Linux-hosted jobs (databases, Android, CI checks) build inside the Nix
   devshell (`.github/actions/setup-nix-build`) so the toolchain is pinned by
