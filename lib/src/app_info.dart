@@ -9,7 +9,7 @@
 /// be maintained by hand.
 library;
 
-const appVersion = '0.9.15+37';
+const appVersion = '0.9.16+38';
 
 /// Haqor's own licence, as the SPDX identifier the Rust crates declare, and
 /// where its source is. The About view shows both: the AGPL asks that a
