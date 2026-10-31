@@ -504,22 +504,16 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
   /// read as it is; a verse opened there opens in the reader, closing this
   /// timeline too.
   void _openStandard(StandardTimeline standard) {
-    final view = StudyWorkspace.viewOfStandard(standard);
     final navigate = widget.onNavigateToPassage;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => TimelinePage(
-          timeline: view.timeline,
-          entries: view.entries,
-          variants: standard.variants,
-          useEnglishBookNames: widget.useEnglishBookNames,
-          onOpenPassage: (passage) {
-            // Its own page has closed already.
-            Navigator.pop(context);
-            navigate?.call(passage.bookIndex, passage.chapter, passage.verse);
-          },
-        ),
-      ),
+    openStandardTimeline(
+      context,
+      standard,
+      useEnglishBookNames: widget.useEnglishBookNames,
+      onOpenPassage: (passage) {
+        // Its own page has closed already.
+        Navigator.pop(context);
+        navigate?.call(passage.bookIndex, passage.chapter, passage.verse);
+      },
     );
   }
 
@@ -585,4 +579,68 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
       actions: _standardActions,
     );
   }
+}
+
+/// Opens [standard], one of the timelines that come with the app, to be
+/// read as it is, on its entry [entryId] if given. Its links open the
+/// standard timelines they lead to the same way, over it. A verse opened
+/// there closes the page, and every one opened beneath it from a link,
+/// then goes to [onOpenPassage].
+void openStandardTimeline(
+  BuildContext context,
+  StandardTimeline standard, {
+  String? entryId,
+  required bool useEnglishBookNames,
+  required ValueChanged<StudyPassage> onOpenPassage,
+}) {
+  final view = StudyWorkspace.viewOfStandard(standard);
+  // Its entries are its own as a study holding it would have them.
+  final own = '${view.timeline.id}:';
+  final selected = entryId == null ? null : '$own$entryId';
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (pageContext) => TimelinePage(
+        timeline: view.timeline,
+        entries: view.entries,
+        variants: standard.variants,
+        useEnglishBookNames: useEnglishBookNames,
+        initialSelectedId: selected,
+        showInitialSelected: selected != null,
+        onOpenPassage: onOpenPassage,
+        linksOf: (entry) => [
+          for (final link in entry.links)
+            (
+              link: link,
+              title: link.title,
+              timelineTitle:
+                  (standardTimelineLinkedAs(link.timelineId) ?? standard)
+                      .template
+                      .title,
+              back: false,
+            ),
+        ],
+        onOpenLink: (link) {
+          final other = standardTimelineLinkedAs(link.timelineId);
+          final entry = other != null
+              ? link.entryId
+              : link.timelineId == view.timeline.id &&
+                    link.entryId.startsWith(own)
+              ? link.entryId.substring(own.length)
+              : null;
+          if (entry == null) return;
+          openStandardTimeline(
+            pageContext,
+            other ?? standard,
+            entryId: entry,
+            useEnglishBookNames: useEnglishBookNames,
+            onOpenPassage: (passage) {
+              // The page over this one has closed already.
+              Navigator.pop(pageContext);
+              onOpenPassage(passage);
+            },
+          );
+        },
+      ),
+    ),
+  );
 }

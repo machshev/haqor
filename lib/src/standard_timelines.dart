@@ -35,11 +35,26 @@ class StandardTimeline {
 }
 
 /// The standard timelines a study may add.
-final standardTimelines = [_moadim];
+final standardTimelines = [_moadim, _yovel];
 
 /// The standard timeline [id], if there is one.
 StandardTimeline? standardTimelineById(String? id) =>
     standardTimelines.where((s) => s.id == id).firstOrNull;
+
+const _standardLink = 'standard:';
+
+/// The [TimelineLink.timelineId] by which an entry of a standard timeline
+/// links to one of the standard timeline [standardId]: a study holding
+/// that one leads the link to its own timeline linked to it; elsewhere it
+/// opens the standard as it is (see [standardTimelineLinkedAs]).
+String standardLinkTimelineId(String standardId) => '$_standardLink$standardId';
+
+/// The standard timeline a link to [timelineId] leads to, where made by
+/// [standardLinkTimelineId] and not yet led to a study's timeline.
+StandardTimeline? standardTimelineLinkedAs(String timelineId) =>
+    timelineId.startsWith(_standardLink)
+    ? standardTimelineById(timelineId.substring(_standardLink.length))
+    : null;
 
 StudyPassage _ref(int book, int chapter, int verse, [int? endVerse]) =>
     StudyPassage(
@@ -57,6 +72,7 @@ const _deuteronomy = 4;
 const _kings1 = 9;
 const _psalms = 26;
 const _ezra = 35;
+const _daniel = 34;
 const _isaiah = 11;
 const _jeremiah = 12;
 const _ezekiel = 13;
@@ -335,14 +351,28 @@ final _torahEntries = <StudyTimelineEntry>[
       _ref(_numbers, 28, 26),
       _ref(_deuteronomy, 16, 9, 10),
       _ref(_acts, 2, 1),
+      _ref(_leviticus, 25, 8, 10),
+      _ref(_daniel, 9, 25),
     ],
+    links: [_yovelLink('yovel', _yovelTitle)],
     note:
         'The fiftieth day, "the morrow of the seventh sabbath" (Leviticus '
         '23:16): the first day of the week. "A pilgrimage of weeks '
         '(shavuot, sevens) thou shalt make for thee, the first-ripe of the '
         'wheat harvest" (Exodus 34:22); "the day of the first-ripe (yom '
         'habikkurim)" (Numbers 28:26). "In the day of the fiftieth '
-        '(pentēkostē) being fulfilled" (Acts 2:1).',
+        '(pentēkostē) being fulfilled" (Acts 2:1). The yovel is counted in '
+        'the same words, days here and years there: "ye shall count for '
+        'yourselves (u-sefartem lakhem) ... seven complete sabbaths ... '
+        'fifty days" (Leviticus 23:15-16); "thou shalt count for thee '
+        '(ve-safarta lekha) seven sabbaths of years, seven years seven '
+        'times; and the days of the seven sabbaths of years shall be to '
+        'thee nine and forty years ... and ye shall hallow the year of the '
+        'fiftieth year" (Leviticus 25:8, 10), the years called days, as a '
+        'day is given for a year (Numbers 14:34; Ezekiel 4:6). Both counts '
+        'begin "when ye come into the land" (Leviticus 23:10; 25:2). Daniel '
+        'counts years in the feast\'s own word: "seven sevens (shavuʿim '
+        'shivʿah)" (Daniel 9:25), forty-nine years.',
   ),
   StudyTimelineEntry(
     id: 'shavuot-qodesh',
@@ -402,7 +432,9 @@ final _torahEntries = <StudyTimelineEntry>[
       _ref(_leviticus, 16, 29, 34),
       _ref(_numbers, 29, 7, 11),
       _ref(_genesis, 6, 14),
+      _ref(_leviticus, 25, 9),
     ],
+    links: [_yovelLink('shofar', _shofarTitle)],
     note:
         '"Only, on the tenth of this seventh month, a day of the coverings '
         '(yom hakippurim) it is: a calling of holiness it shall be to you, '
@@ -410,7 +442,10 @@ final _torahEntries = <StudyTimelineEntry>[
         'ceasing (shabbat shabbaton) it is to you ... from evening to '
         'evening ye shall cease your ceasing" (Leviticus 23:32). Kippurim '
         'is plural, from kaphar, to cover: "thou shalt cover (kaphar) it '
-        'within and without with covering (kopher)" (Genesis 6:14).',
+        'within and without with covering (kopher)" (Genesis 6:14). In the '
+        'fiftieth year the shofar sounds on it: "in the day of the '
+        'coverings ye shall cause the shofar to pass through all your land" '
+        '(Leviticus 25:9).',
   ),
   StudyTimelineEntry(
     id: 'kippurim-shabbaton',
@@ -1804,6 +1839,7 @@ final _messiahEntries = <StudyTimelineEntry>[
       _ref(_exodus, 32, 28),
       _ref(_jeremiah, 31, 33),
     ],
+    links: [_yovelLink('messiah-common', _commonTitle)],
     note:
         '"And in the day of the fiftieth (pentēkostē) being fulfilled, they '
         'were all with one accord in one place ... and they were all filled '
@@ -1862,3 +1898,531 @@ final _messiahEntries = <StudyTimelineEntry>[
         'Torah; the day from Maccabees.',
   ),
 ];
+
+const _joshua = 5;
+const _year = TimelineDurationUnit.years;
+
+/// A link from an entry of the moʿadim to the yovel's [entryId], or from
+/// one of the yovel's to another of its own.
+TimelineLink _yovelLink(String entryId, String title) =>
+    TimelineLink(standardLinkTimelineId('yovel'), entryId, title: title);
+
+/// A link from an entry of the yovel to the moʿadim's [entryId].
+TimelineLink _moadimLink(String entryId, String title) =>
+    TimelineLink(standardLinkTimelineId('moadim'), entryId, title: title);
+
+const _yovelTitle = 'Shnat haYovel (the year of the yovel)';
+const _shofarTitle = 'Shofar teruʿah (the horn of the shout)';
+const _commonTitle = 'Hapanta koina (all things common)';
+
+const _land = 'Shabbat haʾarets (a sabbath of the land)';
+const _berakhah = 'Berakhah (a blessing)';
+const _deror = 'Deror (liberty)';
+const _navi = 'Navi (a prophet)';
+
+/// The yovel, Leviticus 25: seven sabbaths of years counted from the
+/// coming into the land, and the fiftieth hallowed; counted as the fifty
+/// days to Shavuot are, in years. Each year a year of the land; names
+/// glossed literally, and verses rendered literally.
+final _yovel = StandardTimeline(
+  id: 'yovel',
+  description:
+      'Leviticus 25: seven sabbaths of years from the coming into the land, '
+      'the shofar on Yom haKippurim and the fiftieth year hallowed, counted '
+      'as the fifty days to Shavuot; with the yovel in the prophets and in '
+      'the Messiah, each a reading to show alone or side by side.',
+  template: const StudyTimeline(
+    id: '',
+    title: 'HaYovel (the jubilee): seven sabbaths of years',
+    scale: TimelineScale.years,
+    unit: 'Year',
+    monthNaming: TimelineMonthNaming.numbered,
+    categoryColors: {
+      _land: 0,
+      _qiddush: 1,
+      _berakhah: 2,
+      _deror: 3,
+      _kipper: 4,
+      _messiah: 5,
+      _torah: 6,
+      _navi: 7,
+    },
+    note:
+        '"Thou shalt count for thee seven sabbaths of years, seven years '
+        'seven times; and the days of the seven sabbaths of years shall be '
+        'to thee nine and forty years ... and ye shall hallow the year of '
+        'the fiftieth year" (Leviticus 25:8, 10): the count of the fifty '
+        'days to Shavuot (Leviticus 23:15-16) made in years, each counted '
+        'from the coming into the land (Leviticus 23:10; 25:2). Years are '
+        'counted from the first in the land, each a year of the land, from '
+        'ingathering to ingathering: the chag of the ingathering is "in the '
+        'going out of the year" (Exodus 23:16), "at the turn of the year" '
+        '(Exodus 34:22), and the fiftieth is hallowed by the shofar on the '
+        'tenth of the seventh month (Leviticus 25:9-10). The fiftieth day is '
+        '"the morrow of the seventh sabbath" (Leviticus 23:16), the first '
+        'of a new week; whether the fiftieth year is likewise the first of '
+        'the next forty-nine the text does not say, and both it and the '
+        'forty-ninth are rested (Leviticus 25:4, 11). Names are glossed, '
+        'and verses rendered, literally.',
+  ),
+  variants: [for (final r in _yovelReadings) r.variant],
+  entries: [
+    ..._yovelFrame,
+    for (final r in _yovelReadings) ..._read(r.variant.id, r.entries),
+  ],
+);
+
+const _sabbathYearNote =
+    '"Six years thou shalt sow thy field ... and in the seventh year a '
+    'sabbath of ceasing (shabbat shabbaton) shall be to the land, a sabbath '
+    'to Yahweh: thy field thou shalt not sow, and thy vineyard thou shalt '
+    'not prune" (Leviticus 25:3-4); "that the poor of thy people may eat" '
+    '(Exodus 23:11). "At the end of seven years thou shalt make a release '
+    '(shemittah)" (Deuteronomy 15:1).';
+
+const _ordinals = ['7th', '14th', '21st', '28th', '35th', '42nd', '49th'];
+
+/// What every reading of the yovel shows: the forty-nine years counted,
+/// their seven sabbaths, and the fiftieth.
+final _yovelFrame = <StudyTimelineEntry>[
+  StudyTimelineEntry(
+    id: 'count',
+    title: 'Sheva shabbetot shanim (seven sabbaths of years)',
+    shortTitle: 'Seven sabbaths of years',
+    timelineId: '',
+    start: const TimelineTime(1),
+    end: const TimelineTime(50),
+    duration: const TimelineDuration(49, _year),
+    style: TimelineSpanStyle.arrow,
+    verses: [
+      _ref(_leviticus, 25, 8),
+      _ref(_leviticus, 25, 15, 16),
+      _ref(_leviticus, 23, 15, 16),
+    ],
+    links: [_moadimLink('count', 'Sheva shabbatot temimot')],
+    note:
+        '"And thou shalt count for thee (ve-safarta lekha) seven sabbaths of '
+        'years (sheva shabbetot shanim), seven years seven times; and the '
+        'days of the seven sabbaths of years shall be to thee nine and forty '
+        'years" (Leviticus 25:8), as "ye shall count for yourselves (u-'
+        'sefartem lakhem) ... seven complete sabbaths" of days (Leviticus '
+        '23:15). Every sale of the land is reckoned by it: "according to the '
+        'number of years after the yovel thou shalt buy ... according to the '
+        'number of years of the crops he shall sell to thee" (Leviticus '
+        '25:15).',
+  ),
+  for (final (i, ordinal) in _ordinals.indexed)
+    StudyTimelineEntry(
+      id: 'shabbat-${i + 1}',
+      title: 'Shabbat shabbaton (a sabbath of ceasing): the $ordinal year',
+      shortTitle: 'Sabbath of the land, ${i + 1}',
+      timelineId: '',
+      start: TimelineTime(7.0 * (i + 1)),
+      end: TimelineTime(7.0 * (i + 1) + 1),
+      duration: const TimelineDuration(1, _year),
+      category: _land,
+      verses: [
+        _ref(_leviticus, 25, 2, 7),
+        _ref(_exodus, 23, 10, 11),
+        _ref(_deuteronomy, 15, 1, 2),
+      ],
+      note: i < 6
+          ? _sabbathYearNote
+          : '$_sabbathYearNote The seventh sabbath of years, after which '
+                'the fiftieth is hallowed (Leviticus 25:8-10), as the '
+                'seventh sabbath of the count of days before Shavuot '
+                '(Leviticus 23:16).',
+    ),
+  StudyTimelineEntry(
+    id: 'yovel',
+    title: _yovelTitle,
+    shortTitle: 'Yovel',
+    timelineId: '',
+    start: const TimelineTime(50),
+    end: const TimelineTime(51),
+    duration: const TimelineDuration(1, _year),
+    category: _qiddush,
+    verses: [
+      _ref(_leviticus, 25, 10, 12),
+      _ref(_leviticus, 23, 16),
+      _ref(_leviticus, 27, 24),
+    ],
+    links: [_moadimLink('shavuot', 'Chag Shavuot (pilgrimage of weeks)')],
+    note:
+        '"And ye shall hallow the year of the fiftieth year (shnat '
+        'hachamishim shanah), and proclaim liberty (deror) in the land to '
+        'all its inhabitants: a yovel it shall be to you" (Leviticus 25:10); '
+        '"ye shall not sow, nor reap its aftergrowth ... for it is a yovel; '
+        'holiness it shall be to you" (Leviticus 25:11-12). The fiftieth '
+        'year, as Shavuot is the fiftieth day, "the morrow of the seventh '
+        'sabbath" (Leviticus 23:16).',
+  ),
+];
+
+/// The Torah's yovel: Leviticus 25 and 27, with Deuteronomy 15 and 31.
+final _yovelTorahEntries = <StudyTimelineEntry>[
+  StudyTimelineEntry(
+    id: 'land',
+    title: 'Ki tavoʾu el haʾarets (when ye come into the land)',
+    shortTitle: 'Into the land',
+    timelineId: '',
+    start: const TimelineTime(1),
+    verses: [_ref(_leviticus, 25, 1, 2), _ref(_leviticus, 23, 10)],
+    note:
+        '"When ye come into the land which I give you, then shall the land '
+        'keep a sabbath to Yahweh" (Leviticus 25:2), as the count of days '
+        'begins "when ye come into the land ... and reap its harvest" '
+        '(Leviticus 23:10).',
+  ),
+  StudyTimelineEntry(
+    id: 'jericho',
+    title: 'Shofarot hayyovelim (horns of the yovelim) at Jericho',
+    shortTitle: 'Horns at Jericho',
+    timelineId: '',
+    start: const TimelineTime(1),
+    verses: [_ref(_joshua, 6, 4, 5), _ref(_joshua, 6, 15, 20)],
+    note:
+        '"And seven priests shall bear before the ark seven horns of the '
+        'yovelim (shofarot hayyovelim); and the seventh day ye shall '
+        'compass the city seven times ... and when they make a long blast '
+        'with the horn of the yovel ... all the people shall shout with a '
+        'great shout (teruʿah)" (Joshua 6:4-5): the land entered as it is '
+        'given back, with the horn of the yovel and the shout.',
+  ),
+  StudyTimelineEntry(
+    id: 'blessing',
+    title: 'Birkhati (my blessing): fruit for three years',
+    shortTitle: 'Three years\' fruit',
+    timelineId: '',
+    start: const TimelineTime(6),
+    end: const TimelineTime(9),
+    duration: const TimelineDuration(3, _year),
+    category: _berakhah,
+    verses: [_ref(_leviticus, 25, 18, 22)],
+    note:
+        '"And if ye shall say, What shall we eat in the seventh year? ... '
+        'then I will command my blessing upon you in the sixth year, and it '
+        'shall bring forth fruit for the three years; and ye shall sow the '
+        'eighth year, and eat of old fruit until the ninth year" (Leviticus '
+        '25:20-22). Shown for the first seven; the text gives no '
+        'reckoning for the forty-ninth and fiftieth both rested.',
+  ),
+  StudyTimelineEntry(
+    id: 'reading',
+    title: 'Tiqraʾ et hattorah (thou shalt read the torah)',
+    shortTitle: 'The torah read',
+    timelineId: '',
+    start: const TimelineTime(7),
+    category: _torah,
+    verses: [_ref(_deuteronomy, 31, 10, 13)],
+    note:
+        '"At the end of seven years, in the moʿed of the year of the release '
+        '(shnat hashemittah), in the chag of the sukkot, when all Israel is '
+        'come to appear before Yahweh thy God in the place which he shall '
+        'choose, thou shalt read this torah before all Israel in their '
+        'ears" (Deuteronomy 31:10-11): so every seventh year.',
+  ),
+  StudyTimelineEntry(
+    id: 'release',
+    title: 'Shemittah (a release) of every creditor',
+    shortTitle: 'Release',
+    timelineId: '',
+    start: const TimelineTime(7),
+    category: _deror,
+    verses: [_ref(_deuteronomy, 15, 1, 11)],
+    note:
+        '"Every creditor shall release that which he lent to his neighbour; '
+        'he shall not exact it of his neighbour, or of his brother, because '
+        'Yahweh\'s release has been called" (Deuteronomy 15:2); "only that '
+        'there shall be no needy one among you" (Deuteronomy 15:4): so '
+        'every seventh year.',
+  ),
+  StudyTimelineEntry(
+    id: 'shofar',
+    title: _shofarTitle,
+    shortTitle: 'Shofar',
+    timelineId: '',
+    start: const TimelineTime(50),
+    date: 'The 10th of the 7th month,',
+    category: _kipper,
+    verses: [_ref(_leviticus, 25, 9), _ref(_leviticus, 23, 27)],
+    links: [_moadimLink('kippurim', 'Yom haKippurim (day of the coverings)')],
+    note:
+        '"Then thou shalt cause the shofar of the shout (shofar teruʿah) to '
+        'pass through in the seventh month, on the tenth of the month; in '
+        'the day of the coverings (beyom hakkippurim) ye shall cause the '
+        'shofar to pass through all your land" (Leviticus 25:9): liberty '
+        'proclaimed on the day the people are covered.',
+  ),
+  StudyTimelineEntry(
+    id: 'return',
+    title: 'Ish el achuzzato (each to his possession)',
+    shortTitle: 'Each to his possession',
+    timelineId: '',
+    start: const TimelineTime(50),
+    category: _deror,
+    verses: [
+      _ref(_leviticus, 25, 10),
+      _ref(_leviticus, 25, 13),
+      _ref(_leviticus, 25, 23, 34),
+      _ref(_leviticus, 27, 16, 24),
+      _ref(_numbers, 36, 4),
+    ],
+    note:
+        '"Ye shall return each to his possession, and each to his family ye '
+        'shall return" (Leviticus 25:10); "the land shall not be sold for '
+        'ever (litsmitut), for the land is mine; for ye are strangers and '
+        'sojourners with me" (Leviticus 25:23); "it shall go out in the '
+        'yovel, and he shall return to his possession" (Leviticus 25:28). '
+        'A house in a walled city stays with the buyer after a year '
+        '(Leviticus 25:30); the houses of the villages and of the Levites go '
+        'out (Leviticus 25:31-33).',
+  ),
+  StudyTimelineEntry(
+    id: 'servant',
+    title: 'Veyatsaʾ (and he shall go out): the bought brother',
+    shortTitle: 'The brother goes out',
+    timelineId: '',
+    start: const TimelineTime(50),
+    category: _deror,
+    verses: [_ref(_leviticus, 25, 39, 55)],
+    note:
+        '"Until the year of the yovel he shall serve with thee; and he shall '
+        'go out from thee, he and his children with him, and shall return to '
+        'his own family, and to the possession of his fathers shall he '
+        'return; for they are my servants, which I brought forth out of the '
+        'land of Egypt" (Leviticus 25:40-42); "and he shall reckon with him '
+        'that bought him from the year he was sold to him unto the year of '
+        'the yovel" (Leviticus 25:50).',
+  ),
+];
+
+/// The yovel in the prophets: Jeremiah, Ezekiel, Isaiah and Daniel, with
+/// the land's sabbaths.
+final _yovelProphetsEntries = <StudyTimelineEntry>[
+  StudyTimelineEntry(
+    id: 'weeks',
+    title: 'Shavuʿim shivʿah (seven sevens)',
+    shortTitle: 'Seven sevens',
+    timelineId: '',
+    start: const TimelineTime(1),
+    end: const TimelineTime(50),
+    duration: const TimelineDuration(49, _year),
+    category: _navi,
+    style: TimelineSpanStyle.bracket,
+    verses: [_ref(_daniel, 9, 24, 27)],
+    links: [_moadimLink('shavuot', 'Chag Shavuot (pilgrimage of weeks)')],
+    note:
+        '"Seventy sevens (shavuʿim shivʿim) are cut out upon thy people and '
+        'upon thy holy city" (Daniel 9:24); "from the going forth of the '
+        'word to restore and to build Jerusalem unto Messiah the Prince '
+        'shall be seven sevens (shavuʿim shivʿah), and sixty and two sevens" '
+        '(Daniel 9:25). The sevens of the feast of sevens (chag shavuot, '
+        'Exodus 34:22), counted in years: the first seven sevens a yovel\'s '
+        'forty-nine, the seventy ten of them.',
+  ),
+  StudyTimelineEntry(
+    id: 'zedekiah',
+    title: 'Deror (liberty) proclaimed and taken back',
+    shortTitle: 'Zedekiah\'s deror',
+    timelineId: '',
+    start: const TimelineTime(7),
+    category: _navi,
+    verses: [_ref(_jeremiah, 34, 8, 22)],
+    note:
+        'Zedekiah made a covenant "to proclaim liberty (deror) to them" '
+        '(Jeremiah 34:8), and they let their servants go and caused them to '
+        'return (Jeremiah 34:10-11). "At the end of seven years let ye go '
+        'every man his brother a Hebrew" (Jeremiah 34:14): shown at the '
+        'seventh, as cited. "Behold, I proclaim a liberty (deror) for you, '
+        'saith Yahweh, to the sword, to the pestilence, and to the famine" '
+        '(Jeremiah 34:17).',
+  ),
+  StudyTimelineEntry(
+    id: 'ezekiel-head',
+    title: 'Berosh hashanah (at the head of the year), on the tenth',
+    shortTitle: 'Ezekiel\'s tenth',
+    timelineId: '',
+    start: const TimelineTime(25),
+    date: 'The 10th, at the head of',
+    category: _navi,
+    verses: [_ref(_ezekiel, 40, 1, 4), _ref(_leviticus, 25, 9)],
+    note:
+        '"In the five and twentieth year of our captivity, at the head of '
+        'the year (berosh hashanah), on the tenth of the month ... the hand '
+        'of Yahweh was upon me" (Ezekiel 40:1): the tenth, the day the '
+        'shofar of the yovel sounds (Leviticus 25:9), in the twenty-fifth '
+        'year, half of fifty; the text names no yovel. Shown at its year.',
+  ),
+  StudyTimelineEntry(
+    id: 'land-sabbaths',
+    title:
+        'Tirtseh haʾarets et shabbetoteha (the land shall enjoy her '
+        'sabbaths)',
+    shortTitle: 'The land\'s sabbaths',
+    timelineId: '',
+    start: const TimelineTime(49),
+    category: _land,
+    verses: [
+      _ref(_leviticus, 26, 34, 35),
+      _ref(_chronicles2, 36, 20, 21),
+      _ref(_daniel, 9, 2),
+    ],
+    note:
+        '"Then shall the land enjoy her sabbaths, all the days of its '
+        'desolation ... because it did not rest in your sabbaths, when ye '
+        'dwelt upon it" (Leviticus 26:34-35); "until the land had enjoyed '
+        'her sabbaths: all the days of the desolation she kept sabbath, to '
+        'fulfil seventy years" (2 Chronicles 36:21), the seventy years '
+        'Daniel read before the seventy sevens (Daniel 9:2, 24). Each yovel '
+        'holds seven of the land\'s sabbaths; seventy are ten yovels.',
+  ),
+  StudyTimelineEntry(
+    id: 'prince',
+    title: 'Shnat hadderor (the year of liberty): the prince\'s gift',
+    shortTitle: 'The prince\'s gift',
+    timelineId: '',
+    start: const TimelineTime(50),
+    category: _navi,
+    verses: [_ref(_ezekiel, 46, 16, 18)],
+    note:
+        '"If he give a gift of his inheritance to one of his servants, then '
+        'it shall be his to the year of liberty (shnat hadderor); after it '
+        'shall return to the prince" (Ezekiel 46:17), in the house Ezekiel '
+        'was shown.',
+  ),
+  StudyTimelineEntry(
+    id: 'acceptable',
+    title: 'Shnat ratson (the year of acceptance) of Yahweh',
+    shortTitle: 'Year of acceptance',
+    timelineId: '',
+    start: const TimelineTime(50),
+    category: _navi,
+    verses: [
+      _ref(_isaiah, 61, 1, 3),
+      _ref(_isaiah, 63, 4),
+      _ref(_isaiah, 49, 8, 9),
+    ],
+    links: [_yovelLink('messiah-nazareth', 'This day fulfilled: Nazareth')],
+    note:
+        '"To proclaim liberty (deror) to the captives, and the opening of '
+        'the prison to them that are bound; to proclaim the year of '
+        'acceptance (shnat ratson) of Yahweh, and the day of vengeance of '
+        'our God" (Isaiah 61:1-2): deror, the yovel\'s word (Leviticus '
+        '25:10), and a year beside a day, as again, "the day of vengeance '
+        'is in mine heart, and the year of my redeemed is come" (Isaiah '
+        '63:4); "to cause to inherit the desolate heritages, saying to the '
+        'prisoners, Go forth" (Isaiah 49:8-9).',
+  ),
+];
+
+/// The yovel in the Messiah: Luke 4 and Acts 2-4.
+final _yovelMessiahEntries = <StudyTimelineEntry>[
+  StudyTimelineEntry(
+    id: 'nazareth',
+    title: 'Sēmeron peplērōtai (this day is fulfilled)',
+    shortTitle: 'Nazareth',
+    timelineId: '',
+    start: const TimelineTime(50),
+    category: _messiah,
+    verses: [_ref(_luke, 4, 16, 21), _ref(_isaiah, 61, 1, 2)],
+    links: [
+      _yovelLink(
+        'prophets-acceptable',
+        'Shnat ratson (the year of acceptance) of Yahweh',
+      ),
+    ],
+    note:
+        '"To preach release (aphesis) to the captives ... to send away in '
+        'release (en aphesei) them that are bruised, to preach the '
+        'acceptable year of the Lord. And he closed the book ... This day is '
+        'this scripture fulfilled in your ears" (Luke 4:18-21): read to "the '
+        'year of acceptance" and closed before "the day of vengeance" '
+        '(Isaiah 61:2).',
+  ),
+  StudyTimelineEntry(
+    id: 'common',
+    title: _commonTitle,
+    shortTitle: 'All things common',
+    timelineId: '',
+    start: const TimelineTime(50),
+    category: _deror,
+    verses: [
+      _ref(_acts, 2, 1),
+      _ref(_acts, 2, 44, 45),
+      _ref(_acts, 4, 32, 35),
+      _ref(_deuteronomy, 15, 4),
+    ],
+    links: [
+      _moadimLink(
+        'messiah-pentecost',
+        'Hē hēmera tēs pentēkostēs (the day of the fiftieth)',
+      ),
+    ],
+    note:
+        'From "the day of the fiftieth" (Acts 2:1): "all that believed were '
+        'together, and had all things common, and sold their possessions '
+        'and goods, and parted them to all, as every man had need" (Acts '
+        '2:44-45); "neither was there any among them that lacked" (Acts '
+        '4:34), as the release would have it, "only that there shall be no '
+        'needy one among you" (Deuteronomy 15:4).',
+  ),
+  StudyTimelineEntry(
+    id: 'restitution',
+    title: 'Chronoi apokatastaseōs (times of restoration) of all things',
+    shortTitle: 'Restoration',
+    timelineId: '',
+    start: const TimelineTime(50),
+    category: _messiah,
+    verses: [_ref(_acts, 3, 19, 21), _ref(_leviticus, 25, 10)],
+    note:
+        '"That times of refreshing may come from the presence of the Lord, '
+        'and he may send Jesus Christ ... whom the heaven must receive until '
+        'the times of restoration (apokatastasis) of all things, which God '
+        'has spoken by the mouth of all his holy prophets" (Acts 3:19-21): '
+        'as in the yovel "ye shall return each to his possession" '
+        '(Leviticus 25:10).',
+  ),
+];
+
+/// The readings of the yovel: the Torah's, the prophets', the Messiah's.
+final _yovelReadings =
+    <({TimelineVariant variant, List<StudyTimelineEntry> entries})>[
+      (
+        variant: const TimelineVariant(
+          id: _torahReading,
+          title: 'The Torah: Leviticus 25',
+          shortTitle: 'Torah',
+        ),
+        entries: _yovelTorahEntries,
+      ),
+      (
+        variant: const TimelineVariant(
+          id: 'prophets',
+          title: 'The prophets: Jeremiah, Ezekiel, Isaiah, Daniel',
+          shortTitle: 'Prophets',
+          note:
+              'The yovel\'s liberty (deror) and its count of sevens in the '
+              'prophets: proclaimed and broken under Zedekiah, kept in '
+              'Ezekiel\'s house, proclaimed by the anointed one of Isaiah 61, '
+              'and counted in Daniel\'s sevens. Shown at the year each '
+              'answers to; the text dates none of them in a yovel. Verses '
+              'rendered literally.',
+        ),
+        entries: _yovelProphetsEntries,
+      ),
+      (
+        variant: const TimelineVariant(
+          id: 'messiah',
+          title: 'The Messiah: Luke 4, Acts 2-4',
+          shortTitle: 'Messiah',
+          note:
+              'The year of acceptance read in Nazareth as fulfilled that day '
+              '(Luke 4:21), and from the day of the fiftieth (Acts 2:1) the '
+              'possessions of the believers held in common, none lacking, '
+              'until the times of restoration of all things (Acts 3:21). '
+              'Shown at the fiftieth year. Verses rendered literally.',
+        ),
+        entries: _yovelMessiahEntries,
+      ),
+    ];

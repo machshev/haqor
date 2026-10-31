@@ -3609,7 +3609,9 @@ class _ReaderSessionState extends State<_ReaderSession>
     if (workspace == null) return const [];
     String timelineTitle(String id) => id == bibleTimelineId
         ? bibleTimeline.title
-        : workspace.timelineById(id)?.title ?? '';
+        : workspace.timelineById(id)?.title ??
+              standardTimelineLinkedAs(id)?.template.title ??
+              '';
     // The entry as now stored, the page's copy perhaps older.
     final stored = workspace.timelineEntries
         .where((e) => e.id == entry.id && e.timelineId == entry.timelineId)
@@ -3645,6 +3647,21 @@ class _ReaderSessionState extends State<_ReaderSession>
   void _openTimelineLink(TimelineLink link) {
     if (link.timelineId == bibleTimelineId) {
       _openBibleTimeline(initialEventId: link.entryId);
+      return;
+    }
+    // One that comes with the app, which the study does not hold.
+    if (standardTimelineLinkedAs(link.timelineId) case final standard?) {
+      openStandardTimeline(
+        context,
+        standard,
+        entryId: link.entryId,
+        useEnglishBookNames: _englishBookNames,
+        onOpenPassage: (passage) => _navigateTo(
+          passage.bookIndex,
+          passage.chapter,
+          verse: passage.wholeChapter ? null : passage.verse,
+        ),
+      );
       return;
     }
     final timeline = _activeStudyWorkspace?.timelineById(link.timelineId);

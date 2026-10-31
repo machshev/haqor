@@ -1932,12 +1932,29 @@ class StudyWorkspace {
       ];
     }
     String own(String id) => '${timeline.id}:$id';
+    // A link to a standard timeline the study holds leads to its own.
+    TimelineLink held(TimelineLink link) {
+      final other = standardTimelineLinkedAs(link.timelineId);
+      final holder = other == null
+          ? null
+          : timelines.where((t) => t.standardId == other.id).firstOrNull;
+      return holder == null
+          ? link
+          : TimelineLink(
+              holder.id,
+              '${holder.id}:${link.entryId}',
+              title: link.title,
+            );
+    }
+
     return [
       for (final e in standard.entries)
         StudyTimelineEntry.fromJson({
           ...e.toJson(),
           'id': own(e.id),
           'timeline': timeline.id,
+          if (e.links.isNotEmpty)
+            'links': [for (final link in e.links) held(link).toJson()],
           if (e.pin case final pin?)
             'pin': TimelinePin(
               own(pin.anchorId),

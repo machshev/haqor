@@ -1065,6 +1065,83 @@ void main() {
     expect(entry('messiah-count').end, entry('count').end);
   });
 
+  test('the yovel counts seven sabbaths of years and hallows the fiftieth, '
+      'as the moʿadim count to Shavuot', () {
+    final standard = standardTimelineById('yovel')!;
+    final variants = {for (final v in standard.variants) v.id};
+    expect(variants, ['torah', 'prophets', 'messiah']);
+    final byId = {for (final e in standard.entries) e.id: e};
+    expect(byId, hasLength(standard.entries.length));
+    for (final e in standard.entries) {
+      expect(e.isValid, isTrue, reason: e.id);
+      expect(standard.template.fits(e.start), isTrue, reason: e.id);
+      // Each in a reading, or the frame every reading shows.
+      expect(e.variant.isEmpty || variants.contains(e.variant), isTrue);
+    }
+    final view = StudyWorkspace.viewOfStandard(standard);
+    StudyTimelineEntry entry(String id) =>
+        view.entries.singleWhere((e) => e.id == 'yovel:$id');
+    expect(entry('count').start, const TimelineTime(1));
+    expect(entry('count').end, entry('yovel').start);
+    expect(entry('yovel').start, const TimelineTime(50));
+    expect(
+      [for (var n = 1; n <= 7; n++) entry('shabbat-$n').start.value],
+      [7, 14, 21, 28, 35, 42, 49],
+    );
+    expect(entry('shofar').start, entry('yovel').start);
+  });
+
+  test('the standard timelines link one another, each link to an entry '
+      'there', () {
+    for (final standard in standardTimelines) {
+      for (final e in standard.entries) {
+        for (final link in e.links) {
+          final other = standardTimelineLinkedAs(link.timelineId);
+          expect(other, isNotNull, reason: '${standard.id}:${e.id}');
+          expect(
+            other!.entries.map((o) => o.id),
+            contains(link.entryId),
+            reason: '${standard.id}:${e.id}',
+          );
+          expect(link.title, isNotEmpty);
+        }
+      }
+    }
+    final shavuot = standardTimelineById(
+      'moadim',
+    )!.entries.singleWhere((e) => e.id == 'shavuot');
+    expect(shavuot.links.single.entryId, 'yovel');
+  });
+
+  test('a link to a standard timeline leads to the study\'s own linked to '
+      'it, where it holds one', () {
+    var workspace = const StudyWorkspace(
+      id: 's',
+      name: 'Study',
+    ).addStandardTimeline(standardTimelineById('moadim')!, id: 'm');
+    TimelineLink shavuotLink() => workspace
+        .viewOf('m')
+        .singleWhere((e) => e.id == 'm:shavuot')
+        .links
+        .single;
+    // Not held: it opens the standard as it is.
+    expect(shavuotLink().timelineId, standardLinkTimelineId('yovel'));
+    expect(shavuotLink().entryId, 'yovel');
+    workspace = workspace.addStandardTimeline(
+      standardTimelineById('yovel')!,
+      id: 'y',
+    );
+    expect(shavuotLink(), const TimelineLink('y', 'y:yovel'));
+    expect(workspace.viewOf('y').where(shavuotLink().leadsTo), hasLength(1));
+    // And back again.
+    final back = workspace
+        .viewOf('y')
+        .singleWhere((e) => e.id == 'y:yovel')
+        .links
+        .single;
+    expect(back, const TimelineLink('m', 'm:shavuot'));
+  });
+
   test('a study links the standard moʿadim, and builds on them a timeline '
       'of its own, placed on its own weeks', () {
     final standard = standardTimelineById('moadim')!;
