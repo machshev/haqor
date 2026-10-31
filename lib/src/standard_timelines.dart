@@ -413,6 +413,12 @@ final _moadim = StandardTimeline(
         _ref(_deuteronomy, 16, 15, 16),
         _ref(_chronicles2, 7, 8, 10),
         _ref(_nehemiah, 8, 18),
+        _ref(_leviticus, 23, 34),
+        _ref(_leviticus, 23, 39),
+        _ref(_numbers, 29, 12),
+        _ref(_ezekiel, 45, 21),
+        _ref(_ezekiel, 45, 25),
+        _ref(_nehemiah, 8, 14, 15),
       ],
       note:
           'The third of the three times, the seven days of the sukkot and '
@@ -422,7 +428,20 @@ final _moadim = StandardTimeline(
           'ʿatzeret, according to the judgment" (Nehemiah 8:18); "and in the '
           'eighth day they made an ʿatzeret ... and on the twenty-third day '
           'of the seventh month he sent the people away to their tents" (2 '
-          'Chronicles 7:9-10).',
+          'Chronicles 7:9-10). The first time is named by its first day, '
+          '"the pesach, a chag of seven days" (Ezekiel 45:21), the pesach '
+          'running on into the matzot; but Yom Teruah and Yom haKippurim '
+          'stand apart from the sukkot, and are each a calling of holiness, '
+          'not a chag. Each time the text counts this chag, it counts from '
+          'the fifteenth: "the fifteenth day of this seventh month is the '
+          'chag of the sukkot, seven days to Yahweh" (Leviticus 23:34; so '
+          '23:39 and Numbers 29:12); and Ezekiel, who names the first by '
+          'the pesach, begins this one "in the seventh month, in the '
+          'fifteenth day of the month, in the chag ... seven days" (Ezekiel '
+          '45:25). Gathered at Jerusalem on the first of the month, on the '
+          'second they found the sukkot written, and "proclaimed in all '
+          'their cities, and in Jerusalem, saying, Go forth unto the mount" '
+          '(Nehemiah 8:14-15).',
     ),
     StudyTimelineEntry(
       id: 'sukkot',
