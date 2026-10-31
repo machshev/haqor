@@ -42,6 +42,10 @@ final bibleCreationWeek = TimelineWheelCycle(
   start: bibleTimeline.positionOf(const TimelineTime(-4004)),
   length: 7000,
   title: '7,000 years',
+  description:
+      'Creation week · 7,000 years. '
+      'Each day represents 1,000 years from creation. '
+      'Day 7: Kingdom of Christ. An interpretive reading.',
   segments: const [
     'Day 1 · Light',
     'Day 2 · Firmament',

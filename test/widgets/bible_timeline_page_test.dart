@@ -111,7 +111,7 @@ void main() {
       Uint8List(0),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Show creation week wheel'));
+    await tester.tap(find.byTooltip('Show time span wheel'));
     await tester.pumpAndSettle();
     final wheel = tester.widget<TimelineWheel>(find.byType(TimelineWheel));
     expect(wheel.cycle, bibleCreationWeek);

@@ -5,6 +5,93 @@ import 'package:haqor/src/widgets/timeline_chart.dart';
 import 'package:haqor/src/widgets/timeline_wheel.dart';
 
 void main() {
+  test(
+    'every built-in has its full wheel scale, including older saved links',
+    () {
+      for (final standard in standardTimelines) {
+        final expected = standard.id == 'moadim'
+            ? TimelineExtent.year
+            : TimelineExtent.hayovel;
+        expect(standard.template.extent, expected, reason: standard.id);
+        final view = StudyWorkspace.viewOfStandard(standard);
+        final cycle = timelineCycleOf(view.timeline);
+        if (standard.id == 'moadim') {
+          expect(view.timeline.isAnnual, isTrue);
+          expect(cycle, isNull);
+        } else {
+          expect(cycle!.start, 1);
+          expect(cycle.length, 50);
+          for (final entry in view.entries) {
+            final reach = timelineEntryReach(view.timeline, entry);
+            expect(
+              reach.start,
+              greaterThanOrEqualTo(cycle.start),
+              reason: entry.id,
+            );
+            expect(
+              reach.end,
+              lessThanOrEqualTo(cycle.start + cycle.length),
+              reason: entry.id,
+            );
+          }
+        }
+        final legacy = StudyTimeline.fromJson({
+          ...view.timeline.toJson(),
+          'extent': null,
+        })!;
+        final workspace = const StudyWorkspace(
+          id: 'w',
+          name: 'Old',
+        ).putTimeline(legacy);
+        expect(workspace.viewTimeline(legacy.id)!.extent, expected);
+        final detached = workspace.detachStandardTimeline(legacy);
+        expect(detached.timelineById(legacy.id)!.extent, expected);
+        expect(detached.timelineById(legacy.id)!.standardId, isNull);
+      }
+    },
+  );
+
+  test(
+    'chronology wheels include whole spans and the final event across BC/AD',
+    () {
+      const timeline = StudyTimeline(
+        id: 'history',
+        title: 'History',
+        scale: TimelineScale.calendar,
+      );
+      final entries = [
+        const StudyTimelineEntry(
+          id: 'span',
+          title: 'Span',
+          timelineId: 'history',
+          start: TimelineTime(-10),
+          end: TimelineTime(10),
+        ),
+        const StudyTimelineEntry(
+          id: 'last',
+          title: 'Last',
+          timelineId: 'history',
+          start: TimelineTime(20),
+        ),
+      ];
+      final cycle = timelineChronologyCycle(timeline, entries);
+      final marks = timelineWheelMarks(timeline, entries, -10, cycle: cycle);
+      expect(marks, hasLength(2));
+      expect(marks.first.from, greaterThanOrEqualTo(0));
+      expect(marks.last.from, lessThan(1));
+      expect(cycle.segments.join(' '), isNot(contains('AD 0')));
+      expect(cycle.segments.join(' '), contains('BC'));
+      expect(cycle.segments.join(' '), contains('AD'));
+      final single = timelineChronologyCycle(timeline, [entries.last]);
+      expect(single.length, 1);
+      expect(
+        timelineWheelMarks(timeline, [entries.last], 20, cycle: single),
+        hasLength(1),
+      );
+      expect(timelineChronologyCycle(timeline, []).length, 1);
+    },
+  );
+
   for (final extent in TimelineExtent.values) {
     test(
       '${extent.name} survives JSON and supplies its full viewer extent',

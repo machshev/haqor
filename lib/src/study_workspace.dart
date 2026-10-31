@@ -2052,7 +2052,11 @@ class StudyWorkspace {
       ...t.categoryColors,
     };
     final chain = baseChainOf(timeline);
+    final template = standardTimelineById(timeline.standardId)?.template;
     return timeline.copyWith(
+      extent: () =>
+          timeline.extent ??
+          (template?.scale == timeline.scale ? template?.extent : null),
       categoryColors: {
         for (final base in chain.reversed) ...colours(base),
         ...colours(timeline),
@@ -2110,7 +2114,9 @@ class StudyWorkspace {
     return copyWith(
       timelines: [
         for (final t in timelines)
-          t.id == timeline.id ? t.copyWith(standardId: () => null) : t,
+          t.id == timeline.id
+              ? (viewTimeline(t.id) ?? t).copyWith(standardId: () => null)
+              : t,
       ],
       timelineEntries: [
         ...timelineEntries,

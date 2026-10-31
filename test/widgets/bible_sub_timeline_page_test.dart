@@ -9,6 +9,7 @@ import 'package:haqor/src/widgets/bible_sub_timeline_page.dart';
 import 'package:haqor/src/widgets/bible_timeline_page.dart';
 import 'package:haqor/src/widgets/event_sequence_page.dart';
 import 'package:haqor/src/widgets/timeline_chart.dart';
+import 'package:haqor/src/widgets/timeline_wheel.dart';
 
 BibleEventEntry event(int id, String title, int year, {int duration = 0}) =>
     BibleEventEntry(
@@ -44,6 +45,44 @@ EventSequenceEntry section(String key, List<int> events, {int? expands}) =>
     );
 
 void main() {
+  for (final key in bibleDatedSections) {
+    testWidgets('$key opens a wheel covering its dated events', (tester) async {
+      final s = section(key, [1, 2]);
+      final events = {
+        1: event(1, 'First reign', -955, duration: 41),
+        2: event(2, 'Last event', -892),
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BibleSubTimelinePage(
+            section: s,
+            sequences: BibleSequences([s]),
+            events: events,
+            useEnglishBookNames: true,
+            onOpenPassage: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Show time span wheel'));
+      await tester.pumpAndSettle();
+      final wheel = tester.widget<TimelineWheel>(find.byType(TimelineWheel));
+      expect(wheel.cycle!.length, greaterThan(60));
+      expect(
+        timelineWheelMarks(
+          wheel.timeline,
+          wheel.entries,
+          wheel.year,
+          cycle: wheel.cycle,
+        ),
+        hasLength(2),
+      );
+      expect(find.textContaining('years per segment'), findsOneWidget);
+      expect(find.textContaining('Kingdom of Christ'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   test(
     'dated membership retains lifetimes and durations without its own anchor',
     () {

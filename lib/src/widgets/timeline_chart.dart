@@ -3599,8 +3599,6 @@ class _TimelinePageState extends State<TimelinePage> {
                   IconButton(
                     tooltip: _wheelCycle == null
                         ? 'Show year wheel'
-                        : _timeline.extent == null
-                        ? 'Show creation week wheel'
                         : 'Show time span wheel',
                     icon: const Icon(Icons.donut_large),
                     onPressed: () => _showView(wheel: true),
@@ -3664,15 +3662,12 @@ class _TimelinePageState extends State<TimelinePage> {
                         Padding(
                           padding: const EdgeInsets.all(12),
                           child: Text(
-                            widget.wheelCycle == null
-                                ? [
-                                    _timeline.extent!.label,
-                                    if (_wheelCycle!.dayCount > 0)
-                                      'Evening → Morning · each day begins at sunset',
-                                  ].join(' · ')
-                                : 'Creation week · 7,000 years. '
-                                      'Each day represents 1,000 years from creation. '
-                                      'Day 7: Kingdom of Christ. An interpretive reading.',
+                            _wheelCycle!.description ??
+                                [
+                                  _timeline.extent?.label ?? _wheelCycle!.title,
+                                  if (_wheelCycle!.dayCount > 0)
+                                    'Evening → Morning · each day begins at sunset',
+                                ].join(' · '),
                             textAlign: TextAlign.center,
                           ),
                         ),

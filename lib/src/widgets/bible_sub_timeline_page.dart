@@ -6,6 +6,7 @@ import '../study_workspace.dart';
 import 'bible_timeline_page.dart';
 import 'event_sequence_page.dart';
 import 'timeline_chart.dart';
+import 'timeline_wheel.dart';
 
 /// Presentation choices for broad sections whose dated spans are useful.
 /// Their passage-based order remains available without replacing the dates.
@@ -137,6 +138,7 @@ class BibleSubTimelinePage extends StatelessWidget {
 
     return TimelinePage(
       timeline: timeline,
+      wheelCycle: timelineChronologyCycle(timeline, entries),
       entries: entries,
       useEnglishBookNames: useEnglishBookNames,
       onOpenPassage: onOpenPassage,

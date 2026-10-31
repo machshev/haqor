@@ -124,6 +124,7 @@ final _moadim = StandardTimeline(
     id: '',
     title: 'Moʿadei Yahweh (appointed times of Yahweh)',
     scale: TimelineScale.annual,
+    extent: TimelineExtent.year,
     monthNaming: TimelineMonthNaming.numbered,
     showSeasons: true,
     categoryColors: {

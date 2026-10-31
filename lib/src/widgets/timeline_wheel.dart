@@ -15,10 +15,12 @@ class TimelineWheelCycle {
     required this.title,
     required this.segments,
     this.dayCount = 0,
+    this.description,
   });
   final double start;
   final double length;
   final String title;
+  final String? description;
   final List<String> segments;
 
   /// Literal days divided into evening and morning, starting at sunset.
@@ -76,6 +78,52 @@ TimelineWheelCycle? timelineCycleOf(StudyTimeline timeline) {
         : extent == TimelineExtent.week
         ? 7
         : 0,
+  );
+}
+
+/// A dated section's whole chronology, divided into at most about twelve
+/// readable year intervals. A point occupies its year so the last event
+/// never falls exactly on the excluded end of the wheel.
+TimelineWheelCycle timelineChronologyCycle(
+  StudyTimeline timeline,
+  List<StudyTimelineEntry> entries,
+) {
+  final reaches = [
+    for (final entry in entries)
+      (
+        start: timelineEntryReach(timeline, entry).start,
+        end: entry.isSpan
+            ? timelineEntryReach(timeline, entry).end
+            : timeline.positionOf(entry.start).floorToDouble() + 1,
+      ),
+  ];
+  final first = reaches.isEmpty
+      ? 0.0
+      : reaches.map((r) => r.start).reduce(math.min);
+  final last = reaches.isEmpty
+      ? 1.0
+      : reaches.map((r) => r.end).reduce(math.max);
+  final target = math.max(1.0, (last - first) / 10);
+  final power = math.pow(10, (math.log(target) / math.ln10).floor()).toDouble();
+  final step = [
+    1,
+    2,
+    5,
+    10,
+  ].map((n) => n * power).firstWhere((n) => n >= target);
+  final start = (first / step).floor() * step;
+  final count = math.max(1, ((last - start) / step).ceil());
+  String label(double position) => timeline.formatValue(
+    timeline.isCalendar && position <= 0 ? position - 1 : position,
+  );
+  return TimelineWheelCycle(
+    start: start,
+    length: count * step,
+    title: '${formatTimelineNumber(count * step)} years',
+    description:
+        '${label(start)} – ${label(start + count * step)} · '
+        '${formatTimelineNumber(step)} years per segment',
+    segments: [for (var i = 0; i < count; i++) label(start + i * step)],
   );
 }
 
