@@ -677,6 +677,47 @@ void main() {
     expect(x('booths'), greaterThan(width));
   });
 
+  testWidgets('the chart fills the width, zoomed out and resized', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TimelinePage(
+          timeline: _timeline,
+          entries: const [_temple, _reign],
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    double chart() => tester.getSize(find.byType(TimelineChart)).width;
+
+    // Fitted, the reign ending last, it fills the width.
+    expect(chart(), closeTo(800, 1));
+    // Zoomed out, it fills it still.
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.byTooltip('Zoom out'));
+      await tester.pumpAndSettle();
+    }
+    expect(chart(), closeTo(800, 1));
+
+    // Widened, and narrowed again, as a window, it fills it.
+    tester.view.physicalSize = const Size(1200, 900);
+    await tester.pumpAndSettle();
+    expect(chart(), closeTo(1200, 1));
+    await tester.tap(find.byTooltip('Zoom in'));
+    await tester.pumpAndSettle();
+    final zoomed = chart();
+    tester.view.physicalSize = const Size(600, 900);
+    await tester.pumpAndSettle();
+    // The same stretch shown, its padding as it was.
+    expect(chart(), closeTo((zoomed - 48) * (600 - 48) / (1200 - 48) + 48, 2));
+  });
+
   testWidgets('the timeline page draws entries and opens their verses', (
     tester,
   ) async {

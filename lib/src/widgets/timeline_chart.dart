@@ -2523,10 +2523,10 @@ class _TimelinePageState extends State<TimelinePage> {
     );
   }
 
-  /// The least scale zoomed out to: a quarter of the whole drawn timeline's
-  /// fitted into [width].
+  /// The least scale zoomed out to: the whole drawn timeline's fitted
+  /// into [width], filling it.
   double _minScale(double width) =>
-      _scaleFor(timelineExtent(_timeline, _entries), width) / 4;
+      _scaleFor(timelineExtent(_timeline, _entries), width, label: false);
 
   /// Zooms to the scale fitting [window] into [viewport], scrolled to it.
   void _fitTo(
@@ -2551,9 +2551,51 @@ class _TimelinePageState extends State<TimelinePage> {
   }
 
   /// Zooms to fit the timeline's entries into [viewport], not the whole of
-  /// one year's calendar.
-  void _fitEntries(double viewport) =>
-      _fitTo(timelineFocus(_timeline, _entries), viewport);
+  /// one year's calendar: filling it, unless what ends last is an event,
+  /// whose title runs on past it.
+  void _fitEntries(double viewport) {
+    final last = _entries.isEmpty
+        ? null
+        : _entries.reduce(
+            (a, b) =>
+                timelineEntrySpread(_timeline, b).end >
+                    timelineEntrySpread(_timeline, a).end
+                ? b
+                : a,
+          );
+    _fitTo(
+      timelineFocus(_timeline, _entries),
+      viewport,
+      label: last != null && !last.isSpan,
+    );
+  }
+
+  /// Keeps the chart filling a view resized to [viewport], as a window
+  /// is on a desktop: the stretch shown widened or narrowed with it, its
+  /// first time kept at the left.
+  void _resize(double viewport) {
+    final old = _viewport;
+    final current = _pixelsPerUnit;
+    if (current == null || old <= 0 || viewport == old || !_chart) return;
+    final from = old - TimelineChart.padding * 2;
+    final to = viewport - TimelineChart.padding * 2;
+    if (from <= 0 || to <= 0) return;
+    final next = math.max(current * to / from, _minScale(viewport));
+    final scrolled =
+        _zoomedOffset ?? (_horizontal.hasClients ? _horizontal.offset : 0);
+    final offset = scrolled * next / current;
+    // Taken up by this build, which is the resize's.
+    _pixelsPerUnit = next;
+    _zoomedOffset = offset;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_zoomedOffset != offset) return;
+      _zoomedOffset = null;
+      if (!_horizontal.hasClients) return;
+      _horizontal.jumpTo(
+        offset.clamp(0.0, _horizontal.position.maxScrollExtent),
+      );
+    });
+  }
 
   /// Where the chart is to be scrolled once a zoom is drawn, until then.
   double? _zoomedOffset;
@@ -3478,7 +3520,9 @@ class _TimelinePageState extends State<TimelinePage> {
     final editTimeline = widget.onEditTimeline;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final viewport = _viewport = constraints.maxWidth;
+        final viewport = constraints.maxWidth;
+        _resize(viewport);
+        _viewport = viewport;
         final focus = timelineFocus(_timeline, entries);
         final ppu = _pixelsPerUnit ?? _scaleFor(focus, viewport);
         // Zoomed out, the eras over the rest drawn thin, without titles.
@@ -3486,7 +3530,9 @@ class _TimelinePageState extends State<TimelinePage> {
         final compact =
             widget.overviewCategory != null &&
             ppu <
-                TimelinePage.overviewZoom * _scaleFor(extent, viewport) - 1e-9;
+                TimelinePage.overviewZoom *
+                        _scaleFor(extent, viewport, label: false) -
+                    1e-9;
         // Fitted first to the entries, scrolled to them on one year's
         // calendar, which is drawn whole.
         if (_pixelsPerUnit == null && _chart && entries.isNotEmpty) {
