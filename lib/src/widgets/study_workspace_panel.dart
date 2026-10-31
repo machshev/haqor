@@ -482,12 +482,6 @@ class StudyWorkspacePanel extends StatelessWidget {
     return children;
   }
 
-  // An expanded group or heading marks only where it starts. Material's
-  // default also draws a bar after the children, which stacks up with the
-  // next tile's bar and reads as a stray separator.
-  ShapeBorder _expandedTileShape(BuildContext context) =>
-      Border(top: BorderSide(color: Theme.of(context).dividerColor));
-
   Widget _groupTile(
     BuildContext context,
     StudyWorkspace workspace,
@@ -508,13 +502,16 @@ class StudyWorkspacePanel extends StatelessWidget {
         visualDensity: VisualDensity.compact,
         tilePadding: const EdgeInsetsDirectional.only(end: 0),
         childrenPadding: EdgeInsets.zero,
-        shape: _expandedTileShape(context),
+        // No rules above and below: the indent shows what it holds.
+        shape: const Border(),
+        collapsedShape: const Border(),
+        minTileHeight: 32,
         controlAffinity: ListTileControlAffinity.leading,
         title: _dropTarget(
           workspace,
           group.id,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(vertical: 2),
             child: Text(
               group.name,
               style: Theme.of(
@@ -532,6 +529,9 @@ class StudyWorkspacePanel extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               PopupMenuButton<_GroupAction>(
+                iconSize: 18,
+                padding: const EdgeInsets.all(6),
+                style: _compactMenuStyle,
                 tooltip: 'Group options',
                 onSelected: (action) {
                   switch (action) {
@@ -652,13 +652,16 @@ class StudyWorkspacePanel extends StatelessWidget {
           visualDensity: VisualDensity.compact,
           tilePadding: const EdgeInsetsDirectional.only(end: 0),
           childrenPadding: EdgeInsets.zero,
-          shape: _expandedTileShape(context),
+          // No rules above and below: the indent shows what it holds.
+          shape: const Border(),
+          collapsedShape: const Border(),
+          minTileHeight: 32,
           controlAffinity: ListTileControlAffinity.leading,
           title: _dropTarget(
             workspace,
             section.id,
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(vertical: 2),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -716,6 +719,9 @@ class StudyWorkspacePanel extends StatelessWidget {
                     ),
                   ),
                 PopupMenuButton<_SectionAction>(
+                  iconSize: 18,
+                  padding: const EdgeInsets.all(6),
+                  style: _compactMenuStyle,
                   tooltip: section.isSummary
                       ? 'Summary options'
                       : 'Heading options',
@@ -849,13 +855,16 @@ class StudyWorkspacePanel extends StatelessWidget {
           visualDensity: VisualDensity.compact,
           tilePadding: const EdgeInsetsDirectional.only(end: 0),
           childrenPadding: EdgeInsets.zero,
-          shape: _expandedTileShape(context),
+          // No rules above and below: the indent shows what it holds.
+          shape: const Border(),
+          collapsedShape: const Border(),
+          minTileHeight: 32,
           controlAffinity: ListTileControlAffinity.leading,
           title: _dropTarget(
             workspace,
             timeline.id,
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(vertical: 2),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -906,6 +915,9 @@ class StudyWorkspacePanel extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 PopupMenuButton<_TimelineAction>(
+                  iconSize: 18,
+                  padding: const EdgeInsets.all(6),
+                  style: _compactMenuStyle,
                   tooltip: 'Timeline options',
                   onSelected: (action) {
                     switch (action) {
@@ -1028,8 +1040,7 @@ class StudyWorkspacePanel extends StatelessWidget {
             if (workspace.itemsIn(timeline.id).isEmpty)
               _SectionEmpty(
                 text: timeline.isStandard
-                    ? 'Its entries come with the app. Build a timeline on it '
-                          'from this menu to add your own.'
+                    ? 'Build a timeline on it from this menu to add your own.'
                     : 'Add events and spans from this menu, or from a verse.',
               ),
           ],
@@ -1927,6 +1938,13 @@ typedef _OutlinePlace = ({String? groupId, int index, int depth});
 /// The outline's inset from the panel's sides.
 const _outlinePadding = 8.0;
 
+/// A row.s menu button, as small as the row: 32 pixels square.
+const _compactMenuStyle = ButtonStyle(
+  minimumSize: WidgetStatePropertyAll(Size(32, 32)),
+  maximumSize: WidgetStatePropertyAll(Size(32, 32)),
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+);
+
 /// The width of each level's band in the indent area at the start of the
 /// outline. While dragging, the band under the pointer picks the level the
 /// item lands at; beyond the deepest band, it stays at the natural level of
@@ -2361,6 +2379,7 @@ class _OutlineExpansion extends StatefulWidget {
         data: ListTileTheme.of(context),
         child: ListTileTheme.merge(
           titleAlignment: ListTileTitleAlignment.top,
+          minVerticalPadding: 2,
           child: build(
             PageStorageKey((id, scope?.generation ?? 0)),
             scope?.expanded ?? true,
@@ -2744,7 +2763,7 @@ class _SectionEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+    padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
     child: Text(
       text,
       style: Theme.of(context).textTheme.bodySmall?.copyWith(
