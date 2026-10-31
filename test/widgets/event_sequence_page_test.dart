@@ -438,6 +438,14 @@ void main() {
     for (final e in _sequence.events) {
       expect(key('sequence-event-$e'), findsOneWidget);
     }
+    // The Passover's group ends where Capernaum's begins, one event leading
+    // straight to the next: the boxes are stacked, with no arrow's room
+    // between, only the one's foot and the other's title.
+    expect(
+      tester.getTopLeft(key('sequence-event-5')).dy -
+          tester.getBottomLeft(key('sequence-event-4')).dy,
+      lessThan(50),
+    );
     await tester.tap(key('sequence-fold-toggle'));
     await tester.pumpAndSettle();
     expect(key('sequence-group-0'), findsOneWidget);

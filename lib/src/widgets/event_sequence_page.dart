@@ -527,7 +527,8 @@ class _EventSequencePageState extends State<EventSequencePage> {
     // Where the edges from one row to the next all join one to one, each
     // card straight after the one it follows and nothing between, the cards
     // are stacked without an arrow; an arrow is kept where a card leads to
-    // or follows more than one. Longer edges pass beside the stack.
+    // or follows more than one. Longer edges pass beside the stack, and
+    // where a group ends and the next begins, the boxes are stacked too.
     bool stackable((int, int) edge) {
       final (u, v) = edge;
       return graph.oneToOne.contains(edge) &&
@@ -544,10 +545,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
     final stacked = <(int, int)>{};
     final tight = <int>{};
     for (final MapEntry(key: r, value: edges) in between.entries) {
-      if (ends.containsKey(r) ||
-          starts.containsKey(r + 1) ||
-          _milestoneRows.containsKey(r + 1) ||
-          !edges.every(stackable)) {
+      if (_milestoneRows.containsKey(r + 1) || !edges.every(stackable)) {
         continue;
       }
       tight.add(r);
