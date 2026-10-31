@@ -2633,6 +2633,55 @@ pub async fn get_bible_events(bible: SharedBible) {
                             bases: e.bases,
                         })
                         .collect(),
+                    groupings: s
+                        .groupings
+                        .into_iter()
+                        .map(|g| crate::signals::SequenceGroupingEntry {
+                            key: g.key,
+                            title: g.title,
+                            note: g.note,
+                            groups: g
+                                .groups
+                                .into_iter()
+                                .map(|g| crate::signals::SequenceGroupEntry {
+                                    title: g.title,
+                                    note: g.note,
+                                    parent: g.parent,
+                                    events: g.events,
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                    milestones: s
+                        .milestones
+                        .into_iter()
+                        .map(|m| crate::signals::SequenceMilestoneEntry {
+                            event: m.event,
+                            feast: m.feast,
+                            label: m.label,
+                            book: m.book,
+                            chapter: m.chapter,
+                            verse: m.verse,
+                        })
+                        .collect(),
+                    details: s
+                        .details
+                        .into_iter()
+                        .map(|d| crate::signals::SequenceEventDetailsEntry {
+                            event: d.event,
+                            kinds: d.kinds,
+                            region: d.region,
+                            places: d
+                                .places
+                                .into_iter()
+                                .map(|p| crate::signals::SequencePlaceEntry {
+                                    place: name_summary_entry(p.place),
+                                    label: p.label,
+                                    location: place_location_entry(p.location),
+                                })
+                                .collect(),
+                        })
+                        .collect(),
                 })
                 .collect(),
         }

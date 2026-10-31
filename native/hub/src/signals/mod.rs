@@ -1240,6 +1240,69 @@ pub struct EventSequenceEntry {
     /// Its events, by id, in time order.
     pub events: Vec<u32>,
     pub edges: Vec<SequenceEdgeEntry>,
+    /// Ways of dividing its events into groups that fold and unfold.
+    pub groupings: Vec<SequenceGroupingEntry>,
+    /// The feasts and other marks of time its events fall at, in order.
+    pub milestones: Vec<SequenceMilestoneEntry>,
+    /// What kind each event is and where; only for events given any.
+    pub details: Vec<SequenceEventDetailsEntry>,
+}
+
+/// A division of a sequence's events: Robertson's parts, John's feasts.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SequenceGroupingEntry {
+    pub key: String,
+    pub title: String,
+    pub note: String,
+    /// In order, each before those inside it; the groups holding events in
+    /// the sequence's order.
+    pub groups: Vec<SequenceGroupEntry>,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SequenceGroupEntry {
+    pub title: String,
+    /// Its dates or sections; may be empty.
+    pub note: String,
+    /// The index of the group it is inside.
+    pub parent: Option<u32>,
+    /// Its events; empty for a group of groups.
+    pub events: Vec<u32>,
+}
+
+/// A feast or other mark of time an event of a sequence falls at.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SequenceMilestoneEntry {
+    pub event: u32,
+    /// The moʿadim's key, `pesach` or `sukkot`; another or empty for a
+    /// feast they do not know.
+    pub feast: String,
+    pub label: String,
+    /// The verse saying so; the book counted from 1.
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+}
+
+/// What kind of event an event of a sequence is, and where it happens.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SequenceEventDetailsEntry {
+    pub event: u32,
+    /// The chief first: `healing`, `sign`, `parable`, `journey`, …
+    pub kinds: Vec<String>,
+    /// `north`, `galilee`, `east`, `samaria`, `perea` or `judea`; may be
+    /// empty.
+    pub region: String,
+    /// Its places, the chief first.
+    pub places: Vec<SequencePlaceEntry>,
+}
+
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SequencePlaceEntry {
+    pub place: NameSummaryEntry,
+    /// What it is called there (Cana for TIPNR's Kanah).
+    pub label: String,
+    pub location: PlaceLocationEntry,
 }
 
 /// That one event of a sequence came before another, and what says so:

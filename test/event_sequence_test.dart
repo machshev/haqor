@@ -18,6 +18,9 @@ EventSequenceEntry _sequence(
   expands: expands,
   events: events,
   edges: edges,
+  groupings: const [],
+  milestones: const [],
+  details: const [],
 );
 
 void main() {
@@ -79,6 +82,72 @@ void main() {
       }
     }
     expect(graph.column.values.reduce((a, b) => a < b ? a : b), 0);
+  });
+
+  group('grouped', () {
+    // Two parts: 1 alone, then 2–5 in two groups of their own; 6 in none.
+    final grouping = SequenceGroupingEntry(
+      key: 'parts',
+      title: 'Parts',
+      note: '',
+      groups: [
+        SequenceGroupEntry(title: 'One', note: '', parent: null, events: [1]),
+        SequenceGroupEntry(title: 'Two', note: '', parent: null, events: []),
+        SequenceGroupEntry(title: 'Two a', note: '', parent: 1, events: [2, 4]),
+        SequenceGroupEntry(title: 'Two b', note: '', parent: 1, events: [3, 5]),
+      ],
+    );
+    final tree = GroupingTree(grouping);
+
+    test('a grouping is a tree', () {
+      expect(tree.top, [0, 1]);
+      expect(tree.children(1), [2, 3]);
+      expect(tree.leafOf[5], 3);
+      expect(tree.pathTo(3), [1, 3]);
+      expect(tree.depth(3), 1);
+      expect(tree.eventsOf(1), [2, 4, 3, 5]);
+    });
+
+    test('a folded group is one node with its events\' orderings', () {
+      final graph = SequenceGraph(ministry, grouping: tree);
+      final two = groupNode(1);
+      expect(nodeGroup(two), 1);
+      expect(graph.events, [groupNode(0), two, 6]);
+      expect(graph.nodeOf[4], two);
+      expect(graph.after(groupNode(0)), {two});
+      expect(
+        [
+          for (final (n, bases) in graph.directlyAfter(groupNode(0)))
+            (n, bases.join(', ')),
+        ],
+        [(two, 'Mark, John, Luke')],
+      );
+      expect(graph.groupRows, isEmpty);
+    });
+
+    test('an unfolded group\'s rows follow those before it', () {
+      final graph = SequenceGraph(ministry, grouping: tree, expanded: {1, 2});
+      expect(graph.events, [groupNode(0), 2, 4, groupNode(3), 6]);
+      // 2 and 4 are of unknown order, so they share a row.
+      expect(graph.row[groupNode(0)], 0);
+      expect(graph.row[2], 1);
+      expect(graph.row[4], 1);
+      expect(graph.row[groupNode(3)], 2);
+      // 6, ordered with none, is still below every group.
+      expect(graph.row[6], 3);
+      expect(graph.groupRows, {1: (1, 2), 2: (1, 1)});
+    });
+
+    test('in lanes, each node lies in its own', () {
+      final lane = {1: 0, 2: 1, 3: 1, 4: 2, 5: 0};
+      final graph = SequenceGraph(ministry, laneOf: (n) => lane[n]);
+      expect(graph.lanes.map((l) => l.lane), [0, 1, 2, 1 << 20]);
+      final start = {for (final l in graph.lanes) l.lane: l.start};
+      for (final MapEntry(key: e, value: l) in lane.entries) {
+        expect(graph.column[e], start[l], reason: 'event $e');
+      }
+      expect(graph.column[6], start[1 << 20]);
+    });
   });
 
   test('a sequence inside an event is found through it', () {

@@ -8,6 +8,10 @@ import '../bindings/bindings.dart';
 import '../event_sequence.dart';
 import '../study_workspace.dart';
 import 'markdown_note.dart';
+import 'place_map.dart' show Basemap;
+import 'sequence_map_page.dart';
+import 'sequence_style.dart';
+import 'timeline_calendar.dart' show timelineCategoryColor;
 
 /// The width and height of an event's card in the graph, and the room
 /// between cards across and down.
@@ -21,8 +25,27 @@ const _gapDown = 44.0;
 const _gapRank = 56.0;
 const _gapStack = 16.0;
 
-/// Where the choice of drawing left to right is kept.
+/// The room an unfolded group's title takes before its first row, top to
+/// bottom; left to right, the room each depth of titles takes above the
+/// cards, and the room before a group's first rank.
+const _groupHeader = 30.0;
+const _groupHeaderAcross = 26.0;
+const _groupPad = 12.0;
+
+/// How far each depth of unfolded group is drawn in from the one around it.
+const _groupInset = 6.0;
+
+/// The room a feast's mark takes before the row of its event.
+const _milestoneSpace = 30.0;
+
+/// The room the lanes' names take above them, top to bottom.
+const _laneHeader = 26.0;
+
+/// Where the choices of drawing left to right, in region lanes, and as an
+/// outline are kept.
 const eventSequenceHorizontalKey = 'event_sequence_horizontal';
+const eventSequenceLanesKey = 'event_sequence_lanes';
+const eventSequenceOutlineKey = 'event_sequence_outline';
 
 /// A sequence of the Bible's events drawn as what is known to come before
 /// what: each event below those it follows, joined by the orderings that
@@ -30,6 +53,12 @@ const eventSequenceHorizontalKey = 'event_sequence_horizontal';
 /// to come before it and after it, which are of unknown order to it, and
 /// what each ordering rests on; an event with a sequence of its own opens
 /// it.
+///
+/// A sequence with groupings (Robertson's parts, John's feasts) is drawn
+/// folded into its groups, each unfolded on its own; its events are marked
+/// by their kinds and Gospels, its feasts drawn across it, and its events
+/// can be filtered by kind or person, laid in lanes by region, read as an
+/// outline, and shown on the map.
 class EventSequencePage extends StatefulWidget {
   const EventSequencePage({
     super.key,
@@ -39,6 +68,7 @@ class EventSequencePage extends StatefulWidget {
     required this.useEnglishBookNames,
     required this.onOpenPassage,
     this.focusEventId,
+    this.basemap,
   });
 
   final EventSequenceEntry sequence;
@@ -56,6 +86,10 @@ class EventSequencePage extends StatefulWidget {
   /// sequence opened on it.
   final int? focusEventId;
 
+  /// The basemap its maps draw; the bundled one when null. A test passes
+  /// its own.
+  final Basemap? basemap;
+
   static Future<void> open(
     BuildContext context, {
     required EventSequenceEntry sequence,
@@ -64,6 +98,7 @@ class EventSequencePage extends StatefulWidget {
     required bool useEnglishBookNames,
     required ValueChanged<StudyPassage> onOpenPassage,
     int? focusEventId,
+    Basemap? basemap,
   }) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => EventSequencePage(
@@ -73,6 +108,7 @@ class EventSequencePage extends StatefulWidget {
         useEnglishBookNames: useEnglishBookNames,
         onOpenPassage: onOpenPassage,
         focusEventId: focusEventId,
+        basemap: basemap,
       ),
     ),
   );
@@ -81,32 +117,90 @@ class EventSequencePage extends StatefulWidget {
   State<EventSequencePage> createState() => _EventSequencePageState();
 }
 
+/// An unfolded group's box: where it lies along the flow and across it.
+typedef _Box = ({
+  int group,
+  int depth,
+  double alongStart,
+  double alongEnd,
+  double acrossStart,
+  double acrossEnd,
+});
+
+/// "1 event", "3 events".
+String _events(int n) => n == 1 ? '1 event' : '$n events';
+
 class _EventSequencePageState extends State<EventSequencePage> {
-  late final SequenceGraph _graph = SequenceGraph(widget.sequence);
+  /// Every event, none folded: what is known before and after each.
+  late final SequenceGraph _full = SequenceGraph(widget.sequence);
+  late final List<GroupingTree> _trees = [
+    for (final g in widget.sequence.groupings) GroupingTree(g),
+  ];
+  late final Map<int, SequenceEventDetailsEntry> _details = {
+    for (final d in widget.sequence.details) d.event: d,
+  };
+  late final Map<int, SequenceMilestoneEntry> _milestones = {
+    for (final m in widget.sequence.milestones) m.event: m,
+  };
+
+  /// Each event's place in the order drawn, none folded.
+  late final Map<int, int> _order = {
+    for (final (i, e) in _full.drawnOrder.indexed) e: i,
+  };
+
+  late SequenceGraph _graph;
   final _transform = TransformationController();
+
+  /// The node picked out: an event, or a folded group (see [groupNode]).
   int? _selected;
+
+  /// The grouping drawn, by index, or null for none.
+  int? _grouping;
+
+  /// The groups unfolded.
+  final _expanded = <int>{};
+
+  /// The kinds of event lit, by family, and the person whose events are
+  /// lit; with neither, every event.
+  final _families = <SequenceFamily>{};
+  int? _person;
 
   /// Whether the view has been placed on its first layout.
   bool _placed = false;
 
+  /// The grouping last chosen for each sequence, by key: its key, or empty
+  /// for none.
+  static final _lastGrouping = <String, String>{};
+
   @override
   void initState() {
     super.initState();
-    _loadOrientation();
+    final last = _lastGrouping[widget.sequence.key];
+    _grouping = last == null
+        ? (_trees.isEmpty ? null : 0)
+        : switch (_trees.indexWhere((t) => t.grouping.key == last)) {
+            -1 => null,
+            final i => i,
+          };
+    _loadPreferences();
     final focus = widget.focusEventId;
-    if (focus == null) return;
-    final path = widget.sequences.pathTo(focus);
-    final at = path.indexWhere((s) => s.key == widget.sequence.key);
-    if (at < 0) return;
-    if (at == path.length - 1) {
-      _selected = focus;
-    } else {
-      // The event of this sequence that opens the next on the way.
-      _selected = path[at + 1].expands;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _openInside(path[at + 1], focus: focus);
-      });
+    int? select;
+    if (focus != null) {
+      final path = widget.sequences.pathTo(focus);
+      final at = path.indexWhere((s) => s.key == widget.sequence.key);
+      if (at == path.length - 1) {
+        select = focus;
+      } else if (at >= 0) {
+        // The event of this sequence that opens the next on the way.
+        select = path[at + 1].expands;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _openInside(path[at + 1], focus: focus);
+        });
+      }
     }
+    if (select != null) _unfoldTo(select);
+    _rebuild();
+    _selected = select;
   }
 
   @override
@@ -115,67 +209,296 @@ class _EventSequencePageState extends State<EventSequencePage> {
     super.dispose();
   }
 
+  GroupingTree? get _tree => _grouping == null ? null : _trees[_grouping!];
+
   /// Whether the graph runs left to right, each event right of those it
-  /// follows, rather than top to bottom. Kept for the next sequence opened,
-  /// and between runs.
+  /// follows, rather than top to bottom; whether its events lie in lanes
+  /// by region; and whether it is read as an outline instead. Kept for the
+  /// next sequence opened, and between runs.
   static bool _lastHorizontal = false;
+  static bool _lastLanes = false;
+  static bool _lastOutline = false;
   bool _horizontal = _lastHorizontal;
+  bool _lanes = _lastLanes;
+  bool _outline = _lastOutline;
+
+  /// Whether any of its events has a region, to lay in lanes.
+  late final bool _hasRegions = _details.values.any((d) => d.region.isNotEmpty);
 
   /// The view's size when it was last laid out, to place the graph in after
   /// it is turned.
   Size _viewport = Size.zero;
 
-  Future<void> _loadOrientation() async {
+  Future<void> _loadPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
       final horizontal = prefs.getBool(eventSequenceHorizontalKey);
-      if (horizontal == null || horizontal == _horizontal || !mounted) return;
-      _setOrientation(horizontal, save: false);
+      final lanes = prefs.getBool(eventSequenceLanesKey);
+      final outline = prefs.getBool(eventSequenceOutlineKey);
+      if (lanes != null && lanes != _lanes) _setLanes(lanes, save: false);
+      if (outline != null && outline != _outline) {
+        _setOutline(outline, save: false);
+      }
+      if (horizontal != null && horizontal != _horizontal) {
+        _setOrientation(horizontal, save: false);
+      }
     } catch (_) {
-      // Without stored preferences, the default stands.
+      // Without stored preferences, the defaults stand.
     }
   }
+
+  void _save(String key, bool value) => SharedPreferences.getInstance()
+      .then((p) => p.setBool(key, value))
+      .catchError((_) => false);
 
   void _setOrientation(bool horizontal, {bool save = true}) {
     _lastHorizontal = horizontal;
-    setState(() => _horizontal = horizontal);
-    final at = _selected ?? _graph.rows.firstOrNull?.first;
-    if (at != null && _viewport != Size.zero) _centreOn(at, _viewport);
-    if (save) {
-      SharedPreferences.getInstance()
-          .then((p) => p.setBool(eventSequenceHorizontalKey, horizontal))
-          .catchError((_) => false);
+    setState(() {
+      _horizontal = horizontal;
+      _measure();
+    });
+    _centreOnSelected();
+    if (save) _save(eventSequenceHorizontalKey, horizontal);
+  }
+
+  void _setLanes(bool lanes, {bool save = true}) {
+    _lastLanes = lanes;
+    setState(() {
+      _lanes = lanes;
+      _rebuild();
+    });
+    _centreOnSelected();
+    if (save) _save(eventSequenceLanesKey, lanes);
+  }
+
+  void _setOutline(bool outline, {bool save = true}) {
+    _lastOutline = outline;
+    setState(() => _outline = outline);
+    if (!outline) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _centreOnSelected();
+      });
+    }
+    if (save) _save(eventSequenceOutlineKey, outline);
+  }
+
+  void _setGrouping(int? grouping) {
+    _lastGrouping[widget.sequence.key] = grouping == null
+        ? ''
+        : _trees[grouping].grouping.key;
+    final selected = _selected;
+    final event = selected == null
+        ? null
+        : nodeGroup(selected) == null
+        ? selected
+        : null;
+    setState(() {
+      _grouping = grouping;
+      _expanded.clear();
+      if (event != null) _unfoldTo(event);
+      _rebuild();
+      _selected = event;
+    });
+    _centreOnSelected();
+  }
+
+  /// Unfolds the groups holding [event], so that it is drawn.
+  void _unfoldTo(int event) {
+    final tree = _tree;
+    final leaf = tree?.leafOf[event];
+    if (tree == null || leaf == null) return;
+    _expanded.addAll(tree.pathTo(leaf));
+  }
+
+  /// The graph drawn again for the grouping, the groups unfolded and the
+  /// lanes; the node picked out kept, or the group it is folded in.
+  void _rebuild() {
+    _graph = SequenceGraph(
+      widget.sequence,
+      grouping: _tree,
+      expanded: _expanded,
+      laneOf: _lanes && _hasRegions ? _laneOf : null,
+    );
+    final selected = _selected;
+    if (selected != null && !_graph.events.contains(selected)) {
+      _selected = switch (nodeGroup(selected)) {
+        null => _graph.nodeOf[selected],
+        final g => _graph.nodeOf[_tree?.eventsOf(g).firstOrNull],
+      };
+    }
+    _measure();
+  }
+
+  /// The lane of [node]: its region's, or for a folded group the region
+  /// most of its events are in.
+  int? _laneOf(int node) {
+    final g = nodeGroup(node);
+    if (g == null) return regionLane(_details[node]?.region ?? '');
+    final count = <int, int>{};
+    for (final e in _tree!.eventsOf(g)) {
+      final lane = regionLane(_details[e]?.region ?? '');
+      if (lane != null) count[lane] = (count[lane] ?? 0) + 1;
+    }
+    if (count.isEmpty) return null;
+    return count.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+  }
+
+  void _toggle(int group) {
+    setState(() {
+      if (!_expanded.remove(group)) _expanded.add(group);
+      _rebuild();
+      if (_expanded.contains(group)) {
+        // Its first event or group picked out, where the eye goes next.
+        _selected = null;
+      } else {
+        _selected = groupNode(group);
+      }
+    });
+    if (!_outline) {
+      final first = _expanded.contains(group)
+          ? _graph.events.firstWhere(
+              (n) => _graph.groupRows[group]?.$1 == _graph.row[n],
+              orElse: () => groupNode(group),
+            )
+          : groupNode(group);
+      if (_graph.events.contains(first)) _centreOn(first, _viewport);
     }
   }
 
-  Offset _cardAt(int event) {
-    final rank = _graph.row[event]!.toDouble();
-    final across = _graph.column[event]!;
-    return _horizontal
-        ? Offset(
-            _gapRank / 2 + rank * (_cardWidth + _gapRank),
-            _gapStack + across * (_cardHeight + _gapStack),
-          )
-        : Offset(
-            _gapAcross + across * (_cardWidth + _gapAcross),
-            _gapDown / 2 + rank * (_cardHeight + _gapDown),
-          );
+  void _foldAll(bool unfold) {
+    setState(() {
+      _expanded.clear();
+      if (unfold) {
+        _expanded.addAll(
+          List.generate(_tree?.grouping.groups.length ?? 0, (i) => i),
+        );
+      }
+      _rebuild();
+    });
+    _centreOnSelected();
   }
 
-  Size get _canvas => _horizontal
-      ? Size(
-          _graph.rows.length * (_cardWidth + _gapRank),
-          _graph.width * (_cardHeight + _gapStack) + _gapStack,
-        )
-      : Size(
-          _graph.width * (_cardWidth + _gapAcross) + _gapAcross,
-          _graph.rows.length * (_cardHeight + _gapDown),
-        );
+  /// Picks out [event], unfolding the groups it is in.
+  void _reveal(int event) {
+    setState(() {
+      _unfoldTo(event);
+      _rebuild();
+      _selected = event;
+    });
+    if (!_outline) _centreOn(event, _viewport);
+  }
 
-  /// Shows [event]'s card in the middle of the view across the graph's
+  // The graph's geometry, measured by [_measure] for the graph drawn.
+
+  /// Where each row starts along the flow, and where the last ends.
+  var _rowAt = <double>[];
+  var _alongEnd = 0.0;
+
+  /// Where the first slot starts across the flow, and where the canvas
+  /// ends.
+  var _acrossStart = 0.0;
+  var _acrossEnd = 0.0;
+  var _boxes = <_Box>[];
+
+  /// The feasts drawn, by the row of their event.
+  var _milestoneRows = <int, SequenceMilestoneEntry>{};
+
+  double get _slot =>
+      _horizontal ? _cardHeight + _gapStack : _cardWidth + _gapAcross;
+  double get _cardAlong => _horizontal ? _cardWidth : _cardHeight;
+
+  void _measure() {
+    final graph = _graph;
+    final tree = _tree;
+    final starts = <int, List<int>>{};
+    final ends = <int, List<int>>{};
+    var deepest = 0;
+    for (final MapEntry(key: group, value: (first, last))
+        in graph.groupRows.entries) {
+      if (!_expanded.contains(group)) continue;
+      (starts[first] ??= []).add(group);
+      (ends[last] ??= []).add(group);
+      deepest = math.max(deepest, tree!.depth(group) + 1);
+    }
+    _milestoneRows = {
+      for (final m in widget.sequence.milestones) ?graph.row[m.event]: m,
+    };
+    final headerAlong = _horizontal ? _groupPad : _groupHeader;
+    final laned = graph.lanes.isNotEmpty;
+    var at =
+        (laned && !_horizontal ? _laneHeader : 0.0) +
+        (_horizontal ? _gapRank / 2 : _gapDown / 2);
+    final rowAt = <double>[];
+    for (var r = 0; r < graph.rows.length; r++) {
+      at += _groupPad * (ends[r - 1]?.length ?? 0);
+      at += headerAlong * (starts[r]?.length ?? 0);
+      if (_milestoneRows.containsKey(r)) at += _milestoneSpace;
+      rowAt.add(at);
+      at += _horizontal ? _cardWidth + _gapRank : _cardHeight + _gapDown;
+    }
+    at += _groupPad * (ends[graph.rows.length - 1]?.length ?? 0);
+    _rowAt = rowAt;
+    _alongEnd = at;
+    _acrossStart = _horizontal
+        ? deepest * _groupHeaderAcross + _gapStack
+        : _gapAcross + deepest * _groupInset;
+    // Top to bottom, unfolded groups at least three cards wide, so that
+    // their titles can be read; the cards in the middle.
+    final natural = graph.width * _slot;
+    final least = !_horizontal && deepest > 0 ? 3 * _slot : 0.0;
+    final spare = math.max(0.0, least - natural);
+    _acrossStart += spare / 2;
+    _acrossEnd = _acrossStart + natural + spare / 2 + deepest * _groupInset;
+
+    final boxes = <_Box>[];
+    for (final MapEntry(key: group, value: (first, last))
+        in graph.groupRows.entries) {
+      if (!_expanded.contains(group)) continue;
+      final depth = tree!.depth(group);
+      final outerFirst = starts[first]!
+          .where((g) => tree.depth(g) >= depth)
+          .length;
+      final outerLast = ends[last]!.where((g) => tree.depth(g) >= depth).length;
+      boxes.add((
+        group: group,
+        depth: depth,
+        alongStart:
+            rowAt[first] -
+            (_milestoneRows.containsKey(first) ? _milestoneSpace : 0) -
+            headerAlong * outerFirst,
+        alongEnd: rowAt[last] + _cardAlong + _groupPad * outerLast - 4,
+        acrossStart: _horizontal
+            ? depth * _groupHeaderAcross
+            : depth * _groupInset + 4,
+        acrossEnd: _acrossEnd - depth * _groupInset - 4,
+      ));
+    }
+    // The outer first, so that the inner lie over them.
+    boxes.sort((a, b) => a.depth.compareTo(b.depth));
+    _boxes = boxes;
+  }
+
+  Offset _cardAt(int node) {
+    final along = _rowAt[_graph.row[node]!];
+    final across = _acrossStart + _graph.column[node]! * _slot;
+    return _horizontal ? Offset(along, across) : Offset(across, along);
+  }
+
+  Size get _canvas =>
+      _horizontal ? Size(_alongEnd, _acrossEnd) : Size(_acrossEnd, _alongEnd);
+
+  void _centreOnSelected() {
+    if (_viewport == Size.zero || _outline) return;
+    final at = _selected ?? _graph.rows.firstOrNull?.firstOrNull;
+    if (at != null) _centreOn(at, _viewport);
+  }
+
+  /// Shows [node]'s card in the middle of the view across the graph's
   /// flow, and a little after where it starts along it.
-  void _centreOn(int event, Size viewport) {
-    final card = _cardAt(event);
+  void _centreOn(int node, Size viewport) {
+    if (viewport == Size.zero || !_graph.row.containsKey(node)) return;
+    final card = _cardAt(node);
     final scale = _transform.value.getMaxScaleOnAxis();
     final (x, y) = _horizontal
         ? (
@@ -203,29 +526,37 @@ class _EventSequencePageState extends State<EventSequencePage> {
           widget.onOpenPassage(passage);
         },
         focusEventId: focus,
+        basemap: widget.basemap,
       );
 
-  /// The sequence's note: what it orders, and how.
+  /// The sequence's note, and its grouping's: what it orders, and how.
   void _showNote() => showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (context) => SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.sequence.title,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            MarkdownNote(widget.sequence.note),
-          ],
+    builder: (context) {
+      final theme = Theme.of(context);
+      final tree = _tree;
+      return SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.sequence.title, style: theme.textTheme.titleLarge),
+              const SizedBox(height: 8),
+              MarkdownNote(widget.sequence.note),
+              if (tree != null && tree.grouping.note.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(tree.grouping.title, style: theme.textTheme.titleMedium),
+                const SizedBox(height: 4),
+                MarkdownNote(tree.grouping.note),
+              ],
+            ],
+          ),
         ),
-      ),
-    ),
+      );
+    },
   );
 
   void _openPassage(StudyPassage passage) {
@@ -237,11 +568,201 @@ class _EventSequencePageState extends State<EventSequencePage> {
       '${bookDisplayName(passage.bookIndex, useEnglish: widget.useEnglishBookNames)} '
       '${passage.reference}';
 
-  String _title(int event) => widget.events[event]?.title ?? 'Event $event';
+  String _title(int node) => switch (nodeGroup(node)) {
+    final g? => _tree?[g].title ?? 'Group ${g + 1}',
+    null => widget.events[node]?.title ?? 'Event $node',
+  };
+
+  /// [events] in the order they are drawn, none folded.
+  List<int> _ordered(Iterable<int> events) =>
+      [...events]..sort((a, b) => (_order[a] ?? 0).compareTo(_order[b] ?? 0));
+
+  bool get _filtering => _families.isNotEmpty || _person != null;
+
+  /// Whether [event] is of a kind lit and has the person lit.
+  bool _lit(int event) {
+    if (_families.isNotEmpty &&
+        !kindsOf(_details[event]).any((k) => _families.contains(k.family))) {
+      return false;
+    }
+    final person = _person;
+    if (person != null &&
+        !(widget.events[event]?.people.any((p) => p.id == person) ?? false)) {
+      return false;
+    }
+    return true;
+  }
+
+  /// The moʿadim's entry for a feast, and its colour there.
+  (StudyTimelineEntry?, Color) _feast(String key, ThemeData theme) {
+    final moadim = standardTimelineById('moadim');
+    final entry = moadim?.entries.where((e) => e.id == key).firstOrNull;
+    final index = entry == null ? null : moadim!.template.colorOf(entry);
+    return (
+      entry,
+      index == null
+          ? SequenceFamily.feasts.ink(theme.colorScheme)
+          : timelineCategoryColor(index, theme.brightness),
+    );
+  }
+
+  StudyPassage _milestonePassage(SequenceMilestoneEntry m) =>
+      StudyPassage(bookIndex: m.book - 1, chapter: m.chapter, verse: m.verse);
+
+  /// A feast an event falls at: what the moʿadim say of it, its verse, and
+  /// its event.
+  void _showMilestone(SequenceMilestoneEntry m) => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheet) {
+      final theme = Theme.of(sheet);
+      final (entry, color) = _feast(m.feast, theme);
+      return SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.celebration_outlined, color: color),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(m.label, style: theme.textTheme.titleLarge),
+                  ),
+                ],
+              ),
+              if (entry != null) ...[
+                const SizedBox(height: 4),
+                Text(entry.title, style: theme.textTheme.titleSmall),
+              ],
+              if (entry?.note case final note? when note.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(note, style: theme.textTheme.bodyMedium),
+              ],
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.menu_book_outlined),
+                    label: Text(_reference(_milestonePassage(m))),
+                    onPressed: () {
+                      Navigator.pop(sheet);
+                      _openPassage(_milestonePassage(m));
+                    },
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.adjust),
+                    label: Text(_title(m.event)),
+                    onPressed: () {
+                      Navigator.pop(sheet);
+                      if (_outline) {
+                        setState(() {
+                          _unfoldTo(m.event);
+                          _rebuild();
+                          _selected = m.event;
+                        });
+                      } else {
+                        _reveal(m.event);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+
+  /// The map of [events], titled [title].
+  void _openMap(String title, List<int> events) => SequenceMapPage.open(
+    context,
+    title: title,
+    basemap: widget.basemap,
+    stops: [
+      for (final e in _ordered(events))
+        (
+          event: e,
+          title: _title(e),
+          places: _details[e]?.places ?? const <SequencePlaceEntry>[],
+        ),
+    ],
+    knownBefore: (a, b) => _full.after(a).contains(b),
+    onOpenEvent: _outline
+        ? (e) => setState(() {
+            _unfoldTo(e);
+            _rebuild();
+            _selected = e;
+          })
+        : _reveal,
+  );
+
+  /// The people taking part in its events, the most often first.
+  late final List<(NameSummaryEntry, int)> _people = () {
+    final count = <int, int>{};
+    final who = <int, NameSummaryEntry>{};
+    for (final e in widget.sequence.events) {
+      for (final p in widget.events[e]?.people ?? const <NameSummaryEntry>[]) {
+        count[p.id] = (count[p.id] ?? 0) + 1;
+        who[p.id] = p;
+      }
+    }
+    final list = [for (final id in count.keys) (who[id]!, count[id]!)]
+      ..sort((a, b) {
+        final c = b.$2.compareTo(a.$2);
+        return c != 0 ? c : a.$1.name.compareTo(b.$1.name);
+      });
+    return list;
+  }();
+
+  void _pickPerson() => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheet) => SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(sheet).height * 0.7,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Text(
+                'Light the events of',
+                style: Theme.of(sheet).textTheme.titleMedium,
+              ),
+            ),
+            for (final (person, count) in _people)
+              ListTile(
+                key: ValueKey('sequence-person-${person.id}'),
+                title: Text(person.name),
+                subtitle: person.description.isEmpty
+                    ? null
+                    : Text(person.description, maxLines: 1),
+                trailing: Text('$count'),
+                selected: person.id == _person,
+                onTap: () {
+                  Navigator.pop(sheet);
+                  setState(() => _person = person.id);
+                },
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bar = _filterBar(theme);
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -249,7 +770,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
           children: [
             Text(widget.sequence.title),
             Text(
-              '${_graph.events.length} events in order',
+              '${_full.events.length} events in order',
               style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -258,106 +779,260 @@ class _EventSequencePageState extends State<EventSequencePage> {
         ),
         actions: [
           IconButton(
-            key: const ValueKey('sequence-orientation'),
-            tooltip: _horizontal ? 'Draw top to bottom' : 'Draw left to right',
-            icon: Icon(_horizontal ? Icons.swap_vert : Icons.swap_horiz),
-            onPressed: () => _setOrientation(!_horizontal),
+            key: const ValueKey('sequence-outline'),
+            tooltip: _outline ? 'Draw as a graph' : 'Read as an outline',
+            icon: Icon(_outline ? Icons.account_tree_outlined : Icons.list),
+            onPressed: () => _setOutline(!_outline),
           ),
-          if (widget.sequence.note.isNotEmpty)
+          if (!_outline)
             IconButton(
-              key: const ValueKey('sequence-about'),
-              tooltip: 'About this order',
-              icon: const Icon(Icons.info_outline),
-              onPressed: _showNote,
+              key: const ValueKey('sequence-orientation'),
+              tooltip: _horizontal
+                  ? 'Draw top to bottom'
+                  : 'Draw left to right',
+              icon: Icon(_horizontal ? Icons.swap_vert : Icons.swap_horiz),
+              onPressed: () => _setOrientation(!_horizontal),
             ),
+          PopupMenuButton<String>(
+            key: const ValueKey('sequence-menu'),
+            onSelected: (choice) => switch (choice) {
+              'lanes' => _setLanes(!_lanes),
+              'unfold' => _foldAll(true),
+              'fold' => _foldAll(false),
+              'map' => _openMap(widget.sequence.title, widget.sequence.events),
+              'about' => _showNote(),
+              _ => null,
+            },
+            itemBuilder: (context) => [
+              if (_hasRegions && !_outline)
+                CheckedPopupMenuItem(
+                  key: const ValueKey('sequence-lanes'),
+                  value: 'lanes',
+                  checked: _lanes,
+                  child: const Text('Lanes by region'),
+                ),
+              if (_tree != null) ...[
+                const PopupMenuItem(
+                  key: ValueKey('sequence-unfold-all'),
+                  value: 'unfold',
+                  child: Text('Unfold every group'),
+                ),
+                const PopupMenuItem(
+                  key: ValueKey('sequence-fold-all'),
+                  value: 'fold',
+                  child: Text('Fold every group'),
+                ),
+              ],
+              if (_details.values.any((d) => d.places.isNotEmpty))
+                const PopupMenuItem(
+                  key: ValueKey('sequence-map-all'),
+                  value: 'map',
+                  child: Text('Every event on the map'),
+                ),
+              if (widget.sequence.note.isNotEmpty)
+                const PopupMenuItem(
+                  key: ValueKey('sequence-about'),
+                  value: 'about',
+                  child: Text('About this order'),
+                ),
+            ],
+          ),
         ],
+        bottom: bar,
       ),
       body: Column(
         children: [
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                _viewport = constraints.biggest;
-                if (!_placed) {
-                  _placed = true;
-                  final first = _selected ?? _graph.rows.firstOrNull?.first;
-                  if (first != null) _centreOn(first, constraints.biggest);
-                }
-                return InteractiveViewer(
-                  key: const ValueKey('sequence-graph'),
-                  transformationController: _transform,
-                  constrained: false,
-                  minScale: 0.25,
-                  maxScale: 2,
-                  boundaryMargin: EdgeInsets.all(constraints.maxWidth / 2),
-                  child: _graphView(theme),
-                );
-              },
-            ),
-          ),
+          Expanded(child: _outline ? _outlineView(theme) : _graphPane()),
           _panel(theme),
         ],
       ),
     );
   }
 
+  /// The chips choosing the grouping, and lighting kinds and a person; none
+  /// for a sequence with none of them.
+  PreferredSizeWidget? _filterBar(ThemeData theme) {
+    final families = <SequenceFamily>{
+      for (final d in _details.values)
+        for (final k in kindsOf(d)) k.family,
+    };
+    if (_trees.isEmpty && families.isEmpty && _people.isEmpty) return null;
+    final person = _person;
+    final personName = person == null
+        ? null
+        : _people.where((p) => p.$1.id == person).firstOrNull?.$1.name;
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(48),
+      child: SizedBox(
+        height: 48,
+        child: ListView(
+          key: const ValueKey('sequence-filters'),
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          children: [
+            if (_trees.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: PopupMenuButton<int>(
+                  key: const ValueKey('sequence-grouping'),
+                  tooltip: 'Group by',
+                  initialValue: _grouping ?? -1,
+                  onSelected: (i) => _setGrouping(i < 0 ? null : i),
+                  itemBuilder: (context) => [
+                    for (final (i, t) in _trees.indexed)
+                      PopupMenuItem(
+                        key: ValueKey('sequence-grouping-${t.grouping.key}'),
+                        value: i,
+                        child: Text(t.grouping.title),
+                      ),
+                    const PopupMenuItem(
+                      key: ValueKey('sequence-grouping-none'),
+                      value: -1,
+                      child: Text('No groups'),
+                    ),
+                  ],
+                  child: Chip(
+                    avatar: const Icon(Icons.segment, size: 18),
+                    label: Text(_tree?.grouping.title ?? 'No groups'),
+                    deleteIcon: const Icon(Icons.arrow_drop_down),
+                    onDeleted: null,
+                  ),
+                ),
+              ),
+            if (_people.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: personName == null
+                    ? ActionChip(
+                        key: const ValueKey('sequence-person'),
+                        avatar: const Icon(Icons.person_search_outlined),
+                        label: const Text('Person'),
+                        onPressed: _pickPerson,
+                      )
+                    : InputChip(
+                        key: const ValueKey('sequence-person'),
+                        avatar: const Icon(Icons.person_outline),
+                        label: Text(personName),
+                        selected: true,
+                        showCheckmark: false,
+                        onPressed: _pickPerson,
+                        onDeleted: () => setState(() => _person = null),
+                      ),
+              ),
+            for (final family in SequenceFamily.values)
+              if (families.contains(family))
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: FilterChip(
+                    key: ValueKey('sequence-kind-${family.name}'),
+                    avatar: Icon(
+                      family.icon,
+                      size: 18,
+                      color: family.ink(theme.colorScheme),
+                    ),
+                    label: Text(family.label),
+                    selected: _families.contains(family),
+                    showCheckmark: false,
+                    onSelected: (on) => setState(() {
+                      if (on) {
+                        _families.add(family);
+                      } else {
+                        _families.remove(family);
+                      }
+                    }),
+                  ),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _graphPane() => LayoutBuilder(
+    builder: (context, constraints) {
+      _viewport = constraints.biggest;
+      if (!_placed) {
+        _placed = true;
+        final first = _selected ?? _graph.rows.firstOrNull?.firstOrNull;
+        if (first != null) _centreOn(first, constraints.biggest);
+      }
+      return InteractiveViewer(
+        key: const ValueKey('sequence-graph'),
+        transformationController: _transform,
+        constrained: false,
+        minScale: 0.2,
+        maxScale: 2,
+        boundaryMargin: EdgeInsets.all(constraints.maxWidth / 2),
+        child: _graphView(Theme.of(context)),
+      );
+    },
+  );
+
   Widget _graphView(ThemeData theme) {
     final selected = _selected;
     final before = selected == null ? const <int>{} : _graph.before(selected);
     final after = selected == null ? const <int>{} : _graph.after(selected);
     final scheme = theme.colorScheme;
+    final canvas = _canvas;
     return SizedBox.fromSize(
-      size: _canvas,
+      size: canvas,
       child: Stack(
         children: [
+          if (_graph.lanes.isNotEmpty) ..._laneStripes(theme, canvas),
+          for (final box in _boxes) _groupBox(theme, box),
+          for (final MapEntry(key: row, value: m) in _milestoneRows.entries)
+            _milestoneMark(theme, row, m, canvas),
           Positioned.fill(
-            child: CustomPaint(
-              painter: _EdgePainter(
-                edges: [
-                  for (final (u, v) in _graph.drawnEdges)
-                    (
-                      from:
-                          _cardAt(u) +
-                          (_horizontal
-                              ? const Offset(_cardWidth, _cardHeight / 2)
-                              : const Offset(_cardWidth / 2, _cardHeight)),
-                      to:
-                          _cardAt(v) +
-                          (_horizontal
-                              ? const Offset(0, _cardHeight / 2)
-                              : const Offset(_cardWidth / 2, 0)),
-                      lit:
-                          selected != null &&
-                          (({u, v}.every(
-                                (e) => e == selected || before.contains(e),
-                              )) ||
-                              ({u, v}.every(
-                                (e) => e == selected || after.contains(e),
-                              ))),
-                    ),
-                ],
-                color: scheme.outlineVariant,
-                litColor: scheme.primary,
-                horizontal: _horizontal,
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _EdgePainter(
+                  edges: [
+                    for (final (u, v) in _graph.drawnEdges)
+                      (
+                        from:
+                            _cardAt(u) +
+                            (_horizontal
+                                ? const Offset(_cardWidth, _cardHeight / 2)
+                                : const Offset(_cardWidth / 2, _cardHeight)),
+                        to:
+                            _cardAt(v) +
+                            (_horizontal
+                                ? const Offset(0, _cardHeight / 2)
+                                : const Offset(_cardWidth / 2, 0)),
+                        lit:
+                            selected != null &&
+                            (({u, v}.every(
+                                  (e) => e == selected || before.contains(e),
+                                )) ||
+                                ({u, v}.every(
+                                  (e) => e == selected || after.contains(e),
+                                ))),
+                      ),
+                  ],
+                  color: scheme.outlineVariant,
+                  litColor: scheme.primary,
+                  horizontal: _horizontal,
+                ),
               ),
             ),
           ),
-          for (final event in _graph.events)
+          for (final box in _boxes) _groupTitle(theme, box),
+          for (final node in _graph.events)
             Positioned(
-              left: _cardAt(event).dx,
-              top: _cardAt(event).dy,
+              left: _cardAt(node).dx,
+              top: _cardAt(node).dy,
               width: _cardWidth,
               height: _cardHeight,
               child: _card(
                 theme,
-                event,
+                node,
                 relation: selected == null
                     ? null
-                    : event == selected
+                    : node == selected
                     ? _Relation.selected
-                    : before.contains(event)
+                    : before.contains(node)
                     ? _Relation.before
-                    : after.contains(event)
+                    : after.contains(node)
                     ? _Relation.after
                     : _Relation.unknown,
               ),
@@ -367,29 +1042,269 @@ class _EventSequencePageState extends State<EventSequencePage> {
     );
   }
 
-  Widget _card(ThemeData theme, int event, {_Relation? relation}) {
+  /// Each region's lane, shaded every other one, its name at its head.
+  List<Widget> _laneStripes(ThemeData theme, Size canvas) {
+    final scheme = theme.colorScheme;
+    return [
+      for (final (i, lane) in _graph.lanes.indexed) ...[
+        Positioned(
+          left: _horizontal
+              ? 0
+              : _acrossStart + lane.start * _slot - _gapAcross / 2,
+          top: _horizontal
+              ? _acrossStart + lane.start * _slot - _gapStack / 2
+              : 0,
+          width: _horizontal ? canvas.width : lane.width * _slot,
+          height: _horizontal ? lane.width * _slot : canvas.height,
+          child: ColoredBox(
+            color: i.isEven
+                ? scheme.onSurface.withValues(alpha: 0.035)
+                : Colors.transparent,
+          ),
+        ),
+        Positioned(
+          left: _horizontal
+              ? 4
+              : _acrossStart + lane.start * _slot - _gapAcross / 2,
+          top: _horizontal
+              ? _acrossStart + lane.start * _slot - _gapStack / 2
+              : 4,
+          width: _horizontal ? _gapRank * 3 : lane.width * _slot,
+          child: Text(
+            sequenceRegions.values.elementAtOrNull(lane.lane) ?? 'Unplaced',
+            key: ValueKey('sequence-lane-${lane.lane}'),
+            textAlign: _horizontal ? TextAlign.start : TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    ];
+  }
+
+  Rect _boxRect(_Box box) => _horizontal
+      ? Rect.fromLTRB(
+          box.alongStart,
+          box.acrossStart,
+          box.alongEnd,
+          box.acrossEnd,
+        )
+      : Rect.fromLTRB(
+          box.acrossStart,
+          box.alongStart,
+          box.acrossEnd,
+          box.alongEnd,
+        );
+
+  /// An unfolded group's box.
+  Widget _groupBox(ThemeData theme, _Box box) {
+    final scheme = theme.colorScheme;
+    return Positioned.fromRect(
+      rect: _boxRect(box),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.primary.withValues(alpha: 0.035 + 0.02 * box.depth),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: 0.8),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// An unfolded group's title at the head of its box, with the button
+  /// folding it: drawn over the edges passing it, on its box's ground.
+  Widget _groupTitle(ThemeData theme, _Box box) {
+    final scheme = theme.colorScheme;
+    final group = _tree![box.group];
+    final rect = _boxRect(box);
+    final header = _horizontal ? _groupHeaderAcross : _groupHeader;
+    var ground = scheme.surface;
+    for (var d = 0; d <= box.depth; d++) {
+      ground = Color.alphaBlend(
+        scheme.primary.withValues(alpha: 0.035 + 0.02 * d),
+        ground,
+      );
+    }
+    return Positioned(
+      left: rect.left + 4,
+      top: rect.top + 1,
+      width: math.max(0, rect.width - 8),
+      height: header - 2,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: ground,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox.square(
+                dimension: header - 2,
+                child: IconButton(
+                  key: ValueKey('sequence-fold-${box.group}'),
+                  tooltip: 'Fold ${group.title}',
+                  padding: EdgeInsets.zero,
+                  iconSize: 18,
+                  onPressed: () => _toggle(box.group),
+                  icon: const Icon(Icons.unfold_less),
+                ),
+              ),
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: group.title,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        if (group.note.isNotEmpty)
+                          TextSpan(
+                            text: '  ${group.note}',
+                            style: TextStyle(color: scheme.onSurfaceVariant),
+                          ),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelMedium,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A feast's mark across the graph, before the row of its event.
+  Widget _milestoneMark(
+    ThemeData theme,
+    int row,
+    SequenceMilestoneEntry m,
+    Size canvas,
+  ) {
+    final (_, color) = _feast(m.feast, theme);
+    final at = _rowAt[row] - _milestoneSpace + 4;
+    final label = Material(
+      color: Color.alphaBlend(
+        color.withValues(alpha: 0.18),
+        theme.colorScheme.surface,
+      ),
+      shape: StadiumBorder(side: BorderSide(color: color)),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: () => _showMilestone(m),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.celebration_outlined, size: 14, color: color),
+              const SizedBox(width: 4),
+              Text(
+                _horizontal
+                    ? m.label
+                    : '${m.label} · ${_reference(_milestonePassage(m))}',
+                style: theme.textTheme.labelSmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final line = DecoratedBox(
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.6)),
+    );
+    if (_horizontal) {
+      return Positioned(
+        key: ValueKey('sequence-milestone-${m.event}'),
+        left: at,
+        top: 0,
+        width: _milestoneSpace - 8,
+        height: canvas.height,
+        child: Stack(
+          children: [
+            Positioned(
+              left: (_milestoneSpace - 8) / 2 - 1,
+              top: 0,
+              bottom: 0,
+              width: 2,
+              child: line,
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 8,
+              child: Center(child: RotatedBox(quarterTurns: 3, child: label)),
+            ),
+          ],
+        ),
+      );
+    }
+    return Positioned(
+      key: ValueKey('sequence-milestone-${m.event}'),
+      left: 0,
+      top: at,
+      width: canvas.width,
+      height: _milestoneSpace - 8,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            right: 0,
+            top: (_milestoneSpace - 8) / 2 - 1,
+            height: 2,
+            child: line,
+          ),
+          Positioned(
+            left: _acrossStart,
+            top: 0,
+            bottom: 0,
+            child: Center(child: label),
+          ),
+        ],
+      ),
+    );
+  }
+
+  (Color, Color) _relationColours(
+    ColorScheme scheme,
+    _Relation? relation,
+  ) => switch (relation) {
+    _Relation.selected => (scheme.primaryContainer, scheme.onPrimaryContainer),
+    _Relation.before => (scheme.tertiaryContainer, scheme.onTertiaryContainer),
+    _Relation.after => (scheme.secondaryContainer, scheme.onSecondaryContainer),
+    _ => (scheme.surfaceContainerHigh, scheme.onSurface),
+  };
+
+  Widget _card(ThemeData theme, int node, {_Relation? relation}) {
+    if (nodeGroup(node) case final g?) {
+      return _groupCard(theme, g, relation: relation);
+    }
+    final event = node;
     final scheme = theme.colorScheme;
     final entry = widget.events[event];
     final inner = widget.sequences.expanding[event];
-    final first = entry?.passages.firstOrNull;
-    final (background, foreground) = switch (relation) {
-      _Relation.selected => (
-        scheme.primaryContainer,
-        scheme.onPrimaryContainer,
-      ),
-      _Relation.before => (
-        scheme.tertiaryContainer,
-        scheme.onTertiaryContainer,
-      ),
-      _Relation.after => (
-        scheme.secondaryContainer,
-        scheme.onSecondaryContainer,
-      ),
-      _ => (scheme.surfaceContainerHigh, scheme.onSurface),
-    };
-    final passages = entry?.passages.length ?? 0;
+    final kinds = kindsOf(_details[event]);
+    final chief = kinds.firstOrNull?.family;
+    var (background, foreground) = _relationColours(scheme, relation);
+    if (relation == null && chief != null) background = chief.tint(scheme);
+    final dim =
+        (relation == _Relation.unknown ? 0.45 : 1.0) *
+        (_filtering && !_lit(event) ? 0.3 : 1.0);
     return Opacity(
-      opacity: relation == _Relation.unknown ? 0.45 : 1,
+      opacity: dim,
       child: Material(
         key: ValueKey('sequence-event-$event'),
         color: background,
@@ -405,14 +1320,16 @@ class _EventSequencePageState extends State<EventSequencePage> {
         child: InkWell(
           onTap: () =>
               setState(() => _selected = _selected == event ? null : event),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
-            child: Row(
-              children: [
-                Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (chief != null) Container(width: 4, color: chief.ink(scheme)),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(chief == null ? 10 : 7, 5, 6, 5),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
                         _title(event),
@@ -424,37 +1341,328 @@ class _EventSequencePageState extends State<EventSequencePage> {
                           height: 1.2,
                         ),
                       ),
-                      if (first != null)
-                        Text(
-                          [
-                            _reference(_passage(first)),
-                            if (passages > 1) '+${passages - 1}',
-                          ].join(' '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: foreground.withValues(alpha: 0.75),
+                      Row(
+                        children: [
+                          for (final k in kinds.take(3))
+                            Padding(
+                              padding: const EdgeInsets.only(right: 3),
+                              child: Tooltip(
+                                message: k.label,
+                                child: Icon(
+                                  k.icon,
+                                  size: 13,
+                                  color: relation == null
+                                      ? k.family.ink(scheme)
+                                      : foreground,
+                                ),
+                              ),
+                            ),
+                          if (kinds.isEmpty)
+                            if (entry?.passages.firstOrNull case final first?)
+                              Flexible(
+                                child: Text(
+                                  _reference(_passage(first)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: foreground.withValues(alpha: 0.75),
+                                  ),
+                                ),
+                              ),
+                          const Spacer(),
+                          if (inner != null)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 2),
+                              child: Icon(
+                                Icons.account_tree_outlined,
+                                size: 14,
+                                color: foreground,
+                              ),
+                            ),
+                          GospelMarks(
+                            books: gospelsOf(entry),
+                            color: foreground,
                           ),
-                        ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
-                if (inner != null)
-                  Icon(
-                    Icons.account_tree_outlined,
-                    size: 18,
-                    color: foreground,
-                  ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  /// Beneath the graph: the sequence's note, or the picked event's verses,
-  /// what it is known to follow and precede and on what basis.
+  /// A folded group's card, drawn as a stack: its title, how many events
+  /// it holds (and how many are lit), its feasts, and the button unfolding
+  /// it.
+  Widget _groupCard(ThemeData theme, int group, {_Relation? relation}) {
+    final scheme = theme.colorScheme;
+    final tree = _tree!;
+    final members = tree.eventsOf(group);
+    final lit = _filtering ? members.where(_lit).length : members.length;
+    final feasts = [for (final e in members) ?_milestones[e]];
+    var (background, foreground) = _relationColours(scheme, relation);
+    if (relation == null) background = scheme.surfaceContainerHighest;
+    final dim =
+        (relation == _Relation.unknown ? 0.45 : 1.0) *
+        (_filtering && lit == 0 ? 0.3 : 1.0);
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(10),
+      side: BorderSide(
+        color: relation == _Relation.selected ? scheme.primary : scheme.outline,
+        width: relation == _Relation.selected ? 2 : 1,
+      ),
+    );
+    return Opacity(
+      opacity: dim,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // The cards beneath, a little behind.
+          for (final offset in const [6.0, 3.0])
+            Positioned(
+              left: offset,
+              top: offset,
+              right: -offset,
+              bottom: -offset,
+              child: DecoratedBox(
+                decoration: ShapeDecoration(
+                  color: scheme.surfaceContainer,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(color: scheme.outlineVariant),
+                  ),
+                ),
+              ),
+            ),
+          Positioned.fill(
+            child: Material(
+              key: ValueKey('sequence-group-$group'),
+              color: background,
+              shape: shape,
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () {
+                  final node = groupNode(group);
+                  setState(() => _selected = _selected == node ? null : node);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 5, 0, 5),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              tree[group].title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: foreground,
+                                fontWeight: FontWeight.w700,
+                                height: 1.2,
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    _filtering
+                                        ? '$lit of ${_events(members.length)}'
+                                        : _events(members.length),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: foreground.withValues(alpha: 0.8),
+                                    ),
+                                  ),
+                                ),
+                                for (final m in feasts)
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 4),
+                                    child: Tooltip(
+                                      message: m.label,
+                                      child: Icon(
+                                        Icons.celebration_outlined,
+                                        size: 13,
+                                        color: _feast(m.feast, theme).$2,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        key: ValueKey('sequence-unfold-$group'),
+                        tooltip: 'Unfold',
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 20,
+                        color: foreground,
+                        onPressed: () => _toggle(group),
+                        icon: const Icon(Icons.unfold_more),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The sequence as a list: its groups as headings that fold, its events
+  /// in order beneath them, and its feasts as rules between.
+  Widget _outlineView(ThemeData theme) {
+    final tree = _tree;
+    final items = <Widget>[];
+    void events(List<int> list, int depth) {
+      for (final e in _ordered(list)) {
+        if (_milestones[e] case final m?) {
+          items.add(_outlineMilestone(theme, m, depth));
+        }
+        items.add(_outlineEvent(theme, e, depth));
+      }
+    }
+
+    void group(int g, int depth) {
+      items.add(_outlineGroup(theme, g, depth));
+      if (!_expanded.contains(g)) return;
+      final children = tree!.children(g);
+      if (children.isEmpty) {
+        events(tree[g].events, depth + 1);
+      } else {
+        for (final c in children) {
+          group(c, depth + 1);
+        }
+      }
+    }
+
+    if (tree == null) {
+      events(widget.sequence.events, 0);
+    } else {
+      for (final g in tree.top) {
+        group(g, 0);
+      }
+    }
+    return ListView(
+      key: const ValueKey('sequence-outline-list'),
+      children: items,
+    );
+  }
+
+  Widget _outlineGroup(ThemeData theme, int g, int depth) {
+    final tree = _tree!;
+    final group = tree[g];
+    final members = tree.eventsOf(g);
+    final lit = _filtering ? members.where(_lit).length : members.length;
+    final open = _expanded.contains(g);
+    return Opacity(
+      opacity: _filtering && lit == 0 ? 0.4 : 1,
+      child: ListTile(
+        key: ValueKey('sequence-outline-group-$g'),
+        contentPadding: EdgeInsetsDirectional.only(
+          start: 8 + 16.0 * depth,
+          end: 8,
+        ),
+        selected: _selected == groupNode(g),
+        leading: Icon(open ? Icons.expand_more : Icons.chevron_right),
+        title: Text(
+          group.title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        subtitle: Text(
+          [
+            if (group.note.isNotEmpty) group.note,
+            _filtering
+                ? '$lit of ${_events(members.length)}'
+                : _events(members.length),
+          ].join(' · '),
+        ),
+        onTap: () => _toggle(g),
+        onLongPress: () => setState(() => _selected = groupNode(g)),
+      ),
+    );
+  }
+
+  Widget _outlineMilestone(
+    ThemeData theme,
+    SequenceMilestoneEntry m,
+    int depth,
+  ) {
+    final (_, color) = _feast(m.feast, theme);
+    return InkWell(
+      key: ValueKey('sequence-outline-milestone-${m.event}'),
+      onTap: () => _showMilestone(m),
+      child: Padding(
+        padding: EdgeInsetsDirectional.fromSTEB(16.0 + 16 * depth, 6, 16, 6),
+        child: Row(
+          children: [
+            Icon(Icons.celebration_outlined, size: 16, color: color),
+            const SizedBox(width: 8),
+            Text(
+              '${m.label} · ${_reference(_milestonePassage(m))}',
+              style: theme.textTheme.labelMedium?.copyWith(color: color),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Divider(color: color.withValues(alpha: 0.6))),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _outlineEvent(ThemeData theme, int e, int depth) {
+    final scheme = theme.colorScheme;
+    final entry = widget.events[e];
+    final kinds = kindsOf(_details[e]);
+    final chief = kinds.firstOrNull;
+    final region = sequenceRegions[_details[e]?.region ?? ''];
+    final first = entry?.passages.firstOrNull;
+    return Opacity(
+      opacity: _filtering && !_lit(e) ? 0.35 : 1,
+      child: ListTile(
+        key: ValueKey('sequence-outline-event-$e'),
+        dense: true,
+        contentPadding: EdgeInsetsDirectional.only(
+          start: 8 + 16.0 * depth,
+          end: 12,
+        ),
+        selected: _selected == e,
+        leading: CircleAvatar(
+          radius: 15,
+          backgroundColor:
+              chief?.family.tint(scheme) ?? scheme.surfaceContainer,
+          child: Icon(
+            chief?.icon ?? Icons.circle_outlined,
+            size: 16,
+            color: chief?.family.ink(scheme) ?? scheme.onSurfaceVariant,
+          ),
+        ),
+        title: Text(_title(e)),
+        subtitle: Text(
+          [?region, if (first != null) _reference(_passage(first))].join(' · '),
+        ),
+        trailing: GospelMarks(books: gospelsOf(entry), color: scheme.onSurface),
+        onTap: () => setState(() => _selected = _selected == e ? null : e),
+      ),
+    );
+  }
+
+  /// Beneath the graph: what to do, or the picked event's verses, what it
+  /// is known to follow and precede and on what basis, or the picked
+  /// group's events.
   Widget _panel(ThemeData theme) {
     final selected = _selected;
     final scheme = theme.colorScheme;
@@ -462,134 +1670,21 @@ class _EventSequencePageState extends State<EventSequencePage> {
     if (selected == null) {
       children.add(
         Text(
-          'Each event is drawn below those it is known to follow. '
-          'Tap one to see what is known to come before and after it.',
+          _tree != null
+              ? 'Each group is drawn below those before it; unfold one to see '
+                    'its events, each below those it is known to follow. Tap '
+                    'one to see what is known to come before and after it.'
+              : 'Each event is drawn below those it is known to follow. '
+                    'Tap one to see what is known to come before and after it.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: scheme.onSurfaceVariant,
           ),
         ),
       );
+    } else if (nodeGroup(selected) case final g?) {
+      children.addAll(_groupPanel(theme, g));
     } else {
-      final entry = widget.events[selected];
-      final inner = widget.sequences.expanding[selected];
-      Widget legend(Color color, String text) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(3),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Text(text, style: theme.textTheme.labelMedium),
-        ],
-      );
-      Widget related(String heading, List<(int, List<String>)> list) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          Text(heading, style: theme.textTheme.labelLarge),
-          for (final (event, bases) in list)
-            InkWell(
-              key: ValueKey('sequence-related-$event'),
-              onTap: () => setState(() => _selected = event),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: _title(event),
-                        style: TextStyle(color: scheme.primary),
-                      ),
-                      TextSpan(
-                        text: ' — ${bases.join('; ')}',
-                        style: TextStyle(color: scheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-            ),
-        ],
-      );
-      final follows = _graph.directlyBefore(selected);
-      final precedes = _graph.directlyAfter(selected);
-      children.addAll([
-        Row(
-          children: [
-            Expanded(
-              child: Text(_title(selected), style: theme.textTheme.titleMedium),
-            ),
-            IconButton(
-              tooltip: 'Close',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => setState(() => _selected = null),
-              icon: const Icon(Icons.close),
-            ),
-          ],
-        ),
-        Wrap(
-          spacing: 12,
-          runSpacing: 4,
-          children: [
-            legend(
-              scheme.tertiaryContainer,
-              'Before: ${_graph.before(selected).length}',
-            ),
-            legend(
-              scheme.secondaryContainer,
-              'After: ${_graph.after(selected).length}',
-            ),
-            legend(
-              scheme.surfaceContainerHigh,
-              'Order unknown: ${_graph.unorderedWith(selected)}',
-            ),
-          ],
-        ),
-        if (inner != null) ...[
-          const SizedBox(height: 8),
-          FilledButton.tonalIcon(
-            key: const ValueKey('sequence-open-inner'),
-            onPressed: () => _openInside(inner),
-            icon: const Icon(Icons.account_tree_outlined),
-            label: Text('Open ${inner.title}: ${inner.events.length} events'),
-          ),
-        ],
-        if (entry != null && entry.note.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          MarkdownNote(entry.note),
-        ],
-        if (entry != null && entry.passages.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              for (final p in entry.passages)
-                ActionChip(
-                  avatar: const Icon(Icons.menu_book_outlined),
-                  label: Text(_reference(_passage(p))),
-                  onPressed: () => _openPassage(_passage(p)),
-                ),
-            ],
-          ),
-        ],
-        if (follows.isNotEmpty) related('Comes after', follows),
-        if (precedes.isNotEmpty) related('Comes before', precedes),
-        if (follows.isEmpty && precedes.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              'Nothing orders it among the others.',
-              style: theme.textTheme.bodySmall,
-            ),
-          ),
-      ]);
+      children.addAll(_eventPanel(theme, selected));
     }
     return Material(
       color: scheme.surfaceContainerLow,
@@ -614,6 +1709,336 @@ class _EventSequencePageState extends State<EventSequencePage> {
       ),
     );
   }
+
+  Widget _heading(ThemeData theme, String title) => Row(
+    children: [
+      Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
+      IconButton(
+        tooltip: 'Close',
+        visualDensity: VisualDensity.compact,
+        onPressed: () => setState(() => _selected = null),
+        icon: const Icon(Icons.close),
+      ),
+    ],
+  );
+
+  /// How many of [events] are of each family, the most first.
+  Widget _familyCounts(ThemeData theme, List<int> events) {
+    final count = <SequenceFamily, int>{};
+    for (final e in events) {
+      for (final f in {for (final k in kindsOf(_details[e])) k.family}) {
+        count[f] = (count[f] ?? 0) + 1;
+      }
+    }
+    final list = count.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return Wrap(
+      spacing: 10,
+      runSpacing: 4,
+      children: [
+        for (final MapEntry(key: f, value: n) in list)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(f.icon, size: 16, color: f.ink(theme.colorScheme)),
+              const SizedBox(width: 3),
+              Text('${f.label} $n', style: theme.textTheme.labelMedium),
+            ],
+          ),
+      ],
+    );
+  }
+
+  List<Widget> _groupPanel(ThemeData theme, int g) {
+    final tree = _tree!;
+    final group = tree[g];
+    final members = _ordered(tree.eventsOf(g));
+    final placed = members.where(
+      (e) => _details[e]?.places.isNotEmpty ?? false,
+    );
+    final scheme = theme.colorScheme;
+    return [
+      _heading(theme, group.title),
+      if (group.note.isNotEmpty)
+        Text(
+          group.note,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      const SizedBox(height: 6),
+      _familyCounts(theme, members),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          FilledButton.tonalIcon(
+            key: const ValueKey('sequence-panel-unfold'),
+            onPressed: () => _toggle(g),
+            icon: Icon(
+              _expanded.contains(g) ? Icons.unfold_less : Icons.unfold_more,
+            ),
+            label: Text(
+              _expanded.contains(g)
+                  ? 'Fold'
+                  : 'Unfold: ${_events(members.length)}',
+            ),
+          ),
+          if (placed.isNotEmpty)
+            OutlinedButton.icon(
+              key: const ValueKey('sequence-panel-map'),
+              onPressed: () => _openMap(group.title, members),
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('Map'),
+            ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      for (final e in members)
+        InkWell(
+          key: ValueKey('sequence-member-$e'),
+          onTap: () => _outline
+              ? setState(() {
+                  _unfoldTo(e);
+                  _rebuild();
+                  _selected = e;
+                })
+              : _reveal(e),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              children: [
+                Icon(
+                  kindsOf(_details[e]).firstOrNull?.icon ?? Icons.circle,
+                  size: 14,
+                  color:
+                      kindsOf(_details[e]).firstOrNull?.family.ink(scheme) ??
+                      scheme.outline,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _title(e),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ];
+  }
+
+  List<Widget> _eventPanel(ThemeData theme, int selected) {
+    final scheme = theme.colorScheme;
+    final entry = widget.events[selected];
+    final inner = widget.sequences.expanding[selected];
+    final details = _details[selected];
+    final kinds = kindsOf(details);
+    final milestone = _milestones[selected];
+    Widget legend(Color color, String text) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(text, style: theme.textTheme.labelMedium),
+      ],
+    );
+    Widget related(String heading, List<(int, List<String>)> list) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Text(heading, style: theme.textTheme.labelLarge),
+        for (final (event, bases) in list)
+          InkWell(
+            key: ValueKey('sequence-related-$event'),
+            onTap: () => _outline
+                ? setState(() {
+                    _unfoldTo(event);
+                    _rebuild();
+                    _selected = event;
+                  })
+                : _reveal(event),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: _title(event),
+                      style: TextStyle(color: scheme.primary),
+                    ),
+                    TextSpan(
+                      text: ' — ${bases.join('; ')}',
+                      style: TextStyle(color: scheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ),
+      ],
+    );
+    final follows = _full.directlyBefore(selected);
+    final precedes = _full.directlyAfter(selected);
+    final region = sequenceRegions[details?.region ?? ''];
+    final places = details?.places ?? const <SequencePlaceEntry>[];
+    final people = [
+      for (final p in entry?.people ?? const <NameSummaryEntry>[])
+        if (p.kind == 'person') p,
+    ];
+    return [
+      _heading(theme, _title(selected)),
+      if (kinds.isNotEmpty || region != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (final k in kinds)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(k.icon, size: 16, color: k.family.ink(scheme)),
+                    const SizedBox(width: 3),
+                    Text(k.label, style: theme.textTheme.labelMedium),
+                  ],
+                ),
+              if (region != null)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.place_outlined, size: 16, color: scheme.outline),
+                    const SizedBox(width: 3),
+                    Text(
+                      [region, ...places.map((p) => p.label)].join(' · '),
+                      style: theme.textTheme.labelMedium,
+                    ),
+                  ],
+                ),
+              GospelMarks(books: gospelsOf(entry), color: scheme.onSurface),
+            ],
+          ),
+        ),
+      Wrap(
+        spacing: 12,
+        runSpacing: 4,
+        children: [
+          legend(
+            scheme.tertiaryContainer,
+            'Before: ${_full.before(selected).length}',
+          ),
+          legend(
+            scheme.secondaryContainer,
+            'After: ${_full.after(selected).length}',
+          ),
+          legend(
+            scheme.surfaceContainerHigh,
+            'Order unknown: ${_full.unorderedWith(selected)}',
+          ),
+        ],
+      ),
+      if (inner != null || milestone != null || places.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            if (inner != null)
+              FilledButton.tonalIcon(
+                key: const ValueKey('sequence-open-inner'),
+                onPressed: () => _openInside(inner),
+                icon: const Icon(Icons.account_tree_outlined),
+                label: Text(
+                  'Open ${inner.title}: ${inner.events.length} events',
+                ),
+              ),
+            if (milestone != null)
+              OutlinedButton.icon(
+                key: const ValueKey('sequence-panel-feast'),
+                onPressed: () => _showMilestone(milestone),
+                icon: Icon(
+                  Icons.celebration_outlined,
+                  color: _feast(milestone.feast, theme).$2,
+                ),
+                label: Text(milestone.label),
+              ),
+            if (places.isNotEmpty)
+              OutlinedButton.icon(
+                key: const ValueKey('sequence-panel-map'),
+                // With the events either side of it, whence and whither.
+                onPressed: () => _openMap('Around ${_title(selected)}', [
+                  for (final (e, _) in follows) e,
+                  selected,
+                  for (final (e, _) in precedes) e,
+                ]),
+                icon: const Icon(Icons.map_outlined),
+                label: const Text('Map'),
+              ),
+          ],
+        ),
+      ],
+      if (entry != null && entry.note.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        MarkdownNote(entry.note),
+      ],
+      if (entry != null && entry.passages.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            for (final p in entry.passages)
+              ActionChip(
+                avatar: const Icon(Icons.menu_book_outlined),
+                label: Text(_reference(_passage(p))),
+                onPressed: () => _openPassage(_passage(p)),
+              ),
+          ],
+        ),
+      ],
+      if (people.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            for (final p in people)
+              ActionChip(
+                key: ValueKey('sequence-panel-person-${p.id}'),
+                avatar: const Icon(Icons.person_outline),
+                label: Text(p.name),
+                tooltip: 'Light the events of ${p.name}',
+                onPressed: () => setState(() => _person = p.id),
+              ),
+          ],
+        ),
+      ],
+      if (follows.isNotEmpty) related('Comes after', follows),
+      if (precedes.isNotEmpty) related('Comes before', precedes),
+      if (follows.isEmpty && precedes.isEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            'Nothing orders it among the others.',
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+    ];
+  }
 }
 
 /// A passage of an event, as the reader opens it.
@@ -627,12 +2052,12 @@ StudyPassage _passage(ThematicTarget p) => StudyPassage(
       : p.lastVerse,
 );
 
-/// How an event stands to the one picked out.
+/// How a node stands to the one picked out.
 enum _Relation { selected, before, after, unknown }
 
 /// The orderings, each a curve down from the bottom of one card to the top
 /// of the next with a head where it arrives; those leading to or from the
-/// picked event lit.
+/// picked node lit.
 class _EdgePainter extends CustomPainter {
   _EdgePainter({
     required this.edges,

@@ -478,6 +478,9 @@ void _groupingTests() {
           SequenceEdgeEntry(before: 266, after: 267, bases: ["Mark's order"]),
           SequenceEdgeEntry(before: 267, after: 443, bases: ["Mark's order"]),
         ],
+        groupings: const [],
+        milestones: const [],
+        details: const [],
       ),
       EventSequenceEntry(
         key: 'week',
@@ -492,6 +495,9 @@ void _groupingTests() {
             bases: ["John's order", "Mark's order"],
           ),
         ],
+        groupings: const [],
+        milestones: const [],
+        details: const [],
       ),
     ];
 
@@ -566,6 +572,8 @@ void _groupingTests() {
 
       expect(find.byType(EventSequencePage), findsOneWidget);
       expect(find.text('3 events in order'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('sequence-menu')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('sequence-about')));
       await tester.pumpAndSettle();
       expect(find.text('Ordered, not dated.'), findsOneWidget);
