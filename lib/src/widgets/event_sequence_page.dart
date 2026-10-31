@@ -860,15 +860,19 @@ class _EventSequencePageState extends State<EventSequencePage> {
     final personName = person == null
         ? null
         : _people.where((p) => p.$1.id == person).firstOrNull?.$1.name;
-    // Wrapped onto as many lines as they need, so that every chip can be
-    // reached without scrolling.
+    // Compact, the kinds shown by their icons alone (named in their
+    // tooltips), and wrapped onto as many lines as they need, so that every
+    // chip can be reached without scrolling and few lines are taken.
+    const density = VisualDensity.compact;
+    const tap = MaterialTapTargetSize.shrinkWrap;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
       child: SizedBox(
         width: double.infinity,
         child: Wrap(
           key: const ValueKey('sequence-filters'),
-          runSpacing: 6,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             if (_trees.isNotEmpty)
               Padding(
@@ -892,6 +896,8 @@ class _EventSequencePageState extends State<EventSequencePage> {
                     ),
                   ],
                   child: Chip(
+                    visualDensity: density,
+                    materialTapTargetSize: tap,
                     avatar: const Icon(Icons.segment, size: 18),
                     label: Text(_tree?.grouping.title ?? 'No groups'),
                     deleteIcon: const Icon(Icons.arrow_drop_down),
@@ -905,12 +911,16 @@ class _EventSequencePageState extends State<EventSequencePage> {
                 child: personName == null
                     ? ActionChip(
                         key: const ValueKey('sequence-person'),
+                        visualDensity: density,
+                        materialTapTargetSize: tap,
                         avatar: const Icon(Icons.person_search_outlined),
                         label: const Text('Person'),
                         onPressed: _pickPerson,
                       )
                     : InputChip(
                         key: const ValueKey('sequence-person'),
+                        visualDensity: density,
+                        materialTapTargetSize: tap,
                         avatar: const Icon(Icons.person_outline),
                         label: Text(personName),
                         selected: true,
@@ -922,15 +932,19 @@ class _EventSequencePageState extends State<EventSequencePage> {
             for (final family in SequenceFamily.values)
               if (families.contains(family))
                 Padding(
-                  padding: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.only(right: 4),
                   child: FilterChip(
                     key: ValueKey('sequence-kind-${family.name}'),
-                    avatar: Icon(
+                    tooltip: family.label,
+                    visualDensity: density,
+                    materialTapTargetSize: tap,
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    labelPadding: EdgeInsets.zero,
+                    label: Icon(
                       family.icon,
                       size: 18,
                       color: family.ink(theme.colorScheme),
                     ),
-                    label: Text(family.label),
                     selected: _families.contains(family),
                     showCheckmark: false,
                     onSelected: (on) => setState(() {
@@ -945,8 +959,12 @@ class _EventSequencePageState extends State<EventSequencePage> {
             if (_filtering)
               ActionChip(
                 key: const ValueKey('sequence-clear-filters'),
-                avatar: const Icon(Icons.filter_alt_off_outlined),
-                label: const Text('Clear'),
+                tooltip: 'Clear the filters',
+                visualDensity: density,
+                materialTapTargetSize: tap,
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                labelPadding: EdgeInsets.zero,
+                label: const Icon(Icons.filter_alt_off_outlined, size: 18),
                 onPressed: () => setState(() {
                   _families.clear();
                   _person = null;
@@ -1681,11 +1699,11 @@ class _EventSequencePageState extends State<EventSequencePage> {
       children.add(
         Text(
           _tree != null
-              ? 'Each group is drawn below those before it; unfold one to see '
-                    'its events, each below those it is known to follow. Tap '
-                    'one to see what is known to come before and after it.'
-              : 'Each event is drawn below those it is known to follow. '
-                    'Tap one to see what is known to come before and after it.',
+              ? 'Unfold a group to see its events; tap one to see what is '
+                    'known to come before and after it.'
+              : 'Tap an event to see what is known to come before and after it.',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: theme.textTheme.bodySmall?.copyWith(
             color: scheme.onSurfaceVariant,
           ),
@@ -1706,7 +1724,9 @@ class _EventSequencePageState extends State<EventSequencePage> {
           ),
           child: SingleChildScrollView(
             key: const ValueKey('sequence-panel'),
-            padding: const EdgeInsets.fromLTRB(16, 8, 8, 12),
+            padding: selected == null
+                ? const EdgeInsets.fromLTRB(16, 6, 8, 6)
+                : const EdgeInsets.fromLTRB(16, 8, 8, 12),
             child: SizedBox(
               width: double.infinity,
               child: Column(

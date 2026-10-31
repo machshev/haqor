@@ -408,6 +408,8 @@ void main() {
 
   testWidgets('on a narrow screen every chip can be reached', (tester) async {
     await open(tester, size: const Size(360, 800));
+    // Compact, it takes no more than two lines of the screen.
+    expect(tester.getSize(key('sequence-filters')).height, lessThan(80));
     for (final family in ['miracles', 'callings', 'conflict', 'feasts']) {
       await tester.tap(key('sequence-kind-$family'));
       await tester.pumpAndSettle();
