@@ -16,9 +16,10 @@ typedef SequenceMapStop = ({
 });
 
 /// The places of events of a sequence on the map, numbered in the order
-/// they are drawn, each event at its chief place. A line runs from one
-/// event's place to the next's only where the next is known to come after
-/// it: where the order is unknown, no way is drawn.
+/// they are drawn, each event at every place it lists. An event's places are
+/// joined in their order, its route, and a line runs from one event's last
+/// place to the next's first only where the next is known to come after it:
+/// where the order is unknown, no way is drawn.
 class SequenceMapPage extends StatefulWidget {
   const SequenceMapPage({
     super.key,
@@ -140,14 +141,19 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
     final stops = widget.stops;
     final selected = _selected;
     final picked = selected == null ? null : stops[selected].places.firstOrNull;
+    final pickedPlaces = selected == null
+        ? const <SequencePlaceEntry>[]
+        : stops[selected].places;
+    final pickedIds = {for (final p in pickedPlaces) p.place.id};
     // The numbers of the events at each place, by place.
     final numbers = <int, List<int>>{};
     final firstAt = <int, SequencePlaceEntry>{};
     for (final (i, stop) in stops.indexed) {
-      final place = stop.places.firstOrNull;
-      if (place == null) continue;
-      (numbers[place.place.id] ??= []).add(i + 1);
-      firstAt.putIfAbsent(place.place.id, () => place);
+      for (final place in stop.places) {
+        final at = numbers[place.place.id] ??= [];
+        if (at.lastOrNull != i + 1) at.add(i + 1);
+        firstAt.putIfAbsent(place.place.id, () => place);
+      }
     }
     final pins = [
       for (final MapEntry(key: id, value: place) in firstAt.entries)
@@ -155,14 +161,14 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
           place.location,
           label: '${place.label} (${numbers[id]!.join(', ')})',
           id: id,
-          highlighted: picked?.place.id == id,
+          highlighted: pickedIds.contains(id),
         ),
     ];
     // The way to the picked event, from the place of the one it follows.
     final from = selected == null || picked == null
         ? null
         : _cameFrom(selected);
-    final fromPlace = from == null ? null : stops[from].places.first;
+    final fromPlace = from == null ? null : stops[from].places.last;
     final way = fromPlace == null || fromPlace.place.id == picked!.place.id
         ? null
         : [
@@ -177,7 +183,7 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
     for (final (i, stop) in stops.indexed) {
       final place = stop.places.firstOrNull;
       if (place == null) continue;
-      final previous = last == null ? null : stops[last].places.first;
+      final previous = last == null ? null : stops[last].places.last;
       if (previous != null &&
           previous.place.id != place.place.id &&
           widget.knownBefore(stops[last!].event, stop.event)) {
@@ -200,11 +206,23 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
         ),
       );
     }
-    final focus =
-        way ??
-        (picked == null
-            ? null
-            : [picked.location.longitude, picked.location.latitude]);
+    // Each event's own route, from place to place in the order it lists them.
+    for (final (i, stop) in stops.indexed) {
+      for (var k = 1; k < stop.places.length; k++) {
+        final a = stop.places[k - 1], b = stop.places[k];
+        if (a.place.id == b.place.id) continue;
+        legs.addAll(_connection(a, b, i == selected, stop.event, stop.event));
+      }
+    }
+    final route = [
+      for (final p in pickedPlaces) ...[
+        p.location.longitude,
+        p.location.latitude,
+      ],
+    ];
+    final focus = pickedPlaces.length > 1
+        ? [...?way, ...route]
+        : way ?? (route.isEmpty ? null : route);
     final located = stops.where((s) => s.places.isNotEmpty).length;
     final open = widget.onOpenEvent;
     return Scaffold(
