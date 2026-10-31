@@ -2124,15 +2124,20 @@ class _TimelinePageState extends State<TimelinePage> {
   late StudyTimeline _timeline = widget.timeline;
   late List<StudyTimelineEntry> _allEntries = widget.entries;
 
-  /// The reading shown (see [TimelineVariant]), by id; null for all of them
+  /// The readings shown (see [TimelineVariant]), by id: one alone, or more
   /// side by side. One opened on an entry opens on its reading.
-  late String? _variant = switch (widget.entries
-      .where((e) => e.id == widget.initialSelectedId)
-      .firstOrNull
-      ?.variant) {
-    final variant? when variant.isNotEmpty => variant,
-    _ => widget.variants.firstOrNull?.id,
+  late final Set<String> _variants = {
+    ?switch (widget.entries
+        .where((e) => e.id == widget.initialSelectedId)
+        .firstOrNull
+        ?.variant) {
+      final variant? when variant.isNotEmpty => variant,
+      _ => widget.variants.firstOrNull?.id,
+    },
   };
+
+  /// The one reading shown alone, if one is.
+  String? get _variant => _variants.length == 1 ? _variants.single : null;
 
   /// The note of the reading shown, or where it has none, the timeline's.
   String get _note => switch (widget.variants
@@ -2143,19 +2148,23 @@ class _TimelinePageState extends State<TimelinePage> {
     _ => _timeline.note,
   };
 
-  bool get _sideBySide => widget.variants.isNotEmpty && _variant == null;
+  bool get _sideBySide => _variants.length > 1;
 
-  /// The entries of the reading shown, with those in every reading.
-  List<StudyTimelineEntry> get _entries => _variant == null
+  /// The entries of the readings shown, with those in every reading.
+  List<StudyTimelineEntry> get _entries => widget.variants.isEmpty
       ? _allEntries
       : [
           for (final e in _allEntries)
-            if (e.variant.isEmpty || e.variant == _variant) e,
+            if (e.variant.isEmpty || _variants.contains(e.variant)) e,
         ];
 
-  /// Shows the reading [variant], or (null) all side by side, fitted again.
-  void _showVariant(String? variant) => setState(() {
-    _variant = variant;
+  /// Shows [variants], the readings by id, fitted again; none leaves those
+  /// shown as they are.
+  void _showVariants(Iterable<String> variants) => setState(() {
+    if (variants.isEmpty) return;
+    _variants
+      ..clear()
+      ..addAll(variants);
     _pixelsPerUnit = null;
     if (!_entries.any((e) => e.id == _selectedId)) _selectedId = null;
   });
@@ -2459,23 +2468,50 @@ class _TimelinePageState extends State<TimelinePage> {
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
             child: Row(
               children: [
-                for (final (variant, title, tooltip) in [
-                  (null, 'Side by side', 'Every reading, side by side'),
-                  for (final v in variants) (v.id, v.shortLabel, v.title),
-                ])
+                // Every reading side by side, or back to the first alone.
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 6),
+                  child: ActionChip(
+                    key: const ValueKey('timeline-variant-all'),
+                    avatar: Icon(
+                      _variants.length == variants.length
+                          ? Icons.view_day_outlined
+                          : Icons.view_agenda_outlined,
+                      size: 18,
+                    ),
+                    label: Text(
+                      _variants.length == variants.length ? 'One' : 'All',
+                    ),
+                    tooltip: _variants.length == variants.length
+                        ? 'Show ${variants.first.title} alone'
+                        : 'Show every reading side by side',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _showVariants(
+                      _variants.length == variants.length
+                          ? [variants.first.id]
+                          : [for (final v in variants) v.id],
+                    ),
+                  ),
+                ),
+                // Each added beside those shown, or taken away; held, or
+                // clicked with the other button, shown alone. (A tooltip
+                // would take the hold for itself.)
+                for (final v in variants)
                   Padding(
                     padding: const EdgeInsetsDirectional.only(end: 6),
-                    child: Tooltip(
-                      message: tooltip,
-                      child: ChoiceChip(
-                        key: ValueKey('timeline-variant-${variant ?? 'all'}'),
-                        label: Text(title),
-                        avatar: variant == null
-                            ? const Icon(Icons.view_agenda_outlined, size: 18)
-                            : null,
-                        selected: _variant == variant,
+                    child: GestureDetector(
+                      onLongPress: () => _showVariants([v.id]),
+                      onSecondaryTap: () => _showVariants([v.id]),
+                      child: FilterChip(
+                        key: ValueKey('timeline-variant-${v.id}'),
+                        label: Text(v.shortLabel),
+                        selected: _variants.contains(v.id),
                         visualDensity: VisualDensity.compact,
-                        onSelected: (_) => _showVariant(variant),
+                        onSelected: (shown) => _showVariants([
+                          for (final w in variants)
+                            if (w.id == v.id ? shown : _variants.contains(w.id))
+                              w.id,
+                        ]),
                       ),
                     ),
                   ),
@@ -3459,10 +3495,13 @@ class _TimelinePageState extends State<TimelinePage> {
                                                 ? [
                                                     for (final v
                                                         in widget.variants)
-                                                      (
-                                                        id: v.id,
-                                                        title: v.title,
-                                                      ),
+                                                      if (_variants.contains(
+                                                        v.id,
+                                                      ))
+                                                        (
+                                                          id: v.id,
+                                                          title: v.title,
+                                                        ),
                                                   ]
                                                 : const [],
                                             pixelsPerUnit: ppu,

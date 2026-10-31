@@ -486,11 +486,18 @@ void main() {
       start: TimelineTime(0, month: 7, day: 15),
       variant: 'ezekiel',
     );
+    const dedication = StudyTimelineEntry(
+      id: 'dedication',
+      title: 'Dedication',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 7, day: 8),
+      variant: 'solomon',
+    );
     await tester.pumpWidget(
       MaterialApp(
         home: TimelinePage(
           timeline: feasts,
-          entries: const [booths, chag],
+          entries: const [booths, chag, dedication],
           useEnglishBookNames: true,
           onOpenPassage: (_) {},
           variants: const [
@@ -505,6 +512,7 @@ void main() {
               shortTitle: 'Ezekiel',
               note: 'As Ezekiel dates them.',
             ),
+            TimelineVariant(id: 'solomon', title: 'Solomon'),
           ],
         ),
       ),
@@ -512,19 +520,19 @@ void main() {
     await tester.pumpAndSettle();
     final booth = find.byKey(const ValueKey('timeline-mark-booths'));
     final ezekiel = find.byKey(const ValueKey('timeline-mark-chag'));
+    final solomon = find.byKey(const ValueKey('timeline-mark-dedication'));
+    Finder chip(String id) => find.byKey(ValueKey('timeline-variant-$id'));
     // The first reading first.
     expect(booth, findsOneWidget);
     expect(ezekiel, findsNothing);
-    await tester.tap(find.byKey(const ValueKey('timeline-variant-ezekiel')));
-    await tester.pumpAndSettle();
-    expect(booth, findsNothing);
-    expect(ezekiel, findsOneWidget);
-    expect(find.text('As Ezekiel dates them.'), findsOneWidget);
-    // Side by side, each in its band beneath its title.
-    await tester.tap(find.byKey(const ValueKey('timeline-variant-all')));
+    // Another added beside it, each in its band beneath its title; the
+    // third not shown.
+    await tester.tap(chip('ezekiel'));
     await tester.pumpAndSettle();
     expect(booth, findsOneWidget);
     expect(ezekiel, findsOneWidget);
+    expect(solomon, findsNothing);
+    expect(find.byKey(const ValueKey('timeline-band-Solomon')), findsNothing);
     final torahBand = find.byKey(const ValueKey('timeline-band-The Torah'));
     final ezekielBand = find.byKey(
       const ValueKey('timeline-band-Ezekiel\'s house'),
@@ -543,6 +551,27 @@ void main() {
       tester.getTopLeft(ezekielBand).dy,
       lessThan(tester.getTopLeft(ezekiel).dy),
     );
+    // Held, one is shown alone, with its note.
+    await tester.longPress(chip('ezekiel'));
+    await tester.pumpAndSettle();
+    expect(booth, findsNothing);
+    expect(ezekiel, findsOneWidget);
+    expect(find.text('As Ezekiel dates them.'), findsOneWidget);
+    // The last shown is kept, not taken away.
+    await tester.tap(chip('ezekiel'));
+    await tester.pumpAndSettle();
+    expect(ezekiel, findsOneWidget);
+    // All side by side, then the first alone again.
+    await tester.tap(chip('all'));
+    await tester.pumpAndSettle();
+    expect(booth, findsOneWidget);
+    expect(ezekiel, findsOneWidget);
+    expect(solomon, findsOneWidget);
+    await tester.tap(chip('all'));
+    await tester.pumpAndSettle();
+    expect(booth, findsOneWidget);
+    expect(ezekiel, findsNothing);
+    expect(solomon, findsNothing);
   });
 
   testWidgets("the timeline page fits to its entries, not a year's calendar, "
