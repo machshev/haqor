@@ -529,9 +529,10 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
           for (final standard in standardTimelines)
             PopupMenuItem(
               value: standard,
-              child: ListTile(
-                title: Text(standard.template.title),
-                subtitle: Text(standard.description),
+              child: Text(
+                standard.template.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
         ],
