@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/event_sequence.dart';
@@ -542,6 +543,42 @@ void _groupingTests() {
       expect(find.byType(EventSequencePage), findsNothing);
       expect(find.byType(BibleTimelinePage), findsNothing);
       expect(find.text('Open'), findsOneWidget);
+    });
+
+    testWidgets('turn between top to bottom and left to right, kept', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      await open(tester);
+      await tester.tap(
+        find.byKey(const ValueKey('timeline-row-sequence:ministry')),
+      );
+      await tester.pumpAndSettle();
+      Offset at(int event) =>
+          tester.getTopLeft(find.byKey(ValueKey('sequence-event-$event')));
+
+      // Top to bottom at first, each event below the one it follows.
+      expect(at(267).dy, greaterThan(at(266).dy));
+      expect(at(267).dx, moreOrLessEquals(at(266).dx, epsilon: 1));
+
+      await tester.tap(find.byKey(const ValueKey('sequence-orientation')));
+      await tester.pumpAndSettle();
+      expect(at(267).dx, greaterThan(at(266).dx));
+      expect(at(267).dy, moreOrLessEquals(at(266).dy, epsilon: 1));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(eventSequenceHorizontalKey), isTrue);
+
+      // A sequence opened inside it is drawn the same way.
+      await tester.tap(find.byKey(const ValueKey('sequence-event-443')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sequence-open-inner')));
+      await tester.pumpAndSettle();
+      expect(at(460).dx, greaterThan(at(452).dx));
+
+      // Turned back for the next test.
+      await tester.tap(find.byKey(const ValueKey('sequence-orientation')));
+      await tester.pumpAndSettle();
+      expect(prefs.getBool(eventSequenceHorizontalKey), isFalse);
     });
 
     testWidgets('opened on an event inside them, they open to it', (

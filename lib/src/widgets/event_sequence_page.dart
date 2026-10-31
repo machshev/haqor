@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
@@ -14,6 +15,14 @@ const _cardWidth = 172.0;
 const _cardHeight = 64.0;
 const _gapAcross = 20.0;
 const _gapDown = 44.0;
+
+/// Laid left to right, the room between ranks across, and between the cards
+/// of a rank down.
+const _gapRank = 56.0;
+const _gapStack = 16.0;
+
+/// Where the choice of drawing left to right is kept.
+const eventSequenceHorizontalKey = 'event_sequence_horizontal';
 
 /// A sequence of the Bible's events drawn as what is known to come before
 /// what: each event below those it follows, joined by the orderings that
@@ -83,6 +92,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
   @override
   void initState() {
     super.initState();
+    _loadOrientation();
     final focus = widget.focusEventId;
     if (focus == null) return;
     final path = widget.sequences.pathTo(focus);
@@ -105,23 +115,77 @@ class _EventSequencePageState extends State<EventSequencePage> {
     super.dispose();
   }
 
-  Offset _cardAt(int event) => Offset(
-    _gapAcross + _graph.column[event]! * (_cardWidth + _gapAcross),
-    _gapDown / 2 + _graph.row[event]! * (_cardHeight + _gapDown),
-  );
+  /// Whether the graph runs left to right, each event right of those it
+  /// follows, rather than top to bottom. Kept for the next sequence opened,
+  /// and between runs.
+  static bool _lastHorizontal = false;
+  bool _horizontal = _lastHorizontal;
 
-  Size get _canvas => Size(
-    _graph.width * (_cardWidth + _gapAcross) + _gapAcross,
-    _graph.rows.length * (_cardHeight + _gapDown),
-  );
+  /// The view's size when it was last laid out, to place the graph in after
+  /// it is turned.
+  Size _viewport = Size.zero;
 
-  /// Shows [event]'s card in the middle of the view across, and a little
-  /// below the top.
+  Future<void> _loadOrientation() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final horizontal = prefs.getBool(eventSequenceHorizontalKey);
+      if (horizontal == null || horizontal == _horizontal || !mounted) return;
+      _setOrientation(horizontal, save: false);
+    } catch (_) {
+      // Without stored preferences, the default stands.
+    }
+  }
+
+  void _setOrientation(bool horizontal, {bool save = true}) {
+    _lastHorizontal = horizontal;
+    setState(() => _horizontal = horizontal);
+    final at = _selected ?? _graph.rows.firstOrNull?.first;
+    if (at != null && _viewport != Size.zero) _centreOn(at, _viewport);
+    if (save) {
+      SharedPreferences.getInstance()
+          .then((p) => p.setBool(eventSequenceHorizontalKey, horizontal))
+          .catchError((_) => false);
+    }
+  }
+
+  Offset _cardAt(int event) {
+    final rank = _graph.row[event]!.toDouble();
+    final across = _graph.column[event]!;
+    return _horizontal
+        ? Offset(
+            _gapRank / 2 + rank * (_cardWidth + _gapRank),
+            _gapStack + across * (_cardHeight + _gapStack),
+          )
+        : Offset(
+            _gapAcross + across * (_cardWidth + _gapAcross),
+            _gapDown / 2 + rank * (_cardHeight + _gapDown),
+          );
+  }
+
+  Size get _canvas => _horizontal
+      ? Size(
+          _graph.rows.length * (_cardWidth + _gapRank),
+          _graph.width * (_cardHeight + _gapStack) + _gapStack,
+        )
+      : Size(
+          _graph.width * (_cardWidth + _gapAcross) + _gapAcross,
+          _graph.rows.length * (_cardHeight + _gapDown),
+        );
+
+  /// Shows [event]'s card in the middle of the view across the graph's
+  /// flow, and a little after where it starts along it.
   void _centreOn(int event, Size viewport) {
     final card = _cardAt(event);
     final scale = _transform.value.getMaxScaleOnAxis();
-    final x = viewport.width / 2 - (card.dx + _cardWidth / 2) * scale;
-    final y = math.min(0.0, viewport.height / 3 - card.dy * scale);
+    final (x, y) = _horizontal
+        ? (
+            math.min(0.0, viewport.width / 4 - card.dx * scale),
+            viewport.height / 2 - (card.dy + _cardHeight / 2) * scale,
+          )
+        : (
+            viewport.width / 2 - (card.dx + _cardWidth / 2) * scale,
+            math.min(0.0, viewport.height / 3 - card.dy * scale),
+          );
     _transform.value = Matrix4.identity()
       ..translateByDouble(x, y, 0, 1)
       ..scaleByDouble(scale, scale, 1, 1);
@@ -193,6 +257,12 @@ class _EventSequencePageState extends State<EventSequencePage> {
           ],
         ),
         actions: [
+          IconButton(
+            key: const ValueKey('sequence-orientation'),
+            tooltip: _horizontal ? 'Draw top to bottom' : 'Draw left to right',
+            icon: Icon(_horizontal ? Icons.swap_vert : Icons.swap_horiz),
+            onPressed: () => _setOrientation(!_horizontal),
+          ),
           if (widget.sequence.note.isNotEmpty)
             IconButton(
               key: const ValueKey('sequence-about'),
@@ -207,6 +277,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
+                _viewport = constraints.biggest;
                 if (!_placed) {
                   _placed = true;
                   final first = _selected ?? _graph.rows.firstOrNull?.first;
@@ -247,8 +318,14 @@ class _EventSequencePageState extends State<EventSequencePage> {
                     (
                       from:
                           _cardAt(u) +
-                          const Offset(_cardWidth / 2, _cardHeight),
-                      to: _cardAt(v) + const Offset(_cardWidth / 2, 0),
+                          (_horizontal
+                              ? const Offset(_cardWidth, _cardHeight / 2)
+                              : const Offset(_cardWidth / 2, _cardHeight)),
+                      to:
+                          _cardAt(v) +
+                          (_horizontal
+                              ? const Offset(0, _cardHeight / 2)
+                              : const Offset(_cardWidth / 2, 0)),
                       lit:
                           selected != null &&
                           (({u, v}.every(
@@ -261,6 +338,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
                 ],
                 color: scheme.outlineVariant,
                 litColor: scheme.primary,
+                horizontal: _horizontal,
               ),
             ),
           ),
@@ -560,10 +638,15 @@ class _EdgePainter extends CustomPainter {
     required this.edges,
     required this.color,
     required this.litColor,
+    required this.horizontal,
   });
 
   final List<({Offset from, Offset to, bool lit})> edges;
   final Color color, litColor;
+
+  /// Whether the edges run left to right, leaving a card's right side for
+  /// the next's left, rather than top to bottom.
+  final bool horizontal;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -577,25 +660,28 @@ class _EdgePainter extends CustomPainter {
       for (final edge in edges) {
         if (edge.lit != lit) continue;
         final (from, to) = (edge.from, edge.to);
-        final bend = math.min(_gapDown, (to.dy - from.dy) / 2);
+        // Along the flow, and across it.
+        final along = horizontal ? const Offset(1, 0) : const Offset(0, 1);
+        final side = Offset(along.dy, along.dx);
+        final run = horizontal ? to.dx - from.dx : to.dy - from.dy;
+        final bend = math.min(horizontal ? _gapRank : _gapDown, run / 2);
+        final c1 = from + along * bend;
+        final c2 = to - along * bend;
+        final end = to - along * 5;
         canvas.drawPath(
           Path()
             ..moveTo(from.dx, from.dy)
-            ..cubicTo(
-              from.dx,
-              from.dy + bend,
-              to.dx,
-              to.dy - bend,
-              to.dx,
-              to.dy - 5,
-            ),
+            ..cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, end.dx, end.dy),
           paint,
         );
+        final back = to - along * 6;
+        final left = back - side * 4;
+        final right = back + side * 4;
         canvas.drawPath(
           Path()
             ..moveTo(to.dx, to.dy)
-            ..lineTo(to.dx - 4, to.dy - 6)
-            ..lineTo(to.dx + 4, to.dy - 6)
+            ..lineTo(left.dx, left.dy)
+            ..lineTo(right.dx, right.dy)
             ..close(),
           head,
         );
@@ -605,5 +691,8 @@ class _EdgePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_EdgePainter old) =>
-      old.edges != edges || old.color != color || old.litColor != litColor;
+      old.edges != edges ||
+      old.color != color ||
+      old.litColor != litColor ||
+      old.horizontal != horizontal;
 }
