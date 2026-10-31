@@ -157,9 +157,12 @@ void main() {
 
   /// The page opened from a page beneath it, so that a passage it opens
   /// closes it; the passages opened.
-  Future<List<StudyPassage>> open(WidgetTester tester) async {
+  Future<List<StudyPassage>> open(
+    WidgetTester tester, {
+    Size size = const Size(900, 1400),
+  }) async {
     final opened = <StudyPassage>[];
-    tester.view.physicalSize = const Size(900, 1400);
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
@@ -270,7 +273,8 @@ void main() {
 
   testWidgets('lights the events of a kind, or of a person', (tester) async {
     await open(tester);
-    await menu(tester, 'sequence-unfold-all');
+    await tester.tap(key('sequence-fold-toggle'));
+    await tester.pumpAndSettle();
     expect(opacity(tester, 'sequence-event-2'), 1);
 
     await tester.tap(key('sequence-kind-miracles'));
@@ -290,14 +294,16 @@ void main() {
     expect(opacity(tester, 'sequence-event-2'), lessThan(1));
 
     // Folded, a group says how many of its events are lit.
-    await menu(tester, 'sequence-fold-all');
+    await tester.tap(key('sequence-fold-toggle'));
+    await tester.pumpAndSettle();
     expect(find.text('2 of 3 events'), findsOneWidget);
     expect(opacity(tester, 'sequence-group-0'), lessThan(1));
   });
 
   testWidgets('lays its events in lanes by region, kept', (tester) async {
     await open(tester);
-    await menu(tester, 'sequence-unfold-all');
+    await tester.tap(key('sequence-fold-toggle'));
+    await tester.pumpAndSettle();
     await menu(tester, 'sequence-lanes');
     expect(find.text('Galilee'), findsOneWidget);
     expect(find.text('Judea'), findsOneWidget);
@@ -398,5 +404,40 @@ void main() {
     await tester.tap(key('sequence-grouping-parts').last);
     await tester.pumpAndSettle();
     expect(key('sequence-group-0'), findsOneWidget);
+  });
+
+  testWidgets('on a narrow screen every chip can be reached', (tester) async {
+    await open(tester, size: const Size(360, 800));
+    for (final family in ['miracles', 'callings', 'conflict', 'feasts']) {
+      await tester.tap(key('sequence-kind-$family'));
+      await tester.pumpAndSettle();
+    }
+    expect(
+      tester.widget<FilterChip>(key('sequence-kind-feasts')).selected,
+      isTrue,
+    );
+    await tester.tap(key('sequence-clear-filters'));
+    await tester.pumpAndSettle();
+    expect(key('sequence-clear-filters'), findsNothing);
+    expect(
+      tester.widget<FilterChip>(key('sequence-kind-feasts')).selected,
+      isFalse,
+    );
+  });
+
+  testWidgets('one button unfolds every group, and folds them again', (
+    tester,
+  ) async {
+    await open(tester);
+    await tester.tap(key('sequence-fold-toggle'));
+    await tester.pumpAndSettle();
+    for (final e in _sequence.events) {
+      expect(key('sequence-event-$e'), findsOneWidget);
+    }
+    await tester.tap(key('sequence-fold-toggle'));
+    await tester.pumpAndSettle();
+    expect(key('sequence-group-0'), findsOneWidget);
+    expect(key('sequence-group-1'), findsOneWidget);
+    expect(key('sequence-event-1'), findsNothing);
   });
 }

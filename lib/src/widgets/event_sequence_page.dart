@@ -778,6 +778,19 @@ class _EventSequencePageState extends State<EventSequencePage> {
           ],
         ),
         actions: [
+          if (_tree case final tree?)
+            IconButton(
+              key: const ValueKey('sequence-fold-toggle'),
+              tooltip: _expanded.isEmpty
+                  ? 'Unfold every group'
+                  : 'Fold every group',
+              icon: Icon(
+                _expanded.isEmpty ? Icons.unfold_more : Icons.unfold_less,
+              ),
+              onPressed: tree.grouping.groups.isEmpty
+                  ? null
+                  : () => _foldAll(_expanded.isEmpty),
+            ),
           IconButton(
             key: const ValueKey('sequence-outline'),
             tooltip: _outline ? 'Draw as a graph' : 'Read as an outline',
@@ -797,8 +810,6 @@ class _EventSequencePageState extends State<EventSequencePage> {
             key: const ValueKey('sequence-menu'),
             onSelected: (choice) => switch (choice) {
               'lanes' => _setLanes(!_lanes),
-              'unfold' => _foldAll(true),
-              'fold' => _foldAll(false),
               'map' => _openMap(widget.sequence.title, widget.sequence.events),
               'about' => _showNote(),
               _ => null,
@@ -811,18 +822,6 @@ class _EventSequencePageState extends State<EventSequencePage> {
                   checked: _lanes,
                   child: const Text('Lanes by region'),
                 ),
-              if (_tree != null) ...[
-                const PopupMenuItem(
-                  key: ValueKey('sequence-unfold-all'),
-                  value: 'unfold',
-                  child: Text('Unfold every group'),
-                ),
-                const PopupMenuItem(
-                  key: ValueKey('sequence-fold-all'),
-                  value: 'fold',
-                  child: Text('Fold every group'),
-                ),
-              ],
               if (_details.values.any((d) => d.places.isNotEmpty))
                 const PopupMenuItem(
                   key: ValueKey('sequence-map-all'),
@@ -838,10 +837,10 @@ class _EventSequencePageState extends State<EventSequencePage> {
             ],
           ),
         ],
-        bottom: bar,
       ),
       body: Column(
         children: [
+          ?bar,
           Expanded(child: _outline ? _outlineView(theme) : _graphPane()),
           _panel(theme),
         ],
@@ -851,7 +850,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
 
   /// The chips choosing the grouping, and lighting kinds and a person; none
   /// for a sequence with none of them.
-  PreferredSizeWidget? _filterBar(ThemeData theme) {
+  Widget? _filterBar(ThemeData theme) {
     final families = <SequenceFamily>{
       for (final d in _details.values)
         for (final k in kindsOf(d)) k.family,
@@ -861,14 +860,15 @@ class _EventSequencePageState extends State<EventSequencePage> {
     final personName = person == null
         ? null
         : _people.where((p) => p.$1.id == person).firstOrNull?.$1.name;
-    return PreferredSize(
-      preferredSize: const Size.fromHeight(48),
+    // Wrapped onto as many lines as they need, so that every chip can be
+    // reached without scrolling.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
       child: SizedBox(
-        height: 48,
-        child: ListView(
+        width: double.infinity,
+        child: Wrap(
           key: const ValueKey('sequence-filters'),
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          runSpacing: 6,
           children: [
             if (_trees.isNotEmpty)
               Padding(
@@ -942,6 +942,16 @@ class _EventSequencePageState extends State<EventSequencePage> {
                     }),
                   ),
                 ),
+            if (_filtering)
+              ActionChip(
+                key: const ValueKey('sequence-clear-filters'),
+                avatar: const Icon(Icons.filter_alt_off_outlined),
+                label: const Text('Clear'),
+                onPressed: () => setState(() {
+                  _families.clear();
+                  _person = null;
+                }),
+              ),
           ],
         ),
       ),
