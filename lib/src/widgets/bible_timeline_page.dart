@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
+import '../event_sequence.dart';
 import '../study_workspace.dart';
+import 'event_sequence_page.dart';
 import 'name_details.dart';
 import 'timeline_chart.dart';
 
@@ -28,6 +30,7 @@ const bibleTimeline = StudyTimeline(
     'Prophets': 5,
     'Periods': 6,
     'Deaths': 7,
+    'Sequences': 2,
   },
 );
 
@@ -78,9 +81,30 @@ String bibleEventDuration(BibleEventEntry event) {
 /// (see [bibleEventCategory]), and a birth or death pinned to the life of
 /// the one born or dying (see [TimelinePin]), or else a death to their
 /// reign or judgeship, so that it is grouped under it.
-List<StudyTimelineEntry> bibleTimelineEntries(List<BibleEventEntry> events) {
+///
+/// The events of [sequences] are left off, drawn in their sequences
+/// instead (see [EventSequencePage]); a sequence expanding none of the
+/// events stands on the timeline for itself, as a span over its events'
+/// years (see [bibleSequenceEntryId]).
+List<StudyTimelineEntry> bibleTimelineEntries(
+  List<BibleEventEntry> events, {
+  BibleSequences? sequences,
+}) {
+  final hidden = sequences?.homeOf ?? const {};
+  // Each sequence standing for itself, where its first event would be.
+  final standing = <int, StudyTimelineEntry>{};
+  for (final sequence in sequences?.all ?? const <EventSequenceEntry>[]) {
+    if (sequence.expands != null) continue;
+    if (_sequenceEntry(sequence, events) case final entry?) {
+      standing[entry.order] = entry;
+    }
+  }
   final entries = [
-    for (final (order, event) in events.indexed) _entry(event, order),
+    for (final (order, event) in events.indexed)
+      if (!hidden.containsKey(event.id))
+        _entry(event, order)
+      else
+        ?standing[order],
   ];
   // The spans of each person's life, reign or judgeship, by name.
   final spans = <String, List<StudyTimelineEntry>>{};
@@ -130,6 +154,46 @@ TimelinePin? _pinFor(
     }
   }
   return null;
+}
+
+/// The id of the timeline entry standing for [sequence]: `sequence:` and
+/// its key.
+String bibleSequenceEntryId(EventSequenceEntry sequence) =>
+    'sequence:${sequence.key}';
+
+/// [sequence] as a span of [bibleTimeline] over its events' years, placed
+/// among [events] where its first is; null for one with no events.
+StudyTimelineEntry? _sequenceEntry(
+  EventSequenceEntry sequence,
+  List<BibleEventEntry> events,
+) {
+  final members = sequence.events.toSet();
+  final years = [
+    for (final (order, e) in events.indexed)
+      if (members.contains(e.id)) (order: order, year: e.year),
+  ];
+  if (years.isEmpty) return null;
+  final first = years.map((y) => y.year).reduce(math.min);
+  final last = years.map((y) => y.year).reduce(math.max);
+  final start = TimelineTime(first.toDouble());
+  // Through the end of its last year.
+  final length = TimelineDuration(
+    bibleTimeline.positionOf(TimelineTime(last.toDouble())) -
+        bibleTimeline.positionOf(start) +
+        1,
+    TimelineDurationUnit.years,
+  );
+  return StudyTimelineEntry(
+    id: bibleSequenceEntryId(sequence),
+    title: sequence.title,
+    timelineId: bibleTimeline.id,
+    start: start,
+    end: bibleTimeline.addDuration(start, length),
+    duration: length,
+    note: sequence.note,
+    category: 'Sequences',
+    order: years.first.order,
+  );
 }
 
 StudyTimelineEntry _entry(BibleEventEntry event, int order) {
@@ -287,19 +351,41 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
   List<BibleEventEntry>? _events;
   List<StudyTimelineEntry> _entries = const [];
   final _byId = <String, BibleEventEntry>{};
+  BibleSequences _sequences = BibleSequences.empty;
+
+  /// The event to open on inside its sequence, the timeline opening on
+  /// the entry standing for the sequence; taken when that entry opens.
+  int? _focus;
+
+  /// The entry to open on: [BibleTimelinePage.initialEventId], or the
+  /// one standing for the sequence it is drawn in.
+  String? _initialId;
 
   @override
   void initState() {
     super.initState();
+    _initialId = widget.initialEventId;
     _sub = BibleEvents.rustSignalStream.listen((pack) {
       final events = pack.message;
       if (!mounted || events.requestId != _requestId) return;
       setState(() {
         _events = events.events;
-        _entries = bibleTimelineEntries(events.events);
+        _sequences = BibleSequences(events.sequences);
+        _entries = bibleTimelineEntries(events.events, sequences: _sequences);
         _byId
           ..clear()
           ..addAll({for (final e in events.events) '${e.id}': e});
+        final initial = int.tryParse(widget.initialEventId ?? '');
+        final outer = initial == null
+            ? null
+            : _sequences.pathTo(initial).firstOrNull;
+        if (outer != null) {
+          _focus = initial;
+          _initialId = switch (outer.expands) {
+            final e? => '$e',
+            null => bibleSequenceEntryId(outer),
+          };
+        }
       });
     });
     final request = GetBibleEvents(requestId: _requestId = _nextRequestId++);
@@ -340,6 +426,37 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
               navigate(book, chapter, verse);
             },
     );
+  }
+
+  /// Opens the sequence [entry] stands for, or the one telling the inside
+  /// of its event; false for neither.
+  bool _openSequence(StudyTimelineEntry entry) {
+    final sequence =
+        _sequences.all
+            .where((s) => bibleSequenceEntryId(s) == entry.id)
+            .firstOrNull ??
+        switch (int.tryParse(entry.id)) {
+          final id? => _sequences.expanding[id],
+          null => null,
+        };
+    if (sequence == null) return false;
+    final focus = _focus;
+    _focus = null;
+    final navigate = widget.onNavigateToPassage;
+    EventSequencePage.open(
+      context,
+      sequence: sequence,
+      sequences: _sequences,
+      events: {for (final e in _events ?? const <BibleEventEntry>[]) e.id: e},
+      useEnglishBookNames: widget.useEnglishBookNames,
+      onOpenPassage: (passage) {
+        // The timeline closed too, as it is for a passage opened there.
+        Navigator.pop(context);
+        navigate?.call(passage.bookIndex, passage.chapter, passage.verse);
+      },
+      focusEventId: focus,
+    );
+    return true;
   }
 
   Widget _details(BuildContext sheetContext, StudyTimelineEntry entry) {
@@ -407,8 +524,9 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
     return TimelinePage(
       timeline: bibleTimeline,
       entries: _entries,
-      initialSelectedId: widget.initialEventId,
-      showInitialSelected: widget.initialEventId != null,
+      initialSelectedId: _initialId,
+      showInitialSelected: _initialId != null,
+      onOpenEntry: _openSequence,
       useEnglishBookNames: widget.useEnglishBookNames,
       onOpenPassage: (passage) =>
           navigate?.call(passage.bookIndex, passage.chapter, passage.verse),

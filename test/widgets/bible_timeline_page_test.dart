@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:haqor/src/bindings/bindings.dart';
+import 'package:haqor/src/event_sequence.dart';
 import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/bible_timeline_page.dart';
+import 'package:haqor/src/widgets/event_sequence_page.dart';
 
 NameSummaryEntry _name(int id, String name, String kind) => NameSummaryEntry(
   id: id,
@@ -108,6 +110,7 @@ void main() {
       BibleEvents(
         requestId: requests.single.requestId,
         events: _events,
+        sequences: const [],
       ).bincodeSerialize(),
       Uint8List(0),
     );
@@ -151,6 +154,7 @@ void main() {
       BibleEvents(
         requestId: requests.single.requestId,
         events: const [],
+        sequences: const [],
       ).bincodeSerialize(),
       Uint8List(0),
     );
@@ -231,6 +235,7 @@ void _groupingTests() {
       BibleEvents(
         requestId: requests.single.requestId,
         events: _lives,
+        sequences: const [],
       ).bincodeSerialize(),
       Uint8List(0),
     );
@@ -317,6 +322,7 @@ void _groupingTests() {
       BibleEvents(
         requestId: requests.single.requestId,
         events: _lives,
+        sequences: const [],
       ).bincodeSerialize(),
       Uint8List(0),
     );
@@ -355,6 +361,7 @@ void _groupingTests() {
           ...sons,
           _event(400, 'Paul arrives at Rome', 60),
         ],
+        sequences: const [],
       ).bincodeSerialize(),
       Uint8List(0),
     );
@@ -388,5 +395,166 @@ void _groupingTests() {
       findsNothing,
     );
     expect(find.byKey(const ValueKey('timeline-mark-61')), findsOneWidget);
+  });
+
+  group('sequences', () {
+    ThematicTarget mark(int chapter, int verse) => ThematicTarget(
+      book: 41,
+      chapter: chapter,
+      verse: verse,
+      lastChapter: chapter,
+      lastVerse: verse,
+    );
+    final events = [
+      _event(1, 'Creation of all things', -4004),
+      _event(266, 'John the Baptist Begins Ministry', 26),
+      _event(267, 'John Baptizes Jesus', 26),
+      _event(443, 'Holy Week', 30, passages: [mark(11, 1)]),
+      _event(452, 'The Last Supper', 30, passages: [mark(14, 12)]),
+      _event(460, 'Resurrection and Ascension', 30),
+      _event(400, 'Paul arrives at Rome', 60),
+    ];
+    final sequences = [
+      EventSequenceEntry(
+        key: 'ministry',
+        title: 'Ministry of Jesus',
+        note: 'Ordered, not dated.',
+        expands: null,
+        events: [266, 267, 443],
+        edges: [
+          SequenceEdgeEntry(before: 266, after: 267, bases: ["Mark's order"]),
+          SequenceEdgeEntry(before: 267, after: 443, bases: ["Mark's order"]),
+        ],
+      ),
+      EventSequenceEntry(
+        key: 'week',
+        title: 'Holy Week',
+        note: '',
+        expands: 443,
+        events: [452, 460],
+        edges: [
+          SequenceEdgeEntry(
+            before: 452,
+            after: 460,
+            bases: ["John's order", "Mark's order"],
+          ),
+        ],
+      ),
+    ];
+
+    /// The timeline opened from a page beneath it, so that closing it can
+    /// be seen.
+    Future<List<GetBibleEvents>> open(
+      WidgetTester tester, {
+      String? initialEventId,
+      List<(int, int, int)>? readAt,
+    }) async {
+      final requests = <GetBibleEvents>[];
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => BibleTimelinePage.open(
+                context,
+                sendRequest: requests.add,
+                initialEventId: initialEventId,
+                useEnglishBookNames: true,
+                onNavigateToPassage: (book, chapter, verse) =>
+                    readAt?.add((book, chapter, verse)),
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      // Not settled: it waits for the events with a spinner.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      assignRustSignal['BibleEvents']!(
+        BibleEvents(
+          requestId: requests.single.requestId,
+          events: events,
+          sequences: sequences,
+        ).bincodeSerialize(),
+        Uint8List(0),
+      );
+      await tester.pumpAndSettle();
+      return requests;
+    }
+
+    test('their events stand on the timeline as one span', () {
+      final entries = bibleTimelineEntries(
+        events,
+        sequences: BibleSequences(sequences),
+      );
+      expect(entries.map((e) => e.id), ['1', 'sequence:ministry', '400']);
+      final ministry = entries[1];
+      expect(ministry.isSpan, isTrue);
+      expect(bibleTimeline.formatTime(ministry.start), 'AD 26');
+      expect(bibleTimeline.formatTime(ministry.end!), 'AD 31');
+      // Without them, every event, as links to them need.
+      expect(bibleTimelineEntries(events), hasLength(events.length));
+    });
+
+    testWidgets('open from the timeline and inside one another', (
+      tester,
+    ) async {
+      final readAt = <(int, int, int)>[];
+      await open(tester, readAt: readAt);
+      Finder row(String id) => find.byKey(ValueKey('timeline-row-$id'));
+      expect(row('266'), findsNothing);
+      expect(row('452'), findsNothing);
+      await tester.tap(row('sequence:ministry'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(EventSequencePage), findsOneWidget);
+      expect(find.text('3 events in order'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('sequence-about')));
+      await tester.pumpAndSettle();
+      expect(find.text('Ordered, not dated.'), findsOneWidget);
+      await tester.tapAt(const Offset(400, 20));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sequence-event-267')));
+      await tester.pumpAndSettle();
+      expect(find.text('Before: 1'), findsOneWidget);
+      expect(find.text('After: 1'), findsOneWidget);
+      expect(find.text('Comes after'), findsOneWidget);
+      expect(find.textContaining("— Mark's order"), findsNWidgets(2));
+
+      // Holy Week opens its own sequence.
+      await tester.tap(find.byKey(const ValueKey('sequence-related-443')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sequence-open-inner')));
+      await tester.pumpAndSettle();
+      expect(find.text('2 events in order'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('sequence-event-452')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining("John's order; Mark's order"), findsOneWidget);
+
+      // A passage opens in the reader, every page above it closed.
+      await tester.tap(find.widgetWithText(ActionChip, 'Mark 14:12'));
+      await tester.pumpAndSettle();
+      expect(readAt, [(40, 14, 12)]);
+      expect(find.byType(EventSequencePage), findsNothing);
+      expect(find.byType(BibleTimelinePage), findsNothing);
+      expect(find.text('Open'), findsOneWidget);
+    });
+
+    testWidgets('opened on an event inside them, they open to it', (
+      tester,
+    ) async {
+      await open(tester, initialEventId: '452');
+      expect(
+        find.byType(EventSequencePage, skipOffstage: false),
+        findsNWidgets(2),
+      );
+      expect(find.text('2 events in order'), findsOneWidget);
+      expect(find.text('Comes before'), findsOneWidget);
+      expect(find.textContaining('Resurrection and Ascension'), findsWidgets);
+    });
   });
 }

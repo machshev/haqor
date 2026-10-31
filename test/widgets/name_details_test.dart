@@ -674,6 +674,7 @@ void main() {
           event(1, 'Creation of all things', -4004),
           event(126, 'Exodus from Egypt', -1491),
         ],
+        sequences: const [],
       ).bincodeSerialize(),
       Uint8List(0),
     );

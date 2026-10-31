@@ -1225,12 +1225,41 @@ pub struct BibleEventEntry {
     pub note: String,
 }
 
+/// A run of the events ordered by what the text says came before what, not
+/// by date. Two of its events no run of `edges` joins are of unknown order.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct EventSequenceEntry {
+    pub key: String,
+    pub title: String,
+    /// What it orders and how; may be empty.
+    pub note: String,
+    /// The event ([`BibleEventEntry::id`]) whose inside it tells, standing for
+    /// it wherever that event is drawn; none for one standing for itself on
+    /// the timeline.
+    pub expands: Option<u32>,
+    /// Its events, by id, in time order.
+    pub events: Vec<u32>,
+    pub edges: Vec<SequenceEdgeEntry>,
+}
+
+/// That one event of a sequence came before another, and what says so:
+/// "Mark's order", "Matthew 14:13: …".
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SequenceEdgeEntry {
+    pub before: u32,
+    pub after: u32,
+    pub bases: Vec<String>,
+}
+
 /// Reply to [`GetBibleEvents`], in time order from the creation. Empty for a
 /// database built before events were.
 #[derive(Debug, Serialize, RustSignal)]
 pub struct BibleEvents {
     pub request_id: u32,
     pub events: Vec<BibleEventEntry>,
+    /// The sequences ordering some of them; empty for a database built
+    /// before they were.
+    pub sequences: Vec<EventSequenceEntry>,
 }
 
 /// Ask for the people a run of chapters names, for a list of who is who in

@@ -1955,6 +1955,7 @@ class TimelinePage extends StatefulWidget {
     this.onOpenLink,
     this.baseTitles = const {},
     this.collapseGroups = false,
+    this.onOpenEntry,
   });
 
   final StudyTimeline timeline;
@@ -2013,6 +2014,11 @@ class TimelinePage extends StatefulWidget {
   /// More about an entry, shown in its details beneath its verses.
   final Widget Function(BuildContext sheetContext, StudyTimelineEntry entry)?
   entryDetails;
+
+  /// Opens an entry some other way than its details, such as one standing
+  /// for a sequence of events, opening it; returns whether it did, and the
+  /// details are shown when it did not.
+  final bool Function(StudyTimelineEntry entry)? onOpenEntry;
 
   @override
   State<TimelinePage> createState() => _TimelinePageState();
@@ -2580,6 +2586,7 @@ class _TimelinePageState extends State<TimelinePage> {
       _selectedId = entry.id;
       _reveal(entry);
     });
+    if (widget.onOpenEntry?.call(entry) ?? false) return;
     // One of a timeline it is built on is changed there, not here.
     final own = entry.timelineId == _timeline.id;
     final edit = own ? widget.onEditEntry : null;
@@ -3203,6 +3210,7 @@ class _TimelinePageState extends State<TimelinePage> {
                           selectedId: _selectedId,
                           faded: _faded,
                           onTapEntry: _show,
+                          onTapDay: _showDay,
                         ),
                       ),
                     ],

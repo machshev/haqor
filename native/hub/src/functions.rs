@@ -2601,13 +2601,40 @@ pub async fn get_bible_events(bible: SharedBible) {
     while let Some(signal_pack) = receiver.recv().await {
         let req = signal_pack.message;
         debug_print!("{:?}", req);
-        let events = lock(&bible).bible_events().unwrap_or_else(|e| {
-            debug_print!("get_bible_events error: {:?}", e);
-            Vec::new()
-        });
+        let (events, sequences) = {
+            let bible = lock(&bible);
+            let events = bible.bible_events().unwrap_or_else(|e| {
+                debug_print!("get_bible_events error: {:?}", e);
+                Vec::new()
+            });
+            let sequences = bible.event_sequences().unwrap_or_else(|e| {
+                debug_print!("event_sequences error: {:?}", e);
+                Vec::new()
+            });
+            (events, sequences)
+        };
         BibleEvents {
             request_id: req.request_id,
             events: events.into_iter().map(bible_event_entry).collect(),
+            sequences: sequences
+                .into_iter()
+                .map(|s| crate::signals::EventSequenceEntry {
+                    key: s.key,
+                    title: s.title,
+                    note: s.note,
+                    expands: s.expands,
+                    events: s.events,
+                    edges: s
+                        .edges
+                        .into_iter()
+                        .map(|e| crate::signals::SequenceEdgeEntry {
+                            before: e.before,
+                            after: e.after,
+                            bases: e.bases,
+                        })
+                        .collect(),
+                })
+                .collect(),
         }
         .send_signal_to_dart();
     }
