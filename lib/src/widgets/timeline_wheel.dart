@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../study_workspace.dart';
@@ -163,9 +164,15 @@ List<TimelineWheelMark> timelineWheelMarks(
 }
 
 /// The point at [fraction] of the year round a wheel centred on [centre],
-/// [radius] out: clockwise from the top, where 1 Nisan stands.
-Offset timelineWheelPoint(Offset centre, double radius, double fraction) {
-  final angle = -math.pi / 2 + 2 * math.pi * fraction;
+/// [radius] out: clockwise from the top, where 1 Nisan stands, unless the
+/// wheel is turned [turn] of the way round.
+Offset timelineWheelPoint(
+  Offset centre,
+  double radius,
+  double fraction, {
+  double turn = 0,
+}) {
+  final angle = -math.pi / 2 + 2 * math.pi * (fraction + turn);
   return centre + Offset(math.cos(angle), math.sin(angle)) * radius;
 }
 
@@ -177,7 +184,11 @@ Offset timelineWheelPoint(Offset centre, double radius, double fraction) {
 /// whole: the spring feasts facing the autumn ones across it. Tapping an
 /// entry, or its name, calls [onTapEntry]; an event drawn with a high
 /// Sabbath of its day, [onTapDay] with that day, as there is one.
-class TimelineWheel extends StatelessWidget {
+///
+/// Dragged, the wheel turns about its centre; pinched, scrolled, or by its
+/// buttons, it zooms, its names placed afresh in the room it then has, and
+/// dragged with two fingers it moves.
+class TimelineWheel extends StatefulWidget {
   const TimelineWheel({
     super.key,
     required this.timeline,
@@ -201,13 +212,15 @@ class TimelineWheel extends StatelessWidget {
   /// The entries drawn faded: those of the timelines it is built on.
   final Set<String> faded;
 
-  /// The mark at [point] on a wheel of [size], if any: one named by one of
-  /// [labels], an event's dot, or a span's arc.
+  /// The mark at [point] on a wheel of [size] turned [turn] of the way
+  /// round, if any: one named by one of [labels], an event's dot, or a
+  /// span's arc.
   static TimelineWheelMark? markAt(
     List<TimelineWheelMark> marks,
     Size size,
     Offset point, {
     List<TimelineWheelLabel> labels = const [],
+    double turn = 0,
   }) {
     for (final label in labels) {
       if (label.rect.inflate(2).contains(point)) {
@@ -219,13 +232,19 @@ class TimelineWheel extends StatelessWidget {
     final offset = point - centre;
     final distance = offset.distance;
     final fraction =
-        ((math.atan2(offset.dy, offset.dx) + math.pi / 2) / (2 * math.pi)) %
+        ((math.atan2(offset.dy, offset.dx) + math.pi / 2) / (2 * math.pi) -
+            turn) %
         1.0;
     TimelineWheelMark? best;
     var bestDistance = double.infinity;
     for (final mark in marks) {
       if (!mark.entry.isSpan) {
-        final at = timelineWheelPoint(centre, mark.radius * radius, mark.from);
+        final at = timelineWheelPoint(
+          centre,
+          mark.radius * radius,
+          mark.from,
+          turn: turn,
+        );
         final d = (at - point).distance;
         if (d < 14 && d < bestDistance) {
           best = mark;
@@ -244,21 +263,24 @@ class TimelineWheel extends StatelessWidget {
     return best;
   }
 
-  /// The season of the land at [point] on a wheel of [size] showing the
-  /// year [year] of [timeline], if it shows them and one is there.
+  /// The season of the land at [point] on a wheel of [size] turned [turn]
+  /// of the way round, showing the year [year] of [timeline], if it shows
+  /// them and one is there.
   static TimelineSeason? seasonAt(
     StudyTimeline timeline,
     double year,
     Size size,
-    Offset point,
-  ) {
+    Offset point, {
+    double turn = 0,
+  }) {
     if (!timeline.showSeasons) return null;
     final centre = size.center(Offset.zero);
     final radius = size.shortestSide / 2;
     final offset = point - centre;
     final stretch = timelineYearStretch(timeline, year);
     final fraction =
-        ((math.atan2(offset.dy, offset.dx) + math.pi / 2) / (2 * math.pi)) %
+        ((math.atan2(offset.dy, offset.dx) + math.pi / 2) / (2 * math.pi) -
+            turn) %
         1.0;
     final position = stretch.start + fraction * (stretch.end - stretch.start);
     for (final season in timelineSeasons) {
@@ -276,9 +298,109 @@ class TimelineWheel extends StatelessWidget {
   }
 
   @override
+  State<TimelineWheel> createState() => _TimelineWheelState();
+}
+
+class _TimelineWheelState extends State<TimelineWheel> {
+  static const _maxZoom = 6.0;
+
+  /// How far round the wheel is turned, as a fraction of a turn clockwise.
+  double _turn = 0;
+
+  /// How far zoomed in, and where the zoomed wheel's top left stands in
+  /// view.
+  double _zoom = 1;
+  Offset _pan = Offset.zero;
+
+  /// The side of the view, as last laid out.
+  double _side = 0;
+
+  /// Where a drag last stood, and a pinch's scale and twist.
+  Offset _lastFocal = Offset.zero;
+  double _lastScale = 1;
+  double _lastRotation = 0;
+
+  bool get _moved => _turn != 0 || _zoom != 1;
+
+  /// [pan] held so the wheel covers the view.
+  Offset _clamp(Offset pan) {
+    final over = _side * (_zoom - 1);
+    return Offset(pan.dx.clamp(-over, 0.0), pan.dy.clamp(-over, 0.0));
+  }
+
+  /// Zooms by [factor], [focal] in view staying put.
+  void _zoomAt(Offset focal, double factor) {
+    final zoom = (_zoom * factor).clamp(1.0, _maxZoom);
+    final by = zoom / _zoom;
+    _zoom = zoom;
+    _pan = _clamp(focal - (focal - _pan) * by);
+  }
+
+  void _zoomBy(double factor) =>
+      setState(() => _zoomAt(Offset(_side / 2, _side / 2), factor));
+
+  void _reset() => setState(() {
+    _turn = 0;
+    _zoom = 1;
+    _pan = Offset.zero;
+  });
+
+  /// Where the last pointer came down: a drag turns the wheel from there,
+  /// not from where it was first seen to be a drag.
+  Offset _down = Offset.zero;
+
+  void _onScaleStart(ScaleStartDetails details) {
+    _lastFocal = details.pointerCount < 2 ? _down : details.localFocalPoint;
+    _lastScale = 1;
+    _lastRotation = 0;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    final focal = details.localFocalPoint;
+    setState(() {
+      if (details.pointerCount < 2) {
+        // One finger, or the mouse, turns the wheel about its centre.
+        final centre = _pan + Offset(_side, _side) * _zoom / 2;
+        final from = _lastFocal - centre;
+        final to = focal - centre;
+        if (from.distance > 4 && to.distance > 4) {
+          var delta = to.direction - from.direction;
+          if (delta > math.pi) delta -= 2 * math.pi;
+          if (delta < -math.pi) delta += 2 * math.pi;
+          _turn = (_turn + delta / (2 * math.pi)) % 1.0;
+        }
+      } else {
+        // Two zoom it, move it, and twisted, turn it.
+        _zoomAt(_lastFocal, details.scale / _lastScale);
+        _pan = _clamp(_pan + focal - _lastFocal);
+        _turn =
+            (_turn + (details.rotation - _lastRotation) / (2 * math.pi)) % 1.0;
+        _lastScale = details.scale;
+        _lastRotation = details.rotation;
+      }
+      _lastFocal = focal;
+    });
+  }
+
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (event) {
+      final scroll = event as PointerScrollEvent;
+      setState(
+        () => _zoomAt(
+          scroll.localPosition,
+          math.exp(-scroll.scrollDelta.dy / 300),
+        ),
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final timeline = widget.timeline;
+    final year = widget.year;
     final theme = Theme.of(context);
-    final marks = timelineWheelMarks(timeline, entries, year);
+    final marks = timelineWheelMarks(timeline, widget.entries, year);
     // A key to the stars, whose names are mostly left off.
     final key = marks.any(timelineWheelStar)
         ? Padding(
@@ -310,51 +432,119 @@ class TimelineWheel extends StatelessWidget {
               ) -
               16,
         );
-        final size = Size.square(side);
+        _side = side;
+        _pan = _clamp(_pan);
+        final size = Size.square(side * _zoom);
         final layout = TimelineWheelLayout(
           timeline: timeline,
           year: year,
           marks: marks,
           size: size,
-          selectedId: selectedId,
-          faded: faded,
+          selectedId: widget.selectedId,
+          faded: widget.faded,
           theme: theme,
+          turn: _turn,
+          visible: _zoom == 1 ? null : (-_pan & Size.square(side)),
+        );
+        // The zoom, on a ground of its own over the wheel zoomed beneath.
+        final zoom = Material(
+          color: theme.colorScheme.surface.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Zoom in',
+                icon: const Icon(Icons.zoom_in),
+                onPressed: _zoom < _maxZoom ? () => _zoomBy(1.5) : null,
+              ),
+              IconButton(
+                tooltip: 'Zoom out',
+                icon: const Icon(Icons.zoom_out),
+                onPressed: _zoom > 1 ? () => _zoomBy(1 / 1.5) : null,
+              ),
+              IconButton(
+                tooltip: 'Reset wheel',
+                icon: const Icon(Icons.restart_alt),
+                onPressed: _moved ? _reset : null,
+              ),
+            ],
+          ),
         );
         return Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              GestureDetector(
-                key: const ValueKey('timeline-wheel'),
-                onTapUp: (details) {
-                  final point = details.localPosition;
-                  final mark = markAt(
-                    marks,
-                    size,
-                    point,
-                    labels: layout.labels,
-                  );
-                  if (mark != null) {
-                    final day = onTapDay;
-                    if (mark.sabbaths.isNotEmpty && day != null) {
-                      day(mark.entry.start);
-                    } else {
-                      onTapEntry?.call(mark.entry);
-                    }
-                    return;
-                  }
-                  // A season tapped says what it is, and where it is written.
-                  final season = seasonAt(timeline, year, size, point);
-                  if (season == null) return;
-                  ScaffoldMessenger.maybeOf(context)
-                    ?..hideCurrentSnackBar()
-                    ..showSnackBar(
-                      SnackBar(
-                        content: Text('${season.name} · ${season.references}'),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Listener(
+                    onPointerSignal: _onPointerSignal,
+                    onPointerDown: (event) => _down = event.localPosition,
+                    child: GestureDetector(
+                      key: const ValueKey('timeline-wheel'),
+                      onScaleStart: _onScaleStart,
+                      onScaleUpdate: _onScaleUpdate,
+                      onTapUp: (details) {
+                        final point = details.localPosition - _pan;
+                        final mark = TimelineWheel.markAt(
+                          marks,
+                          size,
+                          point,
+                          labels: layout.labels,
+                          turn: _turn,
+                        );
+                        if (mark != null) {
+                          final day = widget.onTapDay;
+                          if (mark.sabbaths.isNotEmpty && day != null) {
+                            day(mark.entry.start);
+                          } else {
+                            widget.onTapEntry?.call(mark.entry);
+                          }
+                          return;
+                        }
+                        // A season tapped says what it is, and where it is written.
+                        final season = TimelineWheel.seasonAt(
+                          timeline,
+                          year,
+                          size,
+                          point,
+                          turn: _turn,
+                        );
+                        if (season == null) return;
+                        ScaffoldMessenger.maybeOf(context)
+                          ?..hideCurrentSnackBar()
+                          ..showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                '${season.name} · ${season.references}',
+                              ),
+                            ),
+                          );
+                      },
+                      child: ClipRect(
+                        child: SizedBox.square(
+                          dimension: side,
+                          child: OverflowBox(
+                            alignment: Alignment.topLeft,
+                            minWidth: 0,
+                            minHeight: 0,
+                            maxWidth: double.infinity,
+                            maxHeight: double.infinity,
+                            child: Transform.translate(
+                              offset: _pan,
+                              child: CustomPaint(
+                                size: size,
+                                painter: _WheelPainter(layout),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    );
-                },
-                child: CustomPaint(size: size, painter: _WheelPainter(layout)),
+                    ),
+                  ),
+                  Positioned(right: 0, bottom: 0, child: zoom),
+                ],
               ),
               ?key,
             ],
@@ -376,6 +566,8 @@ class TimelineWheelLayout {
     required this.selectedId,
     required this.faded,
     required this.theme,
+    this.turn = 0,
+    this.visible,
   }) {
     _place();
   }
@@ -387,6 +579,13 @@ class TimelineWheelLayout {
   final String? selectedId;
   final Set<String> faded;
   final ThemeData theme;
+
+  /// How far round the wheel is turned, as a fraction of a turn clockwise.
+  final double turn;
+
+  /// The part of the wheel in view, when zoomed in: only marks in it are
+  /// named, and only within it; all of it when null.
+  final Rect? visible;
 
   ColorScheme get scheme => theme.colorScheme;
   Offset get centre => size.center(Offset.zero);
@@ -418,10 +617,17 @@ class TimelineWheelLayout {
     entry.isSpan ? scheme.primary : scheme.tertiary,
   ).withValues(alpha: faded.contains(entry.id) ? 0.45 : 1);
 
+  /// The point [radius] out at [fraction] of the year, as the wheel is
+  /// turned.
+  Offset point(double radius, double fraction) =>
+      timelineWheelPoint(centre, radius, fraction, turn: turn);
+
   /// The point of [mark] a line runs from to its name: an event's dot, a
-  /// span's start.
+  /// span's start, or, zoomed in, the first of it in view.
   Offset markPoint(TimelineWheelMark mark) =>
-      timelineWheelPoint(centre, mark.radius * r, mark.from);
+      _from[mark.entry.id] ?? point(mark.radius * r, mark.from);
+
+  final _from = <String, Offset>{};
 
   /// Whether [mark] is chosen: its entry, or a high Sabbath drawn with it.
   bool isSelected(TimelineWheelMark mark) =>
@@ -438,26 +644,27 @@ class TimelineWheelLayout {
   void _place() {
     if (size.isEmpty) return;
     final reach = _labelReach * r;
+    final view = visible ?? Offset.zero & size;
     final blocked = <Rect>[if (title.width > 0) titleRect.inflate(4)];
+    // The marks in view, which alone are named.
+    final shown = <TimelineWheelMark>{};
     for (final mark in marks) {
       if (!mark.entry.isSpan) {
-        blocked.add(Rect.fromCircle(center: markPoint(mark), radius: 9));
+        final at = markPoint(mark);
+        blocked.add(Rect.fromCircle(center: at, radius: 9));
+        if (view.contains(at)) shown.add(mark);
         continue;
       }
       final radius = mark.radius * r;
       final sweep = mark.to - mark.from;
       final steps = math.max(1, (2 * math.pi * radius * sweep / 4).ceil());
       for (var i = 0; i <= steps; i++) {
-        blocked.add(
-          Rect.fromCircle(
-            center: timelineWheelPoint(
-              centre,
-              radius,
-              mark.from + sweep * i / steps,
-            ),
-            radius: 6,
-          ),
-        );
+        final at = point(radius, mark.from + sweep * i / steps);
+        blocked.add(Rect.fromCircle(center: at, radius: 6));
+        if (!shown.contains(mark) && view.contains(at)) {
+          shown.add(mark);
+          if (i > 0) _from[mark.entry.id] = at;
+        }
       }
     }
     final names = <Rect>[];
@@ -467,7 +674,7 @@ class TimelineWheelLayout {
       rect.topRight,
       rect.bottomLeft,
       rect.bottomRight,
-    ].every((p) => (p - centre).distance <= reach);
+    ].every((p) => (p - centre).distance <= reach && view.contains(p));
     // A high Sabbath called as others are ("Shabbaton", "Miqra qodesh")
     // goes unnamed unless chosen: its star, and the key, say what it is.
     final called = <String, int>{};
@@ -493,19 +700,24 @@ class TimelineWheelLayout {
         ? 3
         : 2;
     final order = [
-      for (var i = 0; i <= 3; i++) ...marks.where((m) => rank(m) == i),
+      for (var i = 0; i <= 3; i++)
+        ...marks.where((m) => rank(m) == i && shown.contains(m)),
     ];
     final small = theme.textTheme.labelSmall;
     final probe = TextPainter(
       text: TextSpan(text: 'M', style: small),
       textDirection: TextDirection.ltr,
     )..layout();
-    // The points a name may stand by, on a grid over the room.
+    // The points a name may stand by, on a grid over the room in view.
     final grid = probe.height * 0.6;
     final points = <Offset>[
       for (var y = -reach; y <= reach; y += grid)
-        for (var x = -reach; x <= reach; x += grid)
-          if (x * x + y * y <= reach * reach) centre + Offset(x, y),
+        if (view.top <= centre.dy + y && centre.dy + y <= view.bottom)
+          for (var x = -reach; x <= reach; x += grid)
+            if (x * x + y * y <= reach * reach &&
+                view.left <= centre.dx + x &&
+                centre.dx + x <= view.right)
+              centre + Offset(x, y),
     ];
     for (final mark in order) {
       final selected = isSelected(mark);
@@ -619,7 +831,8 @@ class _WheelPainter extends CustomPainter {
     final stretch = timelineYearStretch(timeline, year);
     final length = stretch.end - stretch.start;
     double fraction(double position) => (position - stretch.start) / length;
-    double angle(double fraction) => -math.pi / 2 + 2 * math.pi * fraction;
+    double angle(double fraction) =>
+        -math.pi / 2 + 2 * math.pi * (fraction + layout.turn);
     final small = theme.textTheme.labelSmall;
 
     // The months round the rim, named along it.
@@ -655,7 +868,7 @@ class _WheelPainter extends CustomPainter {
         timeline.monthName(year, month),
         centre,
         mid,
-        (from + to) / 2,
+        (from + to) / 2 + layout.turn,
         small?.copyWith(fontWeight: FontWeight.w600),
         maxWidth: 2 * math.pi * mid * (to - from) * 0.92,
       );
@@ -670,8 +883,8 @@ class _WheelPainter extends CustomPainter {
       if (time == null || timeline.weekdayOf(time) != 7) continue;
       final at = fraction(timeline.centreOf(time));
       canvas.drawLine(
-        timelineWheelPoint(centre, r * (_monthsInner - 0.005), at),
-        timelineWheelPoint(centre, r * (_monthsInner - 0.03), at),
+        layout.point(r * (_monthsInner - 0.005), at),
+        layout.point(r * (_monthsInner - 0.03), at),
         sabbath,
       );
     }
@@ -733,7 +946,7 @@ class _WheelPainter extends CustomPainter {
     for (final mark in layout.marks.where((m) => !m.entry.isSpan)) {
       final selected = layout.isSelected(mark);
       final color = layout.colorOf(mark.entry);
-      final dot = layout.markPoint(mark);
+      final dot = layout.point(r * mark.radius, mark.from);
       if (timelineWheelStar(mark)) {
         final star = _star(dot, 8);
         canvas
@@ -854,7 +1067,9 @@ class _WheelPainter extends CustomPainter {
       old.layout.size != layout.size ||
       old.layout.selectedId != layout.selectedId ||
       old.layout.faded != layout.faded ||
-      old.layout.theme != theme;
+      old.layout.theme != theme ||
+      old.layout.turn != layout.turn ||
+      old.layout.visible != layout.visible;
 }
 
 /// A high Sabbath's star, as the wheel draws it, for its key.

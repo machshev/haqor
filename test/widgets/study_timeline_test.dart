@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1318,6 +1320,73 @@ void main() {
     expect(tappedDay, isNull);
     await tester.tapAt(at(mark('teruah')));
     expect((tappedDay?.month, tappedDay?.day), (7, 1));
+  });
+
+  testWidgets('the year wheel turns when dragged, and zooms', (tester) async {
+    final workspace = const StudyWorkspace(
+      id: 'w',
+      name: 'w',
+    ).addStandardTimeline(standardTimelineById('moadim')!, id: 'moadim');
+    final timeline = workspace.timelineById('moadim')!;
+    final entries = workspace.viewOf('moadim');
+    StudyTimelineEntry? tapped;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TimelineWheel(
+            timeline: timeline,
+            entries: entries,
+            year: 0,
+            onTapEntry: (e) => tapped = e,
+          ),
+        ),
+      ),
+    );
+    final paint = find.descendant(
+      of: find.byKey(const ValueKey('timeline-wheel')),
+      matching: find.byType(CustomPaint),
+    );
+    final view = tester.getRect(paint);
+    final marks = timelineWheelMarks(timeline, entries, 0);
+    final sukkot1 = marks.singleWhere((m) => m.entry.id == 'moadim:sukkot-1');
+    Offset at(TimelineWheelMark m, Rect wheel, double turn) =>
+        timelineWheelPoint(
+          wheel.center,
+          m.radius * wheel.width / 2,
+          m.from,
+          turn: turn,
+        );
+    // Dragged from the top round to the right, it turns a quarter.
+    final r = view.width / 2 * 0.6;
+    final gesture = await tester.startGesture(view.center - Offset(0, r));
+    for (var i = 1; i <= 10; i++) {
+      final a = -math.pi / 2 + math.pi / 2 * i / 10;
+      await gesture.moveTo(view.center + Offset(math.cos(a), math.sin(a)) * r);
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pump();
+    await tester.tapAt(at(sukkot1, view, 0.25));
+    expect(tapped?.id, 'moadim:sukkot-1');
+    // Zoomed in, the wheel grows past its view, and its marks still open.
+    await tester.tap(find.byTooltip('Zoom in'));
+    await tester.pump();
+    final wheel = tester.getRect(paint);
+    expect(wheel.width, closeTo(view.width * 1.5, 0.01));
+    expect(wheel.center, offsetMoreOrLessEquals(view.center));
+    final inView = marks.firstWhere(
+      (m) => m.entry.isSpan && view.deflate(20).contains(at(m, wheel, 0.25)),
+    );
+    tapped = null;
+    await tester.tapAt(at(inView, wheel, 0.25));
+    expect(tapped?.id, inView.entry.id);
+    // Reset, it stands as it was.
+    await tester.tap(find.byTooltip('Reset wheel'));
+    await tester.pump();
+    expect(tester.getRect(paint), view);
+    tapped = null;
+    await tester.tapAt(at(sukkot1, view, 0));
+    expect(tapped?.id, 'moadim:sukkot-1');
   });
 
   testWidgets('categories colour entries, which a key shows and hides, and '
