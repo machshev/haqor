@@ -280,6 +280,11 @@ List<TimelineWheelMark> timelineWheelMarks(
   }
   // The spans' rings start within the deepest stack of dots.
   final spanOuter = _eventRadius - deepest * _stackStep - _spanBelowEvents;
+  // Fit every lane in the annulus instead of piling overflow onto its
+  // innermost ring. Sparse wheels retain their usual spacing.
+  final spanStep = spanEnds.length < 2
+      ? _spanStep
+      : math.min(_spanStep, (spanOuter - _spanInner) / (spanEnds.length - 1));
   return [
     ...events,
     for (final (entry, from, to, lane) in spans)
@@ -287,7 +292,7 @@ List<TimelineWheelMark> timelineWheelMarks(
         entry: entry,
         from: from,
         to: to,
-        radius: math.max(_spanInner, spanOuter - lane * _spanStep),
+        radius: spanOuter - lane * spanStep,
         sabbaths: const <StudyTimelineEntry>[],
       ),
   ]..sort((a, b) => compareTimelineEntries(a.entry, b.entry));
@@ -732,6 +737,21 @@ class TimelineWheelLayout {
   Offset get centre => size.center(Offset.zero);
   double get r => size.shortestSide / 2;
 
+  /// Leave visible space between dense rings, including the selected arc.
+  late final double spanStrokeLimit = () {
+    final radii =
+        marks.where((m) => m.entry.isSpan).map((m) => m.radius).toSet().toList()
+          ..sort();
+    var gap = double.infinity;
+    for (var i = 1; i < radii.length; i++) {
+      gap = math.min(gap, radii[i] - radii[i - 1]);
+    }
+    return gap * r * 0.75;
+  }();
+
+  double spanStrokeWidth(TimelineWheelMark mark) =>
+      math.min(mark.entry.id == selectedId ? 9.0 : 7.0, spanStrokeLimit);
+
   /// The year, or the calendar's title, in the middle.
   late final TextPainter title = TextPainter(
     text: TextSpan(
@@ -1118,7 +1138,7 @@ class _WheelPainter extends CustomPainter {
           ..color = color.withValues(alpha: color.a * (selected ? 1 : 0.6))
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
-          ..strokeWidth = selected ? 9 : 7,
+          ..strokeWidth = layout.spanStrokeWidth(mark),
       );
     }
     // The events as dots, a high Sabbath's, or an event's on one, a star.
