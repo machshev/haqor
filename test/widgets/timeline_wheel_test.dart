@@ -4,6 +4,69 @@ import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/timeline_wheel.dart';
 
 void main() {
+  test('dense wheel labels reveal with zoom and selection', () {
+    const timeline = StudyTimeline(
+      id: 'chronology',
+      title: 'Chronology',
+      scale: TimelineScale.calendar,
+    );
+    const cycle = TimelineWheelCycle(
+      start: 0,
+      length: 1000,
+      title: '1,000 years',
+      segments: ['1'],
+    );
+    final entries = [
+      for (var i = 0; i < 25; i++)
+        StudyTimelineEntry(
+          id: 'event-$i',
+          title: 'Event $i',
+          timelineId: timeline.id,
+          start: TimelineTime(10.0 + i * 35),
+        ),
+      const StudyTimelineEntry(
+        id: 'span',
+        title: 'Period',
+        timelineId: 'chronology',
+        start: TimelineTime(100),
+        end: TimelineTime(200),
+      ),
+    ];
+    final marks = timelineWheelMarks(timeline, entries, 0, cycle: cycle);
+    TimelineWheelLayout layout(double zoom, {String? selectedId}) =>
+        TimelineWheelLayout(
+          timeline: timeline,
+          year: 0,
+          cycle: cycle,
+          marks: marks,
+          size: const Size.square(600),
+          selectedId: selectedId,
+          faded: const {},
+          theme: ThemeData(),
+          zoom: zoom,
+        );
+    expect(layout(1).labels, isEmpty);
+    expect(layout(1.5).labels.map((l) => l.entry.id), ['span']);
+    expect(layout(2.25).labels.any((l) => !l.entry.isSpan), isTrue);
+    expect(layout(1, selectedId: 'event-0').labels.map((l) => l.entry.id), [
+      'event-0',
+    ]);
+    expect(layout(1).labels, isEmpty);
+    final mark = marks.first;
+    expect(
+      TimelineWheel.markAt(
+        marks,
+        const Size.square(600),
+        timelineWheelPoint(
+          const Offset(300, 300),
+          mark.radius * 300,
+          mark.from,
+        ),
+      )?.entry.id,
+      mark.entry.id,
+    );
+  });
+
   test(
     'nearby events reuse free outer lanes instead of forming a staircase',
     () {

@@ -587,6 +587,7 @@ class _TimelineWheelState extends State<TimelineWheel> {
           faded: widget.faded,
           theme: theme,
           turn: _turn,
+          zoom: _zoom,
           visible: _zoom == 1 ? null : (-_pan & Size.square(side)),
         );
         // The zoom, on a ground of its own over the wheel zoomed beneath.
@@ -712,6 +713,7 @@ class TimelineWheelLayout {
     required this.faded,
     required this.theme,
     this.turn = 0,
+    this.zoom = 1,
     this.visible,
   }) {
     _place();
@@ -728,6 +730,9 @@ class TimelineWheelLayout {
 
   /// How far round the wheel is turned, as a fraction of a turn clockwise.
   final double turn;
+
+  /// Controls label detail independently of the viewport size.
+  final double zoom;
 
   /// The part of the wheel in view, when zoomed in: only marks in it are
   /// named, and only within it; all of it when null.
@@ -853,9 +858,14 @@ class TimelineWheelLayout {
         m.entry.isHighSabbath && called[m.entry.shortLabel]! > 1;
     // The spans first, then the events, the high Sabbaths among them last,
     // each in the order of the year.
+    // Dense overviews show the chronology without a web of leader lines.
+    // Reveal spans first, then individual events, as the user zooms in.
+    // Sparse calendars keep their useful labels at the overview scale.
+    bool awaitingZoom(TimelineWheelMark m) =>
+        marks.length > 24 && zoom < (m.entry.isSpan ? 1.5 : 2.25);
     int rank(TimelineWheelMark m) => isSelected(m)
         ? 0
-        : unnamed(m)
+        : unnamed(m) || awaitingZoom(m)
         ? -1
         : m.entry.isSpan
         ? 1
@@ -866,6 +876,7 @@ class TimelineWheelLayout {
       for (var i = 0; i <= 3; i++)
         ...marks.where((m) => rank(m) == i && shown.contains(m)),
     ];
+    if (order.isEmpty) return;
     final small = theme.textTheme.labelSmall;
     final probe = TextPainter(
       text: TextSpan(text: 'M', style: small),
@@ -1269,6 +1280,7 @@ class _WheelPainter extends CustomPainter {
       old.layout.faded != layout.faded ||
       old.layout.theme != theme ||
       old.layout.turn != layout.turn ||
+      old.layout.zoom != layout.zoom ||
       old.layout.visible != layout.visible;
 }
 
