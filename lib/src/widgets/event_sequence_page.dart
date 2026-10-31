@@ -475,6 +475,11 @@ class _EventSequencePageState extends State<EventSequencePage> {
   /// The edges not drawn, their cards stacked one after the other.
   var _stacked = <(int, int)>{};
 
+  /// Where an edge passing more than one row would run behind the cards
+  /// between its ends, the column (in slots, as [SequenceGraph.column]) it
+  /// runs down instead, in the room beside them.
+  var _detours = <(int, int), double>{};
+
   /// Where the first slot starts across the flow, and where the canvas
   /// ends.
   var _acrossStart = 0.0;
@@ -542,10 +547,52 @@ class _EventSequencePageState extends State<EventSequencePage> {
         (between[graph.row[u]!] ??= []).add(edge);
       }
     }
+    // An edge passing rows whose cards lie in its way is taken beside
+    // them, in the room between slots nearest its ends; and kept room at
+    // each end, to turn there.
+    final detours = <(int, int), double>{};
+    final turning = <int>{};
+    final half = (_horizontal ? _cardAcross : _cardWidth) / (2 * _slot);
+    for (final edge in graph.drawnEdges) {
+      final (u, v) = edge;
+      final (top, bottom) = (graph.row[u]!, graph.row[v]!);
+      if (bottom - top < 2) continue;
+      final (from, to) = (graph.column[u]!, graph.column[v]!);
+      final passed = [for (var r = top + 1; r < bottom; r++) ...graph.rows[r]];
+      bool inWay(double at, int node) =>
+          (at - graph.column[node]!).abs() < half + 0.02;
+      final blocked = [
+        for (var r = top + 1; r < bottom; r++)
+          for (final o in graph.rows[r])
+            if (inWay(from + (to - from) * (r - top) / (bottom - top), o)) o,
+      ];
+      if (blocked.isEmpty) continue;
+      final ways = [
+        for (final o in passed) ...[
+          graph.column[o]! - 0.5,
+          graph.column[o]! + 0.5,
+        ],
+      ].where((at) => !passed.any((o) => inWay(at, o)));
+      if (ways.isEmpty) continue;
+      detours[edge] = ways.reduce(
+        (a, b) =>
+            (a - from).abs() + (a - to).abs() <=
+                (b - from).abs() + (b - to).abs()
+            ? a
+            : b,
+      );
+      turning
+        ..add(top)
+        ..add(bottom - 1);
+    }
+    _detours = detours;
+
     final stacked = <(int, int)>{};
     final tight = <int>{};
     for (final MapEntry(key: r, value: edges) in between.entries) {
-      if (_milestoneRows.containsKey(r + 1) || !edges.every(stackable)) {
+      if (_milestoneRows.containsKey(r + 1) ||
+          turning.contains(r) ||
+          !edges.every(stackable)) {
         continue;
       }
       tight.add(r);
@@ -1160,6 +1207,19 @@ class _EventSequencePageState extends State<EventSequencePage> {
                               (_horizontal
                                   ? Offset(0, _cardAcross / 2)
                                   : const Offset(_cardWidth / 2, 0)),
+                          via: switch (_detours[(u, v)]) {
+                            null => null,
+                            final column => (
+                              across:
+                                  _acrossStart +
+                                  column * _slot +
+                                  (_horizontal ? _cardAcross : _cardWidth) / 2,
+                              start: _rowAt[_graph.row[u]! + 1],
+                              end:
+                                  _rowAt[_graph.row[v]! - 1] +
+                                  _rowAlong[_graph.row[v]! - 1],
+                            ),
+                          },
                           lit:
                               selected != null &&
                               (({u, v}.every(
@@ -2229,7 +2289,18 @@ class _EdgePainter extends CustomPainter {
     required this.horizontal,
   });
 
-  final List<({Offset from, Offset to, bool lit})> edges;
+  /// Each edge from the foot of one card to the head of the next; one
+  /// taken beside the cards between runs [via] a line along the flow, from
+  /// where it enters their rows to where it leaves them.
+  final List<
+    ({
+      Offset from,
+      Offset to,
+      ({double across, double start, double end})? via,
+      bool lit,
+    })
+  >
+  edges;
   final Color color, litColor;
 
   /// Whether the edges run left to right, leaving a card's right side for
@@ -2251,17 +2322,28 @@ class _EdgePainter extends CustomPainter {
         // Along the flow, and across it.
         final along = horizontal ? const Offset(1, 0) : const Offset(0, 1);
         final side = Offset(along.dy, along.dx);
-        final run = horizontal ? to.dx - from.dx : to.dy - from.dy;
-        final bend = math.min(horizontal ? _gapRank : _gapDown, run / 2);
-        final c1 = from + along * bend;
-        final c2 = to - along * bend;
         final end = to - along * 5;
-        canvas.drawPath(
-          Path()
-            ..moveTo(from.dx, from.dy)
-            ..cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, end.dx, end.dy),
-          paint,
-        );
+        // A curve leaving along the flow and arriving along it.
+        void curve(Path path, Offset a, Offset b) {
+          final run = horizontal ? b.dx - a.dx : b.dy - a.dy;
+          final bend = math.min(horizontal ? _gapRank : _gapDown, run / 2);
+          final c1 = a + along * bend;
+          final c2 = b - along * bend;
+          path.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, b.dx, b.dy);
+        }
+
+        final path = Path()..moveTo(from.dx, from.dy);
+        if (edge.via case final via?) {
+          Offset point(double at) =>
+              horizontal ? Offset(at, via.across) : Offset(via.across, at);
+          final (enter, leave) = (point(via.start), point(via.end));
+          curve(path, from, enter);
+          path.lineTo(leave.dx, leave.dy);
+          curve(path, leave, end);
+        } else {
+          curve(path, from, end);
+        }
+        canvas.drawPath(path, paint);
         final back = to - along * 6;
         final left = back - side * 4;
         final right = back + side * 4;
