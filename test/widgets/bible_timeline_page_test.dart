@@ -146,6 +146,58 @@ void main() {
     expect(readAt, [(0, 1, 1)]);
   });
 
+  testWidgets('opens a timeline that comes with the app, its verses in the '
+      'reader', (tester) async {
+    final requests = <GetBibleEvents>[];
+    final readAt = <(int, int, int)>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleTimelinePage(
+          useEnglishBookNames: true,
+          sendRequest: requests.add,
+          onNavigateToPassage: (book, chapter, verse) =>
+              readAt.add((book, chapter, verse)),
+        ),
+      ),
+    );
+    assignRustSignal['BibleEvents']!(
+      BibleEvents(
+        requestId: requests.single.requestId,
+        events: _events,
+        sequences: const [],
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('bible-timeline-standards')));
+    await tester.pumpAndSettle();
+    final moadim = standardTimelineById('moadim')!;
+    await tester.tap(find.text(moadim.template.title));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, moadim.template.title), findsOneWidget);
+    // Read as it is: nothing to add to it or edit.
+    expect(find.byTooltip('Add to timeline'), findsNothing);
+    expect(find.byTooltip('Edit timeline'), findsNothing);
+    final pesach = find.byKey(const ValueKey('timeline-row-moadim:pesach'));
+    await tester.scrollUntilVisible(
+      pesach,
+      200,
+      scrollable: find.descendant(
+        of: find.byType(ListView),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.ensureVisible(pesach);
+    await tester.pumpAndSettle();
+    await tester.tap(pesach);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ActionChip, 'Leviticus 23:5'));
+    await tester.pumpAndSettle();
+    // Both timelines close for the reader.
+    expect(find.byType(BibleTimelinePage, skipOffstage: false), findsNothing);
+    expect(readAt, [(2, 23, 5)]);
+  });
+
   testWidgets('says so when the database has no events', (tester) async {
     final requests = <GetBibleEvents>[];
     await tester.pumpWidget(

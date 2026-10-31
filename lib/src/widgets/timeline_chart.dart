@@ -1956,6 +1956,7 @@ class TimelinePage extends StatefulWidget {
     this.baseTitles = const {},
     this.collapseGroups = false,
     this.onOpenEntry,
+    this.actions = const [],
   });
 
   final StudyTimeline timeline;
@@ -2019,6 +2020,9 @@ class TimelinePage extends StatefulWidget {
   /// for a sequence of events, opening it; returns whether it did, and the
   /// details are shown when it did not.
   final bool Function(StudyTimelineEntry entry)? onOpenEntry;
+
+  /// More buttons for its app bar, after its own.
+  final List<Widget> actions;
 
   @override
   State<TimelinePage> createState() => _TimelinePageState();
@@ -3193,6 +3197,7 @@ class _TimelinePageState extends State<TimelinePage> {
                   icon: const Icon(Icons.edit_note),
                   onPressed: () => _edit(editTimeline),
                 ),
+              ...widget.actions,
             ],
           ),
           body: _withCategories(

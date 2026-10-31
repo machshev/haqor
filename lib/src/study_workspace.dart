@@ -2036,6 +2036,20 @@ class StudyWorkspace {
     })!,
   );
 
+  /// [standard] as a study holding it shows it, outside any study: the
+  /// timeline, and its entries in time order.
+  static ({StudyTimeline timeline, List<StudyTimelineEntry> entries})
+  viewOfStandard(StandardTimeline standard) {
+    final workspace = const StudyWorkspace(
+      id: '',
+      name: '',
+    ).addStandardTimeline(standard, id: standard.id);
+    return (
+      timeline: workspace.viewTimeline(standard.id)!,
+      entries: workspace.viewOf(standard.id),
+    );
+  }
+
   /// [timeline], linked to a standard timeline, made the study's own: its
   /// entries copied in to be changed as any others, no longer following
   /// the standard's.

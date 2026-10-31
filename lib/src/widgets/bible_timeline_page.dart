@@ -500,12 +500,58 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
     );
   }
 
+  /// Opens [standard], one of the timelines that come with the app, to be
+  /// read as it is; a verse opened there opens in the reader, closing this
+  /// timeline too.
+  void _openStandard(StandardTimeline standard) {
+    final view = StudyWorkspace.viewOfStandard(standard);
+    final navigate = widget.onNavigateToPassage;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TimelinePage(
+          timeline: view.timeline,
+          entries: view.entries,
+          useEnglishBookNames: widget.useEnglishBookNames,
+          onOpenPassage: (passage) {
+            // Its own page has closed already.
+            Navigator.pop(context);
+            navigate?.call(passage.bookIndex, passage.chapter, passage.verse);
+          },
+        ),
+      ),
+    );
+  }
+
+  /// The timelines that come with the app, each to open from here.
+  List<Widget> get _standardActions => [
+    if (standardTimelines.isNotEmpty)
+      PopupMenuButton<StandardTimeline>(
+        key: const ValueKey('bible-timeline-standards'),
+        tooltip: 'More timelines',
+        icon: const Icon(Icons.view_timeline_outlined),
+        onSelected: _openStandard,
+        itemBuilder: (_) => [
+          for (final standard in standardTimelines)
+            PopupMenuItem(
+              value: standard,
+              child: ListTile(
+                title: Text(standard.template.title),
+                subtitle: Text(standard.description),
+              ),
+            ),
+        ],
+      ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final events = _events;
     if (events == null || events.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: Text(bibleTimeline.title)),
+        appBar: AppBar(
+          title: Text(bibleTimeline.title),
+          actions: _standardActions,
+        ),
         body: Center(
           child: events == null
               ? const CircularProgressIndicator()
@@ -535,6 +581,7 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
       collapseGroups: true,
       linksOf: widget.linksOf,
       onOpenLink: widget.onOpenLink,
+      actions: _standardActions,
     );
   }
 }
