@@ -3,7 +3,9 @@
 # pinned release and, over Israel and Transjordan, OpenBible.info's Bible
 # geocoding data at a pinned commit (CC BY 4.0, its OpenStreetMap geometry
 # ODbL 1.0; the same commit haqor-core's scripts/fetch-openbible-geocoding.sh
-# reads), and assets/map/relief/ from the Terrain Tiles (SRTM, public domain).
+# reads), assets/map/relief/ from the Terrain Tiles (SRTM, public domain), and
+# assets/map/roads.json from Itiner-e's atlas of Roman roads (CC BY 4.0) at a
+# pinned Zenodo record and checksum.
 # The assets are committed; run this only to change them, and review the maps
 # afterwards.
 set -euo pipefail
@@ -22,6 +24,12 @@ git -C "${work}" init --quiet openbible
 git -C "${work}/openbible" fetch --quiet --depth 1 "${openbible}" "${openbible_commit}"
 git -C "${work}/openbible" checkout --quiet FETCH_HEAD
 dart run tool/build_basemap.dart "${work}" "${work}/openbible" assets/map/basemap.json
+readonly itinere_url="https://zenodo.org/api/records/17122148/files/itinere_roads.geojson/content"
+readonly itinere_sha256="4f8f5cf99f387bab2c509b1bf50143e9a3117691e316f2f46a9bb1d3d4b1cc34"
+curl -sS -L --fail --retry 3 --output "${work}/itinere_roads.geojson" "${itinere_url}"
+echo "${itinere_sha256}  ${work}/itinere_roads.geojson" | sha256sum --check --quiet
+dart run tool/build_roads.dart "${work}/itinere_roads.geojson" \
+  "${work}/ne_10m_rivers_lake_centerlines.geojson" assets/map/roads.json
 # The Terrain Tiles dataset is not versioned; it has been unchanged since 2018.
 readonly tiles_url="https://s3.amazonaws.com/elevation-tiles-prod/terrarium"
 mkdir -p "${work}/tiles"

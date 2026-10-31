@@ -232,6 +232,16 @@ const dataSourceCredits = <DataSourceCredit>[
     url: 'https://www.naturalearthdata.com/',
   ),
   DataSourceCredit(
+    title: 'Itiner-e',
+    description:
+        'The roads of the Roman Empire, along which the place maps draw a '
+        'journey\'s land legs where it keeps to them. Beyond the empire, '
+        'down the Euphrates to Babylon and Ur and up the Balikh to Harran, '
+        'the highways are Haqor\'s own, drawn along Natural Earth\'s rivers.',
+    licence: 'CC BY 4.0',
+    url: 'https://doi.org/10.5281/zenodo.17122148',
+  ),
+  DataSourceCredit(
     title: 'Terrain Tiles (SRTM)',
     description:
         'The hills and valleys shaded on the place maps, from NASA\'s Shuttle '

@@ -8,6 +8,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'road_network.dart';
+
 /// The coastlines, lakes, rivers and wadis the place maps draw: Natural
 /// Earth's (public domain), clipped to the lands of the Bible, and over Israel
 /// and Transjordan OpenStreetMap's as OpenBible.info gathers them (ODbL),
@@ -317,6 +319,30 @@ class MapLeg {
 
   /// Drawn dashed, as a voyage.
   final bool bySea;
+
+  /// The leg as drawn: by land, each stretch between its points along the
+  /// highways of [roads] where it keeps to them (see [RoadNetwork.route]),
+  /// else straight; by sea, as it is.
+  MapLeg along(RoadNetwork roads) {
+    if (bySea) return this;
+    final out = <double>[points[0], points[1]];
+    var changed = false;
+    for (var i = 0; i + 3 < points.length; i += 2) {
+      final way = roads.route(
+        points[i],
+        points[i + 1],
+        points[i + 2],
+        points[i + 3],
+      );
+      if (way == null) {
+        out.addAll([points[i + 2], points[i + 3]]);
+      } else {
+        out.addAll(way.skip(2));
+        changed = true;
+      }
+    }
+    return changed ? MapLeg(out) : this;
+  }
 }
 
 /// A map of [pins] over the bundled [Basemap], panned by dragging and zoomed
@@ -330,6 +356,7 @@ class PlaceMap extends StatefulWidget {
     this.onPinTap,
     this.basemap,
     this.relief,
+    this.roads,
     this.minSpan = 1.6,
   });
 
@@ -347,6 +374,10 @@ class PlaceMap extends StatefulWidget {
   /// and a [basemap] is given.
   final List<Relief>? relief;
 
+  /// The highways the land legs are drawn along; the bundled ones when null
+  /// and no [basemap] is given, else none, and the legs are drawn straight.
+  final RoadNetwork? roads;
+
   /// The fewest degrees of latitude the opening view shows, so a single place
   /// is seen with its surroundings.
   final double minSpan;
@@ -358,6 +389,10 @@ class PlaceMap extends StatefulWidget {
 class _PlaceMapState extends State<PlaceMap> {
   Basemap? _basemap;
   List<Relief>? _relief;
+  RoadNetwork? _roads;
+  // The legs as drawn along the roads, and the legs and roads they are of.
+  List<MapLeg>? _drawnLegs;
+  (List<MapLeg>, RoadNetwork?)? _drawnFor;
   // The relief layers coloured for the theme, the colours they were made
   // for, and those asked for.
   final _reliefImages = <Relief, ui.Image>{};
@@ -381,6 +416,12 @@ class _PlaceMapState extends State<PlaceMap> {
     super.initState();
     _basemap = widget.basemap;
     _relief = widget.relief;
+    _roads = widget.roads;
+    if (_basemap == null && _roads == null) {
+      RoadNetwork.load().then((roads) {
+        if (mounted) setState(() => _roads = roads);
+      });
+    }
     if (_basemap == null) {
       Basemap.load().then((map) {
         if (mounted) setState(() => _basemap = map);
@@ -391,6 +432,21 @@ class _PlaceMapState extends State<PlaceMap> {
         });
       }
     }
+  }
+
+  /// The legs as drawn, along the roads once they are read; found once for
+  /// each list of legs.
+  List<MapLeg> get _legs {
+    final roads = _roads;
+    if (roads == null || widget.legs.isEmpty) return widget.legs;
+    final drawnFor = _drawnFor;
+    if (drawnFor == null ||
+        !identical(drawnFor.$1, widget.legs) ||
+        !identical(drawnFor.$2, roads)) {
+      _drawnFor = (widget.legs, roads);
+      _drawnLegs = [for (final leg in widget.legs) leg.along(roads)];
+    }
+    return _drawnLegs!;
   }
 
   /// The degrees the map shows at [size]: west to east, south to north.
@@ -667,7 +723,7 @@ class _PlaceMapState extends State<PlaceMap> {
                               (layer, image),
                         ],
                         pins: widget.pins,
-                        legs: widget.legs,
+                        legs: _legs,
                         center: _center,
                         scale: _scale,
                         colors: colors,
@@ -695,7 +751,7 @@ class _PlaceMapState extends State<PlaceMap> {
                 right: 6,
                 bottom: 4,
                 child: Text(
-                  'Natural Earth · SRTM · OpenBible.info · '
+                  'Natural Earth · SRTM · OpenBible.info · Itiner-e · '
                   '© OpenStreetMap contributors',
                   textAlign: TextAlign.right,
                   style: theme.textTheme.labelSmall?.copyWith(
