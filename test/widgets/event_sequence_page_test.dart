@@ -80,6 +80,7 @@ SequenceEventDetailsEntry _details(
   String region, [
   List<SequencePlaceEntry> places = const [],
 ]) => SequenceEventDetailsEntry(
+  tracks: const [],
   event: event,
   kinds: kinds,
   region: region,
@@ -205,6 +206,43 @@ void main() {
     await tester.tap(key(item));
     await tester.pumpAndSettle();
   }
+
+  testWidgets(
+    'journey highlighting preserves synchronisation and carries into the map',
+    (tester) async {
+      final sequence = _sequence.copyWith(
+        groupings: [],
+        details: [
+          for (final d in _sequence.details)
+            d.copyWith(tracks: d.event == 2 ? ['John'] : ['Jesus']),
+        ],
+      );
+      await open(tester, sequence: sequence);
+      await tester.tap(key('sequence-track-John'));
+      await tester.pumpAndSettle();
+      expect(opacity(tester, 'sequence-event-2'), 1);
+      expect(opacity(tester, 'sequence-event-3'), lessThan(1));
+      // Chronological cross-track links are still available in the event panel.
+      await tester.tap(key('sequence-event-2'));
+      await tester.pumpAndSettle();
+      expect(key('sequence-related-3'), findsOneWidget);
+      await tester.tap(key('sequence-outline'));
+      await tester.pumpAndSettle();
+      expect(key('sequence-outline-event-3'), findsOneWidget);
+      expect(find.textContaining('John · Galilee'), findsOneWidget);
+      await tester.tap(key('sequence-map'));
+      await tester.pumpAndSettle();
+      final map = tester.widget<SequenceMapPage>(find.byType(SequenceMapPage));
+      expect(map.initialTrack, 'John');
+      expect(map.tracks[3], ['Jesus']);
+      expect(find.byKey(const ValueKey('sequence-map-stop-2')), findsOneWidget);
+      expect(find.byKey(const ValueKey('sequence-map-stop-3')), findsNothing);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(key('sequence-outline'));
+      await tester.pumpAndSettle();
+    },
+  );
 
   testWidgets('Acts kinds, regions, source books and map links work together', (
     tester,
@@ -447,10 +485,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SequenceMapPage), findsOneWidget);
     var picked = tester.widget<PlaceMap>(key('sequence-map'));
-    expect(
-      picked.pins.where((p) => p.highlighted).map((p) => p.label),
-      ['Capernaum (2, 3)'],
-    );
+    expect(picked.pins.where((p) => p.highlighted).map((p) => p.label), [
+      'Capernaum (2, 3)',
+    ]);
     expect(picked.legs.single.highlighted, isTrue);
     expect(picked.focus, picked.legs.single.points);
     expect(

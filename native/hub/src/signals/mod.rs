@@ -1287,6 +1287,8 @@ pub struct SequenceMilestoneEntry {
 /// What kind of event an event of a sequence is, and where it happens.
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct SequenceEventDetailsEntry {
+    /// Named journey tracks at this event, independent of chronological edges.
+    pub tracks: Vec<String>,
     pub event: u32,
     /// The chief first: `healing`, `sign`, `parable`, `journey`, …
     pub kinds: Vec<String>,

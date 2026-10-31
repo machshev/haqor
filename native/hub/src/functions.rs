@@ -2668,6 +2668,7 @@ pub async fn get_bible_events(bible: SharedBible) {
                         .details
                         .into_iter()
                         .map(|d| crate::signals::SequenceEventDetailsEntry {
+                            tracks: d.tracks,
                             event: d.event,
                             kinds: d.kinds,
                             region: d.region,

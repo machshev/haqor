@@ -30,11 +30,18 @@ class SequenceMapPage extends StatefulWidget {
     this.basemap,
     this.journeys,
     this.passages = const {},
+    this.tracks = const {},
+    this.initialTrack,
   });
 
   /// Supplied by tests; otherwise loaded through the existing core signal.
   final List<JourneyEntry>? journeys;
   final Map<int, List<ThematicTarget>> passages;
+
+  /// Explicit journey membership, not people merely mentioned in a passage.
+  /// With no assignments the existing chronological map is retained.
+  final Map<int, List<String>> tracks;
+  final String? initialTrack;
 
   final String title;
   final List<SequenceMapStop> stops;
@@ -56,6 +63,8 @@ class SequenceMapPage extends StatefulWidget {
     ValueChanged<int>? onOpenEvent,
     Basemap? basemap,
     Map<int, List<ThematicTarget>> passages = const {},
+    Map<int, List<String>> tracks = const {},
+    String? initialTrack,
   }) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => SequenceMapPage(
@@ -65,6 +74,8 @@ class SequenceMapPage extends StatefulWidget {
         onOpenEvent: onOpenEvent,
         basemap: basemap,
         passages: passages,
+        tracks: tracks,
+        initialTrack: initialTrack,
       ),
     ),
   );
@@ -76,6 +87,14 @@ class SequenceMapPage extends StatefulWidget {
 class _SequenceMapPageState extends State<SequenceMapPage> {
   /// The index of the event picked out in the list, if any.
   int? _selected;
+  String? _track;
+  List<String> get _tracks =>
+      widget.tracks.values.expand((t) => t).toSet().toList();
+  List<SequenceMapStop> get _stops => [
+    for (final s in widget.stops)
+      if (_track == null || (widget.tracks[s.event]?.contains(_track) ?? false))
+        s,
+  ];
   static int _nextJourneyRequest = 0x53000000;
   StreamSubscription<RustSignalPack<Journeys>>? _journeySub;
   List<JourneyEntry> _journeys = const [];
@@ -83,6 +102,7 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
   @override
   void initState() {
     super.initState();
+    _track = _tracks.contains(widget.initialTrack) ? widget.initialTrack : null;
     _journeys = widget.journeys ?? const [];
     if (widget.journeys == null && widget.basemap == null) {
       final id = _nextJourneyRequest++;
@@ -127,9 +147,18 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
   /// The event the picked one is known to follow most nearly, of those
   /// before it in the list with a place: where the way to it comes from.
   int? _cameFrom(int i) {
-    final stops = widget.stops;
+    final stops = _stops;
     for (var j = i - 1; j >= 0; j--) {
       if (stops[j].places.isEmpty) continue;
+      final tracks = widget.tracks[stops[i].event] ?? const <String>[];
+      if (_tracks.isNotEmpty &&
+          !tracks.any(
+            (t) =>
+                (_track == null || t == _track) &&
+                (widget.tracks[stops[j].event]?.contains(t) ?? false),
+          )) {
+        continue;
+      }
       if (widget.knownBefore(stops[j].event, stops[i].event)) return j;
     }
     return null;
@@ -138,7 +167,7 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final stops = widget.stops;
+    final stops = _stops;
     final selected = _selected;
     final picked = selected == null ? null : stops[selected].places.firstOrNull;
     final pickedPlaces = selected == null
@@ -179,21 +208,40 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
           ];
     final legs = <MapLeg>[];
     var wayDrawn = false;
-    int? last;
-    for (final (i, stop) in stops.indexed) {
-      final place = stop.places.firstOrNull;
-      if (place == null) continue;
-      final previous = last == null ? null : stops[last].places.last;
-      if (previous != null &&
-          previous.place.id != place.place.id &&
-          widget.knownBefore(stops[last!].event, stop.event)) {
-        final isWay = way != null && last == from && i == selected;
-        wayDrawn |= isWay;
-        legs.addAll(
-          _connection(previous, place, isWay, stops[last].event, stop.event),
-        );
+    // A chronological edge can synchronise two people without being travel.
+    // Build each person's path independently, including shared events in both.
+    final seen = <(int, int)>{};
+    for (final track in (_tracks.isEmpty ? [''] : _tracks).where(
+      (t) => _track == null || t == _track,
+    )) {
+      int? last;
+      for (final (i, stop) in stops.indexed) {
+        if (_tracks.isNotEmpty &&
+            !(widget.tracks[stop.event]?.contains(track) ?? false)) {
+          continue;
+        }
+        final place = stop.places.firstOrNull;
+        if (place == null) continue;
+        final previous = last == null ? null : stops[last].places.last;
+        if (previous != null &&
+            previous.place.id != place.place.id &&
+            widget.knownBefore(stops[last!].event, stop.event)) {
+          final isWay = way != null && last == from && i == selected;
+          wayDrawn |= isWay;
+          if (seen.add((last, i))) {
+            legs.addAll(
+              _connection(
+                previous,
+                place,
+                isWay,
+                stops[last].event,
+                stop.event,
+              ),
+            );
+          }
+        }
+        last = i;
       }
-      last = i;
     }
     if (way != null && !wayDrawn) {
       legs.addAll(
@@ -243,6 +291,28 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_tracks.isNotEmpty)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  for (final track in [null, ..._tracks])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        key: ValueKey('map-track-${track ?? "all"}'),
+                        label: Text(track ?? 'All tracks'),
+                        selected: _track == track,
+                        onSelected: (_) => setState(() {
+                          _track = track;
+                          _selected = null;
+                        }),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           Expanded(
             flex: 3,
             child: pins.isEmpty
@@ -263,9 +333,11 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(
-              'A line joins two places only where the second event is known '
-              'to follow the first. Tap an event to pick out its place and '
-              'the way to it.',
+              _tracks.isEmpty
+                  ? 'Lines connect known, ordered event locations. Tap an event to see its place.'
+                  : 'Lines follow the same person between known, ordered locations. '
+                        'Timing links between people are kept in the sequence. '
+                        'Tap an event to see its place and route.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -287,7 +359,12 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
                     child: Text('${i + 1}', style: theme.textTheme.labelSmall),
                   ),
                   title: Text(stop.title),
-                  subtitle: Text(places.isEmpty ? 'No place told' : places),
+                  subtitle: Text(
+                    [
+                      ...(widget.tracks[stop.event] ?? const <String>[]),
+                      places.isEmpty ? 'No place told' : places,
+                    ].join(' · '),
+                  ),
                   onTap: () =>
                       setState(() => _selected = _selected == i ? null : i),
                   trailing: open == null

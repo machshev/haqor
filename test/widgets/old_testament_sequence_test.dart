@@ -122,6 +122,7 @@ void main() {
       details: [
         for (final (i, kind) in kinds.indexed)
           SequenceEventDetailsEntry(
+            tracks: const [],
             event: i + 1,
             kinds: [kind.name],
             region: '',

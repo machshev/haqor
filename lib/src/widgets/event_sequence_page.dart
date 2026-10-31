@@ -169,6 +169,10 @@ class _EventSequencePageState extends State<EventSequencePage> {
   /// lit; with neither, every event.
   final _families = <SequenceFamily>{};
   int? _person;
+  String? _track;
+  late final List<String> _tracks = {
+    for (final d in widget.sequence.details) ...d.tracks,
+  }.toList();
 
   /// Whether the view has been placed on its first layout.
   bool _placed = false;
@@ -753,10 +757,15 @@ class _EventSequencePageState extends State<EventSequencePage> {
   List<int> _ordered(Iterable<int> events) =>
       [...events]..sort((a, b) => (_order[a] ?? 0).compareTo(_order[b] ?? 0));
 
-  bool get _filtering => _families.isNotEmpty || _person != null;
+  bool get _filtering =>
+      _families.isNotEmpty || _person != null || _track != null;
 
   /// Whether [event] is of a kind lit and has the person lit.
   bool _lit(int event) {
+    if (_track != null &&
+        !(_details[event]?.tracks.contains(_track) ?? false)) {
+      return false;
+    }
     if (_families.isNotEmpty &&
         !kindsOf(_details[event]).any((k) => _families.contains(k.family))) {
       return false;
@@ -859,6 +868,8 @@ class _EventSequencePageState extends State<EventSequencePage> {
   void _openMap(String title, List<int> events) => SequenceMapPage.open(
     context,
     title: title,
+    tracks: {for (final e in events) e: _details[e]?.tracks ?? const []},
+    initialTrack: _track,
     passages: {
       for (final e in events) e: widget.events[e]?.passages ?? const [],
     },
@@ -1042,7 +1053,12 @@ class _EventSequencePageState extends State<EventSequencePage> {
       for (final d in _details.values)
         for (final k in kindsOf(d)) k.family,
     };
-    if (_trees.isEmpty && families.isEmpty && _people.isEmpty) return null;
+    if (_trees.isEmpty &&
+        families.isEmpty &&
+        _people.isEmpty &&
+        _tracks.isEmpty) {
+      return null;
+    }
     final person = _person;
     final personName = person == null
         ? null
@@ -1090,6 +1106,22 @@ class _EventSequencePageState extends State<EventSequencePage> {
                     deleteIcon: const Icon(Icons.arrow_drop_down),
                     onDeleted: null,
                   ),
+                ),
+              ),
+            for (final track in _tracks)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: FilterChip(
+                  key: ValueKey('sequence-track-$track'),
+                  avatar: const Icon(Icons.route, size: 18),
+                  label: Text(track),
+                  tooltip:
+                      'Highlight $track’s journey; keep synchronisation links',
+                  selected: _track == track,
+                  visualDensity: density,
+                  materialTapTargetSize: tap,
+                  onSelected: (on) =>
+                      setState(() => _track = on ? track : null),
                 ),
               ),
             if (_people.isNotEmpty)
@@ -1155,6 +1187,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
                 onPressed: () => setState(() {
                   _families.clear();
                   _person = null;
+                  _track = null;
                 }),
               ),
           ],
@@ -1881,7 +1914,11 @@ class _EventSequencePageState extends State<EventSequencePage> {
         ),
         title: Text(_title(e)),
         subtitle: Text(
-          [?region, if (first != null) _reference(_passage(first))].join(' · '),
+          [
+            ...?_details[e]?.tracks,
+            ?region,
+            if (first != null) _reference(_passage(first)),
+          ].join(' · '),
         ),
         trailing: SequenceSourceMarks(event: entry, color: scheme.onSurface),
         onTap: () => setState(() => _selected = _selected == e ? null : e),
