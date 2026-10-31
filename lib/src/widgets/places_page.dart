@@ -8,6 +8,7 @@ import '../bindings/bindings.dart';
 import 'multi_select_chip.dart';
 import 'name_details.dart';
 import 'place_map.dart';
+import 'journey_map_legs.dart';
 
 /// The kinds of place the gazetteer narrows to, each gathering OpenBible.info's
 /// finer kinds.
@@ -355,16 +356,7 @@ class _PlacesPageState extends State<PlacesPage> {
         if (seen.add(s.place.id))
           placePin(s.location, label: s.label, id: s.place.id),
     ];
-    final legs = [
-      for (var i = 0; i + 1 < drawn.length; i++)
-        MapLeg([
-          drawn[i].location.longitude,
-          drawn[i].location.latitude,
-          ...drawn[i + 1].via,
-          drawn[i + 1].location.longitude,
-          drawn[i + 1].location.latitude,
-        ], bySea: drawn[i + 1].bySea),
-    ];
+    final legs = journeyMapLegs(drawn);
     return (pins, legs);
   }
 
@@ -405,7 +397,7 @@ class _PlacesPageState extends State<PlacesPage> {
                 [
                   if (s.label != s.place.name) s.place.name,
                   _verseLabel(s),
-                  if (s.bySea) 'by sea',
+                  if (s.bySea) 'by sea · estimated course',
                   if (!s.drawn) 'not on the map',
                   if (s.drawn && s.location.estimated) 'low certainty',
                 ].join(' · '),

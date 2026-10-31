@@ -232,6 +232,14 @@ const dataSourceCredits = <DataSourceCredit>[
     url: 'https://www.naturalearthdata.com/',
   ),
   DataSourceCredit(
+    title: 'ORBIS',
+    description:
+        'Estimated Mediterranean sea courses from the Roman transport '
+        'network, checked against the map coastline. © 2013 Elijah Meeks.',
+    licence: 'MIT',
+    url: 'https://github.com/emeeks/orbis_v2',
+  ),
+  DataSourceCredit(
     title: 'Itiner-e',
     description:
         'The roads of the Roman Empire, along which the place maps draw a '

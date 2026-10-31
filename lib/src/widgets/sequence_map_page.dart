@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:rinf/rinf.dart';
 
 import '../bindings/bindings.dart';
 import 'name_details.dart' show placePin;
 import 'place_map.dart';
+import 'journey_map_legs.dart';
 
 /// An event of a sequence to show on a [SequenceMapPage], with its places.
 typedef SequenceMapStop = ({
@@ -23,7 +27,13 @@ class SequenceMapPage extends StatefulWidget {
     required this.knownBefore,
     this.onOpenEvent,
     this.basemap,
+    this.journeys,
+    this.passages = const {},
   });
+
+  /// Supplied by tests; otherwise loaded through the existing core signal.
+  final List<JourneyEntry>? journeys;
+  final Map<int, List<ThematicTarget>> passages;
 
   final String title;
   final List<SequenceMapStop> stops;
@@ -44,6 +54,7 @@ class SequenceMapPage extends StatefulWidget {
     required bool Function(int before, int after) knownBefore,
     ValueChanged<int>? onOpenEvent,
     Basemap? basemap,
+    Map<int, List<ThematicTarget>> passages = const {},
   }) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => SequenceMapPage(
@@ -52,6 +63,7 @@ class SequenceMapPage extends StatefulWidget {
         knownBefore: knownBefore,
         onOpenEvent: onOpenEvent,
         basemap: basemap,
+        passages: passages,
       ),
     ),
   );
@@ -63,6 +75,53 @@ class SequenceMapPage extends StatefulWidget {
 class _SequenceMapPageState extends State<SequenceMapPage> {
   /// The index of the event picked out in the list, if any.
   int? _selected;
+  static int _nextJourneyRequest = 0x53000000;
+  StreamSubscription<RustSignalPack<Journeys>>? _journeySub;
+  List<JourneyEntry> _journeys = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _journeys = widget.journeys ?? const [];
+    if (widget.journeys == null && widget.basemap == null) {
+      final id = _nextJourneyRequest++;
+      _journeySub = Journeys.rustSignalStream.listen((pack) {
+        if (!mounted || pack.message.requestId != id) return;
+        setState(() => _journeys = pack.message.journeys);
+      });
+      GetJourneys(requestId: id).sendSignalToRust();
+    }
+  }
+
+  @override
+  void dispose() {
+    _journeySub?.cancel();
+    super.dispose();
+  }
+
+  List<MapLeg> _connection(
+    SequencePlaceEntry from,
+    SequencePlaceEntry to,
+    bool highlighted,
+    int fromEvent,
+    int toEvent,
+  ) =>
+      voyageBetween(
+        _journeys,
+        from.place.id,
+        to.place.id,
+        highlighted: highlighted,
+        fromPassages: widget.passages[fromEvent],
+        toPassages: widget.passages[toEvent],
+      ) ??
+      [
+        MapLeg([
+          from.location.longitude,
+          from.location.latitude,
+          to.location.longitude,
+          to.location.latitude,
+        ], highlighted: highlighted),
+      ];
 
   /// The event the picked one is known to follow most nearly, of those
   /// before it in the list with a place: where the way to it comes from.
@@ -124,18 +183,23 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
           widget.knownBefore(stops[last!].event, stop.event)) {
         final isWay = way != null && last == from && i == selected;
         wayDrawn |= isWay;
-        legs.add(
-          MapLeg([
-            previous.location.longitude,
-            previous.location.latitude,
-            place.location.longitude,
-            place.location.latitude,
-          ], highlighted: isWay),
+        legs.addAll(
+          _connection(previous, place, isWay, stops[last].event, stop.event),
         );
       }
       last = i;
     }
-    if (way != null && !wayDrawn) legs.add(MapLeg(way, highlighted: true));
+    if (way != null && !wayDrawn) {
+      legs.addAll(
+        _connection(
+          fromPlace!,
+          picked!,
+          true,
+          stops[from!].event,
+          stops[selected!].event,
+        ),
+      );
+    }
     final focus =
         way ??
         (picked == null
@@ -150,7 +214,7 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
           children: [
             Text(widget.title),
             Text(
-              '$located of ${stops.length} events placed',
+              '$located of ${stops.length} events placed${legs.any((l) => l.bySea) ? ' · sea courses estimated' : ''}',
               style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

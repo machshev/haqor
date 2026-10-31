@@ -859,6 +859,9 @@ class _EventSequencePageState extends State<EventSequencePage> {
   void _openMap(String title, List<int> events) => SequenceMapPage.open(
     context,
     title: title,
+    passages: {
+      for (final e in events) e: widget.events[e]?.passages ?? const [],
+    },
     basemap: widget.basemap,
     stops: [
       for (final e in _ordered(events))

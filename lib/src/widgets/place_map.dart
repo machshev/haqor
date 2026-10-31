@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'road_network.dart';
+import 'sea_network.dart';
 
 /// The coastlines, lakes, rivers and wadis the place maps draw: Natural
 /// Earth's (public domain), clipped to the lands of the Bible, and over Israel
@@ -315,7 +316,12 @@ const _wadiScale = 150.0;
 /// One leg of a journey on a [PlaceMap], from one stop to the next.
 @immutable
 class MapLeg {
-  const MapLeg(this.points, {this.bySea = false, this.highlighted = false});
+  const MapLeg(
+    this.points, {
+    this.bySea = false,
+    this.highlighted = false,
+    this.estimateSea = true,
+  });
 
   /// Longitude, latitude pairs: the stop it leaves, any points it passes, and
   /// the stop it reaches.
@@ -323,6 +329,17 @@ class MapLeg {
 
   /// Drawn dashed, as a voyage.
   final bool bySea;
+
+  /// False for storm drift and exceptional crossings; retain the given course.
+  final bool estimateSea;
+
+  MapLeg atSea(SeaNetwork sea) {
+    if (!bySea || !estimateSea) return this;
+    final way = sea.route(points);
+    return way == null
+        ? this
+        : MapLeg(way, bySea: true, highlighted: highlighted);
+  }
 
   /// Picked out: drawn bolder, over the others, which fade.
   final bool highlighted;
@@ -364,6 +381,7 @@ class PlaceMap extends StatefulWidget {
     this.basemap,
     this.relief,
     this.roads,
+    this.seaRoutes,
     this.minSpan = 1.6,
     this.focus,
   });
@@ -386,6 +404,8 @@ class PlaceMap extends StatefulWidget {
   /// and no [basemap] is given, else none, and the legs are drawn straight.
   final RoadNetwork? roads;
 
+  final SeaNetwork? seaRoutes;
+
   /// The fewest degrees of latitude the opening view shows, so a single place
   /// is seen with its surroundings.
   final double minSpan;
@@ -403,9 +423,10 @@ class _PlaceMapState extends State<PlaceMap> {
   Basemap? _basemap;
   List<Relief>? _relief;
   RoadNetwork? _roads;
+  SeaNetwork? _seaRoutes;
   // The legs as drawn along the roads, and the legs and roads they are of.
   List<MapLeg>? _drawnLegs;
-  (List<MapLeg>, RoadNetwork?)? _drawnFor;
+  (List<MapLeg>, RoadNetwork?, SeaNetwork?)? _drawnFor;
   // The relief layers coloured for the theme, the colours they were made
   // for, and those asked for.
   final _reliefImages = <Relief, ui.Image>{};
@@ -432,6 +453,17 @@ class _PlaceMapState extends State<PlaceMap> {
     _basemap = widget.basemap;
     _relief = widget.relief;
     _roads = widget.roads;
+    _seaRoutes = widget.seaRoutes;
+    if (_basemap == null && _seaRoutes == null) {
+      SeaNetwork.load().then((sea) {
+        if (mounted) {
+          setState(() {
+            _seaRoutes = sea;
+            _fitted = false;
+          });
+        }
+      });
+    }
     if (_basemap == null && _roads == null) {
       RoadNetwork.load().then((roads) {
         if (mounted) setState(() => _roads = roads);
@@ -453,13 +485,25 @@ class _PlaceMapState extends State<PlaceMap> {
   /// each list of legs.
   List<MapLeg> get _legs {
     final roads = _roads;
-    if (roads == null || widget.legs.isEmpty) return widget.legs;
+    final sea = _seaRoutes;
+    if ((roads == null && sea == null) || widget.legs.isEmpty) {
+      return widget.legs;
+    }
     final drawnFor = _drawnFor;
     if (drawnFor == null ||
         !identical(drawnFor.$1, widget.legs) ||
-        !identical(drawnFor.$2, roads)) {
-      _drawnFor = (widget.legs, roads);
-      _drawnLegs = [for (final leg in widget.legs) leg.along(roads)];
+        !identical(drawnFor.$2, roads) ||
+        !identical(drawnFor.$3, sea)) {
+      _drawnFor = (widget.legs, roads, sea);
+      _drawnLegs = [
+        for (final leg in widget.legs)
+          if (leg.bySea && sea != null)
+            leg.atSea(sea)
+          else if (roads != null)
+            leg.along(roads)
+          else
+            leg,
+      ];
     }
     return _drawnLegs!;
   }
@@ -505,6 +549,10 @@ class _PlaceMapState extends State<PlaceMap> {
   @override
   void didUpdateWidget(PlaceMap old) {
     super.didUpdateWidget(old);
+    if (old.seaRoutes != widget.seaRoutes) {
+      _seaRoutes = widget.seaRoutes;
+      _fitted = false;
+    }
     if (!_samePins(old.pins, widget.pins) ||
         !_sameLegs(old.legs, widget.legs)) {
       _fitted = false;
