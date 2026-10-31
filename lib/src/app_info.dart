@@ -59,7 +59,7 @@ const dataSourceCredits = <DataSourceCredit>[
     description:
         "Brown-Driver-Briggs, Strong's Hebrew Dictionary, and the lexical "
         'index bridging them. Haqor\'s lexicon is an edited and expanded '
-        'derivative of these entries.',
+        'derivative of these entries, and writes "Yahweh" for "Jehovah".',
     licence:
         'CC BY 4.0 — credit the Open Scriptures Hebrew Bible Project. '
         "The underlying BDB and Strong's text is public domain.",
