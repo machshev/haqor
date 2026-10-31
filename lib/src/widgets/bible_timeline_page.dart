@@ -95,7 +95,7 @@ List<StudyTimelineEntry> bibleTimelineEntries(
   final standing = <int, StudyTimelineEntry>{};
   for (final sequence in sequences?.all ?? const <EventSequenceEntry>[]) {
     if (sequence.expands != null) continue;
-    if (_sequenceEntry(sequence, events) case final entry?) {
+    if (_sequenceEntry(sequence, events, sequences!) case final entry?) {
       standing[entry.order] = entry;
     }
   }
@@ -166,21 +166,37 @@ String bibleSequenceEntryId(EventSequenceEntry sequence) =>
 StudyTimelineEntry? _sequenceEntry(
   EventSequenceEntry sequence,
   List<BibleEventEntry> events,
+  BibleSequences sequences,
 ) {
   final members = sequence.events.toSet();
+  final waiting = [...members];
+  while (waiting.isNotEmpty) {
+    final inner = sequences.expanding[waiting.removeLast()];
+    if (inner == null) continue;
+    for (final event in inner.events) {
+      if (members.add(event)) waiting.add(event);
+    }
+  }
   final years = [
     for (final (order, e) in events.indexed)
-      if (members.contains(e.id)) (order: order, year: e.year),
+      if (members.contains(e.id)) (order: order, event: e),
   ];
   if (years.isEmpty) return null;
-  final first = years.map((y) => y.year).reduce(math.min);
-  final last = years.map((y) => y.year).reduce(math.max);
+  final first = years.map((y) => y.event.year).reduce(math.min);
   final start = TimelineTime(first.toDouble());
-  // Through the end of its last year.
+  // Include whole reigns and ministries, and events inside nested sequences.
+  // A point still occupies its whole year, as on the overview before folding.
+  final last = years
+      .map((y) {
+        final event = y.event;
+        final at = bibleTimeline.positionOf(
+          TimelineTime(event.year.toDouble()),
+        );
+        return at + (event.unit == 'years' ? math.max(1, event.duration) : 1);
+      })
+      .reduce(math.max);
   final length = TimelineDuration(
-    bibleTimeline.positionOf(TimelineTime(last.toDouble())) -
-        bibleTimeline.positionOf(start) +
-        1,
+    last - bibleTimeline.positionOf(start),
     TimelineDurationUnit.years,
   );
   return StudyTimelineEntry(

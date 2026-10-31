@@ -26,6 +26,11 @@ enum SequenceFamily {
   baptisms('Baptisms', Icons.water_drop_outlined, Color(0xFF0097A7)),
   ecclesial('Ecclesial life', Icons.groups_outlined, Color(0xFF546E7A)),
   letters('Letters', Icons.mail_outline, Color(0xFF6D4C41)),
+  beginnings('Creation', Icons.public, Color(0xFF00897B)),
+  judgement('Judgement', Icons.gavel, Color(0xFFE53935)),
+  deaths('Deaths', Icons.event_busy, Color(0xFF78909C)),
+  rulers('Kings and judges', Icons.account_balance, Color(0xFF795548)),
+  prophets('Prophets', Icons.campaign_outlined, Color(0xFFB28704)),
   baptist('John the Baptist', Icons.water_drop_outlined, Color(0xFF00ACC1));
 
   const SequenceFamily(this.label, this.icon, this.color);
@@ -49,6 +54,17 @@ enum SequenceFamily {
 /// A kind of event, as the data writes it (see
 /// [SequenceEventDetailsEntry.kinds]).
 enum SequenceKind {
+  creation('creation', 'Creation', Icons.public, SequenceFamily.beginnings),
+  judgement('judgement', 'Judgement', Icons.gavel, SequenceFamily.judgement),
+  death('death', 'Death', Icons.event_busy, SequenceFamily.deaths),
+  reign('reign', 'Reign', Icons.account_balance, SequenceFamily.rulers),
+  judgeship('judgeship', 'Judgeship', Icons.gavel, SequenceFamily.rulers),
+  prophecy(
+    'prophecy',
+    'Prophecy',
+    Icons.campaign_outlined,
+    SequenceFamily.prophets,
+  ),
   preaching(
     'preaching',
     'Preaching',
