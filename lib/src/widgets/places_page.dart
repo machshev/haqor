@@ -165,6 +165,12 @@ class _PlacesPageState extends State<PlacesPage> {
   /// The journey shown in place of the list of places, if any.
   JourneyEntry? _journey;
 
+  /// The index of the journey's stop picked out, if any.
+  int? _stop;
+
+  /// Whether the journey's list scrolls to the picked stop.
+  final _stopKeys = <int, GlobalKey>{};
+
   @override
   void initState() {
     super.initState();
@@ -350,14 +356,77 @@ class _PlacesPageState extends State<PlacesPage> {
       for (final s in journey.stops)
         if (s.drawn) s,
     ];
+    final picked = _stop == null ? null : journey.stops[_stop!];
+    final at = picked == null ? -1 : drawn.indexOf(picked);
     final seen = <int>{};
     final pins = [
       for (final s in drawn)
         if (seen.add(s.place.id))
-          placePin(s.location, label: s.label, id: s.place.id),
+          placePin(
+            s.location,
+            label: s.label,
+            id: s.place.id,
+            highlighted: picked?.place.id == s.place.id,
+          ),
     ];
-    final legs = journeyMapLegs(drawn);
+    final legs = [
+      for (final (i, leg) in journeyMapLegs(drawn).indexed)
+        i + 1 == at
+            ? MapLeg(
+                leg.points,
+                bySea: leg.bySea,
+                estimateSea: leg.estimateSea,
+                highlighted: true,
+              )
+            : leg,
+    ];
     return (pins, legs);
+  }
+
+  /// The indices of [journey]'s stops drawn on the map.
+  List<int> _drawnStops(JourneyEntry journey) => [
+    for (final (i, s) in journey.stops.indexed)
+      if (s.drawn) i,
+  ];
+
+  /// The drawn stop before (or after) the picked one; from none, the first.
+  int? _neighbour(JourneyEntry journey, {required bool back}) {
+    final drawn = _drawnStops(journey);
+    final now = _stop;
+    if (now == null) return back ? null : drawn.firstOrNull;
+    return back
+        ? drawn.lastWhere((i) => i < now, orElse: () => -1).nullIfNegative
+        : drawn.firstWhere((i) => i > now, orElse: () => -1).nullIfNegative;
+  }
+
+  /// Picks [to], keeping its tile in view.
+  void _pickStop(int to) {
+    setState(() => _stop = to);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final tile = _stopKeys[to]?.currentContext;
+      if (tile != null && tile.mounted) {
+        Scrollable.ensureVisible(
+          tile,
+          alignment: .5,
+          duration: const Duration(milliseconds: 200),
+        );
+      }
+    });
+  }
+
+  /// The picked stop and the drawn stop before it: what the map fits.
+  List<double>? _journeyFocus(JourneyEntry journey) {
+    final at = _stop;
+    if (at == null || !journey.stops[at].drawn) return null;
+    final before = _drawnStops(
+      journey,
+    ).lastWhere((i) => i < at, orElse: () => -1);
+    return [
+      for (final s in [
+        if (before >= 0) journey.stops[before],
+        journey.stops[at],
+      ]) ...[s.location.longitude, s.location.latitude],
+    ];
   }
 
   /// A journey's stops in order, under what it is.
@@ -379,40 +448,55 @@ class _PlacesPageState extends State<PlacesPage> {
           child: Text(journey.summary, style: theme.textTheme.bodyMedium),
         ),
         for (final (i, s) in stops)
-          ListTile(
-            key: ValueKey('stop-$i'),
-            leading: CircleAvatar(
-              radius: 14,
-              backgroundColor: s.drawn
-                  ? scheme.primaryContainer
-                  : scheme.surfaceContainerHighest,
-              foregroundColor: s.drawn
-                  ? scheme.onPrimaryContainer
-                  : scheme.onSurfaceVariant,
-              child: Text('${i + 1}', style: theme.textTheme.labelMedium),
-            ),
-            title: Text(s.label),
-            subtitle: Text(
-              [
+          KeyedSubtree(
+            key: _stopKeys.putIfAbsent(i, GlobalKey.new),
+            child: ListTile(
+              key: ValueKey('stop-$i'),
+              selected: _stop == i,
+              leading: CircleAvatar(
+                radius: 14,
+                backgroundColor: s.drawn
+                    ? scheme.primaryContainer
+                    : scheme.surfaceContainerHighest,
+                foregroundColor: s.drawn
+                    ? scheme.onPrimaryContainer
+                    : scheme.onSurfaceVariant,
+                child: Text('${i + 1}', style: theme.textTheme.labelMedium),
+              ),
+              title: Text(s.label),
+              subtitle: Text(
                 [
-                  if (s.label != s.place.name) s.place.name,
-                  _verseLabel(s),
-                  if (s.bySea) 'by sea · estimated course',
-                  if (!s.drawn) 'not on the map',
-                  if (s.drawn && s.location.estimated) 'low certainty',
-                ].join(' · '),
-                if (s.note.isNotEmpty) s.note,
-              ].join('\n'),
-            ),
-            isThreeLine: s.note.isNotEmpty,
-            trailing: widget.onNavigateToPassage == null
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.menu_book_outlined),
-                    tooltip: 'Read ${_verseLabel(s)}',
-                    onPressed: () => _read(s),
+                  [
+                    if (s.label != s.place.name) s.place.name,
+                    _verseLabel(s),
+                    if (s.bySea) 'by sea · estimated course',
+                    if (!s.drawn) 'not on the map',
+                    if (s.drawn && s.location.estimated) 'low certainty',
+                  ].join(' · '),
+                  if (s.note.isNotEmpty) s.note,
+                ].join('\n'),
+              ),
+              isThreeLine: s.note.isNotEmpty,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    key: ValueKey('stop-details-$i'),
+                    icon: const Icon(Icons.info_outline),
+                    tooltip: 'About ${s.label}',
+                    onPressed: () => _open(s.place),
                   ),
-            onTap: () => _open(s.place),
+                  if (widget.onNavigateToPassage != null)
+                    IconButton(
+                      icon: const Icon(Icons.menu_book_outlined),
+                      tooltip: 'Read ${_verseLabel(s)}',
+                      onPressed: () => _read(s),
+                    ),
+                ],
+              ),
+              onTap: () =>
+                  _stop == i ? setState(() => _stop = null) : _pickStop(i),
+            ),
           ),
       ],
     );
@@ -443,6 +527,7 @@ class _PlacesPageState extends State<PlacesPage> {
       enabled: _journeys.isNotEmpty,
       onSelected: (id) => setState(() {
         _journey = id < 0 ? null : _journeys.firstWhere((j) => j.id == id);
+        _stop = null;
       }),
       itemBuilder: (_) => [
         CheckedPopupMenuItem(
@@ -473,7 +558,10 @@ class _PlacesPageState extends State<PlacesPage> {
             : theme.colorScheme.secondaryContainer,
         onDeleted: journey == null
             ? null
-            : () => setState(() => _journey = null),
+            : () => setState(() {
+                _journey = null;
+                _stop = null;
+              }),
         deleteButtonTooltipMessage: 'No journey',
       ),
     );
@@ -527,6 +615,8 @@ class _PlacesPageState extends State<PlacesPage> {
       basemap: widget.basemap,
       pins: pins,
       legs: legs,
+      focus: journey == null ? null : _journeyFocus(journey),
+      fitFocus: journey != null,
       onPinTap: (pin) => _open(
         journey == null
             ? places.places.firstWhere((p) => p.place.id == pin.id).place
@@ -617,14 +707,33 @@ class _PlacesPageState extends State<PlacesPage> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 2, 20, 4),
-          child: Text(
-            journey != null
-                ? '${journey.stops.length} stops'
-                : '${shown.length} place${shown.length == 1 ? '' : 's'}',
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+          padding: const EdgeInsets.fromLTRB(20, 2, 8, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  journey != null
+                      ? '${journey.stops.length} stops'
+                      : '${shown.length} place${shown.length == 1 ? '' : 's'}',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (journey != null) ...[
+                for (final back in [true, false])
+                  IconButton(
+                    key: ValueKey(back ? 'journey-back' : 'journey-next'),
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(back ? Icons.chevron_left : Icons.chevron_right),
+                    tooltip: back ? 'Previous stop' : 'Next stop',
+                    onPressed: switch (_neighbour(journey, back: back)) {
+                      final int to => () => _pickStop(to),
+                      null => null,
+                    },
+                  ),
+              ],
+            ],
           ),
         ),
       ],
@@ -716,4 +825,9 @@ class _PlacesPageState extends State<PlacesPage> {
       ),
     );
   }
+}
+
+extension on int {
+  /// This, or null where it is negative: a search that found nothing.
+  int? get nullIfNegative => this < 0 ? null : this;
 }

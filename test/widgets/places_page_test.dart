@@ -280,6 +280,60 @@ void _journeyTests() {
     expect(_readAt, [(39, 2, 23)]);
   });
 
+  testWidgets("steps through a journey's stops, fitting each", (tester) async {
+    await _pumpPlaces(tester);
+    await tester.tap(find.byKey(const ValueKey('places-journey')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.widgetWithText(CheckedPopupMenuItem<int>, 'The flight into Egypt'),
+    );
+    await tester.pumpAndSettle();
+    IconButton button(String key) =>
+        tester.widget<IconButton>(find.byKey(ValueKey(key)));
+    PlaceMap map() => tester.widget<PlaceMap>(find.byType(PlaceMap));
+    expect(button('journey-back').onPressed, isNull);
+    expect(map().fitFocus, isTrue);
+    expect(map().focus, isNull);
+
+    // Next picks the first stop on the map.
+    await tester.tap(find.byKey(const ValueKey('journey-next')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ListTile>(find.byKey(const ValueKey('stop-0'))).selected,
+      isTrue,
+    );
+    expect(map().pins.where((p) => p.highlighted).map((p) => p.label), [
+      'Bethlehem',
+    ]);
+    expect(map().focus, [35.2, 31.7]);
+
+    // Then the next drawn, passing over Egypt, with the leg to it.
+    await tester.tap(find.byKey(const ValueKey('journey-next')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ListTile>(find.byKey(const ValueKey('stop-2'))).selected,
+      isTrue,
+    );
+    expect(map().legs.single.highlighted, isTrue);
+    expect(map().focus, [35.2, 31.7, 35.2, 31.7]);
+    expect(button('journey-next').onPressed, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('journey-back')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ListTile>(find.byKey(const ValueKey('stop-0'))).selected,
+      isTrue,
+    );
+
+    // Tapping a stop picks it; its button opens the place.
+    await tester.tap(find.byKey(const ValueKey('stop-2')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ListTile>(find.byKey(const ValueKey('stop-2'))).selected,
+      isTrue,
+    );
+  });
+
   testWidgets('leaving a journey brings back the places', (tester) async {
     await _pumpPlaces(tester);
     await tester.tap(find.byKey(const ValueKey('places-journey')));
