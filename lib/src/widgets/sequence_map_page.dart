@@ -7,6 +7,7 @@ import '../bindings/bindings.dart';
 import 'name_details.dart' show placePin;
 import 'place_map.dart';
 import 'journey_map_legs.dart';
+import 'places_page.dart';
 
 /// An event of a sequence to show on a [SequenceMapPage], with its places.
 typedef SequenceMapStop = ({
@@ -433,6 +434,25 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
                     fitFocus: true,
                   ),
           ),
+          if (selected != null)
+            for (final journey in journeysThrough(
+              _journeys,
+              widget.passages[stops[selected].event] ?? const [],
+            ))
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: ActionChip(
+                    key: ValueKey('sequence-map-journey-${journey.id}'),
+                    avatar: const Icon(Icons.route, size: 18),
+                    label: Text('Journey: ${journey.name}'),
+                    tooltip: 'Show the journey on the places map',
+                    onPressed: () =>
+                        PlacesPage.open(context, initialJourneyId: journey.id),
+                  ),
+                ),
+              ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(

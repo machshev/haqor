@@ -67,7 +67,7 @@ JourneyStopEntry _stop(
 /// Where the reader was sent: book (from 0), chapter and verse.
 final _readAt = <(int, int, int)>[];
 
-Future<void> _pumpPlaces(WidgetTester tester) async {
+Future<void> _pumpPlaces(WidgetTester tester, {int? initialJourneyId}) async {
   final requests = <GetPlaces>[];
   final journeyRequests = <GetJourneys>[];
   _readAt.clear();
@@ -80,6 +80,7 @@ Future<void> _pumpPlaces(WidgetTester tester) async {
         useEnglishBookNames: true,
         sendRequest: requests.add,
         sendJourneysRequest: journeyRequests.add,
+        initialJourneyId: initialJourneyId,
         basemap: _basemap,
         onNavigateToPassage: (book, chapter, verse) =>
             _readAt.add((book, chapter, verse)),
@@ -332,6 +333,12 @@ void _journeyTests() {
       tester.widget<ListTile>(find.byKey(const ValueKey('stop-2'))).selected,
       isTrue,
     );
+  });
+
+  testWidgets('opens on a journey given at the start', (tester) async {
+    await _pumpPlaces(tester, initialJourneyId: 1);
+    expect(_listed(tester), ['Bethlehem', 'Egypt', 'Nazareth of Galilee']);
+    expect(tester.widget<PlaceMap>(find.byType(PlaceMap)).legs, hasLength(1));
   });
 
   testWidgets('leaving a journey brings back the places', (tester) async {

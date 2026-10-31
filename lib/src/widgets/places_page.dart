@@ -84,6 +84,7 @@ class PlacesPage extends StatefulWidget {
     this.bookmarks,
     this.sendRequest,
     this.sendJourneysRequest,
+    this.initialJourneyId,
     this.basemap,
   });
 
@@ -103,6 +104,9 @@ class PlacesPage extends StatefulWidget {
   /// Stand in for the signals to Rust, for tests.
   final void Function(GetPlaces)? sendRequest;
   final void Function(GetJourneys)? sendJourneysRequest;
+
+  /// The journey shown first, by id, in place of the list of places.
+  final int? initialJourneyId;
   final Basemap? basemap;
 
   static Future<void> open(
@@ -113,6 +117,7 @@ class PlacesPage extends StatefulWidget {
     ValueChanged<bool>? onNtGreekChanged,
     void Function(int bookIndex, int chapter, int verse)? onNavigateToPassage,
     NameBookmarks? bookmarks,
+    int? initialJourneyId,
   }) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => PlacesPage(
@@ -122,6 +127,7 @@ class PlacesPage extends StatefulWidget {
         onNtGreekChanged: onNtGreekChanged,
         onNavigateToPassage: onNavigateToPassage,
         bookmarks: bookmarks,
+        initialJourneyId: initialJourneyId,
       ),
     ),
   );
@@ -179,6 +185,9 @@ class _PlacesPageState extends State<PlacesPage> {
       if (!mounted || journeys.requestId != _journeysRequestId) return;
       setState(() {
         _journeys = journeys.journeys;
+        _journey ??= _journeys
+            .where((j) => j.id == widget.initialJourneyId)
+            .firstOrNull;
         _journeysOf.clear();
         for (final journey in _journeys) {
           for (final id in {for (final s in journey.stops) s.place.id}) {

@@ -70,3 +70,20 @@ List<MapLeg>? voyageBetween(
   }
   return best == null ? null : journeyMapLegs(best, highlighted: highlighted);
 }
+
+/// The journeys with a stop in [passages]: those telling the event they are.
+List<JourneyEntry> journeysThrough(
+  List<JourneyEntry> journeys,
+  List<ThematicTarget> passages,
+) => [
+  for (final journey in journeys)
+    if (journey.stops.any(
+      (s) => passages.any(
+        (p) =>
+            s.book == p.book &&
+            s.chapter * 1000 + s.verse >= p.chapter * 1000 + p.verse &&
+            s.chapter * 1000 + s.verse <= p.lastChapter * 1000 + p.lastVerse,
+      ),
+    ))
+      journey,
+];

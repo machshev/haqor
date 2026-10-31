@@ -34,6 +34,7 @@ final temple = place(3, 'Pinnacle of the temple', 35.23, 31.78);
 final pisgah = place(4, 'Pisgah', 35.72, 31.77);
 
 void main() {
+  journeyLinkTests();
   testWidgets('pins every place of an event and joins them in order', (
     tester,
   ) async {
@@ -181,5 +182,62 @@ void _stepAndColourTests() {
     expect(jesus, isNot(john));
     final chip = tester.widget<ChoiceChip>(find.byKey(key('map-track-John')));
     expect((chip.avatar! as CircleAvatar).backgroundColor, john);
+  });
+}
+
+void journeyLinkTests() {
+  testWidgets('a picked event links to the journey through its verses', (
+    tester,
+  ) async {
+    JourneyStopEntry at(SequencePlaceEntry p, int chapter, int verse) =>
+        JourneyStopEntry(
+          place: p.place,
+          label: p.label,
+          location: p.location,
+          book: 40,
+          chapter: chapter,
+          verse: verse,
+          bySea: false,
+          drawn: true,
+          via: const [],
+          note: '',
+        );
+    ThematicTarget verses(int chapter, int first, int last) => ThematicTarget(
+      book: 40,
+      chapter: chapter,
+      verse: first,
+      lastChapter: chapter,
+      lastVerse: last,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SequenceMapPage(
+          title: 'Ministry',
+          stops: [
+            (event: 1, title: 'Baptism', places: [jordan]),
+            (event: 2, title: 'Temptations', places: [wilderness]),
+          ],
+          passages: {
+            1: [verses(3, 13, 17)],
+            2: [verses(4, 1, 4)],
+          },
+          knownBefore: (a, b) => a < b,
+          journeys: [
+            JourneyEntry(
+              id: 7,
+              name: 'The temptations',
+              summary: '',
+              stops: [at(jordan, 3, 13), at(wilderness, 4, 1)],
+            ),
+          ],
+          basemap: Basemap.parse('{"land":[]}'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('sequence-map-journey-7')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('sequence-map-stop-2')));
+    await tester.pumpAndSettle();
+    expect(find.text('Journey: The temptations'), findsOneWidget);
   });
 }
