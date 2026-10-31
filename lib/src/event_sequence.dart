@@ -432,9 +432,8 @@ class SequenceGraph {
   }
 
   /// Each run of nodes joined one to one (see [oneToOne]) moved into one
-  /// column, so that it can be drawn stacked: where its nodes lie on
-  /// average, or else where its first or its last lies, the first of those
-  /// clear of the other nodes of its rows.
+  /// column, so that it can be drawn stacked. Keep the run between its
+  /// neighbours in every row, choosing the clear column nearest its mean.
   void _straighten(List<List<int>> built) {
     final next = {for (final (u, v) in oneToOne) u: v};
     final joined = next.values.toSet();
@@ -444,19 +443,26 @@ class SequenceGraph {
       for (var n = next[head]; n != null; n = next[n]) {
         run.add(n);
       }
-      final at = [for (final e in run) column[e]!];
-      final want = [at.reduce((a, b) => a + b) / at.length, at.first, at.last];
-      for (final c in want) {
-        final clear = run.every(
-          (e) => built[row[e]!].every(
-            (o) => o == e || (column[o]! - c).abs() >= 1 - 1e-9,
-          ),
-        );
-        if (!clear) continue;
-        for (final e in run) {
-          column[e] = c;
+      var left = double.negativeInfinity;
+      var right = double.infinity;
+      var total = 0.0;
+      for (final e in run) {
+        final at = column[e]!;
+        total += at;
+        for (final other in built[row[e]!]) {
+          if (other == e) continue;
+          final beside = column[other]!;
+          if (beside < at) {
+            left = math.max(left, beside + 1);
+          } else {
+            right = math.min(right, beside - 1);
+          }
         }
-        break;
+      }
+      if (left > right) continue;
+      final at = (total / run.length).clamp(left, right).toDouble();
+      for (final e in run) {
+        column[e] = at;
       }
     }
   }

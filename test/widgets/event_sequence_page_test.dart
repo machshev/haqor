@@ -558,6 +558,94 @@ void main() {
     );
   });
 
+  testWidgets('stacks the birth sequence branches', (tester) async {
+    // Matthew and Luke's branches, in the runtime database's event order.
+    // The longer wise-men/Egypt chain must align beside the shorter
+    // circumcision/presentation chain, without a grouping to separate them.
+    final titles = [
+      "John's birth predicted",
+      'Gabriel sent to Mary',
+      'Mary Visits Elizabeth',
+      'Birth of John the Baptist',
+      'Birth of Jesus',
+      'Jesus circumcised',
+      'Temple Presentation of Jesus',
+      'Joseph and Mary return to Nazareth',
+      'Childhood of Jesus',
+      'Jesus as a child in the Temple',
+      'Jesus Growing Up',
+      'Espousal of Mary',
+      'An Angel Speaks to Joseph in a Dream',
+      'Wise Men Visit Herod',
+      'Wise Men Visit Jesus',
+      'Joseph and Mary Flee to Egypt',
+      'Herod slays male children',
+      'Joseph and Mary return from Egypt',
+    ];
+    final chains = [
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+      [12, 13, 5, 14, 15, 16, 17, 18, 8],
+      [12, 2],
+    ];
+    final seq = EventSequenceEntry(
+      key: 'test-birth',
+      title: 'Birth and childhood of Jesus',
+      note: '',
+      expands: null,
+      events: [12, 1, 13, 2, 3, 4, 14, 15, 16, 17, 18, 8, 5, 6, 7, 9, 10, 11],
+      edges: [
+        for (final chain in chains)
+          for (var i = 1; i < chain.length; i++) _edge(chain[i - 1], chain[i]),
+      ],
+      groupings: [],
+      milestones: [],
+      details: [],
+    );
+    await open(
+      tester,
+      sequence: seq,
+      events: {
+        for (final (i, t) in titles.indexed)
+          i + 1: _event(i + 1, t, _at(42, 1, 1)),
+      },
+    );
+    for (final horizontal in [false, true]) {
+      if (horizontal) {
+        await tester.tap(key('sequence-orientation'));
+        await tester.pumpAndSettle();
+      }
+      double gap(int a, int b) => horizontal
+          ? tester.getTopLeft(key('sequence-event-$b')).dx -
+                tester.getTopRight(key('sequence-event-$a')).dx
+          : tester.getTopLeft(key('sequence-event-$b')).dy -
+                tester.getBottomLeft(key('sequence-event-$a')).dy;
+      for (final (a, b) in [
+        (2, 3),
+        (3, 4),
+        (6, 7),
+        (14, 15),
+        (15, 16),
+        (16, 17),
+        (17, 18),
+        (8, 9),
+        (9, 10),
+        (10, 11),
+      ]) {
+        expect(
+          gap(a, b),
+          closeTo(4, 0.01),
+          reason: '${titles[a - 1]} → ${titles[b - 1]}',
+        );
+      }
+      // The split at Jesus' birth and the reunion at Nazareth keep arrows.
+      expect(gap(5, 14), greaterThan(20));
+      expect(gap(18, 8), greaterThan(20));
+    }
+    await tester.tap(key('sequence-orientation'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('takes a longer edge beside the stack it would pass behind', (
     tester,
   ) async {
