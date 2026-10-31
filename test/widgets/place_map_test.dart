@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haqor/src/widgets/place_map.dart';
@@ -48,6 +50,7 @@ Future<MapPin?> _tapMap(
 }
 
 void main() {
+  _fitFocusTests();
   test('the basemap reads its wadis', () {
     expect(_basemap.wadis.single, [35.3, 31.8, 35.4, 31.7]);
   });
@@ -173,5 +176,42 @@ void main() {
     await tester.tapAt(state + const Offset(200, 200 + .3 * perDegree));
     await tester.pump(const Duration(milliseconds: 500));
     expect(tapped, hebron);
+  });
+}
+
+void _fitFocusTests() {
+  testWidgets('fitFocus zooms in to fit the focus', (tester) async {
+    const a = MapPin(latitude: 31, longitude: 35, label: 'A', id: 1);
+    const b = MapPin(latitude: 31, longitude: 35.05, label: 'B', id: 2);
+    const c = MapPin(latitude: 35, longitude: 38, label: 'C', id: 3);
+    MapPin? tapped;
+    Widget map(List<double>? focus) => MaterialApp(
+      home: Center(
+        child: SizedBox(
+          width: 400,
+          height: 400,
+          child: PlaceMap(
+            basemap: _basemap,
+            pins: const [a, b, c],
+            focus: focus,
+            fitFocus: true,
+            onPinTap: (pin) => tapped = pin,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(map(null));
+    await tester.pumpWidget(map(const [35, 31, 35.05, 31]));
+    await tester.pump();
+    // A quarter of the 1.6 degrees fills 80% of 400 pixels: 800 a degree,
+    // so A and B lie about 17 pixels either side of the middle.
+    final middle = tester.getCenter(find.byType(PlaceMap));
+    final half = .025 * math.cos(32 * math.pi / 180) * 800;
+    await tester.tapAt(middle - Offset(half, 0));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(tapped, a);
+    await tester.tapAt(middle + Offset(half, 0));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(tapped, b);
   });
 }

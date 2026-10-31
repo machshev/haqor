@@ -321,7 +321,21 @@ class MapLeg {
     this.bySea = false,
     this.highlighted = false,
     this.estimateSea = true,
+    this.color,
   });
+
+  /// Drawn in this colour, a person's on a map of several; the map's route
+  /// colour when null.
+  final Color? color;
+
+  /// The same leg in [color].
+  MapLeg withColor(Color? color) => MapLeg(
+    points,
+    bySea: bySea,
+    highlighted: highlighted,
+    estimateSea: estimateSea,
+    color: color,
+  );
 
   /// Longitude, latitude pairs: the stop it leaves, any points it passes, and
   /// the stop it reaches.
@@ -338,7 +352,7 @@ class MapLeg {
     final way = sea.route(points);
     return way == null
         ? this
-        : MapLeg(way, bySea: true, highlighted: highlighted);
+        : MapLeg(way, bySea: true, highlighted: highlighted, color: color);
   }
 
   /// Picked out: drawn bolder, over the others, which fade.
@@ -365,7 +379,7 @@ class MapLeg {
         changed = true;
       }
     }
-    return changed ? MapLeg(out, highlighted: highlighted) : this;
+    return changed ? MapLeg(out, highlighted: highlighted, color: color) : this;
   }
 }
 
@@ -384,6 +398,7 @@ class PlaceMap extends StatefulWidget {
     this.seaRoutes,
     this.minSpan = 1.6,
     this.focus,
+    this.fitFocus = false,
   });
 
   final List<MapPin> pins;
@@ -414,6 +429,11 @@ class PlaceMap extends StatefulWidget {
   /// picked out, or the way to it. The view moves only as far as it must,
   /// and zooms out only if they do not fit.
   final List<double>? focus;
+
+  /// Fit the view to [focus] when it changes, zooming in as well as out, so
+  /// a place picked out and the way to it fill the map. A single place is
+  /// shown across a quarter of [minSpan].
+  final bool fitFocus;
 
   @override
   State<PlaceMap> createState() => _PlaceMapState();
@@ -587,6 +607,15 @@ class _PlaceMapState extends State<PlaceMap> {
       east = math.max(east, focus[i]);
       south = math.min(south, focus[i + 1]);
       north = math.max(north, focus[i + 1]);
+    }
+    if (widget.fitFocus) {
+      final latSpan = math.max(north - south, widget.minSpan / 4);
+      final lonSpan = math.max((east - west) * _xScale, widget.minSpan / 4);
+      _scale = math
+          .min(size.width * .8 / lonSpan, size.height * .8 / latSpan)
+          .clamp(_minScale, _maxScale);
+      _center = Offset((west + east) / 2, (south + north) / 2);
+      return;
     }
     // A margin of a tenth of the view all round, clear of the zoom buttons.
     final fits =
@@ -1361,7 +1390,7 @@ class _MapPainter extends CustomPainter {
         )
         ..strokeWidth = leg.highlighted ? 7 : 5;
       line
-        ..color = colors.route.withValues(
+        ..color = (leg.color ?? colors.route).withValues(
           alpha: picking && !leg.highlighted ? .35 : 1,
         )
         ..strokeWidth = leg.highlighted ? 4 : 2.5;
