@@ -417,7 +417,7 @@ final _moadim = StandardTimeline(
         _ref(_leviticus, 23, 39),
         _ref(_numbers, 29, 12),
         _ref(_ezekiel, 45, 21),
-        _ref(_ezekiel, 45, 25),
+        _ref(_ezekiel, 45, 23, 25),
         _ref(_nehemiah, 8, 14, 15),
       ],
       note:
@@ -437,8 +437,10 @@ final _moadim = StandardTimeline(
           'chag of the sukkot, seven days to Yahweh" (Leviticus 23:34; so '
           '23:39 and Numbers 29:12); and Ezekiel, who names the first by '
           'the pesach, begins this one "in the seventh month, in the '
-          'fifteenth day of the month, in the chag ... seven days" (Ezekiel '
-          '45:25). Gathered at Jerusalem on the first of the month, on the '
+          'fifteenth day of the month, in the chag, shall he do the like '
+          '(kaʾelleh) seven days, according to the sin offering, according '
+          'to the burnt offering" (Ezekiel 45:25), the two weeks a pair, '
+          'each with a bull and seven rams a day (Ezekiel 45:23). Gathered at Jerusalem on the first of the month, on the '
           'second they found the sukkot written, and "proclaimed in all '
           'their cities, and in Jerusalem, saying, Go forth unto the mount" '
           '(Nehemiah 8:14-15).',
