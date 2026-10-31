@@ -1239,6 +1239,7 @@ void main() {
     final timeline = workspace.timelineById('moadim')!;
     final entries = workspace.viewOf('moadim');
     StudyTimelineEntry? tapped;
+    TimelineTime? tappedDay;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -1247,6 +1248,7 @@ void main() {
             entries: entries,
             year: 0,
             onTapEntry: (e) => tapped = e,
+            onTapDay: (d) => tappedDay = d,
           ),
         ),
       ),
@@ -1288,6 +1290,34 @@ void main() {
     final sukkot = labels.singleWhere((l) => l.entry.id == 'moadim:sukkot');
     await tester.tapAt(wheel.topLeft + sukkot.rect.center);
     expect(tapped?.id, 'moadim:sukkot');
+    // A shabbaton is drawn with the event it belongs to, a star; the
+    // ʿomer, only falling on the first day of Matzot, is not.
+    TimelineWheelMark mark(String id) =>
+        marks.singleWhere((m) => m.entry.id == 'moadim:$id');
+    expect(
+      marks.where((m) => m.entry.id == 'moadim:teruah-shabbaton'),
+      isEmpty,
+    );
+    expect(mark('teruah').sabbaths.map((e) => e.id), [
+      'moadim:teruah-shabbaton',
+    ]);
+    expect(mark('atzeret').sabbaths, hasLength(1));
+    expect(mark('omer').sabbaths, isEmpty);
+    expect(timelineWheelStar(mark('teruah')), isTrue);
+    expect(timelineWheelStar(mark('omer')), isFalse);
+    // The shabbatot called as others are go unnamed, a key saying what
+    // their stars are.
+    expect(named, isNot(contains('moadim:sukkot-1')));
+    expect(named, isNot(contains('moadim:matzot-7')));
+    expect(find.text('Shabbaton (a ceasing)'), findsOneWidget);
+    // A lone shabbaton tapped opens it; an event drawn with one, its day.
+    Offset at(TimelineWheelMark m) =>
+        timelineWheelPoint(wheel.center, m.radius * wheel.width / 2, m.from);
+    await tester.tapAt(at(mark('sukkot-1')));
+    expect(tapped?.id, 'moadim:sukkot-1');
+    expect(tappedDay, isNull);
+    await tester.tapAt(at(mark('teruah')));
+    expect((tappedDay?.month, tappedDay?.day), (7, 1));
   });
 
   testWidgets('categories colour entries, which a key shows and hides, and '

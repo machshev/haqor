@@ -8,14 +8,22 @@ import 'timeline_chart.dart';
 
 /// Where an entry stands on the year's wheel (see [TimelineWheel]): the
 /// stretch of the year it covers, [from] and [to] as fractions of the year
-/// from 1 Nisan, clockwise from the top; and where its mark stands, as a
-/// fraction of the wheel's radius ([radius]: an event's dot, a span's arc).
+/// from 1 Nisan, clockwise from the top; where its mark stands, as a
+/// fraction of the wheel's radius ([radius]: an event's dot, a span's arc);
+/// and the high Sabbaths of an event's day drawn with it ([sabbaths]), its
+/// dot then a star.
 typedef TimelineWheelMark = ({
   StudyTimelineEntry entry,
   double from,
   double to,
   double radius,
+  List<StudyTimelineEntry> sabbaths,
 });
+
+/// Whether [mark] is drawn as a high Sabbath's star: one itself, or an
+/// event on one.
+bool timelineWheelStar(TimelineWheelMark mark) =>
+    mark.entry.isHighSabbath || mark.sabbaths.isNotEmpty;
 
 /// An entry's name placed on the wheel: its box, [rect], and the point by
 /// it, [at], that a line runs to from its mark.
@@ -64,8 +72,10 @@ const _labelReach = 0.775;
 
 /// Where [entries] stand on the wheel of the year [year] of [timeline]:
 /// those dated within it to the month at least, a span cut to the year.
-/// Events standing close have their dots stacked inward, and spans are
-/// packed into as few rings of arcs as fit, within the dots.
+/// A high Sabbath on the day of the event it belongs to is drawn with it, that
+/// event's dot a star. Events standing close have their dots stacked
+/// inward, and spans are packed into as few rings of arcs as fit, within
+/// the dots.
 List<TimelineWheelMark> timelineWheelMarks(
   StudyTimeline timeline,
   List<StudyTimelineEntry> entries,
@@ -75,14 +85,40 @@ List<TimelineWheelMark> timelineWheelMarks(
   final length = stretch.end - stretch.start;
   double fraction(double position) =>
       ((position - stretch.start) / length).clamp(0.0, 1.0);
+  final sorted = List.of(entries)..sort(compareTimelineEntries);
+  // Each high Sabbath on the day of another event, by that event.
+  final sabbathsOf = <String, List<StudyTimelineEntry>>{};
+  final joined = <String>{};
+  for (final sabbath in sorted.where((e) => e.isHighSabbath)) {
+    if (sabbath.start.day == null) continue;
+    // The event it is pinned to, or else one of its category, on its day;
+    // not one only falling on it, as the ʿomer may.
+    final onDay = sorted.where(
+      (e) =>
+          !e.isSpan &&
+          !e.isHighSabbath &&
+          timeline.isOnDay(e.start, sabbath.start),
+    );
+    final event =
+        onDay.where((e) => e.id == sabbath.pin?.anchorId).firstOrNull ??
+        onDay
+            .where(
+              (e) =>
+                  sabbath.category.isNotEmpty && e.category == sabbath.category,
+            )
+            .firstOrNull;
+    if (event == null) continue;
+    (sabbathsOf[event.id] ??= []).add(sabbath);
+    joined.add(sabbath.id);
+  }
   final events = <TimelineWheelMark>[];
   final spans = <(StudyTimelineEntry, double, double, int)>[];
   final spanEnds = <double>[];
   var lastEvent = double.negativeInfinity;
   var stack = 0;
   var deepest = 0;
-  for (final entry in List.of(entries)..sort(compareTimelineEntries)) {
-    if (entry.start.month == null) continue;
+  for (final entry in sorted) {
+    if (entry.start.month == null || joined.contains(entry.id)) continue;
     final reach = timelineEntryReach(timeline, entry);
     if (reach.end < stretch.start || reach.start >= stretch.end) continue;
     final from = fraction(reach.start);
@@ -98,6 +134,7 @@ List<TimelineWheelMark> timelineWheelMarks(
         from: from,
         to: from,
         radius: _eventRadius - stack * _stackStep,
+        sabbaths: sabbathsOf[entry.id] ?? const [],
       ));
       continue;
     }
@@ -120,6 +157,7 @@ List<TimelineWheelMark> timelineWheelMarks(
         from: from,
         to: to,
         radius: math.max(_spanInner, spanOuter - lane * _spanStep),
+        sabbaths: const <StudyTimelineEntry>[],
       ),
   ]..sort((a, b) => compareTimelineEntries(a.entry, b.entry));
 }
@@ -133,11 +171,12 @@ Offset timelineWheelPoint(Offset centre, double radius, double fraction) {
 
 /// One year of a timeline as a wheel, its months round the rim from Nisan
 /// at the top, the Sabbaths ticked inside them, and, as the timeline
-/// shows them, the seasons of the land; its events as dots and its spans
-/// as arcs, each named within where there is room, a line out to its
-/// mark. The cycle of the feasts shows whole: the spring feasts facing the
-/// autumn ones across it. Tapping an entry, or its name, calls
-/// [onTapEntry].
+/// shows them, the seasons of the land; its events as dots, a high
+/// Sabbath's as a star, and its spans as arcs, each named within where
+/// there is room, a line out to its mark. The cycle of the feasts shows
+/// whole: the spring feasts facing the autumn ones across it. Tapping an
+/// entry, or its name, calls [onTapEntry]; an event drawn with a high
+/// Sabbath of its day, [onTapDay] with that day, as there is one.
 class TimelineWheel extends StatelessWidget {
   const TimelineWheel({
     super.key,
@@ -146,6 +185,7 @@ class TimelineWheel extends StatelessWidget {
     required this.year,
     this.selectedId,
     this.onTapEntry,
+    this.onTapDay,
     this.faded = const {},
   });
 
@@ -156,20 +196,23 @@ class TimelineWheel extends StatelessWidget {
   final double year;
   final String? selectedId;
   final ValueChanged<StudyTimelineEntry>? onTapEntry;
+  final ValueChanged<TimelineTime>? onTapDay;
 
   /// The entries drawn faded: those of the timelines it is built on.
   final Set<String> faded;
 
-  /// The entry at [point] on a wheel of [size], if any: one of [labels],
-  /// an event's dot, or a span's arc.
-  static StudyTimelineEntry? entryAt(
+  /// The mark at [point] on a wheel of [size], if any: one named by one of
+  /// [labels], an event's dot, or a span's arc.
+  static TimelineWheelMark? markAt(
     List<TimelineWheelMark> marks,
     Size size,
     Offset point, {
     List<TimelineWheelLabel> labels = const [],
   }) {
     for (final label in labels) {
-      if (label.rect.inflate(2).contains(point)) return label.entry;
+      if (label.rect.inflate(2).contains(point)) {
+        return marks.firstWhere((m) => m.entry.id == label.entry.id);
+      }
     }
     final centre = size.center(Offset.zero);
     final radius = size.shortestSide / 2;
@@ -198,7 +241,7 @@ class TimelineWheel extends StatelessWidget {
         }
       }
     }
-    return best?.entry;
+    return best;
   }
 
   /// The season of the land at [point] on a wheel of [size] showing the
@@ -236,11 +279,36 @@ class TimelineWheel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final marks = timelineWheelMarks(timeline, entries, year);
+    // A key to the stars, whose names are mostly left off.
+    final key = marks.any(timelineWheelStar)
+        ? Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              key: const ValueKey('timeline-wheel-key'),
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CustomPaint(
+                  size: const Size.square(16),
+                  painter: _KeyStar(theme.colorScheme),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Shabbaton (a ceasing)',
+                  style: theme.textTheme.labelSmall,
+                ),
+              ],
+            ),
+          )
+        : null;
     return LayoutBuilder(
       builder: (context, constraints) {
         final side = math.max(
           0.0,
-          math.min(constraints.maxWidth, constraints.maxHeight) - 16,
+          math.min(
+                constraints.maxWidth,
+                constraints.maxHeight - (key == null ? 0 : 28),
+              ) -
+              16,
         );
         final size = Size.square(side);
         final layout = TimelineWheelLayout(
@@ -253,27 +321,43 @@ class TimelineWheel extends StatelessWidget {
           theme: theme,
         );
         return Center(
-          child: GestureDetector(
-            key: const ValueKey('timeline-wheel'),
-            onTapUp: (details) {
-              final point = details.localPosition;
-              final entry = entryAt(marks, size, point, labels: layout.labels);
-              if (entry != null) {
-                onTapEntry?.call(entry);
-                return;
-              }
-              // A season tapped says what it is, and where it is written.
-              final season = seasonAt(timeline, year, size, point);
-              if (season == null) return;
-              ScaffoldMessenger.maybeOf(context)
-                ?..hideCurrentSnackBar()
-                ..showSnackBar(
-                  SnackBar(
-                    content: Text('${season.name} · ${season.references}'),
-                  ),
-                );
-            },
-            child: CustomPaint(size: size, painter: _WheelPainter(layout)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                key: const ValueKey('timeline-wheel'),
+                onTapUp: (details) {
+                  final point = details.localPosition;
+                  final mark = markAt(
+                    marks,
+                    size,
+                    point,
+                    labels: layout.labels,
+                  );
+                  if (mark != null) {
+                    final day = onTapDay;
+                    if (mark.sabbaths.isNotEmpty && day != null) {
+                      day(mark.entry.start);
+                    } else {
+                      onTapEntry?.call(mark.entry);
+                    }
+                    return;
+                  }
+                  // A season tapped says what it is, and where it is written.
+                  final season = seasonAt(timeline, year, size, point);
+                  if (season == null) return;
+                  ScaffoldMessenger.maybeOf(context)
+                    ?..hideCurrentSnackBar()
+                    ..showSnackBar(
+                      SnackBar(
+                        content: Text('${season.name} · ${season.references}'),
+                      ),
+                    );
+                },
+                child: CustomPaint(size: size, painter: _WheelPainter(layout)),
+              ),
+              ?key,
+            ],
           ),
         );
       },
@@ -339,6 +423,12 @@ class TimelineWheelLayout {
   Offset markPoint(TimelineWheelMark mark) =>
       timelineWheelPoint(centre, mark.radius * r, mark.from);
 
+  /// Whether [mark] is chosen: its entry, or a high Sabbath drawn with it.
+  bool isSelected(TimelineWheelMark mark) =>
+      selectedId != null &&
+      (mark.entry.id == selectedId ||
+          mark.sabbaths.any((e) => e.id == selectedId));
+
   /// Places each entry's name in the room within the seasons, clear of
   /// the dots and arcs, of the names placed before it and of the title,
   /// as near its mark as it may stand without its line crossing them: the
@@ -378,10 +468,25 @@ class TimelineWheelLayout {
       rect.bottomLeft,
       rect.bottomRight,
     ].every((p) => (p - centre).distance <= reach);
+    // A high Sabbath called as others are ("Shabbaton", "Miqra qodesh")
+    // goes unnamed unless chosen: its star, and the key, say what it is.
+    final called = <String, int>{};
+    for (final mark in marks) {
+      for (final e in [
+        mark.entry,
+        ...mark.sabbaths,
+      ].where((e) => e.isHighSabbath)) {
+        called.update(e.shortLabel, (n) => n + 1, ifAbsent: () => 1);
+      }
+    }
+    bool unnamed(TimelineWheelMark m) =>
+        m.entry.isHighSabbath && called[m.entry.shortLabel]! > 1;
     // The spans first, then the events, the high Sabbaths among them last,
     // each in the order of the year.
-    int rank(TimelineWheelMark m) => m.entry.id == selectedId
+    int rank(TimelineWheelMark m) => isSelected(m)
         ? 0
+        : unnamed(m)
+        ? -1
         : m.entry.isSpan
         ? 1
         : m.entry.isHighSabbath
@@ -403,7 +508,7 @@ class TimelineWheelLayout {
           if (x * x + y * y <= reach * reach) centre + Offset(x, y),
     ];
     for (final mark in order) {
-      final selected = mark.entry.id == selectedId;
+      final selected = isSelected(mark);
       final painter = TextPainter(
         text: TextSpan(
           text: mark.entry.shortLabel,
@@ -624,28 +729,30 @@ class _WheelPainter extends CustomPainter {
           ..strokeWidth = selected ? 9 : 7,
       );
     }
-    // The events as dots.
+    // The events as dots, a high Sabbath's, or an event's on one, a star.
     for (final mark in layout.marks.where((m) => !m.entry.isSpan)) {
-      final selected = mark.entry.id == layout.selectedId;
+      final selected = layout.isSelected(mark);
       final color = layout.colorOf(mark.entry);
       final dot = layout.markPoint(mark);
-      if (mark.entry.isHighSabbath) {
-        canvas.drawCircle(dot, 6, Paint()..color = scheme.tertiaryContainer);
-        canvas.drawCircle(
-          dot,
-          6,
-          Paint()
-            ..color = color
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5,
-        );
+      if (timelineWheelStar(mark)) {
+        final star = _star(dot, 8);
+        canvas
+          ..drawPath(star, Paint()..color = scheme.tertiaryContainer)
+          ..drawPath(
+            star,
+            Paint()
+              ..color = color
+              ..style = PaintingStyle.stroke
+              ..strokeJoin = StrokeJoin.round
+              ..strokeWidth = 1.5,
+          );
       } else {
         canvas.drawCircle(dot, 5, Paint()..color = color);
       }
       if (selected) {
         canvas.drawCircle(
           dot,
-          8,
+          timelineWheelStar(mark) ? 10 : 8,
           Paint()
             ..color = scheme.onSurface
             ..style = PaintingStyle.stroke
@@ -668,6 +775,20 @@ class _WheelPainter extends CustomPainter {
     }
     // The year in the middle.
     layout.title.paint(canvas, layout.titleRect.topLeft);
+  }
+
+  /// A five-pointed star centred on [centre], its points [radius] out.
+  static Path _star(Offset centre, double radius) {
+    final path = Path();
+    for (var i = 0; i < 10; i++) {
+      final a = -math.pi / 2 + i * math.pi / 5;
+      final p =
+          centre +
+          Offset(math.cos(a), math.sin(a)) *
+              (i.isEven ? radius : radius * 0.45);
+      i == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
+    }
+    return path..close();
   }
 
   /// A ring's stretch from [from] round [sweep], between radii [inner] and
@@ -734,4 +855,32 @@ class _WheelPainter extends CustomPainter {
       old.layout.selectedId != layout.selectedId ||
       old.layout.faded != layout.faded ||
       old.layout.theme != theme;
+}
+
+/// A high Sabbath's star, as the wheel draws it, for its key.
+class _KeyStar extends CustomPainter {
+  _KeyStar(this.scheme);
+
+  final ColorScheme scheme;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final star = _WheelPainter._star(
+      size.center(Offset.zero),
+      size.shortestSide / 2 - 1,
+    );
+    canvas
+      ..drawPath(star, Paint()..color = scheme.tertiaryContainer)
+      ..drawPath(
+        star,
+        Paint()
+          ..color = scheme.tertiary
+          ..style = PaintingStyle.stroke
+          ..strokeJoin = StrokeJoin.round
+          ..strokeWidth = 1.5,
+      );
+  }
+
+  @override
+  bool shouldRepaint(_KeyStar old) => old.scheme != scheme;
 }
