@@ -229,6 +229,21 @@ class SequenceGraph {
         if (!_next[u]!.any((w) => w != v && after(w).contains(v))) (u, v),
   ];
 
+  /// The drawn edges joining one to one: from a node leading to no other
+  /// to one following no other, in the row straight after.
+  late final Set<(int, int)> oneToOne = () {
+    final outs = <int, int>{};
+    final ins = <int, int>{};
+    for (final (u, v) in drawnEdges) {
+      outs[u] = (outs[u] ?? 0) + 1;
+      ins[v] = (ins[v] ?? 0) + 1;
+    }
+    return {
+      for (final (u, v) in drawnEdges)
+        if (outs[u] == 1 && ins[v] == 1 && row[v] == row[u]! + 1) (u, v),
+    };
+  }();
+
   /// The rows the nodes are drawn in, top to bottom, each left to right.
   late final List<List<int>> rows;
 
@@ -406,6 +421,7 @@ class SequenceGraph {
         }
       }
     }
+    _straighten(built);
     final left = column.values.fold(double.infinity, math.min);
     final right = column.values.fold(double.negativeInfinity, math.max);
     for (final e in events) {
@@ -413,6 +429,36 @@ class SequenceGraph {
     }
     width = events.isEmpty ? 1 : right - left + 1;
     rows = built;
+  }
+
+  /// Each run of nodes joined one to one (see [oneToOne]) moved into one
+  /// column, so that it can be drawn stacked: where its nodes lie on
+  /// average, or else where its first or its last lies, the first of those
+  /// clear of the other nodes of its rows.
+  void _straighten(List<List<int>> built) {
+    final next = {for (final (u, v) in oneToOne) u: v};
+    final joined = next.values.toSet();
+    for (final head in next.keys) {
+      if (joined.contains(head)) continue;
+      final run = [head];
+      for (var n = next[head]; n != null; n = next[n]) {
+        run.add(n);
+      }
+      final at = [for (final e in run) column[e]!];
+      final want = [at.reduce((a, b) => a + b) / at.length, at.first, at.last];
+      for (final c in want) {
+        final clear = run.every(
+          (e) => built[row[e]!].every(
+            (o) => o == e || (column[o]! - c).abs() >= 1 - 1e-9,
+          ),
+        );
+        if (!clear) continue;
+        for (final e in run) {
+          column[e] = c;
+        }
+        break;
+      }
+    }
   }
 
   /// Each node in its lane: the lanes side by side, each as wide as the

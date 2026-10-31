@@ -448,8 +448,8 @@ void main() {
   testWidgets('stacks a one-to-one chain, with arrows only where it branches', (
     tester,
   ) async {
-    // Baptism leads to two, which both lead to Fishers of Men, then one to
-    // one to Peter's Mother-in-law.
+    // Baptism leads to two: Water to Wine one to one to Fishers of Men, and
+    // Temple Cleansing beside them; both then lead to Peter's Mother-in-law.
     await open(
       tester,
       sequence: EventSequenceEntry(
@@ -462,31 +462,27 @@ void main() {
           _edge(1, 2),
           _edge(1, 3),
           _edge(2, 4),
-          _edge(3, 4),
           _edge(4, 5),
+          _edge(3, 5),
         ],
         groupings: const [],
         milestones: const [],
         details: const [],
       ),
     );
+    double gap(int above, int below) =>
+        tester.getTopLeft(key('sequence-event-$below')).dy -
+        tester.getBottomLeft(key('sequence-event-$above')).dy;
     // Each card fitted to its one line of title.
     expect(tester.getSize(key('sequence-event-1')).height, lessThan(56));
-    // Where Baptism branches, room for the arrows.
+    // Where Baptism branches, and where the two meet, room for the arrows.
+    expect(gap(1, 2), greaterThan(20));
+    expect(gap(4, 5), greaterThan(20));
+    // One to one, stacked straight beneath, the longer edge passing beside.
+    expect(gap(2, 4), lessThan(8));
     expect(
-      tester.getTopLeft(key('sequence-event-2')).dy -
-          tester.getBottomLeft(key('sequence-event-1')).dy,
-      greaterThan(20),
-    );
-    // One to one, stacked straight beneath.
-    expect(
-      tester.getTopLeft(key('sequence-event-5')).dy -
-          tester.getBottomLeft(key('sequence-event-4')).dy,
-      lessThan(8),
-    );
-    expect(
-      tester.getTopLeft(key('sequence-event-5')).dx,
       tester.getTopLeft(key('sequence-event-4')).dx,
+      tester.getTopLeft(key('sequence-event-2')).dx,
     );
   });
 }

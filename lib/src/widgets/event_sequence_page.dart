@@ -524,36 +524,30 @@ class _EventSequencePageState extends State<EventSequencePage> {
         ? List.filled(graph.rows.length, _cardWidth)
         : fitted;
 
-    // Between two rows joined only one to one, each card straight after the
-    // one it follows and nothing between, the cards are stacked without an
-    // arrow; an arrow is kept where a card leads to or follows more than one.
-    final outs = <int, int>{};
-    final ins = <int, int>{};
-    for (final (u, v) in graph.drawnEdges) {
-      outs[u] = (outs[u] ?? 0) + 1;
-      ins[v] = (ins[v] ?? 0) + 1;
-    }
-    bool oneToOne((int, int) edge) {
+    // Where the edges from one row to the next all join one to one, each
+    // card straight after the one it follows and nothing between, the cards
+    // are stacked without an arrow; an arrow is kept where a card leads to
+    // or follows more than one. Longer edges pass beside the stack.
+    bool stackable((int, int) edge) {
       final (u, v) = edge;
-      return graph.row[v] == graph.row[u]! + 1 &&
-          outs[u] == 1 &&
-          ins[v] == 1 &&
+      return graph.oneToOne.contains(edge) &&
           (graph.column[u]! - graph.column[v]!).abs() < 1e-6;
     }
 
-    final crossing = <int, List<(int, int)>>{};
+    final between = <int, List<(int, int)>>{};
     for (final edge in graph.drawnEdges) {
-      for (var r = graph.row[edge.$1]!; r < graph.row[edge.$2]!; r++) {
-        (crossing[r] ??= []).add(edge);
+      final (u, v) = edge;
+      if (graph.row[v] == graph.row[u]! + 1) {
+        (between[graph.row[u]!] ??= []).add(edge);
       }
     }
     final stacked = <(int, int)>{};
     final tight = <int>{};
-    for (final MapEntry(key: r, value: edges) in crossing.entries) {
+    for (final MapEntry(key: r, value: edges) in between.entries) {
       if (ends.containsKey(r) ||
           starts.containsKey(r + 1) ||
           _milestoneRows.containsKey(r + 1) ||
-          !edges.every(oneToOne)) {
+          !edges.every(stackable)) {
         continue;
       }
       tight.add(r);
