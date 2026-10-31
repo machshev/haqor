@@ -493,4 +493,61 @@ void main() {
       tester.getTopLeft(key('sequence-event-2')).dx,
     );
   });
+
+  testWidgets('takes a longer edge beside the stack it would pass behind', (
+    tester,
+  ) async {
+    // Baptism leads one to one down to Fishers of Men, and on to Peter's
+    // Mother-in-law in the next group, straight beneath them.
+    await open(
+      tester,
+      sequence: EventSequenceEntry(
+        key: 'test-detour',
+        title: 'Detour',
+        note: '',
+        expands: null,
+        events: [1, 2, 3, 4, 5],
+        edges: [_edge(1, 2), _edge(2, 3), _edge(3, 4), _edge(1, 5)],
+        groupings: [
+          SequenceGroupingEntry(
+            key: 'parts',
+            title: 'Parts',
+            note: '',
+            groups: [
+              SequenceGroupEntry(
+                title: 'First',
+                note: '',
+                parent: null,
+                events: [1, 2, 3, 4],
+              ),
+              SequenceGroupEntry(
+                title: 'Second',
+                note: '',
+                parent: null,
+                events: [5],
+              ),
+            ],
+          ),
+        ],
+        milestones: const [],
+        details: const [],
+      ),
+    );
+    await tester.tap(key('sequence-fold-toggle'));
+    await tester.pumpAndSettle();
+    final painter =
+        tester
+                .widgetList<CustomPaint>(find.byType(CustomPaint))
+                .map((p) => p.painter)
+                .firstWhere((p) => p.runtimeType.toString() == '_EdgePainter')
+            as dynamic;
+    final long = (painter.edges as List).singleWhere(
+      (e) => (e.to.dy - e.from.dy) > 150,
+    );
+    // Beside the cards between, half a card's width from the line their
+    // middles lie on.
+    final width = tester.getSize(key('sequence-event-3')).width;
+    expect(long.via, isNotNull);
+    expect((long.via.across - long.from.dx).abs(), greaterThan(width / 2));
+  });
 }
