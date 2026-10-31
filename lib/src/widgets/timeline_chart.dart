@@ -1083,18 +1083,25 @@ class TimelineChart extends StatelessWidget {
               group: false,
             );
           }
-          final room = (next[entry.id] ?? double.infinity) - slot.left;
+          final laneRoom = (next[entry.id] ?? double.infinity) - slot.left;
+          final room = entry.isSpan ? math.min(mark, laneRoom) : laneRoom;
           final lead = entry.isSpan ? 6.0 : _dot + 4;
           final button = groups.containsKey(entry.id)
               ? _GroupToggle.width
               : 0.0;
           // Its title where it fits, or it is chosen; its short title else.
-          final long = _textWidth(entry.title, style);
+          final graphTitle =
+              entry.isSpan && entry.title.startsWith('Lifetime of ')
+              ? entry.title.substring('Lifetime of '.length)
+              : entry.title;
+          final long = _textWidth(graphTitle, style);
           final text =
               room >= lead + long + 4 + button || entry.id == selectedId
-              ? entry.title
-              : entry.shortLabel;
-          final title = text == entry.title ? long : _textWidth(text, style);
+              ? graphTitle
+              : entry.shortTitle.isEmpty
+              ? graphTitle
+              : entry.shortTitle;
+          final title = text == graphTitle ? long : _textWidth(text, style);
           final full = lead + title + 4 + button;
           if (room >= full) {
             return (
@@ -1516,7 +1523,7 @@ class _EntryMark extends StatelessWidget {
       label,
       maxLines: 1,
       softWrap: false,
-      overflow: TextOverflow.ellipsis,
+      overflow: entry.isSpan ? TextOverflow.clip : TextOverflow.ellipsis,
       style: style,
     );
     return Tooltip(
