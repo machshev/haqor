@@ -253,7 +253,8 @@ void main() {
     await menu(tester, 'sequence-lanes');
     expect(find.text('Italy'), findsWidgets);
     expect(find.text('Macedonia'), findsWidgets);
-    await menu(tester, 'sequence-map-all');
+    await tester.tap(key('sequence-map'));
+    await tester.pumpAndSettle();
     final map = tester.widget<SequenceMapPage>(find.byType(SequenceMapPage));
     expect(map.stops.singleWhere((s) => s.event == 304).places, isEmpty);
     expect(

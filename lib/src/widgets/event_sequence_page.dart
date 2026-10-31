@@ -954,6 +954,14 @@ class _EventSequencePageState extends State<EventSequencePage> {
           ],
         ),
         actions: [
+          if (_details.values.any((d) => d.places.isNotEmpty))
+            IconButton(
+              key: const ValueKey('sequence-map'),
+              tooltip: 'Every event on the map',
+              icon: const Icon(Icons.map_outlined),
+              onPressed: () =>
+                  _openMap(widget.sequence.title, widget.sequence.events),
+            ),
           if (_tree case final tree?)
             IconButton(
               key: const ValueKey('sequence-fold-toggle'),
