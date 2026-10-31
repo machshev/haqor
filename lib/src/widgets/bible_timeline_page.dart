@@ -176,7 +176,10 @@ String bibleEventDuration(BibleEventEntry event) {
 /// the rest as events, saying how long they lasted; each in its category
 /// (see [bibleEventCategory]), and a birth or death pinned to the life of
 /// the one born or dying (see [TimelinePin]), or else a death to their
-/// reign or judgeship, so that it is grouped under it.
+/// reign or judgeship, so that it is grouped under it. A birth that
+/// begins a life drawn, or a death that ends one, is left off, the life
+/// showing it already; each so left off is put in [coveredBy], if given,
+/// with the id of its life.
 ///
 /// The events of [sequences] are left off, drawn in their sequences
 /// instead (see [EventSequencePage]); a sequence expanding none of the
@@ -185,6 +188,7 @@ String bibleEventDuration(BibleEventEntry event) {
 List<StudyTimelineEntry> bibleTimelineEntries(
   List<BibleEventEntry> events, {
   BibleSequences? sequences,
+  Map<String, String>? coveredBy,
 }) {
   final hidden = sequences?.homeOf ?? const {};
   // Each sequence standing for itself, where its first event would be.
@@ -210,13 +214,39 @@ List<StudyTimelineEntry> bibleTimelineEntries(
       (spans[name] ??= []).add(entry);
     }
   }
-  return [
-    for (final entry in entries)
-      switch (_pinFor(entry, spans)) {
-        final pin? => entry.pinnedTo(pin),
-        null => entry,
-      },
-  ];
+  final kept = <StudyTimelineEntry>[];
+  for (final entry in entries) {
+    if (_lifeCovering(entry, spans) case final life?) {
+      coveredBy?[entry.id] = life;
+      continue;
+    }
+    kept.add(switch (_pinFor(entry, spans)) {
+      final pin? => entry.pinnedTo(pin),
+      null => entry,
+    });
+  }
+  return kept;
+}
+
+/// The id of the span of the life, among [spans] by name, that [entry]
+/// begins (a birth) or ends (a death), a year either way, and so needs
+/// no drawing of its own; null for none.
+String? _lifeCovering(
+  StudyTimelineEntry entry,
+  Map<String, List<StudyTimelineEntry>> spans,
+) {
+  if (entry.isSpan) return null;
+  final birth = entry.category == 'Births';
+  if (!birth && entry.category != 'Deaths') return null;
+  final at = bibleTimeline.positionOf(entry.start);
+  for (final name in bibleEventSubjects(entry.title)) {
+    for (final span in spans[name] ?? const <StudyTimelineEntry>[]) {
+      if (span.category != 'Lifetimes') continue;
+      final edge = bibleTimeline.positionOf(birth ? span.start : span.last);
+      if ((at - edge).abs() <= 1) return span.id;
+    }
+  }
+  return null;
 }
 
 /// How a birth or death is pinned to the span, among [spans] by name, of
@@ -485,11 +515,20 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
       setState(() {
         _events = events.events;
         _sequences = BibleSequences(events.sequences);
+        final covered = <String, String>{};
         _entries = [
           ...bibleEras,
           bibleKingdomOfChrist,
-          ...bibleTimelineEntries(events.events, sequences: _sequences),
+          ...bibleTimelineEntries(
+            events.events,
+            sequences: _sequences,
+            coveredBy: covered,
+          ),
         ];
+        // A birth or death left off, its life opened on instead.
+        if (covered[widget.initialEventId] case final life?) {
+          _initialId = life;
+        }
         _byId
           ..clear()
           ..addAll({for (final e in events.events) '${e.id}': e});

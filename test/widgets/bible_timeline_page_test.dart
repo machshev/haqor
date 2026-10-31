@@ -309,31 +309,34 @@ final _lives = [
 ];
 
 void _groupingTests() {
-  test('events are sorted into kinds, births and deaths pinned to lives', () {
-    final entries = {for (final e in bibleTimelineEntries(_lives)) e.id: e};
+  test('events are sorted into kinds, births and deaths a life shows left '
+      'off, and other deaths pinned', () {
+    final covered = <String, String>{};
+    final entries = {
+      for (final e in bibleTimelineEntries(_lives, coveredBy: covered)) e.id: e,
+    };
     expect(entries['4']!.category, 'Lifetimes');
-    expect(entries['7']!.category, 'Births');
-    expect(entries['23']!.category, 'Deaths');
+    expect(entries['60']!.category, 'Births');
+    expect(entries['71']!.category, 'Deaths');
     expect(entries['70']!.category, 'Reigns');
     expect(entries['80']!.category, 'Prophets');
     expect(bibleEventCategory('Deliverance by Gideon', span: true), 'Judges');
     expect(bibleEventCategory('The Great Flood', span: true), 'Periods');
     expect(bibleEventCategory('Tower of Babel', span: false), 'Events');
 
-    // Seth's birth starts his life, Adam's death falls 929 years into his.
-    expect(entries['7']!.pin!.anchorId, '8');
-    expect(entries['7']!.pin!.offset.amount, 0);
-    expect(entries['23']!.pin!.anchorId, '4');
-    expect(entries['23']!.pin!.offset.amount, 929);
-    // A king known by two names; Reuben has no life to belong to.
+    // Seth's birth starts his life and Adam's death ends his: each drawn
+    // already by the life, and left off.
+    expect(entries.containsKey('7'), isFalse);
+    expect(entries.containsKey('23'), isFalse);
+    expect(covered, {'7': '8', '23': '4'});
+    // A king known by two names, his death pinned to his reign; Reuben has
+    // no life to belong to.
     expect(entries['71']!.pin!.anchorId, '70');
     expect(entries['60']!.pin, isNull);
     expect(entries['4']!.pin, isNull);
   });
 
-  testWidgets('births and deaths fold under lives, and kinds hide', (
-    tester,
-  ) async {
+  testWidgets('deaths fold under reigns, and kinds hide', (tester) async {
     final requests = <GetBibleEvents>[];
     tester.view.physicalSize = const Size(800, 1400);
     tester.view.devicePixelRatio = 1;
@@ -350,109 +353,110 @@ void _groupingTests() {
       Uint8List(0),
     );
     await tester.pumpAndSettle();
-    Finder row(String id) => find.byKey(ValueKey('timeline-row-$id'));
+    Finder row(String id) =>
+        find.byKey(ValueKey('timeline-row-$id'), skipOffstage: false);
+    Future<void> tap(Finder finder) async {
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
 
-    // Folded away at first, a count on the span's bar and its row.
+    // The births and deaths the lives show are not drawn or listed.
     expect(row('4'), findsOneWidget);
-    expect(row('23'), findsNothing);
+    expect(row('8'), findsOneWidget);
     expect(row('7'), findsNothing);
-    expect(row('60'), findsOneWidget);
-    expect(find.byKey(const ValueKey('timeline-group-row-4')), findsOneWidget);
+    expect(row('23'), findsNothing);
+    expect(find.byKey(const ValueKey('timeline-mark-7')), findsNothing);
     expect(find.byKey(const ValueKey('timeline-mark-23')), findsNothing);
-    // Zoomed out, the bar is drawn thin, without its count.
-    expect(find.byKey(const ValueKey('timeline-group-4')), findsNothing);
-    await _zoomIn(tester);
-    final toggle = find.byKey(const ValueKey('timeline-group-4'));
+    expect(row('60'), findsOneWidget);
+
+    // A death folded under the reign at first, a count on its row.
+    expect(row('70'), findsOneWidget);
+    expect(row('71'), findsNothing);
+    final toggle = find.byKey(
+      const ValueKey('timeline-group-row-70'),
+      skipOffstage: false,
+    );
     expect(toggle, findsOneWidget);
 
-    // Opened from the bar, its death shows beneath it, set in.
-    await tester.ensureVisible(toggle);
-    await tester.pumpAndSettle();
-    await tester.tap(toggle);
-    await tester.pumpAndSettle();
-    expect(row('23'), findsOneWidget);
-    expect(find.byKey(const ValueKey('timeline-mark-23')), findsOneWidget);
+    // Opened, the death shows beneath it, set in.
+    await tap(toggle);
+    expect(row('71'), findsOneWidget);
     expect(
-      tester.getTopLeft(row('23')).dy,
-      greaterThan(tester.getTopLeft(row('4')).dy),
+      tester.getTopLeft(row('71')).dy,
+      greaterThan(tester.getTopLeft(row('70')).dy),
     );
+    Finder title(String id, String text) =>
+        find.descendant(of: row(id), matching: find.text(text));
     expect(
-      tester
-          .getTopLeft(
-            find.descendant(
-              of: row('23'),
-              matching: find.text('Death of Adam'),
-            ),
-          )
-          .dx,
+      tester.getTopLeft(title('71', 'Death of Jehoahaz')).dx,
       greaterThan(
-        tester
-            .getTopLeft(
-              find.descendant(
-                of: row('4'),
-                matching: find.text('Lifetime of Adam'),
-              ),
-            )
-            .dx,
+        tester.getTopLeft(title('70', 'Reign of Ahaziah (Jehoahaz)')).dx,
       ),
     );
-    expect(row('7'), findsNothing);
+    await tap(toggle);
+    expect(row('71'), findsNothing);
 
-    // All opened, then all closed, the whole timeline in view.
-    await tester.tap(find.byTooltip('Fit to entries'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('timeline-expand-all')));
-    await tester.pumpAndSettle();
-    expect(row('7'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('timeline-collapse-all')));
-    await tester.pumpAndSettle();
+    // All opened, then all closed.
+    await tap(find.byKey(const ValueKey('timeline-expand-all')));
+    expect(row('71'), findsOneWidget);
+    await tap(find.byKey(const ValueKey('timeline-collapse-all')));
+    expect(row('71'), findsNothing);
+
+    // With reigns hidden, the death stands alone; with deaths hidden, it
+    // goes. Lives hidden, what they showed stays off.
+    await tap(find.byKey(const ValueKey('timeline-category-Reigns')));
+    expect(row('70'), findsNothing);
+    expect(row('71'), findsOneWidget);
+    await tap(find.byKey(const ValueKey('timeline-category-Deaths')));
+    expect(row('71'), findsNothing);
+    await tap(find.byKey(const ValueKey('timeline-category-Lifetimes')));
+    expect(row('4'), findsNothing);
     expect(row('7'), findsNothing);
     expect(row('23'), findsNothing);
-
-    // With lives hidden, births and deaths stand alone; with births hidden,
-    // they go.
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('timeline-category-Lifetimes')),
-    );
-    await tester.tap(find.byKey(const ValueKey('timeline-category-Lifetimes')));
-    await tester.pumpAndSettle();
-    expect(row('4'), findsNothing);
-    expect(row('7'), findsOneWidget);
-    expect(row('23'), findsOneWidget);
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('timeline-category-Births')),
-    );
-    await tester.tap(find.byKey(const ValueKey('timeline-category-Births')));
-    await tester.pumpAndSettle();
-    expect(row('7'), findsNothing);
-    expect(row('60'), findsNothing);
-    expect(row('23'), findsOneWidget);
   });
 
-  testWidgets('opened on an event folded away, its life opens', (tester) async {
-    final requests = <GetBibleEvents>[];
+  testWidgets('opened on a death a life shows, the life is opened on; on '
+      'one folded away, its reign opens', (tester) async {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: BibleTimelinePage(
-          sendRequest: requests.add,
-          initialEventId: '23',
+    Future<void> openOn(String id) async {
+      final requests = <GetBibleEvents>[];
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BibleTimelinePage(
+            sendRequest: requests.add,
+            initialEventId: id,
+          ),
         ),
-      ),
+      );
+      assignRustSignal['BibleEvents']!(
+        BibleEvents(
+          requestId: requests.single.requestId,
+          events: _lives,
+          sequences: const [],
+        ).bincodeSerialize(),
+        Uint8List(0),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    ListTile tile(String id) => tester.widget(
+      find.byKey(ValueKey('timeline-row-$id'), skipOffstage: false),
     );
-    assignRustSignal['BibleEvents']!(
-      BibleEvents(
-        requestId: requests.single.requestId,
-        events: _lives,
-        sequences: const [],
-      ).bincodeSerialize(),
-      Uint8List(0),
+
+    await openOn('23');
+    expect(tile('4').selected, isTrue);
+    expect(
+      find.byKey(const ValueKey('timeline-row-23'), skipOffstage: false),
+      findsNothing,
     );
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('timeline-row-23')), findsOneWidget);
-    expect(find.byKey(const ValueKey('timeline-row-7')), findsNothing);
+
+    await openOn('71');
+    expect(tile('71').selected, isTrue);
   });
 
   testWidgets('more than five events stacked at a time are drawn as one', (

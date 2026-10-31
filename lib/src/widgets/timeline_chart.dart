@@ -3729,24 +3729,24 @@ class _TimelinePageState extends State<TimelinePage> {
                   // The chart and the list beneath it scroll down together,
                   // the chart its whole height; a mouse drag pans the chart
                   // and the page, as a touch does.
-                  : Stack(
-                      children: [
-                        ScrollConfiguration(
-                          behavior: ScrollConfiguration.of(context).copyWith(
-                            dragDevices: {
-                              ...ScrollConfiguration.of(context).dragDevices,
-                              PointerDeviceKind.mouse,
-                            },
-                          ),
-                          child: CustomScrollView(
-                            key: const ValueKey('timeline-page-scroll'),
-                            // Picking a stretch, a drag is the pick's.
-                            physics: _selecting
-                                ? const NeverScrollableScrollPhysics()
-                                : null,
-                            slivers: [
-                              SliverToBoxAdapter(
-                                child: Scrollbar(
+                  : ScrollConfiguration(
+                      behavior: ScrollConfiguration.of(context).copyWith(
+                        dragDevices: {
+                          ...ScrollConfiguration.of(context).dragDevices,
+                          PointerDeviceKind.mouse,
+                        },
+                      ),
+                      child: CustomScrollView(
+                        key: const ValueKey('timeline-page-scroll'),
+                        // Picking a stretch, a drag is the pick's.
+                        physics: _selecting
+                            ? const NeverScrollableScrollPhysics()
+                            : null,
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: Stack(
+                              children: [
+                                Scrollbar(
                                   controller: _horizontal,
                                   child: SingleChildScrollView(
                                     controller: _horizontal,
@@ -3870,61 +3870,54 @@ class _TimelinePageState extends State<TimelinePage> {
                                     ),
                                   ),
                                 ),
-                              ),
-                              const SliverToBoxAdapter(
-                                child: Divider(height: 1),
-                              ),
-                              if (_note.isNotEmpty)
-                                SliverPadding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    12,
-                                    16,
-                                    4,
-                                  ),
-                                  sliver: SliverToBoxAdapter(
-                                    child: MarkdownNote(_note),
-                                  ),
+                                Positioned(
+                                  top: 0,
+                                  right: 8,
+                                  child: _zoomBar(viewport),
                                 ),
-                              // Those in the stretch of time the chart shows,
-                              // kept to it as it is panned and zoomed.
-                              ListenableBuilder(
-                                listenable: Listenable.merge([
-                                  _horizontal,
-                                  _chartScrolled,
-                                ]),
-                                builder: (context, _) {
-                                  final window = _shownWindow(
-                                    shown,
-                                    ppu,
-                                    viewport,
-                                  );
-                                  final rows = [
-                                    for (final row in grouped.rows)
-                                      if (row.entry.id == _selectedId ||
-                                          _overlaps(row.entry, window))
-                                        row,
-                                  ];
-                                  return SliverPadding(
-                                    padding: const EdgeInsets.only(bottom: 8),
-                                    sliver: SliverList.builder(
-                                      itemCount: rows.length + 1,
-                                      itemBuilder: (context, i) => i == 0
-                                          ? _listHeader(
-                                              theme,
-                                              rows.length,
-                                              grouped.rows.length,
-                                            )
-                                          : _row(theme, rows[i - 1], groups),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        Positioned(top: 0, right: 8, child: _zoomBar(viewport)),
-                      ],
+                          const SliverToBoxAdapter(child: Divider(height: 1)),
+                          if (_note.isNotEmpty)
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                              sliver: SliverToBoxAdapter(
+                                child: MarkdownNote(_note),
+                              ),
+                            ),
+                          // Those in the stretch of time the chart shows,
+                          // kept to it as it is panned and zoomed.
+                          ListenableBuilder(
+                            listenable: Listenable.merge([
+                              _horizontal,
+                              _chartScrolled,
+                            ]),
+                            builder: (context, _) {
+                              final window = _shownWindow(shown, ppu, viewport);
+                              final rows = [
+                                for (final row in grouped.rows)
+                                  if (row.entry.id == _selectedId ||
+                                      _overlaps(row.entry, window))
+                                    row,
+                              ];
+                              return SliverPadding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                sliver: SliverList.builder(
+                                  itemCount: rows.length + 1,
+                                  itemBuilder: (context, i) => i == 0
+                                      ? _listHeader(
+                                          theme,
+                                          rows.length,
+                                          grouped.rows.length,
+                                        )
+                                      : _row(theme, rows[i - 1], groups),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
                     ),
             ),
           ),
