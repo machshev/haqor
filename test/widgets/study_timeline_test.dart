@@ -622,23 +622,43 @@ void main() {
     await tester.pumpAndSettle();
     expectFitted();
 
-    // A mouse drag over the first few days zooms into them.
+    // A mouse drag pans, as a touch drag does, keeping the scale.
     final chart = tester.getRect(
       find.byKey(const ValueKey('timeline-drag-zoom')),
     );
     final y = chart.bottom - 10;
+    final span = x('booths') - x('trumpets');
+    await tester.tap(find.byTooltip('Zoom in'));
+    await tester.pumpAndSettle();
+    final zoomed = x('booths') - x('trumpets');
+    final from = x('trumpets');
     final gesture = await tester.startGesture(
-      Offset(x('trumpets') - 4, y),
+      Offset(width / 2, y),
       kind: PointerDeviceKind.mouse,
     );
-    await gesture.moveBy(const Offset(20, 0));
-    await gesture.moveBy(Offset((x('booths') - x('trumpets')) / 3, 0));
+    await gesture.moveBy(const Offset(-20, 0));
+    await gesture.moveBy(const Offset(-60, 0));
     await gesture.up();
     await tester.pumpAndSettle();
-    expect(x('trumpets'), inInclusiveRange(0, width));
-    expect(x('booths'), greaterThan(width));
+    expect(x('booths') - x('trumpets'), closeTo(zoomed, 1));
+    expect(x('trumpets'), lessThan(from - 40));
 
-    // On touch, a drag scrolls, unless picking a stretch is turned on.
+    // The mouse wheel zooms, the time under the mouse kept where it is.
+    await tester.tap(find.byTooltip('Fit to entries'));
+    await tester.pumpAndSettle();
+    // 10 past the left of its dot, 5 past its middle.
+    final under = x('trumpets') + 10;
+    final mouse = TestPointer(1, PointerDeviceKind.mouse);
+    await tester.sendEventToBinding(mouse.hover(Offset(under, y)));
+    await tester.sendEventToBinding(mouse.scroll(const Offset(0, -200)));
+    await tester.pumpAndSettle();
+    expect(x('booths') - x('trumpets'), closeTo(span * 2, 2));
+    expect(x('trumpets') + 5, closeTo(under - 10, 2));
+    await tester.sendEventToBinding(mouse.scroll(const Offset(0, 200)));
+    await tester.pumpAndSettle();
+    expect(x('booths') - x('trumpets'), closeTo(span, 2));
+
+    // A touch drag scrolls too, unless picking a stretch is turned on.
     await tester.tap(find.byTooltip('Fit to entries'));
     await tester.pumpAndSettle();
     final before = x('booths') - x('trumpets');

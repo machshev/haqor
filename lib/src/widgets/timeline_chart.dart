@@ -996,8 +996,7 @@ class TimelineChart extends StatelessWidget {
 
     final points = [
       for (final e in entries)
-        if (point(e))
-          (entry: e, x: px(timelineEntryReach(timeline, e).start)),
+        if (point(e)) (entry: e, x: px(timelineEntryReach(timeline, e).start)),
     ]..sort((a, b) => a.x.compareTo(b.x));
     final clusters = <String, List<StudyTimelineEntry>>{};
     var i = 0;
@@ -2549,21 +2548,51 @@ class _TimelinePageState extends State<TimelinePage> {
   void _fitEntries(double viewport) =>
       _fitTo(timelineFocus(_timeline, _entries), viewport);
 
-  void _zoom(double factor, double viewport) {
+  /// Where the chart is to be scrolled once a zoom is drawn, until then.
+  double? _zoomedOffset;
+
+  /// Zooms by [factor], keeping the time [at] pixels into the view where
+  /// it is: the middle, unless given, as under the mouse for its wheel.
+  void _zoom(double factor, double viewport, {double? at}) {
     final current =
         _pixelsPerUnit ??
         _scaleFor(timelineFocus(_timeline, _entries), viewport);
-    // Keep the time at the middle of the view where it is.
-    final middle =
-        (_horizontal.hasClients ? _horizontal.offset : 0) + viewport / 2;
-    final time = (middle - TimelineChart.padding) / current;
+    final focus = at ?? viewport / 2;
+    // Taken from the scroll a zoom not yet drawn is to have, so that a run
+    // of turns of the wheel zooms about the same time.
+    final scrolled =
+        _zoomedOffset ?? (_horizontal.hasClients ? _horizontal.offset : 0);
+    final time = (scrolled + focus - TimelineChart.padding) / current;
     final next = (current * factor).clamp(_minScale(viewport), 1e6);
-    setState(() => _pixelsPerUnit = next);
+    if (next == current) return;
+    final offset = math.max(0.0, time * next + TimelineChart.padding - focus);
+    setState(() {
+      _pixelsPerUnit = next;
+      _zoomedOffset = offset;
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_zoomedOffset != offset) return;
+      _zoomedOffset = null;
       if (!_horizontal.hasClients) return;
-      final offset = time * next + TimelineChart.padding - viewport / 2;
       _horizontal.jumpTo(
         offset.clamp(0.0, _horizontal.position.maxScrollExtent),
+      );
+    });
+  }
+
+  /// Zooms by a turn of the mouse wheel over the chart, about the time
+  /// under the mouse; up zooms in. A sideways
+  /// scroll is left to scroll it.
+  void _zoomByWheel(PointerSignalEvent event, double viewport) {
+    if (event is! PointerScrollEvent || event.scrollDelta.dy == 0) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (event) {
+      final dy = (event as PointerScrollEvent).scrollDelta.dy;
+      final scrolled =
+          _zoomedOffset ?? (_horizontal.hasClients ? _horizontal.offset : 0);
+      _zoom(
+        math.pow(2, -dy / 200).toDouble(),
+        viewport,
+        at: event.localPosition.dx - scrolled,
       );
     });
   }
@@ -3606,110 +3635,144 @@ class _TimelinePageState extends State<TimelinePage> {
                           ),
                           child: Stack(
                             children: [
-                              Scrollbar(
-                                controller: _horizontal,
-                                child: SingleChildScrollView(
+                              // A mouse drag pans the chart, as a touch does.
+                              ScrollConfiguration(
+                                behavior: ScrollConfiguration.of(context)
+                                    .copyWith(
+                                      dragDevices: {
+                                        ...ScrollConfiguration.of(
+                                          context,
+                                        ).dragDevices,
+                                        PointerDeviceKind.mouse,
+                                      },
+                                    ),
+                                child: Scrollbar(
                                   controller: _horizontal,
-                                  scrollDirection: Axis.horizontal,
-                                  // Picking a stretch, a touch drag is the pick's.
-                                  physics: _selecting
-                                      ? const NeverScrollableScrollPhysics()
-                                      : null,
-                                  // Room above for the controls over the chart.
-                                  padding: const EdgeInsets.only(top: 48),
                                   child: SingleChildScrollView(
-                                    child: GestureDetector(
-                                      key: const ValueKey('timeline-drag-zoom'),
-                                      // A mouse drag doesn't scroll, so always picks.
-                                      supportedDevices: _selecting
-                                          ? null
-                                          : const {PointerDeviceKind.mouse},
-                                      dragStartBehavior: DragStartBehavior.down,
-                                      onHorizontalDragStart: (d) => setState(
-                                        () => _drag = (
-                                          from: d.localPosition.dx,
-                                          to: d.localPosition.dx,
-                                        ),
-                                      ),
-                                      onHorizontalDragUpdate: (d) => setState(
-                                        () => _drag = (
-                                          from:
-                                              _drag?.from ?? d.localPosition.dx,
-                                          to: d.localPosition.dx,
-                                        ),
-                                      ),
-                                      onHorizontalDragEnd: (_) =>
-                                          _zoomToDrag(ppu, viewport),
-                                      onHorizontalDragCancel: () =>
-                                          setState(() => _drag = null),
-                                      child: Stack(
-                                        children: [
-                                          TimelineChart(
-                                            timeline: _timeline,
-                                            entries: shown,
-                                            headCategory:
-                                                widget.overviewCategory,
-                                            compact: compact,
-                                            bands: _sideBySide
-                                                ? [
-                                                    for (final v
-                                                        in widget.variants)
-                                                      if (_variants.contains(
-                                                        v.id,
-                                                      ))
-                                                        (
-                                                          id: v.id,
-                                                          title: v.title,
-                                                        ),
-                                                  ]
-                                                : const [],
-                                            pixelsPerUnit: ppu,
-                                            seasons: _timeline.showSeasons,
-                                            faded: _faded,
-                                            selectedId: _selectedId,
-                                            onTapEntry: _show,
-                                            groups: {
-                                              for (final MapEntry(:key, :value)
-                                                  in groups.entries)
-                                                key: (
-                                                  count: value,
-                                                  open: _isOpen(key),
-                                                ),
-                                            },
-                                            onToggleGroup: _toggleGroup,
-                                            onTapCluster: _showCluster,
+                                    controller: _horizontal,
+                                    scrollDirection: Axis.horizontal,
+                                    // Picking a stretch, a drag is the pick's.
+                                    physics: _selecting
+                                        ? const NeverScrollableScrollPhysics()
+                                        : null,
+                                    // Room above for the controls over the chart.
+                                    padding: const EdgeInsets.only(top: 48),
+                                    child: SingleChildScrollView(
+                                      physics: _selecting
+                                          ? const NeverScrollableScrollPhysics()
+                                          : null,
+                                      // The mouse wheel zooms, about the time
+                                      // under the mouse.
+                                      child: Listener(
+                                        onPointerSignal: (event) =>
+                                            _zoomByWheel(event, viewport),
+                                        child: GestureDetector(
+                                          key: const ValueKey(
+                                            'timeline-drag-zoom',
                                           ),
-                                          if (_drag case final drag?)
-                                            Positioned(
-                                              left: math.min(
-                                                drag.from,
-                                                drag.to,
+                                          // Picking a stretch from the toolbar,
+                                          // a drag is the pick's; else it pans.
+                                          dragStartBehavior:
+                                              DragStartBehavior.down,
+                                          onHorizontalDragStart: !_selecting
+                                              ? null
+                                              : (d) => setState(
+                                                  () => _drag = (
+                                                    from: d.localPosition.dx,
+                                                    to: d.localPosition.dx,
+                                                  ),
+                                                ),
+                                          onHorizontalDragUpdate: !_selecting
+                                              ? null
+                                              : (d) => setState(
+                                                  () => _drag = (
+                                                    from:
+                                                        _drag?.from ??
+                                                        d.localPosition.dx,
+                                                    to: d.localPosition.dx,
+                                                  ),
+                                                ),
+                                          onHorizontalDragEnd: !_selecting
+                                              ? null
+                                              : (_) =>
+                                                    _zoomToDrag(ppu, viewport),
+                                          onHorizontalDragCancel: !_selecting
+                                              ? null
+                                              : () => setState(
+                                                  () => _drag = null,
+                                                ),
+                                          child: Stack(
+                                            children: [
+                                              TimelineChart(
+                                                timeline: _timeline,
+                                                entries: shown,
+                                                headCategory:
+                                                    widget.overviewCategory,
+                                                compact: compact,
+                                                bands: _sideBySide
+                                                    ? [
+                                                        for (final v
+                                                            in widget.variants)
+                                                          if (_variants
+                                                              .contains(v.id))
+                                                            (
+                                                              id: v.id,
+                                                              title: v.title,
+                                                            ),
+                                                      ]
+                                                    : const [],
+                                                pixelsPerUnit: ppu,
+                                                seasons: _timeline.showSeasons,
+                                                faded: _faded,
+                                                selectedId: _selectedId,
+                                                onTapEntry: _show,
+                                                groups: {
+                                                  for (final MapEntry(
+                                                        :key,
+                                                        :value,
+                                                      )
+                                                      in groups.entries)
+                                                    key: (
+                                                      count: value,
+                                                      open: _isOpen(key),
+                                                    ),
+                                                },
+                                                onToggleGroup: _toggleGroup,
+                                                onTapCluster: _showCluster,
                                               ),
-                                              width: (drag.to - drag.from)
-                                                  .abs(),
-                                              top: 0,
-                                              bottom: 0,
-                                              child: IgnorePointer(
-                                                child: DecoratedBox(
-                                                  decoration: BoxDecoration(
-                                                    color: theme
-                                                        .colorScheme
-                                                        .primary
-                                                        .withValues(
-                                                          alpha: 0.12,
-                                                        ),
-                                                    border: Border.symmetric(
-                                                      vertical: BorderSide(
+                                              if (_drag case final drag?)
+                                                Positioned(
+                                                  left: math.min(
+                                                    drag.from,
+                                                    drag.to,
+                                                  ),
+                                                  width: (drag.to - drag.from)
+                                                      .abs(),
+                                                  top: 0,
+                                                  bottom: 0,
+                                                  child: IgnorePointer(
+                                                    child: DecoratedBox(
+                                                      decoration: BoxDecoration(
                                                         color: theme
                                                             .colorScheme
-                                                            .primary,
+                                                            .primary
+                                                            .withValues(
+                                                              alpha: 0.12,
+                                                            ),
+                                                        border: Border.symmetric(
+                                                          vertical: BorderSide(
+                                                            color: theme
+                                                                .colorScheme
+                                                                .primary,
+                                                          ),
+                                                        ),
                                                       ),
                                                     ),
                                                   ),
                                                 ),
-                                              ),
-                                            ),
-                                        ],
+                                            ],
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
