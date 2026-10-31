@@ -7,6 +7,7 @@ import 'package:rinf/rinf.dart';
 import '../bindings/bindings.dart';
 import '../event_sequence.dart';
 import '../study_workspace.dart';
+import 'bible_prophecy.dart';
 import 'bible_sub_timeline_page.dart';
 import 'event_sequence_page.dart';
 import 'name_details.dart';
@@ -23,7 +24,11 @@ const bibleTimeline = StudyTimeline(
       'Dated from the creation in 4004 BC, after Floyd Nolen Jones\'s '
       '*Chronology of the Old Testament*, as [Theographic Bible Metadata]'
       '(https://github.com/robertrouse/theographic-bible-metadata) gives '
-      'them (CC BY-SA 4.0).',
+      'them (CC BY-SA 4.0). Daniel\'s kingdoms and times, and after the '
+      'apostles the eras and the seals, trumpets and vials of the '
+      'Apocalypse, are read through history, a day for a year, after John '
+      'Thomas\'s *Eureka*; the BC kingdoms are dated as historians date '
+      'them.',
   categoryColors: {
     'Lifetimes': 0,
     'Births': 1,
@@ -34,6 +39,8 @@ const bibleTimeline = StudyTimeline(
     'Deaths': 7,
     'Sequences': 2,
     'Sub-timelines': 2,
+    bibleDanielCategory: 1,
+    bibleApocalypseCategory: 5,
   },
 );
 
@@ -83,10 +90,12 @@ final bibleKingdomOfChrist = StudyTimelineEntry(
 /// The category of the Bible's overall eras (see [bibleEras]).
 const bibleEraCategory = 'Eras';
 
-/// The overall eras of the Bible's history, end to end from the creation
-/// to Paul in Rome, on [bibleTimeline]: each its title, a short one to fit
-/// a narrow screen, and the year (as written, BC negative) it starts, each
-/// running to the next's start; the last to [_erasEnd].
+/// The overall eras of the Bible's history, end to end from the creation,
+/// through the apostles, and on through the Apocalypse's seals, trumpets
+/// and vials (see [bibleApocalypse]) to now, on [bibleTimeline]: each its
+/// title, a short one to fit a narrow screen, and the year (as written,
+/// BC negative) it starts, each running to the next's start; the last to
+/// [_erasEnd].
 const _eras = [
   ('Creation to the Flood', 'Creation', -4004),
   ('The patriarchs', 'Patriarchs', -2348),
@@ -100,8 +109,19 @@ const _eras = [
   ('Between the Testaments', 'Between', -441),
   ('The life of Jesus', 'Jesus', -6),
   ('The Acts of the Apostles', 'Acts', 30),
+  ('The Jewish war and the fall of Jerusalem', 'AD 70', 66),
+  ('The church to the Apocalypse', 'Church', 70),
+  ('The six seals: pagan Rome', 'Seals', 96),
+  ('The sealing: the empire made Christian', 'Sealing', 324),
+  ('The first four trumpets: the West overthrown', 'Trumpets', 395),
+  ('The woe trumpets: Saracens and Turks', 'Woes', 632),
+  ('The witnesses slain and raised', 'Witnesses', 1453),
+  ('The seventh trumpet: five vials', 'Vials', 1790),
+  ('The sixth vial: the Euphrates dried up', 'Sixth vial', 1821),
 ];
-const _erasEnd = 60;
+
+/// The end of the last era, still running: the year now.
+int get _erasEnd => DateTime.now().year;
 
 /// The overall eras of the Bible's history (see [_eras]), as spans of
 /// [bibleTimeline] in [bibleEraCategory], drawn above its other entries
@@ -519,6 +539,8 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
         _entries = [
           ...bibleEras,
           bibleKingdomOfChrist,
+          ...bibleDaniel,
+          ...bibleApocalypse,
           ...bibleTimelineEntries(
             events.events,
             sequences: _sequences,

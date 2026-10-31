@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/event_sequence.dart';
 import 'package:haqor/src/study_workspace.dart';
+import 'package:haqor/src/widgets/bible_prophecy.dart';
 import 'package:haqor/src/widgets/bible_timeline_page.dart';
 import 'package:haqor/src/widgets/event_sequence_page.dart';
 import 'package:haqor/src/widgets/timeline_wheel.dart';
@@ -645,7 +646,7 @@ void _groupingTests() {
       Finder row(String id) => find.byKey(ValueKey('timeline-row-$id'));
       expect(row('266'), findsNothing);
       expect(row('452'), findsNothing);
-      await tester.ensureVisible(row('sequence:ministry'));
+      await _scrollTo(tester, row('sequence:ministry'));
       await tester.pumpAndSettle();
       await tester.tap(row('sequence:ministry'));
       await tester.pumpAndSettle();
@@ -690,7 +691,8 @@ void _groupingTests() {
     ) async {
       SharedPreferences.setMockInitialValues({});
       await open(tester);
-      await tester.ensureVisible(
+      await _scrollTo(
+        tester,
         find.byKey(const ValueKey('timeline-row-sequence:ministry')),
       );
       await tester.pumpAndSettle();
@@ -750,9 +752,87 @@ Future<void> _zoomIn(WidgetTester tester) async {
 }
 
 void _overviewTests() {
-  test('the eras run end to end from the creation to Paul in Rome', () {
+  test("Daniel's kingdoms follow one another, a day for a year", () {
+    final entries = bibleDaniel;
+    final ids = entries.map((e) => e.id).toList();
+    expect(ids.toSet(), hasLength(ids.length));
+    TimelineTime? endOf(String id) =>
+        entries.firstWhere((e) => e.id == 'daniel:$id').end;
+    TimelineTime startOf(String id) =>
+        entries.firstWhere((e) => e.id == 'daniel:$id').start;
+    // The image's metals, and the beasts, end to end.
+    for (final (a, b) in [
+      ('image:gold', 'image:silver'),
+      ('image:silver', 'image:brass'),
+      ('image:brass', 'image:iron'),
+      ('image:iron', 'image:feet'),
+      ('beast:lion', 'beast:bear'),
+      ('beast:bear', 'beast:leopard'),
+    ]) {
+      expect(endOf(a), startOf(b), reason: '$a to $b');
+    }
+    for (final e in entries) {
+      expect(e.category, bibleDanielCategory);
+      expect(e.verses.every((v) => v.bookIndex == 34), isTrue);
+      expect(e.note, isNotEmpty);
+      if (e.end case final end?) {
+        expect(
+          bibleTimeline.positionOf(end),
+          greaterThan(bibleTimeline.positionOf(e.start)),
+          reason: e.title,
+        );
+      }
+    }
+    // Sixty-nine weeks of years, from 457 BC, there being no year 0.
+    final weeks = entries.firstWhere((e) => e.id == 'daniel:weeks:69');
+    expect(
+      bibleTimeline.positionOf(weeks.last) -
+          bibleTimeline.positionOf(weeks.start),
+      483,
+    );
+    expect(bibleTimeline.colorOf(entries.first), isNotNull);
+  });
+  test('the Apocalypse runs from Patmos through the seals, trumpets and '
+      'vials', () {
+    final entries = bibleApocalypse;
+    final ids = entries.map((e) => e.id).toList();
+    expect(ids.toSet(), hasLength(ids.length));
+    for (final prefix in ['seal', 'trumpet', 'vial']) {
+      final count = prefix == 'seal'
+          ? 6
+          : prefix == 'trumpet'
+          ? 7
+          : 6;
+      for (var n = 1; n <= count; n++) {
+        expect(ids, contains('apocalypse:$prefix:$n'));
+      }
+    }
+    for (final e in entries) {
+      expect(e.category, bibleApocalypseCategory);
+      expect(e.timelineId, bibleTimeline.id);
+      expect(e.verses, isNotEmpty);
+      expect(e.verses.every((v) => v.bookIndex == 65), isTrue);
+      expect(e.note, isNotEmpty);
+      if (e.end case final end?) {
+        expect(
+          bibleTimeline.positionOf(end),
+          greaterThan(bibleTimeline.positionOf(e.start)),
+          reason: e.title,
+        );
+      }
+    }
+    // The sixth trumpet's hour, day, month and year: 391 years and 30 days.
+    final turks = entries.firstWhere((e) => e.id == 'apocalypse:trumpet:6');
+    expect(
+      bibleTimeline.positionOf(turks.last) -
+          bibleTimeline.positionOf(turks.start),
+      closeTo(391 + 30 / 365, 0.01),
+    );
+    expect(bibleTimeline.colorOf(entries.first), isNotNull);
+  });
+  test('the eras run end to end from the creation to now', () {
     expect(bibleEras.first.start.value, -4004);
-    expect(bibleEras.last.end!.value, 60);
+    expect(bibleEras.last.end!.value, DateTime.now().year);
     for (final (before, after) in [
       for (var i = 1; i < bibleEras.length; i++)
         (bibleEras[i - 1], bibleEras[i]),
@@ -801,4 +881,19 @@ void _overviewTests() {
     expect(titleOf('4'), findsWidgets);
     expect(tester.getSize(mark('4')).height, greaterThan(20));
   });
+}
+
+/// Scrolls the list beneath the chart until [row] is built and shown.
+Future<void> _scrollTo(WidgetTester tester, Finder row) async {
+  await tester.scrollUntilVisible(
+    row,
+    200,
+    scrollable: find
+        .descendant(
+          of: find.byKey(const ValueKey('timeline-page-scroll')),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  await tester.ensureVisible(row);
 }
