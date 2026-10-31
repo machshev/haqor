@@ -92,8 +92,10 @@ String markdownPlainText(String markdown) {
     }
   }
 
+  // Plain text, not HTML: quotes and ampersands stay as written.
   md.Document(
     extensionSet: md.ExtensionSet.gitHubFlavored,
+    encodeHtml: false,
   ).parse(markdown).forEach(visit);
   return text.toString().replaceAll(RegExp(r"\s+"), ' ').trim();
 }

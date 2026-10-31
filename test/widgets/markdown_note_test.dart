@@ -83,6 +83,7 @@ void main() {
 
   test('plain text drops Markdown syntax', () {
     expect(markdownPlainText('# Title\n\n- **one**\n- *two*'), 'Title one two');
+    expect(markdownPlainText('"Holy" & set <apart>'), '"Holy" & set <apart>');
   });
 }
 
