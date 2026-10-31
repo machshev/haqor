@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'road_network.dart';
+import 'jerusalem_map.dart';
 import 'sea_network.dart';
 
 /// The coastlines, lakes, rivers and wadis the place maps draw: Natural
@@ -465,7 +466,8 @@ class _PlaceMapState extends State<PlaceMap> {
   late Offset _startFocal;
 
   static const _minScale = 6.0;
-  static const _maxScale = 6000.0;
+  static const _maxScale = 180000.0;
+  bool _jerusalem = false;
 
   @override
   void initState() {
@@ -609,8 +611,15 @@ class _PlaceMapState extends State<PlaceMap> {
       north = math.max(north, focus[i + 1]);
     }
     if (widget.fitFocus) {
-      final latSpan = math.max(north - south, widget.minSpan / 4);
-      final lonSpan = math.max((east - west) * _xScale, widget.minSpan / 4);
+      // Keep individual Jerusalem events at city scale after opening the
+      // reconstruction; the regional minimum would otherwise hide its detail.
+      final cityFocus =
+          _jerusalem &&
+          jerusalemBounds.inflate(.02).contains(Offset(west, south)) &&
+          jerusalemBounds.inflate(.02).contains(Offset(east, north));
+      final minimum = cityFocus ? .008 : widget.minSpan / 4;
+      final latSpan = math.max(north - south, minimum);
+      final lonSpan = math.max((east - west) * _xScale, minimum);
       _scale = math
           .min(size.width * .8 / lonSpan, size.height * .8 / latSpan)
           .clamp(_minScale, _maxScale);
@@ -859,6 +868,7 @@ class _PlaceMapState extends State<PlaceMap> {
                       size: size,
                       painter: _MapPainter(
                         basemap: _basemap,
+                        jerusalem: _jerusalem,
                         relief: [
                           for (final layer in _relief ?? const <Relief>[])
                             if (_reliefImages[layer] case final image?)
@@ -877,6 +887,64 @@ class _PlaceMapState extends State<PlaceMap> {
                   ),
                 ),
               ),
+              if (_jerusalem ||
+                  widget.pins.any(
+                    (p) => jerusalemBounds
+                        .inflate(.015)
+                        .contains(Offset(p.longitude, p.latitude)),
+                  ))
+                Positioned(
+                  left: 8,
+                  right: 64,
+                  top: 8,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Material(
+                        color: scheme.surface.withValues(alpha: .95),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextButton.icon(
+                              key: const ValueKey('jerusalem-detail'),
+                              icon: const Icon(Icons.location_city, size: 18),
+                              label: const Text('Jerusalem · AD 30'),
+                              onPressed: () => setState(() {
+                                _jerusalem = true;
+                                _fitted = true;
+                                _center = jerusalemBounds.center;
+                                _scale = math
+                                    .min(
+                                      size.width /
+                                          (jerusalemBounds.width * _xScale),
+                                      (size.height - 100) /
+                                          jerusalemBounds.height,
+                                    )
+                                    .clamp(_minScale, _maxScale);
+                              }),
+                            ),
+                            if (_jerusalem) ...[
+                              IconButton(
+                                tooltip: 'About this reconstruction',
+                                icon: const Icon(Icons.info_outline, size: 18),
+                                onPressed: () => showJerusalemMapNotes(context),
+                              ),
+                              IconButton(
+                                tooltip: 'Hide Jerusalem reconstruction',
+                                icon: const Icon(Icons.close, size: 18),
+                                onPressed: () =>
+                                    setState(() => _jerusalem = false),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               Positioned(
                 right: 8,
                 top: 8,
@@ -1066,6 +1134,7 @@ class _CoursePaths {
 class _MapPainter extends CustomPainter {
   _MapPainter({
     required this.basemap,
+    required this.jerusalem,
     required this.relief,
     required this.pins,
     required this.legs,
@@ -1076,6 +1145,7 @@ class _MapPainter extends CustomPainter {
   });
 
   final Basemap? basemap;
+  final bool jerusalem;
 
   /// The relief layers coloured so far, coarsest first.
   final List<(Relief, ui.Image)> relief;
@@ -1221,6 +1291,26 @@ class _MapPainter extends CustomPainter {
       size.height / 2 - (latitude - center.dy) * scale,
     );
     Offset at(MapPin p) => screen(p.longitude, p.latitude);
+    if (jerusalem) {
+      paintJerusalem(
+        canvas,
+        size,
+        screen,
+        colors.label,
+        colors.land,
+        scale: scale,
+        labelStyle: labelStyle,
+        reserved: [
+          for (final pin in pins.where((p) => p.label.isNotEmpty))
+            Rect.fromLTWH(
+              screen(pin.longitude, pin.latitude).dx + 8,
+              screen(pin.longitude, pin.latitude).dy - 12,
+              180,
+              30,
+            ),
+        ],
+      );
+    }
     _paintLegs(canvas, size, screen);
     // Candidates under the likeliest locations, so a solid pin is never
     // hidden by a hollow one. A region is named across its ground instead.
@@ -1487,6 +1577,7 @@ class _MapPainter extends CustomPainter {
   @override
   bool shouldRepaint(_MapPainter old) =>
       old.basemap != basemap ||
+      old.jerusalem != jerusalem ||
       !listEquals(old.relief, relief) ||
       old.pins != pins ||
       old.legs != legs ||
