@@ -7,6 +7,78 @@ import '../study_workspace.dart';
 import 'timeline_calendar.dart';
 import 'timeline_chart.dart';
 
+/// A time span divided into equal segments using the wheel's event layout.
+class TimelineWheelCycle {
+  const TimelineWheelCycle({
+    required this.start,
+    required this.length,
+    required this.title,
+    required this.segments,
+    this.dayCount = 0,
+  });
+  final double start;
+  final double length;
+  final String title;
+  final List<String> segments;
+
+  /// Literal days divided into evening and morning, starting at sunset.
+  /// These are schematic halves, not calculated sunrise/sunset times.
+  final int dayCount;
+
+  List<({String label, double from, double to})> get dayParts => [
+    for (var day = 0; day < dayCount; day++) ...[
+      (label: 'Evening', from: day / dayCount, to: (day + 0.5) / dayCount),
+      (
+        label: 'Morning',
+        from: (day + 0.5) / dayCount,
+        to: (day + 1) / dayCount,
+      ),
+    ],
+  ];
+}
+
+/// The wheel implied by a saved timeline's time span. Years retain the
+/// calendar wheel, with its actual month lengths and leap months.
+TimelineWheelCycle? timelineCycleOf(StudyTimeline timeline) {
+  final extent = timeline.extent;
+  if (extent == null || extent == TimelineExtent.year) return null;
+  final labels = switch (extent) {
+    TimelineExtent.day => [for (var h = 0; h < 24; h++) '$h'],
+    TimelineExtent.week => [
+      for (var d = 1; d <= 7; d++) d == 7 ? 'Day 7 · Sabbath' : 'Day $d',
+    ],
+    TimelineExtent.month => [
+      for (var d = 1; d <= timeline.monthDays; d++) '$d',
+    ],
+    TimelineExtent.hayovel => [for (var y = 1; y <= 50; y++) '$y'],
+    TimelineExtent.creationWeek => const [
+      'Day 1 · Light',
+      'Day 2 · Firmament',
+      'Day 3 · Land and plants',
+      'Day 4 · Lights',
+      'Day 5 · Fish and birds',
+      'Day 6 · Animals and man',
+      'Day 7 · Rest',
+    ],
+    TimelineExtent.year => <String>[],
+  };
+  return TimelineWheelCycle(
+    start: extent.start,
+    length: timeline.extentLength!,
+    title: extent == TimelineExtent.hayovel
+        ? 'HaYovel'
+        : extent == TimelineExtent.creationWeek
+        ? '7,000 years'
+        : extent.label,
+    segments: labels,
+    dayCount: extent == TimelineExtent.day
+        ? 1
+        : extent == TimelineExtent.week
+        ? 7
+        : 0,
+  );
+}
+
 /// Where an entry stands on the year's wheel (see [TimelineWheel]): the
 /// stretch of the year it covers, [from] and [to] as fractions of the year
 /// from 1 Nisan, clockwise from the top; where its mark stands, as a
@@ -80,9 +152,12 @@ const _labelReach = 0.775;
 List<TimelineWheelMark> timelineWheelMarks(
   StudyTimeline timeline,
   List<StudyTimelineEntry> entries,
-  double year,
-) {
-  final stretch = timelineYearStretch(timeline, year);
+  double year, {
+  TimelineWheelCycle? cycle,
+}) {
+  final stretch = cycle == null
+      ? timelineYearStretch(timeline, year)
+      : (start: cycle.start, end: cycle.start + cycle.length);
   final length = stretch.end - stretch.start;
   double fraction(double position) =>
       ((position - stretch.start) / length).clamp(0.0, 1.0);
@@ -119,7 +194,10 @@ List<TimelineWheelMark> timelineWheelMarks(
   var stack = 0;
   var deepest = 0;
   for (final entry in sorted) {
-    if (entry.start.month == null || joined.contains(entry.id)) continue;
+    if ((cycle == null && entry.start.month == null) ||
+        joined.contains(entry.id)) {
+      continue;
+    }
     final reach = timelineEntryReach(timeline, entry);
     if (reach.end < stretch.start || reach.start >= stretch.end) continue;
     final from = fraction(reach.start);
@@ -194,6 +272,7 @@ class TimelineWheel extends StatefulWidget {
     required this.timeline,
     required this.entries,
     required this.year,
+    this.cycle,
     this.selectedId,
     this.onTapEntry,
     this.onTapDay,
@@ -205,6 +284,7 @@ class TimelineWheel extends StatefulWidget {
 
   /// The year shown, as written; 0 on one year's calendar.
   final double year;
+  final TimelineWheelCycle? cycle;
   final String? selectedId;
   final ValueChanged<StudyTimelineEntry>? onTapEntry;
   final ValueChanged<TimelineTime>? onTapDay;
@@ -400,7 +480,12 @@ class _TimelineWheelState extends State<TimelineWheel> {
     final timeline = widget.timeline;
     final year = widget.year;
     final theme = Theme.of(context);
-    final marks = timelineWheelMarks(timeline, widget.entries, year);
+    final marks = timelineWheelMarks(
+      timeline,
+      widget.entries,
+      year,
+      cycle: widget.cycle,
+    );
     // A key to the stars, whose names are mostly left off.
     final key = marks.any(timelineWheelStar)
         ? Padding(
@@ -438,6 +523,7 @@ class _TimelineWheelState extends State<TimelineWheel> {
         final layout = TimelineWheelLayout(
           timeline: timeline,
           year: year,
+          cycle: widget.cycle,
           marks: marks,
           size: size,
           selectedId: widget.selectedId,
@@ -504,6 +590,7 @@ class _TimelineWheelState extends State<TimelineWheel> {
                           return;
                         }
                         // A season tapped says what it is, and where it is written.
+                        if (widget.cycle != null) return;
                         final season = TimelineWheel.seasonAt(
                           timeline,
                           year,
@@ -561,6 +648,7 @@ class TimelineWheelLayout {
   TimelineWheelLayout({
     required this.timeline,
     required this.year,
+    this.cycle,
     required this.marks,
     required this.size,
     required this.selectedId,
@@ -574,6 +662,7 @@ class TimelineWheelLayout {
 
   final StudyTimeline timeline;
   final double year;
+  final TimelineWheelCycle? cycle;
   final List<TimelineWheelMark> marks;
   final Size size;
   final String? selectedId;
@@ -594,7 +683,9 @@ class TimelineWheelLayout {
   /// The year, or the calendar's title, in the middle.
   late final TextPainter title = TextPainter(
     text: TextSpan(
-      text: timeline.isAnnual ? timeline.title : timeline.formatValue(year),
+      text:
+          cycle?.title ??
+          (timeline.isAnnual ? timeline.title : timeline.formatValue(year)),
       style: theme.textTheme.titleSmall,
     ),
     maxLines: 1,
@@ -836,20 +927,25 @@ class _WheelPainter extends CustomPainter {
     final small = theme.textTheme.labelSmall;
 
     // The months round the rim, named along it.
-    final months = timeline.monthsIn(year);
+    final cycle = layout.cycle;
+    final months = cycle?.segments.length ?? timeline.monthsIn(year);
     for (var month = 1; month <= months; month++) {
-      final from = fraction(
-        timeline.positionOf(TimelineTime(year, month: month, day: 1)),
-      );
-      final to = fraction(
-        timeline.endOf(
-          TimelineTime(
-            year,
-            month: month,
-            day: timeline.daysInMonth(year, month),
-          ),
-        ),
-      );
+      final from = cycle != null
+          ? (month - 1) / months
+          : fraction(
+              timeline.positionOf(TimelineTime(year, month: month, day: 1)),
+            );
+      final to = cycle != null
+          ? month / months
+          : fraction(
+              timeline.endOf(
+                TimelineTime(
+                  year,
+                  month: month,
+                  day: timeline.daysInMonth(year, month),
+                ),
+              ),
+            );
       _band(
         canvas,
         centre,
@@ -865,7 +961,7 @@ class _WheelPainter extends CustomPainter {
       final mid = r * (_monthsInner + _monthsOuter) / 2;
       _alongRim(
         canvas,
-        timeline.monthName(year, month),
+        cycle?.segments[month - 1] ?? timeline.monthName(year, month),
         centre,
         mid,
         (from + to) / 2 + layout.turn,
@@ -873,11 +969,42 @@ class _WheelPainter extends CustomPainter {
         maxWidth: 2 * math.pi * mid * (to - from) * 0.92,
       );
     }
+    // Evening first, then morning, inside each literal day's rim.
+    for (final part
+        in cycle?.dayParts ?? <({String label, double from, double to})>[]) {
+      final evening = part.label == 'Evening';
+      _band(
+        canvas,
+        centre,
+        r * 0.79,
+        r * 0.875,
+        angle(part.from),
+        angle(part.to) - angle(part.from),
+        Paint()
+          ..color = evening
+              ? scheme.secondaryContainer
+              : scheme.tertiaryContainer,
+      );
+      final mid = r * 0.8325;
+      _alongRim(
+        canvas,
+        part.label,
+        centre,
+        mid,
+        (part.from + part.to) / 2 + layout.turn,
+        small?.copyWith(
+          color: evening
+              ? scheme.onSecondaryContainer
+              : scheme.onTertiaryContainer,
+        ),
+        maxWidth: 2 * math.pi * mid * (part.to - part.from) * 0.92,
+      );
+    }
     // The Sabbaths, ticked just inside the months.
     final sabbath = Paint()
       ..color = scheme.secondary
       ..strokeWidth = 1.5;
-    final days = timeline.daysInYear(year);
+    final days = cycle == null ? timeline.daysInYear(year) : 0;
     for (var day = 0; day < days; day++) {
       final time = timeline.addDays(TimelineTime(year, month: 1, day: 1), day);
       if (time == null || timeline.weekdayOf(time) != 7) continue;
@@ -890,7 +1017,7 @@ class _WheelPainter extends CustomPainter {
     }
     // The seasons of the land, rain outside the farming year.
     // Each apart from the next, and shaded by turns.
-    if (timeline.showSeasons) {
+    if (cycle == null && timeline.showSeasons) {
       for (final (i, season) in timelineSeasons.indexed) {
         final at = season.inYear(timeline, year);
         final radius = season.kind == TimelineSeasonKind.rain
@@ -1063,6 +1190,7 @@ class _WheelPainter extends CustomPainter {
   bool shouldRepaint(_WheelPainter old) =>
       old.layout.timeline != timeline ||
       old.layout.year != year ||
+      old.layout.cycle != layout.cycle ||
       old.layout.marks != layout.marks ||
       old.layout.size != layout.size ||
       old.layout.selectedId != layout.selectedId ||

@@ -33,6 +33,8 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
   late final TextEditingController _title, _unit, _note, _leapYears, _year;
   late String? _baseId = widget.initial.baseId;
   late TimelineScale _scale;
+  late TimelineExtent? _extent = widget.initial.extent;
+  late int _monthDays = widget.initial.monthDays;
   late TimelineLeapMonths _leap;
   late TimelineMonthNaming _naming;
   String? _error;
@@ -122,7 +124,16 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
   /// The timelines it may be built on: those of its scale, but itself.
   List<StudyTimeline> get _bases => [
     for (final t in widget.bases)
-      if (t.scale == _scale && t.id != widget.initial.id) t,
+      if (t.hasSameAxis(
+            widget.initial.copyWith(
+              scale: _scale,
+              extent: () => _extent,
+              unit: _unit.text.trim(),
+              monthDays: _monthDays,
+            ),
+          ) &&
+          t.id != widget.initial.id)
+        t,
   ];
 
   /// The year one year's calendar is set in, as entered: null for none, or
@@ -178,6 +189,8 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
       widget.initial.copyWith(
         title: title,
         scale: _scale,
+        extent: () => _extent,
+        monthDays: _monthDays,
         unit: switch (_scale) {
           TimelineScale.calendar || TimelineScale.annual => 'Year',
           TimelineScale.years => unit.isEmpty ? 'Year' : unit,
@@ -214,48 +227,98 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
                 onChanged: (_) => setState(() => _error = null),
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<TimelineScale>(
-                key: const ValueKey('timeline-scale'),
-                initialValue: _scale,
+              DropdownButtonFormField<TimelineExtent?>(
+                key: const ValueKey('timeline-extent'),
+                initialValue: _extent,
                 isExpanded: true,
-                decoration: InputDecoration(
-                  labelText: 'Counts',
-                  helperText: widget.initial.isStandard
-                      ? 'Linked to a timeline that comes with the app: its '
-                            'entries come from there. Build a timeline on it '
-                            'to add your own.'
-                      : null,
-                  helperMaxLines: 3,
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: TimelineScale.calendar,
-                    child: Text('Calendar years (BC / AD)'),
+                decoration: const InputDecoration(labelText: 'Time span'),
+                items: [
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('Custom / open-ended'),
                   ),
-                  DropdownMenuItem(
-                    value: TimelineScale.years,
-                    child: Text('Years of its own, such as a reign'),
-                  ),
-                  DropdownMenuItem(
-                    value: TimelineScale.annual,
-                    child: Text("A year's calendar, such as the feasts"),
-                  ),
-                  DropdownMenuItem(
-                    value: TimelineScale.units,
-                    child: Text('Another unit, such as days'),
-                  ),
+                  for (final extent in TimelineExtent.values)
+                    DropdownMenuItem(value: extent, child: Text(extent.label)),
                 ],
                 onChanged: widget.initial.isStandard
                     ? null
-                    : (scale) {
-                        if (scale != null) {
-                          setState(() {
-                            _scale = scale;
-                            _error = null;
-                          });
-                        }
+                    : (extent) {
+                        setState(() {
+                          _extent = extent;
+                          if (extent != null) {
+                            _scale = extent.scale;
+                            _unit.text = extent.unit;
+                            _baseId = null;
+                          }
+                          _error = null;
+                        });
                       },
               ),
+              if (_extent == TimelineExtent.day)
+                const Text(
+                  'Hours from sunset: 0–24. Use decimals for parts of an hour.',
+                ),
+              if (_extent == TimelineExtent.creationWeek)
+                const Text(
+                  'Years from creation: 0–7,000; each day represents 1,000 years.',
+                ),
+              if (_extent == TimelineExtent.month)
+                DropdownButtonFormField<int>(
+                  key: const ValueKey('timeline-month-days'),
+                  initialValue: _monthDays,
+                  decoration: const InputDecoration(labelText: 'Days in month'),
+                  items: const [
+                    DropdownMenuItem(value: 29, child: Text('29')),
+                    DropdownMenuItem(value: 30, child: Text('30')),
+                  ],
+                  onChanged: widget.initial.isStandard
+                      ? null
+                      : (days) => setState(() => _monthDays = days ?? 30),
+                ),
+              const SizedBox(height: 12),
+              if (_extent == null)
+                DropdownButtonFormField<TimelineScale>(
+                  key: const ValueKey('timeline-scale'),
+                  initialValue: _scale,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: 'Counts',
+                    helperText: widget.initial.isStandard
+                        ? 'Linked to a timeline that comes with the app: its '
+                              'entries come from there. Build a timeline on it '
+                              'to add your own.'
+                        : null,
+                    helperMaxLines: 3,
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: TimelineScale.calendar,
+                      child: Text('Calendar years (BC / AD)'),
+                    ),
+                    DropdownMenuItem(
+                      value: TimelineScale.years,
+                      child: Text('Years of its own, such as a reign'),
+                    ),
+                    DropdownMenuItem(
+                      value: TimelineScale.annual,
+                      child: Text("A year's calendar, such as the feasts"),
+                    ),
+                    DropdownMenuItem(
+                      value: TimelineScale.units,
+                      child: Text('Another unit, such as days'),
+                    ),
+                  ],
+                  onChanged: widget.initial.isStandard
+                      ? null
+                      : (scale) {
+                          if (scale != null) {
+                            setState(() {
+                              _scale = scale;
+                              _error = null;
+                            });
+                          }
+                        },
+                ),
               if (_bases.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String?>(
@@ -300,8 +363,9 @@ class _StudyTimelineEditorState extends State<StudyTimelineEditor> {
                   onChanged: (_) => setState(() => _error = null),
                 ),
               ],
-              if (_scale == TimelineScale.years ||
-                  _scale == TimelineScale.units) ...[
+              if (_extent == null &&
+                  (_scale == TimelineScale.years ||
+                      _scale == TimelineScale.units)) ...[
                 const SizedBox(height: 12),
                 TextField(
                   key: const ValueKey('timeline-unit'),

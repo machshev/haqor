@@ -20,6 +20,36 @@ enum TimelineScale {
   annual,
 }
 
+/// The extent of a timeline, independently of how its dates are stored.
+/// Null on older timelines and on open-ended custom timelines.
+enum TimelineExtent {
+  day('Day (24 hours)', TimelineScale.units, 'Hour', 0, 24),
+  week('Week (7 days)', TimelineScale.units, 'Day', 1, 7),
+  month('Month', TimelineScale.units, 'Day', 1, 30),
+  year('Year', TimelineScale.annual, 'Year', 0, 1),
+  hayovel('HaYovel (50 years)', TimelineScale.years, 'Year', 1, 50),
+  creationWeek(
+    'Creation week (7,000 years)',
+    TimelineScale.years,
+    'Year',
+    0,
+    7000,
+  );
+
+  const TimelineExtent(
+    this.label,
+    this.scale,
+    this.unit,
+    this.start,
+    this.length,
+  );
+  final String label;
+  final TimelineScale scale;
+  final String unit;
+  final double start;
+  final double length;
+}
+
 /// The part of a day an event falls in. A day runs from sunset to sunset
 /// (Genesis 1:5, Leviticus 23:32): its night comes first, then its
 /// daytime, and its evening, "between the evenings" when the Passover was
@@ -275,6 +305,8 @@ class StudyTimeline {
     required this.title,
     this.scale = TimelineScale.units,
     this.unit = 'Year',
+    this.extent,
+    this.monthDays = 30,
     this.leapMonths = TimelineLeapMonths.none,
     this.leapYears = const {},
     this.monthNaming = TimelineMonthNaming.postExile,
@@ -298,6 +330,19 @@ class StudyTimeline {
   final String id;
   final String title;
   final TimelineScale scale;
+
+  final TimelineExtent? extent;
+
+  /// Length of a standalone month; calendar months use their year's calendar.
+  final int monthDays;
+
+  double? get extentLength =>
+      extent == TimelineExtent.month ? monthDays.toDouble() : extent?.length;
+
+  /// Whether dates can be overlaid without changing their meaning.
+  bool hasSameAxis(StudyTimeline other) =>
+      scale == other.scale &&
+      (scale != TimelineScale.units || unit == other.unit);
 
   /// What the scale counts, unless it counts calendar years.
   final String unit;
@@ -828,6 +873,8 @@ class StudyTimeline {
   StudyTimeline copyWith({
     String? title,
     TimelineScale? scale,
+    TimelineExtent? Function()? extent,
+    int? monthDays,
     String? unit,
     TimelineLeapMonths? leapMonths,
     Set<int>? leapYears,
@@ -847,6 +894,8 @@ class StudyTimeline {
     id: id,
     title: title ?? this.title,
     scale: scale ?? this.scale,
+    extent: extent == null ? this.extent : extent(),
+    monthDays: monthDays ?? this.monthDays,
     unit: unit ?? this.unit,
     leapMonths: leapMonths ?? this.leapMonths,
     leapYears: leapYears ?? this.leapYears,
@@ -868,6 +917,8 @@ class StudyTimeline {
     'id': id,
     'title': title,
     'scale': scale.name,
+    if (extent != null) 'extent': extent!.name,
+    if (extent == TimelineExtent.month) 'monthDays': monthDays,
     'unit': unit,
     if (leapMonths != TimelineLeapMonths.none) 'leapMonths': leapMonths.name,
     if (leapYears.isNotEmpty) 'leapYears': leapYears.toList()..sort(),
@@ -897,10 +948,15 @@ class StudyTimeline {
             .firstOrNull ??
         (value['era'] == true ? TimelineScale.calendar : TimelineScale.units);
     final timeline = StudyTimeline(
-      extra: timelineExtraKeys(value, const {
+      extra: timelineExtraKeys(value, {
         'id',
         'title',
         'scale',
+        if (TimelineExtent.values.any(
+          (e) => e.name == value['extent'] && e.scale == scale,
+        ))
+          'extent',
+        'monthDays',
         'era',
         'unit',
         'leapMonths',
@@ -921,6 +977,10 @@ class StudyTimeline {
       id: id,
       title: title,
       scale: scale,
+      extent: TimelineExtent.values
+          .where((e) => e.name == value['extent'] && e.scale == scale)
+          .firstOrNull,
+      monthDays: value['monthDays'] == 29 ? 29 : 30,
       unit: value['unit'] is String ? value['unit'] as String : 'Year',
       leapMonths:
           TimelineLeapMonths.values

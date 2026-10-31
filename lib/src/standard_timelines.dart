@@ -1952,6 +1952,7 @@ final _yovel = StandardTimeline(
     id: '',
     title: 'HaYovel (the jubilee): seven sabbaths of years',
     scale: TimelineScale.years,
+    extent: TimelineExtent.hayovel,
     unit: 'Year',
     monthNaming: TimelineMonthNaming.numbered,
     categoryColors: {

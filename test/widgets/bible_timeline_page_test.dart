@@ -8,6 +8,7 @@ import 'package:haqor/src/event_sequence.dart';
 import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/bible_timeline_page.dart';
 import 'package:haqor/src/widgets/event_sequence_page.dart';
+import 'package:haqor/src/widgets/timeline_wheel.dart';
 
 NameSummaryEntry _name(int id, String name, String kind) => NameSummaryEntry(
   id: id,
@@ -70,6 +71,58 @@ final _events = [
 ];
 
 void main() {
+  test(
+    'creation week places events and the kingdom across seven millennia',
+    () {
+      final marks = timelineWheelMarks(
+        bibleTimeline,
+        [...bibleTimelineEntries(_events), bibleKingdomOfChrist],
+        0,
+        cycle: bibleCreationWeek,
+      );
+      expect(bibleCreationWeek.segments, hasLength(7));
+      expect(marks.firstWhere((m) => m.entry.id == '1').from, 0);
+      final kingdom = marks.firstWhere(
+        (m) => m.entry.id == bibleKingdomOfChrist.id,
+      );
+      expect(kingdom.from, closeTo(6 / 7, 0.000001));
+      expect(kingdom.to, 1);
+      expect(
+        bibleTimeline.positionOf(bibleKingdomOfChrist.last) -
+            bibleTimeline.positionOf(bibleKingdomOfChrist.start),
+        1000,
+      );
+    },
+  );
+
+  testWidgets('Bible wheel opens with events and the seventh-day kingdom', (
+    tester,
+  ) async {
+    final requests = <GetBibleEvents>[];
+    await tester.pumpWidget(
+      MaterialApp(home: BibleTimelinePage(sendRequest: requests.add)),
+    );
+    assignRustSignal['BibleEvents']!(
+      BibleEvents(
+        requestId: requests.single.requestId,
+        events: _events,
+        sequences: const [],
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Show creation week wheel'));
+    await tester.pumpAndSettle();
+    final wheel = tester.widget<TimelineWheel>(find.byType(TimelineWheel));
+    expect(wheel.cycle, bibleCreationWeek);
+    expect(wheel.entries.any((e) => e.id == bibleKingdomOfChrist.id), isTrue);
+    expect(find.textContaining('Day 7: Kingdom of Christ'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byTooltip('Show timeline'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TimelineWheel), findsNothing);
+  });
+
   test('events lasting years are spans, the rest events', () {
     final entries = bibleTimelineEntries(_events);
     final creation = entries.first;
@@ -354,11 +407,17 @@ void _groupingTests() {
 
     // With lives hidden, births and deaths stand alone; with births hidden,
     // they go.
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timeline-category-Lifetimes')),
+    );
     await tester.tap(find.byKey(const ValueKey('timeline-category-Lifetimes')));
     await tester.pumpAndSettle();
     expect(row('4'), findsNothing);
     expect(row('7'), findsOneWidget);
     expect(row('23'), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timeline-category-Births')),
+    );
     await tester.tap(find.byKey(const ValueKey('timeline-category-Births')));
     await tester.pumpAndSettle();
     expect(row('7'), findsNothing);

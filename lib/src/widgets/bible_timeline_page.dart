@@ -11,6 +11,7 @@ import 'bible_sub_timeline_page.dart';
 import 'event_sequence_page.dart';
 import 'name_details.dart';
 import 'timeline_chart.dart';
+import 'timeline_wheel.dart';
 
 /// The timeline the Bible's events are shown on: calendar years, from the
 /// creation in 4004 BC.
@@ -34,6 +35,44 @@ const bibleTimeline = StudyTimeline(
     'Sequences': 2,
     'Sub-timelines': 2,
   },
+);
+
+/// Seven millennia read alongside the seven days of creation.
+final bibleCreationWeek = TimelineWheelCycle(
+  start: bibleTimeline.positionOf(const TimelineTime(-4004)),
+  length: 7000,
+  title: '7,000 years',
+  segments: const [
+    'Day 1 · Light',
+    'Day 2 · Firmament',
+    'Day 3 · Land and plants',
+    'Day 4 · Lights',
+    'Day 5 · Fish and birds',
+    'Day 6 · Animals and man',
+    'Day 7 · Rest',
+  ],
+);
+
+final bibleKingdomOfChrist = StudyTimelineEntry(
+  id: 'creation-week:kingdom',
+  title: 'Kingdom of Christ',
+  timelineId: bibleTimeline.id,
+  start: bibleTimeline.addDuration(
+    const TimelineTime(-4004),
+    const TimelineDuration(6000, TimelineDurationUnit.years),
+  )!,
+  end: bibleTimeline.addDuration(
+    const TimelineTime(-4004),
+    const TimelineDuration(7000, TimelineDurationUnit.years),
+  ),
+  duration: const TimelineDuration(1000, TimelineDurationUnit.years),
+  category: 'Creation week',
+  note:
+      'The seventh day, years 6,000–7,000 from creation, represents '
+      'the thousand-year reign of Christ in this reading of the creation '
+      'week. This is an interpretive placement, not a dated event from '
+      'the source chronology. See Genesis 2:1–3; Psalm 90:4; '
+      '2 Peter 3:8; Revelation 20:4–6.',
 );
 
 /// The category of the Bible's overall eras (see [bibleEras]).
@@ -443,6 +482,7 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
         _sequences = BibleSequences(events.sequences);
         _entries = [
           ...bibleEras,
+          bibleKingdomOfChrist,
           ...bibleTimelineEntries(events.events, sequences: _sequences),
         ];
         _byId
@@ -638,6 +678,7 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
     final navigate = widget.onNavigateToPassage;
     return TimelinePage(
       timeline: bibleTimeline,
+      wheelCycle: bibleCreationWeek,
       entries: _entries,
       initialSelectedId: _initialId,
       showInitialSelected: _initialId != null,

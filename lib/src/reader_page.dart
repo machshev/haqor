@@ -3536,6 +3536,8 @@ class _ReaderSessionState extends State<_ReaderSession>
               id: id,
               title: '',
               scale: base.scale,
+              extent: base.extent,
+              monthDays: base.monthDays,
               unit: base.unit,
               leapMonths: base.leapMonths,
               leapYears: base.leapYears,

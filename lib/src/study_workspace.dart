@@ -1883,7 +1883,7 @@ class StudyWorkspace {
     if (baseId != null) {
       var at = timelineById(baseId);
       final seen = <String>{};
-      var sound = at != null && at.scale == timeline.scale;
+      var sound = at != null && at.hasSameAxis(timeline);
       while (sound && at != null && seen.add(at.id)) {
         if (at.id == timeline.id) sound = false;
         at = at.baseId == null ? null : timelineById(at.baseId!);
@@ -1936,7 +1936,7 @@ class StudyWorkspace {
     final seen = {timeline.id};
     for (var id = timeline.baseId; id != null; id = chain.last.baseId) {
       final base = timelineById(id);
-      if (base == null || base.scale != timeline.scale || !seen.add(id)) break;
+      if (base == null || !base.hasSameAxis(timeline) || !seen.add(id)) break;
       chain.add(base);
     }
     return chain;

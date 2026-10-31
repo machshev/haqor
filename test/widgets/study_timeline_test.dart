@@ -50,6 +50,68 @@ Future<List<VerseEntry>> _chapter(int book, int chapter) async => [
 ];
 
 void main() {
+  for (final extent in TimelineExtent.values) {
+    testWidgets('creates and views a ${extent.label} timeline', (tester) async {
+      StudyTimeline? saved;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                saved = await showDialog<StudyTimeline>(
+                  context: context,
+                  builder: (_) => const StudyTimelineEditor(
+                    initial: StudyTimeline(id: 't', title: 'Test'),
+                    creating: true,
+                  ),
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('timeline-extent')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text(extent.label).last);
+      await tester.tap(find.text(extent.label).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+      expect(saved?.extent, extent);
+      expect(saved?.scale, extent.scale);
+      expect(saved?.unit, extent.unit);
+      final restored = StudyTimeline.fromJson(saved!.toJson())!;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TimelinePage(
+            timeline: restored,
+            entries: const [],
+            useEnglishBookNames: true,
+            onOpenPassage: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byTooltip(
+          extent == TimelineExtent.year
+              ? 'Show year wheel'
+              : 'Show time span wheel',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(TimelineWheel), findsOneWidget);
+      if (extent == TimelineExtent.day || extent == TimelineExtent.week) {
+        expect(find.textContaining('Evening → Morning'), findsOneWidget);
+      }
+
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   test('entries pack into the fewest lanes, in time order', () {
     final slots = packTimelineLanes(
       _timeline,

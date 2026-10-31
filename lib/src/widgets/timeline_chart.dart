@@ -16,6 +16,22 @@ import 'timeline_wheel.dart';
   StudyTimeline timeline,
   List<StudyTimelineEntry> entries,
 ) {
+  final extent = timeline.extent;
+  if (extent != null) {
+    final reaches = [
+      for (final entry in entries) timelineEntrySpread(timeline, entry),
+    ];
+    return (
+      start: reaches.fold(
+        extent.start,
+        (value, reach) => math.min(value, reach.start),
+      ),
+      end: reaches.fold(
+        extent.start + timeline.extentLength!,
+        (value, reach) => math.max(value, reach.end),
+      ),
+    );
+  }
   // One year's calendar shows its whole year.
   if (entries.isEmpty || timeline.isAnnual) return (start: 0, end: 1);
   return timelineFocus(timeline, entries);
@@ -2148,6 +2164,7 @@ class TimelinePage extends StatefulWidget {
     required this.onOpenPassage,
     this.initialSelectedId,
     this.initialCalendar = false,
+    this.wheelCycle,
     this.showInitialSelected = false,
     this.reload,
     this.onEditTimeline,
@@ -2177,6 +2194,8 @@ class TimelinePage extends StatefulWidget {
 
   /// Whether to open on the calendar, where the timeline has months.
   final bool initialCalendar;
+
+  final TimelineWheelCycle? wheelCycle;
 
   /// Whether to open [initialSelectedId]'s details when the page opens.
   final bool showInitialSelected;
@@ -2314,6 +2333,9 @@ class _TimelinePageState extends State<TimelinePage> {
   /// Whether the year is shown as a wheel (see [TimelineWheel]), rather
   /// than the timeline or the calendar.
   bool _wheel = false;
+
+  TimelineWheelCycle? get _wheelCycle =>
+      widget.wheelCycle ?? timelineCycleOf(_timeline);
 
   bool get _chart => !_calendar && !_wheel;
 
@@ -2564,7 +2586,9 @@ class _TimelinePageState extends State<TimelinePage> {
                 : a,
           );
     _fitTo(
-      timelineFocus(_timeline, _entries),
+      _timeline.extent == null
+          ? timelineFocus(_timeline, _entries)
+          : timelineExtent(_timeline, _entries),
       viewport,
       label: last != null && !last.isSpan,
     );
@@ -3558,14 +3582,14 @@ class _TimelinePageState extends State<TimelinePage> {
                   selectedIcon: const Icon(Icons.eco),
                   onPressed: _toggleSeasons,
                 ),
-              if (_timeline.hasMonths) ...[
+              if (_timeline.hasMonths || _wheelCycle != null) ...[
                 if (!_chart)
                   IconButton(
                     tooltip: 'Show timeline',
                     icon: const Icon(Icons.timeline),
                     onPressed: _showView,
                   ),
-                if (!_calendar)
+                if (!_calendar && _timeline.hasMonths)
                   IconButton(
                     tooltip: 'Show calendar',
                     icon: const Icon(Icons.calendar_month_outlined),
@@ -3573,7 +3597,11 @@ class _TimelinePageState extends State<TimelinePage> {
                   ),
                 if (!_wheel)
                   IconButton(
-                    tooltip: 'Show year wheel',
+                    tooltip: _wheelCycle == null
+                        ? 'Show year wheel'
+                        : _timeline.extent == null
+                        ? 'Show creation week wheel'
+                        : 'Show time span wheel',
                     icon: const Icon(Icons.donut_large),
                     onPressed: () => _showView(wheel: true),
                   ),
@@ -3626,13 +3654,31 @@ class _TimelinePageState extends State<TimelinePage> {
           ),
           body: _withCategories(
             theme,
-            _wheel && _timeline.hasMonths
+            _wheel && (_timeline.hasMonths || _wheelCycle != null)
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _calendarBar(theme),
+                      if (_wheelCycle == null)
+                        _calendarBar(theme)
+                      else
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            widget.wheelCycle == null
+                                ? [
+                                    _timeline.extent!.label,
+                                    if (_wheelCycle!.dayCount > 0)
+                                      'Evening → Morning · each day begins at sunset',
+                                  ].join(' · ')
+                                : 'Creation week · 7,000 years. '
+                                      'Each day represents 1,000 years from creation. '
+                                      'Day 7: Kingdom of Christ. An interpretive reading.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
                       Expanded(
                         child: TimelineWheel(
+                          cycle: _wheelCycle,
                           timeline: _timeline,
                           entries: entries,
                           year: _year,

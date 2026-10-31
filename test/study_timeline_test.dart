@@ -2,8 +2,120 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/timeline_chart.dart';
+import 'package:haqor/src/widgets/timeline_wheel.dart';
 
 void main() {
+  for (final extent in TimelineExtent.values) {
+    test(
+      '${extent.name} survives JSON and supplies its full viewer extent',
+      () {
+        final timeline = StudyTimeline(
+          id: 'extent',
+          title: extent.label,
+          extent: extent,
+          scale: extent.scale,
+          unit: extent.unit,
+          monthDays: 29,
+        );
+        final loaded = StudyTimeline.fromJson(timeline.toJson())!;
+        expect(loaded.extent, extent);
+        final workspace = const StudyWorkspace(
+          id: 'w',
+          name: 'Spans',
+        ).putTimeline(loaded);
+        final stored = decodeStudyWorkspaces(
+          encodeStudyWorkspaces([workspace]),
+        ).single;
+        expect(stored.timelineById(loaded.id)!.extent, extent);
+
+        expect(loaded.copyWith(title: 'renamed').extent, extent);
+        expect(loaded.hasSameAxis(timeline), isTrue);
+        final length = extent == TimelineExtent.month ? 29.0 : extent.length;
+        expect(timelineExtent(loaded, []), (
+          start: extent.start,
+          end: extent.start + length,
+        ));
+        final wheel = timelineCycleOf(loaded);
+        if (extent == TimelineExtent.year) {
+          expect(wheel, isNull);
+          expect(loaded.isAnnual, isTrue);
+        } else {
+          expect(wheel!.length, length);
+          if (extent == TimelineExtent.day || extent == TimelineExtent.week) {
+            final days = extent == TimelineExtent.day ? 1 : 7;
+            expect(wheel.dayParts, hasLength(days * 2));
+            for (var day = 0; day < days; day++) {
+              expect(wheel.dayParts[day * 2], (
+                label: 'Evening',
+                from: day / days,
+                to: (day + 0.5) / days,
+              ));
+              expect(wheel.dayParts[day * 2 + 1], (
+                label: 'Morning',
+                from: (day + 0.5) / days,
+                to: (day + 1) / days,
+              ));
+            }
+          } else {
+            expect(wheel.dayParts, isEmpty);
+          }
+
+          final entry = StudyTimelineEntry(
+            id: 'mid',
+            title: 'Middle',
+            timelineId: loaded.id,
+            start: TimelineTime(extent.start + length / 2),
+          );
+          final marks = timelineWheelMarks(loaded, [entry], 0, cycle: wheel);
+          expect(marks.single.from, closeTo(0.5, 1e-9));
+        }
+      },
+    );
+  }
+
+  test('hour timelines retain fractional hours and duration arithmetic', () {
+    const day = StudyTimeline(
+      id: 'd',
+      title: 'Day',
+      extent: TimelineExtent.day,
+      unit: 'Hour',
+    );
+    expect(
+      day.addDuration(
+        const TimelineTime(6.5),
+        const TimelineDuration(1.25, TimelineDurationUnit.units),
+      ),
+      const TimelineTime(7.75),
+    );
+    expect(day.formatTime(const TimelineTime(6.5)), 'Hour 6.5');
+    expect(
+      day.hasSameAxis(
+        const StudyTimeline(
+          id: 'w',
+          title: 'Week',
+          extent: TimelineExtent.week,
+          unit: 'Day',
+        ),
+      ),
+      isFalse,
+    );
+  });
+
+  test('legacy timelines remain open-ended and unknown extents survive', () {
+    final old = StudyTimeline.fromJson({
+      'id': 'old',
+      'title': 'Old',
+      'scale': 'units',
+      'unit': 'Day',
+    })!;
+    expect(old.extent, isNull);
+    final future = StudyTimeline.fromJson({
+      ...old.toJson(),
+      'extent': 'futureCycle',
+    })!;
+    expect(future.toJson()['extent'], 'futureCycle');
+  });
+
   const kings = StudyTimeline(
     id: 'kings',
     title: 'The divided kingdom',
