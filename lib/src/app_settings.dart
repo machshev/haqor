@@ -1098,3 +1098,16 @@ double snapFontSize(double? saved) {
 
 /// The New Testament texts the setting chooses between.
 enum _NtText { hebrew, syriac, greek }
+
+const _studyNotesFoldedKey = 'study_outline_notes_folded';
+
+/// Whether the study outline last had its long notes folded to one line.
+Future<bool> studyNotesFolded() async =>
+    (await SharedPreferences.getInstance()).readBool(_studyNotesFoldedKey) ??
+    false;
+
+Future<void> setStudyNotesFolded(bool folded) async =>
+    (await SharedPreferences.getInstance()).setBool(
+      _studyNotesFoldedKey,
+      folded,
+    );

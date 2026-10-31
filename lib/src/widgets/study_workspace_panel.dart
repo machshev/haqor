@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_settings.dart' show setStudyNotesFolded, studyNotesFolded;
 import '../bible_data.dart';
 import '../study_workspace.dart';
 import '../surface.dart';
@@ -688,7 +689,7 @@ class StudyWorkspacePanel extends StatelessWidget {
                     ),
                   ),
                   if (section.note.isNotEmpty)
-                    MarkdownNote(
+                    _OutlineNote(
                       section.note,
                       style: theme.textTheme.bodySmall,
                     ),
@@ -888,7 +889,7 @@ class StudyWorkspacePanel extends StatelessWidget {
                       ),
                     ),
                   if (timeline.note.isNotEmpty)
-                    MarkdownNote(
+                    _OutlineNote(
                       timeline.note,
                       style: theme.textTheme.bodySmall,
                     ),
@@ -1090,7 +1091,7 @@ class StudyWorkspacePanel extends StatelessWidget {
                   ),
               ],
             ),
-          if (entry.note.isNotEmpty) MarkdownNote(entry.note),
+          if (entry.note.isNotEmpty) _OutlineNote(entry.note),
         ],
       ),
       onTap: onEditTimelineEntry == null
@@ -1163,7 +1164,7 @@ class StudyWorkspacePanel extends StatelessWidget {
       _reference(passage),
       style: const TextStyle(fontWeight: FontWeight.bold),
     ),
-    subtitle: passage.note.isEmpty ? null : MarkdownNote(passage.note),
+    subtitle: passage.note.isEmpty ? null : _OutlineNote(passage.note),
     onTap: () => onOpenPassage(passage),
     trailing: PopupMenuButton<_ItemAction>(
       tooltip: 'Passage options',
@@ -1568,7 +1569,7 @@ class StudyWorkspacePanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (detail != null) Text(detail),
-        if (note.isNotEmpty) MarkdownNote(note),
+        if (note.isNotEmpty) _OutlineNote(note),
       ],
     );
   }
@@ -1589,7 +1590,7 @@ class StudyWorkspacePanel extends StatelessWidget {
       end: 0,
     ),
     leading: const Icon(Icons.notes_outlined, size: 18),
-    title: MarkdownNote(note.text),
+    title: _OutlineNote(note.text),
     trailing: PopupMenuButton<_NoteAction>(
       tooltip: 'Note options',
       iconSize: 18,
@@ -1753,49 +1754,67 @@ class StudyWorkspacePanel extends StatelessWidget {
                   ? _EmptyWorkspace(onCreate: onCreate)
                   : _OutlineDragScope(
                       child: _OutlineExpansion(
-                        child: ListView(
-                          key: PageStorageKey('study-outline-${workspace.id}'),
-                          padding: const EdgeInsets.fromLTRB(
-                            _outlinePadding,
-                            0,
-                            _outlinePadding,
-                            24,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            _dropTarget(
-                              workspace,
-                              null,
-                              child: _OutlineHeader(
-                                onBookmarkCurrent: () =>
-                                    onBookmarkCurrent(null),
-                                onCreateGroup: () => onCreateGroup(null),
-                                onCreateNote: () => onCreateNote(null),
-                                onCreateSummary: onCreateSection == null
-                                    ? null
-                                    : () => onCreateSection!(null),
-                                onCreateTimeline: onCreateTimeline == null
-                                    ? null
-                                    : () => onCreateTimeline!(null),
+                            // Held above the list, so adding an item or
+                            // folding the outline never needs a scroll back
+                            // to the top.
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: _outlinePadding,
+                              ),
+                              child: _dropTarget(
+                                workspace,
+                                null,
+                                child: _OutlineHeader(
+                                  onBookmarkCurrent: () =>
+                                      onBookmarkCurrent(null),
+                                  onCreateGroup: () => onCreateGroup(null),
+                                  onCreateNote: () => onCreateNote(null),
+                                  onCreateSummary: onCreateSection == null
+                                      ? null
+                                      : () => onCreateSection!(null),
+                                  onCreateTimeline: onCreateTimeline == null
+                                      ? null
+                                      : () => onCreateTimeline!(null),
+                                ),
                               ),
                             ),
-                            ..._itemsAt(
-                              context,
-                              workspace,
-                              null,
-                              ancestors: const {},
-                            ),
-                            if (workspace.groups.isEmpty &&
-                                workspace.passages.isEmpty &&
-                                workspace.words.isEmpty &&
-                                workspace.notes.isEmpty &&
-                                workspace.links.isEmpty &&
-                                workspace.sections.isEmpty &&
-                                workspace.timelines.isEmpty)
-                              const _SectionEmpty(
-                                text:
-                                    'Bookmark a passage or word, or create a group '
-                                    'to begin a study or talk outline.',
+                            Expanded(
+                              child: ListView(
+                                key: PageStorageKey(
+                                  'study-outline-${workspace.id}',
+                                ),
+                                padding: const EdgeInsets.fromLTRB(
+                                  _outlinePadding,
+                                  0,
+                                  _outlinePadding,
+                                  24,
+                                ),
+                                children: [
+                                  ..._itemsAt(
+                                    context,
+                                    workspace,
+                                    null,
+                                    ancestors: const {},
+                                  ),
+                                  if (workspace.groups.isEmpty &&
+                                      workspace.passages.isEmpty &&
+                                      workspace.words.isEmpty &&
+                                      workspace.notes.isEmpty &&
+                                      workspace.links.isEmpty &&
+                                      workspace.sections.isEmpty &&
+                                      workspace.timelines.isEmpty)
+                                    const _SectionEmpty(
+                                      text:
+                                          'Bookmark a passage or word, or '
+                                          'create a group to begin a study '
+                                          'or talk outline.',
+                                    ),
+                                ],
                               ),
+                            ),
                           ],
                         ),
                       ),
@@ -2358,19 +2377,159 @@ class _OutlineExpansion extends StatefulWidget {
 class _OutlineExpansionState extends State<_OutlineExpansion> {
   var _generation = 0;
   var _expanded = true;
+  var _noteGeneration = 0;
+  var _notesFolded = false;
+
+  bool get notesFolded => _notesFolded;
+
+  @override
+  void initState() {
+    super.initState();
+    // The last choice, kept between sessions: a long note folded away
+    // should not be back in full each time the app opens.
+    studyNotesFolded().then((folded) {
+      if (mounted && folded != _notesFolded && _noteGeneration == 0) {
+        setState(() {
+          _noteGeneration++;
+          _notesFolded = folded;
+        });
+      }
+    }, onError: (Object _) {});
+  }
 
   void setAll({required bool expanded}) => setState(() {
     _generation++;
     _expanded = expanded;
   });
 
+  /// Folds every long note to its first line, or unfolds them all.
+  void foldNotes({required bool folded}) {
+    setState(() {
+      _noteGeneration++;
+      _notesFolded = folded;
+    });
+    setStudyNotesFolded(folded).catchError((Object _) {});
+  }
+
   @override
   Widget build(BuildContext context) => _OutlineExpansionScope(
     state: this,
     generation: _generation,
     expanded: _expanded,
+    noteGeneration: _noteGeneration,
+    notesFolded: _notesFolded,
     child: widget.child,
   );
+}
+
+/// A note in the outline. One longer than a line can be folded to its first
+/// line, on its own or with every other from the outline header, so a long
+/// description need not fill the panel.
+class _OutlineNote extends StatelessWidget {
+  const _OutlineNote(this.data, {this.style});
+
+  final String data;
+  final TextStyle? style;
+
+  /// Plain text longer than this, or a note of more than one line, folds.
+  static const _foldableLength = 80;
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<_OutlineExpansionScope>();
+    final trimmed = data.trim();
+    final plain = markdownPlainText(trimmed);
+    if (!trimmed.contains('\n') && plain.length <= _foldableLength) {
+      return MarkdownNote(data, style: style);
+    }
+    return _FoldableNote(
+      key: PageStorageKey(('note', data, scope?.noteGeneration ?? 0)),
+      data: data,
+      plain: plain,
+      style: style,
+      initiallyFolded: scope?.notesFolded ?? false,
+    );
+  }
+}
+
+class _FoldableNote extends StatefulWidget {
+  const _FoldableNote({
+    super.key,
+    required this.data,
+    required this.plain,
+    required this.style,
+    required this.initiallyFolded,
+  });
+
+  final String data, plain;
+  final TextStyle? style;
+  final bool initiallyFolded;
+
+  @override
+  State<_FoldableNote> createState() => _FoldableNoteState();
+}
+
+class _FoldableNoteState extends State<_FoldableNote> {
+  late bool _folded;
+
+  @override
+  void initState() {
+    super.initState();
+    // Kept in page storage, as the outline's expansion tiles keep theirs,
+    // so a note scrolled out of the list and back stays as it was left.
+    _folded =
+        PageStorage.maybeOf(context)?.readState(context) as bool? ??
+        widget.initiallyFolded;
+  }
+
+  void _toggle() {
+    setState(() => _folded = !_folded);
+    PageStorage.maybeOf(context)?.writeState(context, _folded);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final chevron = Icon(
+      _folded ? Icons.expand_more : Icons.expand_less,
+      size: 16,
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    if (_folded) {
+      return Tooltip(
+        message: 'Show the whole note',
+        child: InkWell(
+          onTap: _toggle,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.plain,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: (widget.style ?? const TextStyle()).copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              chevron,
+            ],
+          ),
+        ),
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: MarkdownNote(widget.data, style: widget.style)),
+        Tooltip(
+          message: 'Fold note',
+          child: InkWell(onTap: _toggle, child: chevron),
+        ),
+      ],
+    );
+  }
 }
 
 /// The list tile theme around an expandable outline tile, which sets its
@@ -2407,16 +2566,20 @@ class _OutlineExpansionScope extends InheritedWidget {
     required this.state,
     required this.generation,
     required this.expanded,
+    required this.noteGeneration,
+    required this.notesFolded,
     required super.child,
   });
 
   final _OutlineExpansionState state;
   final int generation;
   final bool expanded;
+  final int noteGeneration;
+  final bool notesFolded;
 
   @override
   bool updateShouldNotify(_OutlineExpansionScope old) =>
-      generation != old.generation;
+      generation != old.generation || noteGeneration != old.noteGeneration;
 }
 
 class _OutlineHeader extends StatelessWidget {
@@ -2458,6 +2621,17 @@ class _OutlineHeader extends StatelessWidget {
           icon: const Icon(Icons.unfold_more),
           onPressed: () =>
               _OutlineExpansion.of(context)?.setAll(expanded: true),
+        ),
+        Builder(
+          builder: (context) {
+            final expansion = _OutlineExpansion.of(context);
+            final folded = expansion?.notesFolded ?? false;
+            return IconButton(
+              tooltip: folded ? 'Unfold notes' : 'Fold notes',
+              icon: Icon(folded ? Icons.notes : Icons.short_text),
+              onPressed: () => expansion?.foldNotes(folded: !folded),
+            );
+          },
         ),
         PopupMenuButton<_OutlineAction>(
           tooltip: 'Add study item',

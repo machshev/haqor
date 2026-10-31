@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/study_workspace_panel.dart';
@@ -1109,6 +1110,87 @@ void sectionTileTests() {
     await tester.pumpAndSettle();
     expect(find.text('Inner'), findsOneWidget);
     expect(find.text('Deep note'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('long notes fold to a line and the header stays in view', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    const long =
+        'A long description that runs on well past a single line of the '
+        'panel, as the appointed times timeline does.';
+    var workspace = const StudyWorkspace(
+      id: 'notes',
+      name: 'Notes study',
+    ).putNote(const StudyNote(id: 'long', text: long));
+    for (var i = 0; i < 40; i++) {
+      workspace = workspace.putNote(StudyNote(id: 'n$i', text: 'Note $i'));
+    }
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 380,
+            height: 500,
+            child: StudyWorkspacePanel(
+              workspaces: [workspace],
+              activeWorkspace: workspace,
+              currentPassage: const StudyPassage(
+                bookIndex: 0,
+                chapter: 1,
+                verse: 1,
+              ),
+              useEnglishBookNames: true,
+              onCreate: () {},
+              onSelect: (_) {},
+              onRename: () {},
+              onDelete: () {},
+              onToggleHighlights: (_) {},
+              onCreateGroup: (_) {},
+              onEditGroup: (_) {},
+              onDeleteGroup: (_) {},
+              onBookmarkCurrent: (_) {},
+              onOpenPassage: (_) {},
+              onEditPassage: (_) {},
+              onUpdatePassage: (_) {},
+              onRemovePassage: (_) {},
+              onEditWord: (_) {},
+              onUpdateWord: (_) {},
+              onSwitchWordKind: (_) {},
+              onRemoveWord: (_) {},
+              onOpenWord: (_) {},
+              onCreateNote: (_) {},
+              onEditNote: (_) {},
+              onUpdateNote: (_) {},
+              onRemoveNote: (_) {},
+              onMoveItem: (_, _, _) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Fold note'), findsOneWidget);
+    expect(find.byTooltip('Show the whole note'), findsNothing);
+
+    await tester.tap(find.byTooltip('Fold notes'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Show the whole note'), findsOneWidget);
+    expect(find.byTooltip('Fold note'), findsNothing);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('study_outline_notes_folded'), isTrue);
+
+    // One note opens on its own; the short ones never fold.
+    await tester.tap(find.byTooltip('Show the whole note'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Fold note'), findsOneWidget);
+
+    await tester.drag(find.byType(ListView), const Offset(0, -2000));
+    await tester.pumpAndSettle();
+    expect(find.text('Note 39'), findsOneWidget);
+    expect(find.byTooltip('Add study item'), findsOneWidget);
+    expect(find.byTooltip('Unfold notes'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
