@@ -1172,8 +1172,8 @@ void main() {
         marks.singleWhere((m) => m.entry.id == id);
     // Trumpets stands about half the year round from Passover.
     expect(mark('Trumpets').from - mark('Passover').from, closeTo(0.5, 0.05));
-    // Events a day apart take rings of labels of their own.
-    expect(mark('First day').labelRadius, isNot(mark('Passover').labelRadius));
+    // Events a day apart have their dots stacked, the later inward.
+    expect(mark('First day').radius, lessThan(mark('Passover').radius));
     // Spans apart round the wheel share a ring of arcs.
     expect(mark('unleavened').radius, mark('tabernacles').radius);
     expect(mark('unleavened').to, greaterThan(mark('unleavened').from));
@@ -1225,6 +1225,69 @@ void main() {
       find.textContaining('Qetsir seʿorim (barley harvest) · Exodus 9:31-32'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('the year wheel names the appointed times clear of one '
+      'another on a phone, and opens one whose name is tapped', (tester) async {
+    tester.view.physicalSize = const Size(390, 700) * 3;
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final workspace = const StudyWorkspace(
+      id: 'w',
+      name: 'w',
+    ).addStandardTimeline(standardTimelineById('moadim')!, id: 'moadim');
+    final timeline = workspace.timelineById('moadim')!;
+    final entries = workspace.viewOf('moadim');
+    StudyTimelineEntry? tapped;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TimelineWheel(
+            timeline: timeline,
+            entries: entries,
+            year: 0,
+            onTapEntry: (e) => tapped = e,
+          ),
+        ),
+      ),
+    );
+    final wheel = tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey('timeline-wheel')),
+        matching: find.byType(CustomPaint),
+      ),
+    );
+    final marks = timelineWheelMarks(timeline, entries, 0);
+    final layout = TimelineWheelLayout(
+      timeline: timeline,
+      year: 0,
+      marks: marks,
+      size: wheel.size,
+      selectedId: null,
+      faded: const {},
+      theme: Theme.of(tester.element(find.byType(TimelineWheel))),
+    );
+    final labels = layout.labels;
+    // Most are named, the pilgrimages all, and no two names overlap.
+    expect(labels.length, greaterThan(marks.length ~/ 2));
+    final named = {for (final l in labels) l.entry.id};
+    for (final id in ['matzot', 'shavuot', 'sukkot']) {
+      expect(named, contains('moadim:$id'));
+    }
+    for (final (i, a) in labels.indexed) {
+      for (final b in labels.skip(i + 1)) {
+        expect(
+          a.rect.overlaps(b.rect),
+          isFalse,
+          reason:
+              '${a.entry.id} '
+              'overlaps ${b.entry.id}',
+        );
+      }
+    }
+    final sukkot = labels.singleWhere((l) => l.entry.id == 'moadim:sukkot');
+    await tester.tapAt(wheel.topLeft + sukkot.rect.center);
+    expect(tapped?.id, 'moadim:sukkot');
   });
 
   testWidgets('categories colour entries, which a key shows and hides, and '

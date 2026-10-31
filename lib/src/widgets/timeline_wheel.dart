@@ -8,34 +8,41 @@ import 'timeline_chart.dart';
 
 /// Where an entry stands on the year's wheel (see [TimelineWheel]): the
 /// stretch of the year it covers, [from] and [to] as fractions of the year
-/// from 1 Nisan, clockwise from the top; and, as fractions of the wheel's
-/// radius, where its mark stands ([radius]: an event's dot, a span's arc)
-/// and where an event's label does ([labelRadius]).
+/// from 1 Nisan, clockwise from the top; and where its mark stands, as a
+/// fraction of the wheel's radius ([radius]: an event's dot, a span's arc).
 typedef TimelineWheelMark = ({
   StudyTimelineEntry entry,
   double from,
   double to,
   double radius,
-  double labelRadius,
 });
 
-/// How far round the wheel events must stand apart to share a ring of
-/// labels, and spans to share a ring of arcs.
-const _eventGap = 0.03;
+/// An entry's name placed on the wheel: its box, [rect], and the point by
+/// it, [at], that a line runs to from its mark.
+typedef TimelineWheelLabel = ({StudyTimelineEntry entry, Rect rect, Offset at});
+
+/// How close round the wheel events stand to have their dots stacked
+/// inward rather than drawn over one another, how far inward each, and how
+/// many deep at most; and how far apart spans must stand to share a ring
+/// of arcs.
+const _stackGap = 0.012;
+const _stackStep = 0.05;
+const _stackDepth = 3;
 const _spanGap = 0.008;
 
 /// The wheel's rings, as fractions of its radius: the months outermost,
-/// then the seasons, then the events' dots, their labels in up to three
-/// rings within, and the spans' arcs within those.
+/// then the seasons, then the events' dots, stacked inward where they
+/// stand close, then the spans' arcs; the names of both stand in the room
+/// within the seasons, clear of them.
 const _monthsOuter = 0.99;
 const _monthsInner = 0.88;
 const _rainRadius = 0.845;
 const _harvestRadius = 0.80;
-const _eventRadius = 0.745;
-const _labelRadii = [0.69, 0.62, 0.55];
-const _spanOuter = 0.47;
-const _spanStep = 0.06;
-const _spanInner = 0.2;
+const _eventRadius = 0.75;
+const _spanBelowEvents = 0.065;
+const _spanStep = 0.045;
+const _spanInner = 0.3;
+const _labelReach = 0.775;
 
 /// The stretch of the axis the year [year] of [timeline] covers.
 ({double start, double end}) timelineYearStretch(
@@ -57,8 +64,8 @@ const _spanInner = 0.2;
 
 /// Where [entries] stand on the wheel of the year [year] of [timeline]:
 /// those dated within it to the month at least, a span cut to the year.
-/// Events are staggered across the rings of labels where they stand close,
-/// and spans packed into as few rings of arcs as fit.
+/// Events standing close have their dots stacked inward, and spans are
+/// packed into as few rings of arcs as fit, within the dots.
 List<TimelineWheelMark> timelineWheelMarks(
   StudyTimeline timeline,
   List<StudyTimelineEntry> entries,
@@ -68,9 +75,12 @@ List<TimelineWheelMark> timelineWheelMarks(
   final length = stretch.end - stretch.start;
   double fraction(double position) =>
       ((position - stretch.start) / length).clamp(0.0, 1.0);
-  final marks = <TimelineWheelMark>[];
-  final labelEnds = List.filled(_labelRadii.length, double.negativeInfinity);
+  final events = <TimelineWheelMark>[];
+  final spans = <(StudyTimelineEntry, double, double, int)>[];
   final spanEnds = <double>[];
+  var lastEvent = double.negativeInfinity;
+  var stack = 0;
+  var deepest = 0;
   for (final entry in List.of(entries)..sort(compareTimelineEntries)) {
     if (entry.start.month == null) continue;
     final reach = timelineEntryReach(timeline, entry);
@@ -78,18 +88,16 @@ List<TimelineWheelMark> timelineWheelMarks(
     final from = fraction(reach.start);
     final to = fraction(reach.end);
     if (!entry.isSpan) {
-      var ring = labelEnds.indexWhere((end) => end + _eventGap <= from);
-      if (ring < 0) {
-        // Every ring is crowded here: the one free longest ago.
-        ring = labelEnds.indexOf(labelEnds.reduce(math.min));
-      }
-      labelEnds[ring] = from;
-      marks.add((
+      stack = from - lastEvent < _stackGap
+          ? math.min(stack + 1, _stackDepth)
+          : 0;
+      lastEvent = from;
+      deepest = math.max(deepest, stack);
+      events.add((
         entry: entry,
         from: from,
         to: from,
-        radius: _eventRadius,
-        labelRadius: _labelRadii[ring],
+        radius: _eventRadius - stack * _stackStep,
       ));
       continue;
     }
@@ -100,16 +108,20 @@ List<TimelineWheelMark> timelineWheelMarks(
     } else {
       spanEnds[lane] = to;
     }
-    final radius = math.max(_spanInner, _spanOuter - lane * _spanStep);
-    marks.add((
-      entry: entry,
-      from: from,
-      to: math.max(to, from + 0.002),
-      radius: radius,
-      labelRadius: radius,
-    ));
+    spans.add((entry, from, math.max(to, from + 0.002), lane));
   }
-  return marks;
+  // The spans' rings start within the deepest stack of dots.
+  final spanOuter = _eventRadius - deepest * _stackStep - _spanBelowEvents;
+  return [
+    ...events,
+    for (final (entry, from, to, lane) in spans)
+      (
+        entry: entry,
+        from: from,
+        to: to,
+        radius: math.max(_spanInner, spanOuter - lane * _spanStep),
+      ),
+  ]..sort((a, b) => compareTimelineEntries(a.entry, b.entry));
 }
 
 /// The point at [fraction] of the year round a wheel centred on [centre],
@@ -121,9 +133,10 @@ Offset timelineWheelPoint(Offset centre, double radius, double fraction) {
 
 /// One year of a timeline as a wheel, its months round the rim from Nisan
 /// at the top, the Sabbaths ticked inside them, and, as the timeline
-/// shows them, the seasons of the land; its events as dots, named within,
-/// and its spans as arcs. The cycle of the feasts shows whole: the spring
-/// feasts facing the autumn ones across it. Tapping an entry calls
+/// shows them, the seasons of the land; its events as dots and its spans
+/// as arcs, each named within where there is room, a line out to its
+/// mark. The cycle of the feasts shows whole: the spring feasts facing the
+/// autumn ones across it. Tapping an entry, or its name, calls
 /// [onTapEntry].
 class TimelineWheel extends StatelessWidget {
   const TimelineWheel({
@@ -147,13 +160,17 @@ class TimelineWheel extends StatelessWidget {
   /// The entries drawn faded: those of the timelines it is built on.
   final Set<String> faded;
 
-  /// The entry at [point] on a wheel of [size], if any: an event's dot, or
-  /// a span's arc.
+  /// The entry at [point] on a wheel of [size], if any: one of [labels],
+  /// an event's dot, or a span's arc.
   static StudyTimelineEntry? entryAt(
     List<TimelineWheelMark> marks,
     Size size,
-    Offset point,
-  ) {
+    Offset point, {
+    List<TimelineWheelLabel> labels = const [],
+  }) {
+    for (final label in labels) {
+      if (label.rect.inflate(2).contains(point)) return label.entry;
+    }
     final centre = size.center(Offset.zero);
     final radius = size.shortestSide / 2;
     final offset = point - centre;
@@ -226,12 +243,21 @@ class TimelineWheel extends StatelessWidget {
           math.min(constraints.maxWidth, constraints.maxHeight) - 16,
         );
         final size = Size.square(side);
+        final layout = TimelineWheelLayout(
+          timeline: timeline,
+          year: year,
+          marks: marks,
+          size: size,
+          selectedId: selectedId,
+          faded: faded,
+          theme: theme,
+        );
         return Center(
           child: GestureDetector(
             key: const ValueKey('timeline-wheel'),
             onTapUp: (details) {
               final point = details.localPosition;
-              final entry = entryAt(marks, size, point);
+              final entry = entryAt(marks, size, point, labels: layout.labels);
               if (entry != null) {
                 onTapEntry?.call(entry);
                 return;
@@ -247,17 +273,7 @@ class TimelineWheel extends StatelessWidget {
                   ),
                 );
             },
-            child: CustomPaint(
-              size: size,
-              painter: _WheelPainter(
-                timeline: timeline,
-                year: year,
-                marks: marks,
-                selectedId: selectedId,
-                faded: faded,
-                theme: theme,
-              ),
-            ),
+            child: CustomPaint(size: size, painter: _WheelPainter(layout)),
           ),
         );
       },
@@ -265,30 +281,236 @@ class TimelineWheel extends StatelessWidget {
   }
 }
 
-class _WheelPainter extends CustomPainter {
-  _WheelPainter({
+/// A wheel laid out at its size: its entries' colours, and their names
+/// placed where they fit.
+class TimelineWheelLayout {
+  TimelineWheelLayout({
     required this.timeline,
     required this.year,
     required this.marks,
+    required this.size,
     required this.selectedId,
     required this.faded,
     required this.theme,
-  });
+  }) {
+    _place();
+  }
 
   final StudyTimeline timeline;
   final double year;
   final List<TimelineWheelMark> marks;
+  final Size size;
   final String? selectedId;
   final Set<String> faded;
   final ThemeData theme;
 
   ColorScheme get scheme => theme.colorScheme;
+  Offset get centre => size.center(Offset.zero);
+  double get r => size.shortestSide / 2;
+
+  /// The year, or the calendar's title, in the middle.
+  late final TextPainter title = TextPainter(
+    text: TextSpan(
+      text: timeline.isAnnual ? timeline.title : timeline.formatValue(year),
+      style: theme.textTheme.titleSmall,
+    ),
+    maxLines: 1,
+    ellipsis: '…',
+    textAlign: TextAlign.center,
+    textDirection: TextDirection.ltr,
+  )..layout(maxWidth: math.max(0, r * 0.5));
+
+  Rect get titleRect =>
+      Rect.fromCenter(center: centre, width: title.width, height: title.height);
+
+  /// The names placed, with how each is drawn.
+  final labels = <TimelineWheelLabel>[];
+  final painters = <TextPainter>[];
+
+  Color colorOf(StudyTimelineEntry entry) => timelineEntryColor(
+    timeline,
+    entry,
+    theme.brightness,
+    entry.isSpan ? scheme.primary : scheme.tertiary,
+  ).withValues(alpha: faded.contains(entry.id) ? 0.45 : 1);
+
+  /// The point of [mark] a line runs from to its name: an event's dot, a
+  /// span's start.
+  Offset markPoint(TimelineWheelMark mark) =>
+      timelineWheelPoint(centre, mark.radius * r, mark.from);
+
+  /// Places each entry's name in the room within the seasons, clear of
+  /// the dots and arcs, of the names placed before it and of the title,
+  /// as near its mark as it may stand without its line crossing them: the
+  /// one chosen first, then the rest by rank (see below). A name stands to
+  /// the side of its point away from its mark. One with no room is left
+  /// out; its mark may still be tapped.
+  void _place() {
+    if (size.isEmpty) return;
+    final reach = _labelReach * r;
+    final blocked = <Rect>[if (title.width > 0) titleRect.inflate(4)];
+    for (final mark in marks) {
+      if (!mark.entry.isSpan) {
+        blocked.add(Rect.fromCircle(center: markPoint(mark), radius: 9));
+        continue;
+      }
+      final radius = mark.radius * r;
+      final sweep = mark.to - mark.from;
+      final steps = math.max(1, (2 * math.pi * radius * sweep / 4).ceil());
+      for (var i = 0; i <= steps; i++) {
+        blocked.add(
+          Rect.fromCircle(
+            center: timelineWheelPoint(
+              centre,
+              radius,
+              mark.from + sweep * i / steps,
+            ),
+            radius: 6,
+          ),
+        );
+      }
+    }
+    final names = <Rect>[];
+    final lines = <(Offset, Offset)>[];
+    bool inside(Rect rect) => [
+      rect.topLeft,
+      rect.topRight,
+      rect.bottomLeft,
+      rect.bottomRight,
+    ].every((p) => (p - centre).distance <= reach);
+    // The spans first, then the events, the high Sabbaths among them last,
+    // each in the order of the year.
+    int rank(TimelineWheelMark m) => m.entry.id == selectedId
+        ? 0
+        : m.entry.isSpan
+        ? 1
+        : m.entry.isHighSabbath
+        ? 3
+        : 2;
+    final order = [
+      for (var i = 0; i <= 3; i++) ...marks.where((m) => rank(m) == i),
+    ];
+    final small = theme.textTheme.labelSmall;
+    final probe = TextPainter(
+      text: TextSpan(text: 'M', style: small),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    // The points a name may stand by, on a grid over the room.
+    final grid = probe.height * 0.6;
+    final points = <Offset>[
+      for (var y = -reach; y <= reach; y += grid)
+        for (var x = -reach; x <= reach; x += grid)
+          if (x * x + y * y <= reach * reach) centre + Offset(x, y),
+    ];
+    for (final mark in order) {
+      final selected = mark.entry.id == selectedId;
+      final painter = TextPainter(
+        text: TextSpan(
+          text: mark.entry.shortLabel,
+          style: small?.copyWith(
+            color: mark.entry.isSpan ? colorOf(mark.entry) : null,
+            fontWeight: selected ? FontWeight.bold : null,
+          ),
+        ),
+        maxLines: 1,
+        ellipsis: '…',
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: math.max(0, reach * 0.8));
+      final w = painter.width + 4;
+      final h = painter.height;
+      final from = markPoint(mark);
+      final candidates = [for (final at in points) (at, (at - from).distance)]
+        ..sort((a, b) => a.$2.compareTo(b.$2));
+      Rect? best;
+      Offset? bestAt;
+      var bestScore = double.infinity;
+      for (final (at, distance) in candidates) {
+        if (distance >= bestScore) break;
+        final rect = Rect.fromLTWH(
+          from.dx <= at.dx ? at.dx : at.dx - w,
+          at.dy - h / 2,
+          w,
+          h,
+        );
+        if (!inside(rect) ||
+            names.any(rect.overlaps) ||
+            blocked.any(rect.overlaps)) {
+          continue;
+        }
+        // A line crossing a name, or another line, costs as much as a
+        // longer one.
+        var score = distance;
+        for (final name in names) {
+          if (_crosses(from, at, name)) score += 3 * h;
+        }
+        for (final (a, b) in lines) {
+          if (_crosses(a, b, rect)) score += 3 * h;
+          if (_meet(a, b, from, at)) score += h;
+        }
+        if (score < bestScore) {
+          best = rect;
+          bestAt = at;
+          bestScore = score;
+        }
+      }
+      if (best == null || bestAt == null) continue;
+      names.add(best.inflate(1));
+      lines.add((from, bestAt));
+      labels.add((entry: mark.entry, rect: best, at: bestAt));
+      painters.add(painter);
+    }
+  }
+}
+
+/// Whether the line from [a] to [b] passes through [rect].
+bool _crosses(Offset a, Offset b, Rect rect) {
+  var t0 = 0.0;
+  var t1 = 1.0;
+  final d = b - a;
+  for (final (p, q) in [
+    (-d.dx, a.dx - rect.left),
+    (d.dx, rect.right - a.dx),
+    (-d.dy, a.dy - rect.top),
+    (d.dy, rect.bottom - a.dy),
+  ]) {
+    if (p == 0) {
+      if (q < 0) return false;
+      continue;
+    }
+    final t = q / p;
+    if (p < 0) {
+      if (t > t1) return false;
+      t0 = math.max(t0, t);
+    } else {
+      if (t < t0) return false;
+      t1 = math.min(t1, t);
+    }
+  }
+  return t0 < t1;
+}
+
+/// Whether the lines from [a] to [b] and from [c] to [d] cross.
+bool _meet(Offset a, Offset b, Offset c, Offset d) {
+  double side(Offset p, Offset q, Offset s) =>
+      (q.dx - p.dx) * (s.dy - p.dy) - (q.dy - p.dy) * (s.dx - p.dx);
+  return side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0;
+}
+
+class _WheelPainter extends CustomPainter {
+  _WheelPainter(this.layout);
+
+  final TimelineWheelLayout layout;
+
+  StudyTimeline get timeline => layout.timeline;
+  double get year => layout.year;
+  ThemeData get theme => layout.theme;
+  ColorScheme get scheme => layout.scheme;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
-    final centre = size.center(Offset.zero);
-    final r = size.shortestSide / 2;
+    final centre = layout.centre;
+    final r = layout.r;
     final stretch = timelineYearStretch(timeline, year);
     final length = stretch.end - stretch.start;
     double fraction(double position) => (position - stretch.start) / length;
@@ -322,16 +544,15 @@ class _WheelPainter extends CustomPainter {
               ? scheme.surfaceContainerHighest
               : scheme.surfaceContainerHigh,
       );
-      _text(
+      final mid = r * (_monthsInner + _monthsOuter) / 2;
+      _alongRim(
         canvas,
         timeline.monthName(year, month),
-        timelineWheelPoint(
-          centre,
-          r * (_monthsInner + _monthsOuter) / 2,
-          (from + to) / 2,
-        ),
+        centre,
+        mid,
+        (from + to) / 2,
         small?.copyWith(fontWeight: FontWeight.w600),
-        maxWidth: 2 * math.pi * r * 0.9 * (to - from),
+        maxWidth: 2 * math.pi * mid * (to - from) * 0.92,
       );
     }
     // The Sabbaths, ticked just inside the months.
@@ -373,15 +594,24 @@ class _WheelPainter extends CustomPainter {
         );
       }
     }
-    // The spans as arcs, named at their start.
-    for (final mark in marks.where((m) => m.entry.isSpan)) {
-      final selected = mark.entry.id == selectedId;
-      final color = timelineEntryColor(
-        timeline,
-        mark.entry,
-        theme.brightness,
-        scheme.primary,
-      ).withValues(alpha: faded.contains(mark.entry.id) ? 0.45 : 1);
+    // A line from each mark to its name, beneath them all.
+    final marksById = {for (final m in layout.marks) m.entry.id: m};
+    for (final label in layout.labels) {
+      final mark = marksById[label.entry.id]!;
+      canvas.drawLine(
+        layout.markPoint(mark),
+        label.at,
+        Paint()
+          ..color =
+              (mark.entry.isSpan ? layout.colorOf(mark.entry) : scheme.outline)
+                  .withValues(alpha: 0.5)
+          ..strokeWidth = 1,
+      );
+    }
+    // The spans as arcs.
+    for (final mark in layout.marks.where((m) => m.entry.isSpan)) {
+      final selected = mark.entry.id == layout.selectedId;
+      final color = layout.colorOf(mark.entry);
       canvas.drawArc(
         Rect.fromCircle(center: centre, radius: r * mark.radius),
         angle(mark.from),
@@ -393,33 +623,12 @@ class _WheelPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round
           ..strokeWidth = selected ? 9 : 7,
       );
-      _label(
-        canvas,
-        mark.entry.shortLabel,
-        centre,
-        r * (mark.radius - 0.035),
-        mark.from,
-        small?.copyWith(
-          color: color,
-          fontWeight: selected ? FontWeight.bold : null,
-        ),
-      );
     }
-    // The events as dots, named within, a line out to each label.
-    final leader = Paint()
-      ..color = scheme.outline.withValues(alpha: 0.6)
-      ..strokeWidth = 1;
-    for (final mark in marks.where((m) => !m.entry.isSpan)) {
-      final selected = mark.entry.id == selectedId;
-      final color = timelineEntryColor(
-        timeline,
-        mark.entry,
-        theme.brightness,
-        scheme.tertiary,
-      ).withValues(alpha: faded.contains(mark.entry.id) ? 0.45 : 1);
-      final dot = timelineWheelPoint(centre, r * mark.radius, mark.from);
-      final label = timelineWheelPoint(centre, r * mark.labelRadius, mark.from);
-      canvas.drawLine(dot, label, leader);
+    // The events as dots.
+    for (final mark in layout.marks.where((m) => !m.entry.isSpan)) {
+      final selected = mark.entry.id == layout.selectedId;
+      final color = layout.colorOf(mark.entry);
+      final dot = layout.markPoint(mark);
       if (mark.entry.isHighSabbath) {
         canvas.drawCircle(dot, 6, Paint()..color = scheme.tertiaryContainer);
         canvas.drawCircle(
@@ -443,23 +652,22 @@ class _WheelPainter extends CustomPainter {
             ..strokeWidth = 2,
         );
       }
-      _label(
+    }
+    // The names, each on a ground of its own where a line passes beneath.
+    final ground = Paint()..color = scheme.surface.withValues(alpha: 0.85);
+    for (final (i, label) in layout.labels.indexed) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(label.rect, const Radius.circular(3)),
+        ground,
+      );
+      final after = label.at.dx <= label.rect.left + 0.5;
+      layout.painters[i].paint(
         canvas,
-        mark.entry.shortLabel,
-        centre,
-        r * mark.labelRadius,
-        mark.from,
-        small?.copyWith(fontWeight: selected ? FontWeight.bold : null),
+        label.rect.topLeft + Offset(after ? 4 : 0, 0),
       );
     }
     // The year in the middle.
-    _text(
-      canvas,
-      timeline.isAnnual ? timeline.title : timeline.formatValue(year),
-      centre,
-      theme.textTheme.titleSmall,
-      maxWidth: r * _spanInner * 2,
-    );
+    layout.title.paint(canvas, layout.titleRect.topLeft);
   }
 
   /// A ring's stretch from [from] round [sweep], between radii [inner] and
@@ -485,13 +693,17 @@ class _WheelPainter extends CustomPainter {
     canvas.drawPath(path, paint);
   }
 
-  /// [text] centred on [at], cut to [maxWidth].
-  void _text(
+  /// [text] centred on the point [radius] out at [fraction], cut to
+  /// [maxWidth], written along the rim: upright on the wheel's top half,
+  /// and turned to read upright on its bottom half too.
+  void _alongRim(
     Canvas canvas,
     String text,
-    Offset at,
+    Offset centre,
+    double radius,
+    double fraction,
     TextStyle? style, {
-    double maxWidth = double.infinity,
+    required double maxWidth,
   }) {
     final painter = TextPainter(
       text: TextSpan(text: text, style: style),
@@ -500,42 +712,26 @@ class _WheelPainter extends CustomPainter {
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: math.max(0, maxWidth));
-    painter.paint(canvas, at - Offset(painter.width / 2, painter.height / 2));
-  }
-
-  /// [text] beside the point [radius] out at [fraction], running inward:
-  /// ending at it on the wheel's right half, starting from it on its left.
-  void _label(
-    Canvas canvas,
-    String text,
-    Offset centre,
-    double radius,
-    double fraction,
-    TextStyle? style,
-  ) {
-    final at = timelineWheelPoint(centre, radius, fraction);
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: style),
-      maxLines: 1,
-      ellipsis: '…',
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: math.max(40, radius * 0.9));
-    final right = at.dx >= centre.dx;
-    painter.paint(
-      canvas,
-      Offset(
-        right ? at.dx - painter.width - 4 : at.dx + 4,
-        at.dy - painter.height / 2,
-      ),
-    );
+    final angle = -math.pi / 2 + 2 * math.pi * fraction;
+    final bottom = math.sin(angle) > 0;
+    canvas
+      ..save()
+      ..translate(
+        centre.dx + math.cos(angle) * radius,
+        centre.dy + math.sin(angle) * radius,
+      )
+      ..rotate(bottom ? angle - math.pi / 2 : angle + math.pi / 2);
+    painter.paint(canvas, Offset(-painter.width / 2, -painter.height / 2));
+    canvas.restore();
   }
 
   @override
   bool shouldRepaint(_WheelPainter old) =>
-      old.timeline != timeline ||
-      old.year != year ||
-      old.marks != marks ||
-      old.selectedId != selectedId ||
-      old.faded != faded ||
-      old.theme != theme;
+      old.layout.timeline != timeline ||
+      old.layout.year != year ||
+      old.layout.marks != layout.marks ||
+      old.layout.size != layout.size ||
+      old.layout.selectedId != layout.selectedId ||
+      old.layout.faded != layout.faded ||
+      old.layout.theme != theme;
 }
