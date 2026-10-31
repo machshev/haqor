@@ -2608,4 +2608,73 @@ void main() {
     await chart(354 * 200.0);
     expect(find.text('Pesach (the passing over)'), findsOneWidget);
   });
+
+  testWidgets('every category chip can be reached, wide or narrow', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final names = [for (var i = 0; i < 14; i++) 'Category number $i'];
+    final entries = [
+      for (final (i, name) in names.indexed)
+        StudyTimelineEntry(
+          id: 'e$i',
+          title: 'Event $i',
+          timelineId: 'kings',
+          start: TimelineTime(-970.0 + i),
+          category: name,
+        ),
+    ];
+    Finder chip(String name) => find.byKey(ValueKey('timeline-category-$name'));
+    Future<void> pumpAt(Size size) async {
+      tester.view.physicalSize = size;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TimelinePage(
+            timeline: _timeline,
+            entries: entries,
+            useEnglishBookNames: true,
+            onOpenPassage: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    // Wide, they wrap onto more lines: the last wholly on the page, and
+    // hidden with a click.
+    await pumpAt(const Size(1000, 900));
+    final last = chip(names.last);
+    expect(tester.getRect(last).right, lessThanOrEqualTo(1000));
+    expect(
+      tester.getTopLeft(last).dy,
+      greaterThan(tester.getTopLeft(chip(names.first)).dy),
+    );
+    await tester.tap(last);
+    await tester.pumpAndSettle();
+    expect(tester.widget<InputChip>(last).selected, isFalse);
+
+    // Narrow, one row, scrolled across by a mouse drag or the wheel.
+    await pumpAt(const Size(400, 900));
+    expect(tester.getTopLeft(last).dy, tester.getTopLeft(chip(names.first)).dy);
+    expect(tester.getRect(last).left, greaterThan(400));
+    final firstLeft = tester.getTopLeft(chip(names.first)).dx;
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.down(tester.getCenter(chip(names.first)));
+    for (var i = 0; i < 10; i++) {
+      await mouse.moveBy(const Offset(-20, 0));
+    }
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(chip(names.first)).dx, lessThan(firstLeft));
+    // The wheel turned over the row, in the middle of the page.
+    final wheelAt = Offset(200, tester.getCenter(chip(names.first)).dy);
+    final scroller = TestPointer(1, PointerDeviceKind.mouse);
+    await tester.sendEventToBinding(scroller.hover(wheelAt));
+    for (var i = 0; i < 20; i++) {
+      await tester.sendEventToBinding(scroller.scroll(const Offset(0, 300)));
+    }
+    await tester.pumpAndSettle();
+    expect(tester.getRect(last).right, lessThanOrEqualTo(400));
+  });
 }

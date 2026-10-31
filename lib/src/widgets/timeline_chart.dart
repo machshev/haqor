@@ -2700,102 +2700,96 @@ class _TimelinePageState extends State<TimelinePage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (variants.isNotEmpty)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          _ChipStrip(
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-            child: Row(
-              children: [
-                // Every reading side by side, or back to the first alone.
+            spacing: 0,
+            children: [
+              // Every reading side by side, or back to the first alone.
+              Padding(
+                padding: const EdgeInsetsDirectional.only(end: 6),
+                child: ActionChip(
+                  key: const ValueKey('timeline-variant-all'),
+                  avatar: Icon(
+                    _variants.length == variants.length
+                        ? Icons.view_day_outlined
+                        : Icons.view_agenda_outlined,
+                    size: 18,
+                  ),
+                  label: Text(
+                    _variants.length == variants.length ? 'One' : 'All',
+                  ),
+                  tooltip: _variants.length == variants.length
+                      ? 'Show ${variants.first.title} alone'
+                      : 'Show every reading side by side',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _showVariants(
+                    _variants.length == variants.length
+                        ? [variants.first.id]
+                        : [for (final v in variants) v.id],
+                  ),
+                ),
+              ),
+              // Each added beside those shown, or taken away; held, or
+              // clicked with the other button, shown alone. (A tooltip
+              // would take the hold for itself.)
+              for (final v in variants)
                 Padding(
                   padding: const EdgeInsetsDirectional.only(end: 6),
-                  child: ActionChip(
-                    key: const ValueKey('timeline-variant-all'),
-                    avatar: Icon(
-                      _variants.length == variants.length
-                          ? Icons.view_day_outlined
-                          : Icons.view_agenda_outlined,
-                      size: 18,
-                    ),
-                    label: Text(
-                      _variants.length == variants.length ? 'One' : 'All',
-                    ),
-                    tooltip: _variants.length == variants.length
-                        ? 'Show ${variants.first.title} alone'
-                        : 'Show every reading side by side',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => _showVariants(
-                      _variants.length == variants.length
-                          ? [variants.first.id]
-                          : [for (final v in variants) v.id],
+                  child: GestureDetector(
+                    onLongPress: () => _showVariants([v.id]),
+                    onSecondaryTap: () => _showVariants([v.id]),
+                    child: FilterChip(
+                      key: ValueKey('timeline-variant-${v.id}'),
+                      label: Text(v.shortLabel),
+                      selected: _variants.contains(v.id),
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (shown) => _showVariants([
+                        for (final w in variants)
+                          if (w.id == v.id ? shown : _variants.contains(w.id))
+                            w.id,
+                      ]),
                     ),
                   ),
                 ),
-                // Each added beside those shown, or taken away; held, or
-                // clicked with the other button, shown alone. (A tooltip
-                // would take the hold for itself.)
-                for (final v in variants)
-                  Padding(
-                    padding: const EdgeInsetsDirectional.only(end: 6),
-                    child: GestureDetector(
-                      onLongPress: () => _showVariants([v.id]),
-                      onSecondaryTap: () => _showVariants([v.id]),
-                      child: FilterChip(
-                        key: ValueKey('timeline-variant-${v.id}'),
-                        label: Text(v.shortLabel),
-                        selected: _variants.contains(v.id),
-                        visualDensity: VisualDensity.compact,
-                        onSelected: (shown) => _showVariants([
-                          for (final w in variants)
-                            if (w.id == v.id ? shown : _variants.contains(w.id))
-                              w.id,
-                        ]),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            ],
           ),
-        // One row, scrolled across, to leave the chart its room on a phone.
         if (categories.isNotEmpty)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          _ChipStrip(
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-            child: Row(
-              spacing: 6,
-              children: [
-                for (final category in categories)
-                  InputChip(
-                    key: ValueKey('timeline-category-$category'),
-                    label: Text(category),
-                    selected: !_hidden.contains(category),
-                    showCheckmark: false,
-                    visualDensity: VisualDensity.compact,
-                    avatar: CircleAvatar(
-                      backgroundColor:
-                          switch (_timeline.categoryColors[category]) {
-                            final index? => timelineCategoryColor(
-                              index,
-                              theme.brightness,
-                            ),
-                            null => theme.colorScheme.outline,
-                          },
-                    ),
-                    tooltip: _hidden.contains(category)
-                        ? 'Show $category'
-                        : 'Hide $category',
-                    onSelected: (shown) => setState(() {
-                      if (shown) {
-                        _hidden.remove(category);
-                      } else {
-                        _hidden.add(category);
-                      }
-                    }),
-                    deleteIcon: const Icon(Icons.palette_outlined, size: 18),
-                    deleteButtonTooltipMessage: 'Colour $category',
-                    onDeleted: () => _recolor(category),
+            spacing: 6,
+            children: [
+              for (final category in categories)
+                InputChip(
+                  key: ValueKey('timeline-category-$category'),
+                  label: Text(category),
+                  selected: !_hidden.contains(category),
+                  showCheckmark: false,
+                  visualDensity: VisualDensity.compact,
+                  avatar: CircleAvatar(
+                    backgroundColor:
+                        switch (_timeline.categoryColors[category]) {
+                          final index? => timelineCategoryColor(
+                            index,
+                            theme.brightness,
+                          ),
+                          null => theme.colorScheme.outline,
+                        },
                   ),
-              ],
-            ),
+                  tooltip: _hidden.contains(category)
+                      ? 'Show $category'
+                      : 'Hide $category',
+                  onSelected: (shown) => setState(() {
+                    if (shown) {
+                      _hidden.remove(category);
+                    } else {
+                      _hidden.add(category);
+                    }
+                  }),
+                  deleteIcon: const Icon(Icons.palette_outlined, size: 18),
+                  deleteButtonTooltipMessage: 'Colour $category',
+                  onDeleted: () => _recolor(category),
+                ),
+            ],
           ),
         Expanded(child: body),
       ],
@@ -3946,4 +3940,85 @@ class _TimelinePageState extends State<TimelinePage> {
       },
     );
   }
+}
+
+/// A strip of chips above the chart: wrapped onto as many lines as they
+/// need where the page is wide, so a mouse can reach every one; on a
+/// narrow page one row, to leave the chart its room, scrolled across by a
+/// drag of a finger or a mouse, or by the mouse wheel.
+class _ChipStrip extends StatefulWidget {
+  const _ChipStrip({
+    required this.padding,
+    required this.spacing,
+    required this.children,
+  });
+
+  /// Below this width the chips keep to one scrolled row.
+  static const wrapWidth = 600.0;
+
+  final EdgeInsetsGeometry padding;
+  final double spacing;
+  final List<Widget> children;
+
+  @override
+  State<_ChipStrip> createState() => _ChipStripState();
+}
+
+class _ChipStripState extends State<_ChipStrip> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// A turn of the wheel, either way, scrolls the row across.
+  void _wheel(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || !_controller.hasClients) return;
+    final delta = event.scrollDelta.dx != 0
+        ? event.scrollDelta.dx
+        : event.scrollDelta.dy;
+    if (delta == 0) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      final position = _controller.position;
+      _controller.jumpTo(
+        (position.pixels + delta).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        ),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (constraints.maxWidth >= _ChipStrip.wrapWidth) {
+        return Padding(
+          padding: widget.padding,
+          child: Wrap(
+            spacing: widget.spacing,
+            runSpacing: 4,
+            children: widget.children,
+          ),
+        );
+      }
+      return Listener(
+        onPointerSignal: _wheel,
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(
+            dragDevices: PointerDeviceKind.values.toSet(),
+            scrollbars: false,
+          ),
+          child: SingleChildScrollView(
+            controller: _controller,
+            scrollDirection: Axis.horizontal,
+            padding: widget.padding,
+            child: Row(spacing: widget.spacing, children: widget.children),
+          ),
+        ),
+      );
+    },
+  );
 }

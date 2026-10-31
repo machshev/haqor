@@ -333,7 +333,7 @@ void _groupingTests() {
     tester,
   ) async {
     final requests = <GetBibleEvents>[];
-    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.physicalSize = const Size(800, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
