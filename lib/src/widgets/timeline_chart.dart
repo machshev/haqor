@@ -124,13 +124,16 @@ typedef TimelineSlot = ({
 /// them; an anchor is placed before what is pinned to it from its start.
 /// Shabbatons pinned to nothing above them, stars without labels, all
 /// share the first lane. Spans of one category that never overlap, as the
-/// three pilgrimages, share a lane of their own, which nothing else takes.
+/// three pilgrimages, share a lane of their own, which nothing else takes;
+/// unless [shareRows] is false, when they are packed with the rest, to
+/// keep to as few lanes as may be.
 List<TimelineSlot> packTimelineLanes(
   StudyTimeline timeline,
   List<StudyTimelineEntry> entries, {
   required double Function(double position) x,
   required double Function(StudyTimelineEntry entry) width,
   double gap = 8,
+  bool shareRows = true,
 }) {
   final sorted = List.of(entries)..sort(compareTimelineEntries);
   final byId = {for (final e in sorted) e.id: e};
@@ -179,7 +182,7 @@ List<TimelineSlot> packTimelineLanes(
   }
   final rows = <String, int>{};
   for (final MapEntry(key: category, value: spans) in byCategory.entries) {
-    if (spans.length < 2) continue;
+    if (!shareRows || spans.length < 2) continue;
     final at = spans.map(extent).toList()
       ..sort((a, b) => a.from.compareTo(b.from));
     var apart = true;
@@ -486,11 +489,24 @@ class TimelineChart extends StatelessWidget {
     this.onToggleGroup,
     this.onTapCluster,
     this.bands = const [],
+    this.headCategory,
+    this.compact = false,
   });
 
   final StudyTimeline timeline;
   final List<StudyTimelineEntry> entries;
   final double pixelsPerUnit;
+
+  /// The category of the spans drawn first, in lanes of their own at the
+  /// top of each band: the overall eras of a timeline, such as the Bible's
+  /// (see [TimelinePage.overviewCategory]), abutting one another in one.
+  final String? headCategory;
+
+  /// Whether to draw zoomed out for an overview: the entries of
+  /// [headCategory] as usual, the rest in thin lanes without their titles,
+  /// packed into as few as may be; each still shows its title and time in
+  /// its tooltip, and opens as usual.
+  final bool compact;
 
   /// The readings to draw side by side, each its entries (see
   /// [StudyTimelineEntry.variant]) in a band of its own beneath its title,
@@ -522,13 +538,22 @@ class TimelineChart extends StatelessWidget {
   static const seasonHeight = 16.0;
   static const _dot = 10.0;
 
+  /// A lane's height drawn [compact], and the dot of an event in it.
+  static const compactLaneHeight = 12.0;
+  static const _compactDot = 8.0;
+
+  /// Whether [entry] is drawn thin, without its title (see [compact]).
+  bool _thin(StudyTimelineEntry entry) =>
+      compact && entry.category != headCategory;
+
+  /// The size of [entry]'s dot, or of a high Sabbath's star.
+  double _dotOf(StudyTimelineEntry entry) =>
+      (_thin(entry) ? _compactDot : _dot) + (entry.isHighSabbath ? 2 : 0);
+
   /// How far an event's mark reaches back from its centre: half a dot,
   /// or of a high Sabbath's star.
-  static double _inset(StudyTimelineEntry entry) => entry.isSpan
-      ? 0
-      : entry.isHighSabbath
-      ? (_dot + 2) / 2
-      : _dot / 2;
+  double _inset(StudyTimelineEntry entry) =>
+      entry.isSpan ? 0 : _dotOf(entry) / 2;
 
   static double widthFor(
     StudyTimeline timeline,
@@ -562,6 +587,8 @@ class TimelineChart extends StatelessWidget {
     final slots = <TimelineSlot>[];
     final bandRows = <({String title, int header, int first, int lanes})>[];
     final bandAt = <int, ({int first, int lanes})>{};
+    // Each lane's height, in order: thin ones drawn compact.
+    final laneHeights = <double>[];
     var nextLane = 0;
     for (var b = 0; b <= bands.length; b++) {
       final inBand = [
@@ -575,34 +602,64 @@ class TimelineChart extends StatelessWidget {
         for (final events in bandClusters.values)
           for (final e in events) e.id,
       };
-      // Packed by their marks alone, to keep to as few lanes as may be;
-      // each label then takes what room its lane leaves it.
+      final marked = [
+        for (final e in inBand)
+          if (!clustered.contains(e.id) && !_isDayBlock(e)) e,
+        for (final MapEntry(:key, :value) in bandClusters.entries)
+          _clusterEntry(key, value),
+      ];
+      // The eras first, end to end in lanes of their own.
+      final heads = packTimelineLanes(
+        timeline,
+        [
+          for (final e in marked)
+            if (headCategory != null && e.category == headCategory) e,
+        ],
+        x: px,
+        // At their true widths, a short one not pushing the next aside.
+        width: (_) => 0,
+        gap: 0,
+      );
+      final headLanes = heads.isEmpty
+          ? 0
+          : heads.map((s) => s.lane).reduce(math.max) + 1;
+      // The rest packed by their marks alone, to keep to as few lanes as
+      // may be; each label then takes what room its lane leaves it.
       final packed = packTimelineLanes(
         timeline,
         [
-          for (final e in inBand)
-            if (!clustered.contains(e.id) && !_isDayBlock(e)) e,
-          for (final MapEntry(:key, :value) in bandClusters.entries)
-            _clusterEntry(key, value),
+          for (final e in marked)
+            if (headCategory == null || e.category != headCategory) e,
         ],
         x: px,
-        width: (e) => e.isHighSabbath
-            ? _dot + 2
-            : e.isSpan
-            ? 4
-            : _dot,
-        gap: _gap,
+        width: (e) => e.isSpan ? 4 : _dotOf(e),
+        gap: compact ? 2 : _gap,
+        shareRows: !compact,
       );
+      final restLanes = packed.isEmpty
+          ? 0
+          : packed.map((s) => s.lane).reduce(math.max) + 1;
       final titled = b < bands.length;
       final header = nextLane;
       final first = nextLane + (titled ? 1 : 0);
-      final lanes = packed.isEmpty
-          ? 1
-          : packed.map((s) => s.lane).reduce(math.max) + 1;
-      for (final s in packed) {
+      final lanes = math.max(1, headLanes + restLanes);
+      if (titled) laneHeights.add(laneHeight);
+      laneHeights.addAll([
+        for (var i = 0; i < lanes; i++)
+          compact && i >= headLanes ? compactLaneHeight : laneHeight,
+      ]);
+      for (final s in heads) {
         slots.add((
           entry: s.entry,
           lane: s.lane + first,
+          left: s.left,
+          right: s.right,
+        ));
+      }
+      for (final s in packed) {
+        slots.add((
+          entry: s.entry,
+          lane: s.lane + first + headLanes,
           left: s.left,
           right: s.right,
         ));
@@ -623,7 +680,11 @@ class TimelineChart extends StatelessWidget {
         ? double.infinity
         : px(timelineEntrySpread(timeline, e).start);
     final labels = _labelsFor(slots, labelStyle, from);
-    final lanes = math.max(1, nextLane);
+    if (laneHeights.isEmpty) laneHeights.add(laneHeight);
+    final laneTops = [0.0];
+    for (final h in laneHeights) {
+      laneTops.add(laneTops.last + h);
+    }
     // Room too for the labels running past the last time.
     final width = slots.fold(
       widthFor(timeline, entries, pixelsPerUnit),
@@ -637,8 +698,14 @@ class TimelineChart extends StatelessWidget {
         : const <({TimelineSeason season, double start, double end})>[];
     // The seasons take a row each for rain and harvest above the lanes.
     final top = seasonBands.isEmpty ? 0.0 : seasonHeight * 2 + 6;
-    final height = top + lanes * laneHeight + axisHeight;
-    final axisY = top + lanes * laneHeight + 4;
+    final height = top + laneTops.last + axisHeight;
+    final axisY = top + laneTops.last + 4;
+    // Where a lane starts, and where a mark in it is drawn, clear of the
+    // lanes either side.
+    double laneTop(int lane) => top + laneTops[lane];
+    double markInset(int lane) => laneHeights[lane] < laneHeight ? 2 : 4;
+    double markTop(int lane) => laneTop(lane) + markInset(lane);
+    double markHeight(int lane) => laneHeights[lane] - 2 * markInset(lane);
     return SizedBox(
       width: width,
       height: height,
@@ -677,7 +744,10 @@ class TimelineChart extends StatelessWidget {
                 guides: [
                   for (final slot in slots)
                     if (!slot.entry.isSpan)
-                      (x: slot.left, top: top + slot.lane * laneHeight + 15),
+                      (
+                        x: slot.left,
+                        top: markTop(slot.lane) + markHeight(slot.lane) / 2,
+                      ),
                 ],
                 color: theme.colorScheme.outline,
                 labelStyle: labelStyle?.copyWith(
@@ -696,12 +766,14 @@ class TimelineChart extends StatelessWidget {
               Positioned(
                 left: at.from,
                 width: math.max(2, at.to - at.from),
-                top: bands.isEmpty
-                    ? 0
-                    : top + bandAt[bandOf(day)]!.first * laneHeight,
+                top: bands.isEmpty ? 0 : laneTop(bandAt[bandOf(day)]!.first),
                 height: bands.isEmpty
                     ? axisY
-                    : bandAt[bandOf(day)]!.lanes * laneHeight,
+                    : laneTop(
+                            bandAt[bandOf(day)]!.first +
+                                bandAt[bandOf(day)]!.lanes,
+                          ) -
+                          laneTop(bandAt[bandOf(day)]!.first),
                 child: _ShabbatonBlock(
                   entry: day,
                   color: switch (timeline.colorOf(day)) {
@@ -722,7 +794,7 @@ class TimelineChart extends StatelessWidget {
             Positioned(
               left: 0,
               width: width,
-              top: top + row.header * laneHeight,
+              top: laneTop(row.header),
               height: laneHeight,
               child: Container(
                 key: ValueKey('timeline-band-${row.title}'),
@@ -779,8 +851,8 @@ class TimelineChart extends StatelessWidget {
                     Positioned(
                       left: at.from,
                       width: math.max(2, at.to - at.from),
-                      top: top + slot.lane * laneHeight + 4,
-                      height: laneHeight - 8,
+                      top: markTop(slot.lane),
+                      height: markHeight(slot.lane),
                       child: Opacity(
                         opacity: faded.contains(slot.entry.id) ? 0.45 : 1,
                         child: _Wedge(
@@ -816,9 +888,9 @@ class TimelineChart extends StatelessWidget {
               Positioned(
                 // An event's mark is centred on its time.
                 left: slot.left - _inset(slot.entry),
-                top: top + slot.lane * laneHeight + 4,
+                top: markTop(slot.lane),
                 width: label.width + _inset(slot.entry),
-                height: laneHeight - 8,
+                height: markHeight(slot.lane),
                 child: Opacity(
                   opacity: faded.contains(slot.entry.id) ? 0.45 : 1,
                   child: _EntryMark(
@@ -849,6 +921,7 @@ class TimelineChart extends StatelessWidget {
                             ) ??
                             false),
                     stacked: clusters[slot.entry.id]?.length ?? 0,
+                    dot: _dotOf(slot.entry),
                     tooltip: switch (clusters[slot.entry.id]) {
                       // The events it stands for, as many as are short.
                       final events? => [
@@ -895,32 +968,45 @@ class TimelineChart extends StatelessWidget {
   /// drawn as one mark, with their number.
   static const mostStacked = 5;
 
-  /// The events (not spans or high Sabbaths) whose dots fall so close
-  /// together, placed by [px], that more than [mostStacked] would stack,
-  /// each such run by the id of its mark (see [_clusterEntry]): from each
-  /// event, those starting within a dot and a gap of it.
   /// Whether [entry] is a shabbaton dated to its day, drawn as the whole
   /// of that day rather than as a mark in a lane.
   bool _isDayBlock(StudyTimelineEntry entry) =>
       entry.isHighSabbath && timeline.hasMonths && entry.start.day != null;
 
+  /// The events (not spans or high Sabbaths) whose dots fall so close
+  /// together, placed by [px], that more than [mostStacked] would stack,
+  /// each such run by the id of its mark (see [_clusterEntry]): from each
+  /// event, those starting within a dot and a gap of it. Drawn [compact],
+  /// any two whose dots would touch are drawn as one, spans too short to
+  /// show among them, to keep to as few lanes as may be.
   Map<String, List<StudyTimelineEntry>> _clusters(
     double Function(double position) px,
     List<StudyTimelineEntry> entries,
   ) {
+    final reach = compact ? _compactDot + 2 : _dot + _gap;
+    final most = compact ? 1 : mostStacked;
+    // Drawn compact, a span narrower than a dot is taken as one too.
+    bool point(StudyTimelineEntry e) {
+      if (e.isHighSabbath) return false;
+      if (!e.isSpan) return true;
+      if (!_thin(e)) return false;
+      final reach = timelineEntryReach(timeline, e);
+      return px(reach.end) - px(reach.start) < _compactDot;
+    }
+
     final points = [
       for (final e in entries)
-        if (!e.isSpan && !e.isHighSabbath)
+        if (point(e))
           (entry: e, x: px(timelineEntryReach(timeline, e).start)),
     ]..sort((a, b) => a.x.compareTo(b.x));
     final clusters = <String, List<StudyTimelineEntry>>{};
     var i = 0;
     while (i < points.length) {
       var j = i;
-      while (j < points.length && points[j].x - points[i].x < _dot + _gap) {
+      while (j < points.length && points[j].x - points[i].x < reach) {
         j++;
       }
-      if (j - i > mostStacked) {
+      if (j - i > most) {
         final run = [for (final p in points.sublist(i, j)) p.entry]
           ..sort(compareTimelineEntries);
         clusters['cluster-${run.first.id}'] = run;
@@ -988,7 +1074,8 @@ class TimelineChart extends StatelessWidget {
         slot.entry.id: () {
           final entry = slot.entry;
           final mark = slot.right - slot.left;
-          if (entry.isHighSabbath) {
+          // A high Sabbath's title, or one drawn thin, is in its tooltip alone.
+          if (entry.isHighSabbath || _thin(entry)) {
             return (
               width: mark,
               text: entry.title,
@@ -1371,6 +1458,7 @@ class _EntryMark extends StatelessWidget {
     this.titleWidth = 0,
     this.showTitle = true,
     this.stacked = 0,
+    this.dot = TimelineChart._dot,
     this.color,
     required this.selected,
     required this.tooltip,
@@ -1391,6 +1479,9 @@ class _EntryMark extends StatelessWidget {
   /// For a mark standing for several events stacked too close together
   /// (see [TimelineChart.mostStacked]), how many; 0 for one entry.
   final int stacked;
+
+  /// The size of its dot, or of a high Sabbath's star.
+  final double dot;
 
   /// For a span with entries grouped under it, the button after its title
   /// that shows or hides them.
@@ -1418,7 +1509,7 @@ class _EntryMark extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final bar = color ?? scheme.primary;
-    final dot = color ?? scheme.tertiary;
+    final dotColor = color ?? scheme.tertiary;
     final style = Theme.of(context).textTheme.bodySmall?.copyWith(
       fontWeight: selected ? FontWeight.bold : null,
     );
@@ -1524,16 +1615,16 @@ class _EntryMark extends StatelessWidget {
                   if (entry.isHighSabbath)
                     Icon(
                       Icons.star,
-                      size: TimelineChart._dot + 2,
-                      color: selected ? scheme.onSurface : dot,
+                      size: dot,
+                      color: selected ? scheme.onSurface : dotColor,
                     )
                   else
                     Container(
-                      width: TimelineChart._dot,
-                      height: TimelineChart._dot,
+                      width: dot,
+                      height: dot,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: dot,
+                        color: dotColor,
                         border: selected
                             ? Border.all(color: scheme.onSurface, width: 2)
                             : null,
@@ -1541,7 +1632,7 @@ class _EntryMark extends StatelessWidget {
                         boxShadow: stacked > 0
                             ? [
                                 BoxShadow(
-                                  color: dot.withValues(alpha: 0.35),
+                                  color: dotColor.withValues(alpha: 0.35),
                                   spreadRadius: 3,
                                 ),
                               ]
@@ -2067,6 +2158,7 @@ class TimelinePage extends StatefulWidget {
     this.onOpenEntry,
     this.actions = const [],
     this.variants = const [],
+    this.overviewCategory,
   });
 
   final StudyTimeline timeline;
@@ -2137,6 +2229,17 @@ class TimelinePage extends StatefulWidget {
   /// The readings its entries are in (see [StudyTimelineEntry.variant]),
   /// shown one at a time, the first first, or all side by side.
   final List<TimelineVariant> variants;
+
+  /// The category of the spans giving the timeline's overall eras, shown
+  /// in lanes of their own at the top; zoomed out, until zoomed in
+  /// [overviewZoom] times on the whole fitted, the rest are drawn thin
+  /// and without titles beneath them (see [TimelineChart.compact]).
+  final String? overviewCategory;
+
+  /// How many times on the whole timeline fitted to the view it is zoomed
+  /// in before its entries are drawn as usual beneath its eras: three
+  /// steps of the zoom buttons.
+  static const overviewZoom = 3.0;
 
   @override
   State<TimelinePage> createState() => _TimelinePageState();
@@ -3342,6 +3445,12 @@ class _TimelinePageState extends State<TimelinePage> {
         final viewport = _viewport = constraints.maxWidth;
         final focus = timelineFocus(_timeline, entries);
         final ppu = _pixelsPerUnit ?? _scaleFor(focus, viewport);
+        // Zoomed out, the eras over the rest drawn thin, without titles.
+        final extent = timelineExtent(_timeline, entries);
+        final compact =
+            widget.overviewCategory != null &&
+            ppu <
+                TimelinePage.overviewZoom * _scaleFor(extent, viewport) - 1e-9;
         // Fitted first to the entries, scrolled to them on one year's
         // calendar, which is drawn whole.
         if (_pixelsPerUnit == null && _chart && entries.isNotEmpty) {
@@ -3538,6 +3647,9 @@ class _TimelinePageState extends State<TimelinePage> {
                                           TimelineChart(
                                             timeline: _timeline,
                                             entries: shown,
+                                            headCategory:
+                                                widget.overviewCategory,
+                                            compact: compact,
                                             bands: _sideBySide
                                                 ? [
                                                     for (final v

@@ -7,6 +7,7 @@ import 'package:rinf/rinf.dart';
 import '../bindings/bindings.dart';
 import '../event_sequence.dart';
 import '../study_workspace.dart';
+import 'bible_sub_timeline_page.dart';
 import 'event_sequence_page.dart';
 import 'name_details.dart';
 import 'timeline_chart.dart';
@@ -31,8 +32,59 @@ const bibleTimeline = StudyTimeline(
     'Periods': 6,
     'Deaths': 7,
     'Sequences': 2,
+    'Sub-timelines': 2,
   },
 );
+
+/// The category of the Bible's overall eras (see [bibleEras]).
+const bibleEraCategory = 'Eras';
+
+/// The overall eras of the Bible's history, end to end from the creation
+/// to Paul in Rome, on [bibleTimeline]: each its title, a short one to fit
+/// a narrow screen, and the year (as written, BC negative) it starts, each
+/// running to the next's start; the last to [_erasEnd].
+const _eras = [
+  ('Creation to the Flood', 'Creation', -4004),
+  ('The patriarchs', 'Patriarchs', -2348),
+  ('Israel in Egypt', 'Egypt', -1706),
+  ('The exodus and the wilderness', 'Exodus', -1491),
+  ('The conquest and the judges', 'Judges', -1451),
+  ('The united kingdom', 'Kingdom', -1095),
+  ('The divided kingdom', 'Divided', -975),
+  ('The exile in Babylon', 'Exile', -586),
+  ('The return from exile', 'Return', -536),
+  ('Between the Testaments', 'Between', -441),
+  ('The life of Jesus', 'Jesus', -6),
+  ('The Acts of the Apostles', 'Acts', 30),
+];
+const _erasEnd = 60;
+
+/// The overall eras of the Bible's history (see [_eras]), as spans of
+/// [bibleTimeline] in [bibleEraCategory], drawn above its other entries
+/// (see [TimelinePage.overviewCategory]).
+final List<StudyTimelineEntry> bibleEras = [
+  for (final (i, (title, short, year)) in _eras.indexed)
+    () {
+      final start = TimelineTime(year.toDouble());
+      final next = i + 1 < _eras.length ? _eras[i + 1].$3 : _erasEnd;
+      final end = TimelineTime(next.toDouble());
+      final length = TimelineDuration(
+        bibleTimeline.positionOf(end) - bibleTimeline.positionOf(start),
+        TimelineDurationUnit.years,
+      );
+      return StudyTimelineEntry(
+        id: 'era:$i',
+        title: title,
+        shortTitle: short,
+        timelineId: bibleTimeline.id,
+        start: start,
+        end: end,
+        duration: length,
+        category: bibleEraCategory,
+        order: -_eras.length + i,
+      );
+    }(),
+];
 
 /// What kind of event of the Bible [title] names, from how it reads:
 /// "Birth of Seth" a birth, "Reign of Asa" a reign, the judges' times of
@@ -57,7 +109,7 @@ String bibleEventCategory(String title, {required bool span}) {
 /// …", "Reign of …" or the like: "Birth of Jacob and Esau" is about Jacob
 /// and Esau, "Death of Eli, Ark Captured" about Eli, and "Reign of Ahaziah
 /// (Jehoahaz)" about him by either name.
-List<String> _subjects(String title) {
+List<String> bibleEventSubjects(String title) {
   final match = RegExp(
     r'^(?:Birth|Death|Lifetime|Reign|Judgeship) of ([^,]+)',
   ).firstMatch(title);
@@ -110,7 +162,7 @@ List<StudyTimelineEntry> bibleTimelineEntries(
   final spans = <String, List<StudyTimelineEntry>>{};
   for (final entry in entries) {
     if (!entry.isSpan) continue;
-    for (final name in _subjects(entry.title)) {
+    for (final name in bibleEventSubjects(entry.title)) {
       (spans[name] ??= []).add(entry);
     }
   }
@@ -139,7 +191,7 @@ TimelinePin? _pinFor(
     const ['Lifetimes'],
     if (!birth) const ['Reigns', 'Judges'],
   ]) {
-    for (final name in _subjects(entry.title)) {
+    for (final name in bibleEventSubjects(entry.title)) {
       for (final span in spans[name] ?? const <StudyTimelineEntry>[]) {
         if (!kinds.contains(span.category)) continue;
         final start = bibleTimeline.positionOf(span.start);
@@ -207,7 +259,9 @@ StudyTimelineEntry? _sequenceEntry(
     end: bibleTimeline.addDuration(start, length),
     duration: length,
     note: sequence.note,
-    category: 'Sequences',
+    category: bibleDatedSections.contains(sequence.key)
+        ? 'Sub-timelines'
+        : 'Sequences',
     order: years.first.order,
   );
 }
@@ -387,7 +441,10 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
       setState(() {
         _events = events.events;
         _sequences = BibleSequences(events.sequences);
-        _entries = bibleTimelineEntries(events.events, sequences: _sequences);
+        _entries = [
+          ...bibleEras,
+          ...bibleTimelineEntries(events.events, sequences: _sequences),
+        ];
         _byId
           ..clear()
           ..addAll({for (final e in events.events) '${e.id}': e});
@@ -444,9 +501,9 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
     );
   }
 
-  /// Opens the sequence [entry] stands for, or the one telling the inside
-  /// of its event; false for neither.
-  bool _openSequence(StudyTimelineEntry entry) {
+  /// Opens the dated section or narrative order [entry] stands for,
+  /// or the one telling the inside of its event; false for neither.
+  bool _openSection(StudyTimelineEntry entry) {
     final sequence =
         _sequences.all
             .where((s) => bibleSequenceEntryId(s) == entry.id)
@@ -459,9 +516,9 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
     final focus = _focus;
     _focus = null;
     final navigate = widget.onNavigateToPassage;
-    EventSequencePage.open(
+    openBibleSection(
       context,
-      sequence: sequence,
+      section: sequence,
       sequences: _sequences,
       events: {for (final e in _events ?? const <BibleEventEntry>[]) e.id: e},
       useEnglishBookNames: widget.useEnglishBookNames,
@@ -584,13 +641,15 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
       entries: _entries,
       initialSelectedId: _initialId,
       showInitialSelected: _initialId != null,
-      onOpenEntry: _openSequence,
+      onOpenEntry: _openSection,
       useEnglishBookNames: widget.useEnglishBookNames,
       onOpenPassage: (passage) =>
           navigate?.call(passage.bookIndex, passage.chapter, passage.verse),
       entryDetails: _details,
       // Births and deaths fold under the lives they belong to.
       collapseGroups: true,
+      // Its eras above the rest, which are drawn thin zoomed out.
+      overviewCategory: bibleEraCategory,
       linksOf: widget.linksOf,
       onOpenLink: widget.onOpenLink,
       actions: _standardActions,

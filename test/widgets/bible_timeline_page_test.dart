@@ -239,6 +239,7 @@ void main() {
   });
 
   _groupingTests();
+  _overviewTests();
 }
 
 final _lives = [
@@ -301,12 +302,18 @@ void _groupingTests() {
     expect(row('23'), findsNothing);
     expect(row('7'), findsNothing);
     expect(row('60'), findsOneWidget);
-    expect(find.byKey(const ValueKey('timeline-group-4')), findsOneWidget);
     expect(find.byKey(const ValueKey('timeline-group-row-4')), findsOneWidget);
     expect(find.byKey(const ValueKey('timeline-mark-23')), findsNothing);
+    // Zoomed out, the bar is drawn thin, without its count.
+    expect(find.byKey(const ValueKey('timeline-group-4')), findsNothing);
+    await _zoomIn(tester);
+    final toggle = find.byKey(const ValueKey('timeline-group-4'));
+    expect(toggle, findsOneWidget);
 
     // Opened from the bar, its death shows beneath it, set in.
-    await tester.tap(find.byKey(const ValueKey('timeline-group-4')));
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
     await tester.pumpAndSettle();
     expect(row('23'), findsOneWidget);
     expect(find.byKey(const ValueKey('timeline-mark-23')), findsOneWidget);
@@ -420,10 +427,13 @@ void _groupingTests() {
       Uint8List(0),
     );
     await tester.pumpAndSettle();
+    await _zoomIn(tester);
 
     // Drawn as one mark, though each is still listed.
     final mark = find.byKey(const ValueKey('timeline-mark-cluster-60'));
     expect(mark, findsOneWidget);
+    await tester.ensureVisible(mark);
+    await tester.pumpAndSettle();
     expect(find.text('Births ×7'), findsOneWidget);
     expect(find.byKey(const ValueKey('timeline-mark-61')), findsNothing);
     expect(find.byKey(const ValueKey('timeline-mark-1')), findsOneWidget);
@@ -568,6 +578,8 @@ void _groupingTests() {
       Finder row(String id) => find.byKey(ValueKey('timeline-row-$id'));
       expect(row('266'), findsNothing);
       expect(row('452'), findsNothing);
+      await tester.ensureVisible(row('sequence:ministry'));
+      await tester.pumpAndSettle();
       await tester.tap(row('sequence:ministry'));
       await tester.pumpAndSettle();
 
@@ -611,6 +623,10 @@ void _groupingTests() {
     ) async {
       SharedPreferences.setMockInitialValues({});
       await open(tester);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('timeline-row-sequence:ministry')),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('timeline-row-sequence:ministry')),
       );
@@ -654,5 +670,68 @@ void _groupingTests() {
       expect(find.text('Comes before'), findsOneWidget);
       expect(find.textContaining('Resurrection and Ascension'), findsWidgets);
     });
+  });
+}
+
+/// Zooms the chart in until it is drawn as usual, past its overview (see
+/// [TimelinePage.overviewZoom]).
+Future<void> _zoomIn(WidgetTester tester) async {
+  for (var i = 0; i < 3; i++) {
+    await tester.tap(find.byTooltip('Zoom in'));
+    await tester.pumpAndSettle();
+  }
+}
+
+void _overviewTests() {
+  test('the eras run end to end from the creation to Paul in Rome', () {
+    expect(bibleEras.first.start.value, -4004);
+    expect(bibleEras.last.end!.value, 60);
+    for (final (before, after) in [
+      for (var i = 1; i < bibleEras.length; i++)
+        (bibleEras[i - 1], bibleEras[i]),
+    ]) {
+      expect(before.end, after.start);
+    }
+    // Each with a short title for a narrow screen.
+    expect(bibleEras.every((e) => e.shortTitle.length <= 10), isTrue);
+    expect(bibleEras.map((e) => e.category).toSet(), {bibleEraCategory});
+  });
+
+  testWidgets('zoomed out, the eras are titled over the rest drawn thin', (
+    tester,
+  ) async {
+    final requests = <GetBibleEvents>[];
+    tester.view.physicalSize = const Size(412, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(home: BibleTimelinePage(sendRequest: requests.add)),
+    );
+    assignRustSignal['BibleEvents']!(
+      BibleEvents(
+        requestId: requests.single.requestId,
+        events: _lives,
+        sequences: const [],
+      ).bincodeSerialize(),
+      Uint8List(0),
+    );
+    await tester.pumpAndSettle();
+    Finder mark(String id) => find.byKey(ValueKey('timeline-mark-$id'));
+    Finder titleOf(String id) =>
+        find.descendant(of: mark(id), matching: find.byType(Text));
+
+    // The eras in one lane above the rest, the first titled.
+    final eras = [for (final e in bibleEras) tester.getTopLeft(mark(e.id))];
+    expect(eras.map((at) => at.dy).toSet(), hasLength(1));
+    expect(titleOf('era:0'), findsOneWidget);
+    expect(tester.getTopLeft(mark('4')).dy, greaterThan(eras.first.dy));
+    // Adam's life thin, untitled.
+    expect(titleOf('4'), findsNothing);
+    expect(tester.getSize(mark('4')).height, lessThan(10));
+
+    // Zoomed in, drawn as usual.
+    await _zoomIn(tester);
+    expect(titleOf('4'), findsWidgets);
+    expect(tester.getSize(mark('4')).height, greaterThan(20));
   });
 }
