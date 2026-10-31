@@ -807,9 +807,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('timeline-mark-reign')), findsOneWidget);
     expect(find.byKey(const ValueKey('timeline-mark-temple')), findsOneWidget);
+    // Zoomed in to the middle of the reign, the list keeps to what the
+    // chart shows: the temple, begun before, out of it.
+    final templeRow = find.byKey(const ValueKey('timeline-row-temple'));
     await tester.tap(find.byTooltip('Zoom in'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('timeline-row-temple')));
+    expect(templeRow, findsNothing);
+    expect(find.byKey(const ValueKey('timeline-row-reign')), findsOneWidget);
+    expect(find.text('1 of 2 in view'), findsOneWidget);
+    await tester.tap(find.byTooltip('Fit to entries'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 of 2 in view'), findsNothing);
+    await tester.tap(templeRow);
     await tester.pumpAndSettle();
     expect(find.text('In the fourth year'), findsOneWidget);
     await tester.tap(find.text('1 Kings 6:1'));
@@ -1011,6 +1020,9 @@ void main() {
     await tester.tap(find.text('Add span'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('timeline-row-reign')), findsOneWidget);
+    // Fitted to both, both listed.
+    await tester.tap(find.byTooltip('Fit to entries'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Edit event'));
     await tester.pumpAndSettle();
@@ -2201,7 +2213,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.byKey(const ValueKey('timeline-row-m:omer')),
       200,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('timeline-page-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     // Midway, the whole row within the page.
     await Scrollable.ensureVisible(

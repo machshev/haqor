@@ -235,10 +235,12 @@ void main() {
     await tester.scrollUntilVisible(
       pesach,
       200,
-      scrollable: find.descendant(
-        of: find.byType(ListView),
-        matching: find.byType(Scrollable),
-      ),
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('timeline-page-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     await tester.ensureVisible(pesach);
     await tester.pumpAndSettle();
@@ -396,7 +398,9 @@ void _groupingTests() {
     );
     expect(row('7'), findsNothing);
 
-    // All opened, then all closed.
+    // All opened, then all closed, the whole timeline in view.
+    await tester.tap(find.byTooltip('Fit to entries'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('timeline-expand-all')));
     await tester.pumpAndSettle();
     expect(row('7'), findsOneWidget);
