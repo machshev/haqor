@@ -4,6 +4,38 @@ import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/timeline_wheel.dart';
 
 void main() {
+  test(
+    'nearby events reuse free outer lanes instead of forming a staircase',
+    () {
+      const timeline = StudyTimeline(
+        id: 'chronology',
+        title: 'Chronology',
+        scale: TimelineScale.calendar,
+      );
+      const cycle = TimelineWheelCycle(
+        start: 0,
+        length: 1000,
+        title: '1,000 years',
+        segments: ['1'],
+      );
+      final entries = [
+        for (var i = 0; i < 8; i++)
+          StudyTimelineEntry(
+            id: 'event-$i',
+            title: 'Event $i',
+            timelineId: timeline.id,
+            start: TimelineTime(100.0 + i * 8),
+          ),
+      ];
+      final marks = timelineWheelMarks(timeline, entries, 0, cycle: cycle);
+      expect(marks.map((m) => m.radius).toSet(), hasLength(2));
+      for (var i = 0; i < marks.length; i++) {
+        expect(marks[i].radius, marks[i % 2].radius);
+      }
+      expect(marks[1].radius, lessThan(marks[0].radius));
+    },
+  );
+
   test('dense chronology spans stay separate and individually selectable', () {
     const timeline = StudyTimeline(
       id: 'chronology',

@@ -242,8 +242,7 @@ List<TimelineWheelMark> timelineWheelMarks(
   final events = <TimelineWheelMark>[];
   final spans = <(StudyTimelineEntry, double, double, int)>[];
   final spanEnds = <double>[];
-  var lastEvent = double.negativeInfinity;
-  var stack = 0;
+  final eventEnds = List.filled(_stackDepth + 1, double.negativeInfinity);
   var deepest = 0;
   for (final entry in sorted) {
     if ((cycle == null && entry.start.month == null) ||
@@ -255,10 +254,11 @@ List<TimelineWheelMark> timelineWheelMarks(
     final from = fraction(reach.start);
     final to = fraction(reach.end);
     if (!entry.isSpan) {
-      stack = from - lastEvent < _stackGap
-          ? math.min(stack + 1, _stackDepth)
-          : 0;
-      lastEvent = from;
+      // Reuse the outermost free lane, rather than moving every event in
+      // a chain of nearby dates another step inward.
+      final available = eventEnds.indexWhere((end) => from - end >= _stackGap);
+      final stack = available < 0 ? _stackDepth : available;
+      eventEnds[stack] = from;
       deepest = math.max(deepest, stack);
       events.add((
         entry: entry,
