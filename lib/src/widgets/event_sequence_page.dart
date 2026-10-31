@@ -13,17 +13,22 @@ import 'sequence_map_page.dart';
 import 'sequence_style.dart';
 import 'timeline_calendar.dart' show timelineCategoryColor;
 
-/// The width and height of an event's card in the graph, and the room
-/// between cards across and down.
+/// The width of an event's card in the graph, the most it is tall (its
+/// height otherwise fitted to its title), and the room between cards across
+/// and, where an arrow joins them, down.
 const _cardWidth = 172.0;
 const _cardHeight = 64.0;
 const _gapAcross = 20.0;
-const _gapDown = 44.0;
+const _gapDown = 28.0;
 
-/// Laid left to right, the room between ranks across, and between the cards
-/// of a rank down.
-const _gapRank = 56.0;
-const _gapStack = 16.0;
+/// Laid left to right, the room between ranks across where an arrow joins
+/// them, and between the cards of a rank down.
+const _gapRank = 36.0;
+const _gapStack = 12.0;
+
+/// The room between ranks joined only one to one, each card straight after
+/// the one it follows: stacked, with no arrow between.
+const _gapStacked = 4.0;
 
 /// The room an unfolded group's title takes before its first row, top to
 /// bottom; left to right, the room each depth of titles takes above the
@@ -168,6 +173,13 @@ class _EventSequencePageState extends State<EventSequencePage> {
   /// Whether the view has been placed on its first layout.
   bool _placed = false;
 
+  /// The styles cards' titles are measured in, and the heights measured,
+  /// by node; until the theme is known, every card at its tallest.
+  TextStyle? _titleStyle;
+  TextStyle? _footStyle;
+  TextScaler _textScaler = TextScaler.noScaling;
+  final _fitted = <int, double>{};
+
   /// The grouping last chosen for each sequence, by key: its key, or empty
   /// for none.
   static final _lastGrouping = <String, String>{};
@@ -204,9 +216,69 @@ class _EventSequencePageState extends State<EventSequencePage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final text = Theme.of(context).textTheme;
+    final title = text.bodySmall?.copyWith(height: 1.2);
+    final foot = text.labelSmall;
+    final scaler = MediaQuery.textScalerOf(context);
+    if (title == _titleStyle && foot == _footStyle && scaler == _textScaler) {
+      return;
+    }
+    _titleStyle = title;
+    _footStyle = foot;
+    _textScaler = scaler;
+    _fitted.clear();
+    _measure();
+  }
+
+  @override
   void dispose() {
     _transform.dispose();
     super.dispose();
+  }
+
+  /// How tall [node]'s card need be: its title's lines (two at most), its
+  /// marks beneath, and for a folded group the button unfolding it.
+  double _fittedHeight(int node) {
+    final title = _titleStyle;
+    if (title == null) return _cardHeight;
+    return _fitted[node] ??= () {
+      final group = nodeGroup(node);
+      final String text;
+      final double width;
+      if (group != null) {
+        text = _tree?[group].title ?? '';
+        width = _cardWidth - 10 - 40;
+      } else {
+        text = _title(node);
+        final striped = kindsOf(_details[node]).isNotEmpty;
+        width = _cardWidth - (striped ? 4 + 7 : 10) - 6;
+      }
+      final lines = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: title.copyWith(
+            fontWeight: group == null ? FontWeight.w600 : FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        textScaler: _textScaler,
+        maxLines: 2,
+      )..layout(maxWidth: width);
+      final foot = TextPainter(
+        text: TextSpan(text: 'Mt', style: _footStyle),
+        textDirection: TextDirection.ltr,
+        textScaler: _textScaler,
+      )..layout();
+      final height = 5 + lines.height + 2 + math.max(14.0, foot.height) + 5;
+      lines.dispose();
+      foot.dispose();
+      return math.min(
+        _cardHeight,
+        math.max(group == null ? 0.0 : 50.0, height.ceilToDouble()),
+      );
+    }();
   }
 
   GroupingTree? get _tree => _grouping == null ? null : _trees[_grouping!];
@@ -395,6 +467,14 @@ class _EventSequencePageState extends State<EventSequencePage> {
   var _rowAt = <double>[];
   var _alongEnd = 0.0;
 
+  /// How far each row reaches along the flow; left to right, how tall
+  /// every card is.
+  var _rowAlong = <double>[];
+  var _cardAcross = _cardHeight;
+
+  /// The edges not drawn, their cards stacked one after the other.
+  var _stacked = <(int, int)>{};
+
   /// Where the first slot starts across the flow, and where the canvas
   /// ends.
   var _acrossStart = 0.0;
@@ -405,8 +485,14 @@ class _EventSequencePageState extends State<EventSequencePage> {
   var _milestoneRows = <int, SequenceMilestoneEntry>{};
 
   double get _slot =>
-      _horizontal ? _cardHeight + _gapStack : _cardWidth + _gapAcross;
-  double get _cardAlong => _horizontal ? _cardWidth : _cardHeight;
+      _horizontal ? _cardAcross + _gapStack : _cardWidth + _gapAcross;
+
+  /// The size of [node]'s card: as tall as the tallest of its row, or left
+  /// to right as the tallest of all.
+  Size _cardSize(int node) => Size(
+    _cardWidth,
+    _horizontal ? _cardAcross : _rowAlong[_graph.row[node]!],
+  );
 
   void _measure() {
     final graph = _graph;
@@ -426,17 +512,68 @@ class _EventSequencePageState extends State<EventSequencePage> {
     };
     final headerAlong = _horizontal ? _groupPad : _groupHeader;
     final laned = graph.lanes.isNotEmpty;
-    var at =
-        (laned && !_horizontal ? _laneHeader : 0.0) +
-        (_horizontal ? _gapRank / 2 : _gapDown / 2);
+
+    // Each card fitted to its title: top to bottom, a row as tall as its
+    // tallest; left to right, every card as tall as the tallest.
+    final fitted = [
+      for (final r in graph.rows) r.map(_fittedHeight).fold(0.0, math.max),
+    ];
+    _cardAcross = fitted.fold(0.0, math.max);
+    if (_cardAcross == 0) _cardAcross = _cardHeight;
+    _rowAlong = _horizontal
+        ? List.filled(graph.rows.length, _cardWidth)
+        : fitted;
+
+    // Between two rows joined only one to one, each card straight after the
+    // one it follows and nothing between, the cards are stacked without an
+    // arrow; an arrow is kept where a card leads to or follows more than one.
+    final outs = <int, int>{};
+    final ins = <int, int>{};
+    for (final (u, v) in graph.drawnEdges) {
+      outs[u] = (outs[u] ?? 0) + 1;
+      ins[v] = (ins[v] ?? 0) + 1;
+    }
+    bool oneToOne((int, int) edge) {
+      final (u, v) = edge;
+      return graph.row[v] == graph.row[u]! + 1 &&
+          outs[u] == 1 &&
+          ins[v] == 1 &&
+          (graph.column[u]! - graph.column[v]!).abs() < 1e-6;
+    }
+
+    final crossing = <int, List<(int, int)>>{};
+    for (final edge in graph.drawnEdges) {
+      for (var r = graph.row[edge.$1]!; r < graph.row[edge.$2]!; r++) {
+        (crossing[r] ??= []).add(edge);
+      }
+    }
+    final stacked = <(int, int)>{};
+    final tight = <int>{};
+    for (final MapEntry(key: r, value: edges) in crossing.entries) {
+      if (ends.containsKey(r) ||
+          starts.containsKey(r + 1) ||
+          _milestoneRows.containsKey(r + 1) ||
+          !edges.every(oneToOne)) {
+        continue;
+      }
+      tight.add(r);
+      stacked.addAll(edges);
+    }
+    _stacked = stacked;
+
+    final gap = _horizontal ? _gapRank : _gapDown;
+    var at = (laned && !_horizontal ? _laneHeader : 0.0) + gap / 2;
     final rowAt = <double>[];
     for (var r = 0; r < graph.rows.length; r++) {
       at += _groupPad * (ends[r - 1]?.length ?? 0);
       at += headerAlong * (starts[r]?.length ?? 0);
       if (_milestoneRows.containsKey(r)) at += _milestoneSpace;
       rowAt.add(at);
-      at += _horizontal ? _cardWidth + _gapRank : _cardHeight + _gapDown;
+      at +=
+          _rowAlong[r] +
+          (tight.contains(r) || r == graph.rows.length - 1 ? _gapStacked : gap);
     }
+    if (graph.rows.isNotEmpty) at += gap / 2 - _gapStacked;
     at += _groupPad * (ends[graph.rows.length - 1]?.length ?? 0);
     _rowAt = rowAt;
     _alongEnd = at;
@@ -467,7 +604,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
             rowAt[first] -
             (_milestoneRows.containsKey(first) ? _milestoneSpace : 0) -
             headerAlong * outerFirst,
-        alongEnd: rowAt[last] + _cardAlong + _groupPad * outerLast - 4,
+        alongEnd: rowAt[last] + _rowAlong[last] + _groupPad * outerLast - 4,
         acrossStart: _horizontal
             ? depth * _groupHeaderAcross
             : depth * _groupInset + 4,
@@ -503,7 +640,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
     final (x, y) = _horizontal
         ? (
             math.min(0.0, viewport.width / 4 - card.dx * scale),
-            viewport.height / 2 - (card.dy + _cardHeight / 2) * scale,
+            viewport.height / 2 - (card.dy + _cardAcross / 2) * scale,
           )
         : (
             viewport.width / 2 - (card.dx + _cardWidth / 2) * scale,
@@ -1016,26 +1153,30 @@ class _EventSequencePageState extends State<EventSequencePage> {
                 painter: _EdgePainter(
                   edges: [
                     for (final (u, v) in _graph.drawnEdges)
-                      (
-                        from:
-                            _cardAt(u) +
-                            (_horizontal
-                                ? const Offset(_cardWidth, _cardHeight / 2)
-                                : const Offset(_cardWidth / 2, _cardHeight)),
-                        to:
-                            _cardAt(v) +
-                            (_horizontal
-                                ? const Offset(0, _cardHeight / 2)
-                                : const Offset(_cardWidth / 2, 0)),
-                        lit:
-                            selected != null &&
-                            (({u, v}.every(
-                                  (e) => e == selected || before.contains(e),
-                                )) ||
-                                ({u, v}.every(
-                                  (e) => e == selected || after.contains(e),
-                                ))),
-                      ),
+                      if (!_stacked.contains((u, v)))
+                        (
+                          from:
+                              _cardAt(u) +
+                              (_horizontal
+                                  ? Offset(_cardWidth, _cardAcross / 2)
+                                  : Offset(
+                                      _cardWidth / 2,
+                                      _cardSize(u).height,
+                                    )),
+                          to:
+                              _cardAt(v) +
+                              (_horizontal
+                                  ? Offset(0, _cardAcross / 2)
+                                  : const Offset(_cardWidth / 2, 0)),
+                          lit:
+                              selected != null &&
+                              (({u, v}.every(
+                                    (e) => e == selected || before.contains(e),
+                                  )) ||
+                                  ({u, v}.every(
+                                    (e) => e == selected || after.contains(e),
+                                  ))),
+                        ),
                   ],
                   color: scheme.outlineVariant,
                   litColor: scheme.primary,
@@ -1050,7 +1191,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
               left: _cardAt(node).dx,
               top: _cardAt(node).dy,
               width: _cardWidth,
-              height: _cardHeight,
+              height: _cardSize(node).height,
               child: _card(
                 theme,
                 node,

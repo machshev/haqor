@@ -160,7 +160,9 @@ void main() {
   Future<List<StudyPassage>> open(
     WidgetTester tester, {
     Size size = const Size(900, 1400),
+    EventSequenceEntry? sequence,
   }) async {
+    final shown = sequence ?? _sequence;
     final opened = <StudyPassage>[];
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -171,8 +173,8 @@ void main() {
           builder: (context) => TextButton(
             onPressed: () => EventSequencePage.open(
               context,
-              sequence: _sequence,
-              sequences: BibleSequences([_sequence]),
+              sequence: shown,
+              sequences: BibleSequences([shown]),
               events: _events,
               useEnglishBookNames: true,
               onOpenPassage: opened.add,
@@ -441,5 +443,50 @@ void main() {
     expect(key('sequence-group-0'), findsOneWidget);
     expect(key('sequence-group-1'), findsOneWidget);
     expect(key('sequence-event-1'), findsNothing);
+  });
+
+  testWidgets('stacks a one-to-one chain, with arrows only where it branches', (
+    tester,
+  ) async {
+    // Baptism leads to two, which both lead to Fishers of Men, then one to
+    // one to Peter's Mother-in-law.
+    await open(
+      tester,
+      sequence: EventSequenceEntry(
+        key: 'test-branching',
+        title: 'Branching',
+        note: '',
+        expands: null,
+        events: [1, 2, 3, 4, 5],
+        edges: [
+          _edge(1, 2),
+          _edge(1, 3),
+          _edge(2, 4),
+          _edge(3, 4),
+          _edge(4, 5),
+        ],
+        groupings: const [],
+        milestones: const [],
+        details: const [],
+      ),
+    );
+    // Each card fitted to its one line of title.
+    expect(tester.getSize(key('sequence-event-1')).height, lessThan(56));
+    // Where Baptism branches, room for the arrows.
+    expect(
+      tester.getTopLeft(key('sequence-event-2')).dy -
+          tester.getBottomLeft(key('sequence-event-1')).dy,
+      greaterThan(20),
+    );
+    // One to one, stacked straight beneath.
+    expect(
+      tester.getTopLeft(key('sequence-event-5')).dy -
+          tester.getBottomLeft(key('sequence-event-4')).dy,
+      lessThan(8),
+    );
+    expect(
+      tester.getTopLeft(key('sequence-event-5')).dx,
+      tester.getTopLeft(key('sequence-event-4')).dx,
+    );
   });
 }
