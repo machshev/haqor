@@ -2036,6 +2036,18 @@ class StudyWorkspace {
     })!,
   );
 
+  /// The readings [timelineId] is shown in (see [TimelineVariant]): those of
+  /// the standard timeline it is linked to, or that one it is built on is.
+  List<TimelineVariant> variantsOf(String timelineId) {
+    final timeline = timelineById(timelineId);
+    if (timeline == null) return const [];
+    for (final t in [timeline, ...baseChainOf(timeline)]) {
+      final variants = standardTimelineById(t.standardId)?.variants;
+      if (variants != null && variants.isNotEmpty) return variants;
+    }
+    return const [];
+  }
+
   /// [standard] as a study holding it shows it, outside any study: the
   /// timeline, and its entries in time order.
   static ({StudyTimeline timeline, List<StudyTimelineEntry> entries})

@@ -549,6 +549,7 @@ class StudyTimelineEntryEditor extends StatefulWidget {
     this.entries = const [],
     this.loadBibleEntries,
     this.anchorsFor,
+    this.variantsFor,
   });
 
   final StudyTimelineEntry initial;
@@ -564,6 +565,10 @@ class StudyTimelineEntryEditor extends StatefulWidget {
   /// own and those of the timelines it is built on, as it places them;
   /// without it, those of [entries] on that timeline.
   final List<StudyTimelineEntry> Function(String timelineId)? anchorsFor;
+
+  /// The readings of the timeline [timelineId] (see [TimelineVariant]):
+  /// its anchors are offered by reading, each named with its own.
+  final List<TimelineVariant> Function(String timelineId)? variantsFor;
   final bool creating;
 
   /// The timelines it may be on; the initial one must be among them.
@@ -626,10 +631,29 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
       return false;
     }
 
+    // Its own first, then each reading's in turn.
+    final order = [
+      for (final v in widget.variantsFor?.call(_timelineId) ?? const []) v.id,
+    ];
+    int rank(StudyTimelineEntry e) => order.indexOf(e.variant);
     return [
       for (final e in candidates)
         if (e.id != widget.initial.id && !pinnedToSelf(e)) e,
-    ]..sort(compareTimelineEntries);
+    ]..sort((a, b) {
+      final byReading = rank(a).compareTo(rank(b));
+      return byReading != 0 ? byReading : compareTimelineEntries(a, b);
+    });
+  }
+
+  /// [entry]'s title as an anchor is offered, with its reading's name.
+  String _anchorLabel(StudyTimelineEntry entry) {
+    final reading = widget.variantsFor
+        ?.call(_timelineId)
+        .where((v) => v.id == entry.variant)
+        .firstOrNull;
+    return reading == null
+        ? entry.title
+        : '${entry.title} · ${reading.shortLabel}';
   }
 
   /// The entry it is pinned to, where that is on its timeline.
@@ -1579,7 +1603,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                s.title,
+                                _anchorLabel(s),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),

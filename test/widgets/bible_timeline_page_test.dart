@@ -189,7 +189,8 @@ void main() {
     );
     await tester.ensureVisible(pesach);
     await tester.pumpAndSettle();
-    await tester.tap(pesach);
+    // Its top, the list below the chart and readings short of room.
+    await tester.tapAt(tester.getTopLeft(pesach) + const Offset(40, 20));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ActionChip, 'Leviticus 23:5'));
     await tester.pumpAndSettle();

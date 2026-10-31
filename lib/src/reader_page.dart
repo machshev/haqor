@@ -3684,6 +3684,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         builder: (_) => TimelinePage(
           timeline: workspace.viewTimeline(timeline.id) ?? timeline,
           entries: workspace.viewOf(timeline.id),
+          variants: workspace.variantsOf(timeline.id),
           baseTitles: {
             for (final base in workspace.baseChainOf(timeline))
               base.id: base.title,
@@ -3756,6 +3757,8 @@ class _ReaderSessionState extends State<_ReaderSession>
         entries: workspace.timelineEntries,
         anchorsFor: (id) =>
             _activeStudyWorkspace?.viewOf(id) ?? workspace.viewOf(id),
+        variantsFor: (id) =>
+            (_activeStudyWorkspace ?? workspace).variantsOf(id),
         loadBibleEntries: loadBibleTimelineEntries,
         useEnglishBookNames: _englishBookNames,
         loadChapter: _loadStudyChapter,

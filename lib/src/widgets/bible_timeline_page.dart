@@ -511,6 +511,7 @@ class _BibleTimelinePageState extends State<BibleTimelinePage> {
         builder: (_) => TimelinePage(
           timeline: view.timeline,
           entries: view.entries,
+          variants: standard.variants,
           useEnglishBookNames: widget.useEnglishBookNames,
           onOpenPassage: (passage) {
             // Its own page has closed already.

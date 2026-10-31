@@ -1009,34 +1009,60 @@ void main() {
     expect(lane('wave'), 1);
   });
 
-  test('Ezekiel\'s moʿadim and Hezekiah\'s pesach come whole, dated as the '
-      'text dates them', () {
+  test('the moʿadim come in readings, each dated as its text dates it, and '
+      'the Messiah\'s on the Torah\'s weeks', () {
     TimelineTime day(int month, int day) =>
         TimelineTime(0, month: month, day: day);
-    for (final id in ['ezekiel-moadim', 'hezekiah-pesach']) {
-      final standard = standardTimelineById(id)!;
-      final view = StudyWorkspace.viewOfStandard(standard);
-      expect(view.entries, hasLength(standard.entries.length), reason: id);
+    final standard = standardTimelineById('moadim')!;
+    final variants = {for (final v in standard.variants) v.id};
+    expect(variants.first, 'torah');
+    expect(variants, hasLength(standard.variants.length));
+    // Every entry in a reading, and pinned only within it.
+    final byId = {for (final e in standard.entries) e.id: e};
+    expect(byId, hasLength(standard.entries.length));
+    for (final e in standard.entries) {
+      expect(variants, contains(e.variant), reason: e.id);
+      if (e.pin case final pin?) {
+        expect(byId[pin.anchorId]?.variant, e.variant, reason: e.id);
+      }
     }
-    TimelineTime? start(String timeline, String id) =>
-        StudyWorkspace.viewOfStandard(
-          standardTimelineById(timeline)!,
-        ).entries.singleWhere((e) => e.id == '$timeline:$id').start;
-    TimelineTime? end(String timeline, String id) =>
-        StudyWorkspace.viewOfStandard(
-          standardTimelineById(timeline)!,
-        ).entries.singleWhere((e) => e.id == '$timeline:$id').end;
+    var workspace = const StudyWorkspace(
+      id: 's',
+      name: 'Study',
+    ).addStandardTimeline(standard, id: 'm');
+    expect(workspace.variantsOf('m'), standard.variants);
+    workspace = workspace.putTimeline(
+      workspace.timelineById('m')!.copyWith(nisanWeekday: 4),
+    );
+    final entries = workspace.viewOf('m');
+    expect(entries, hasLength(standard.entries.length));
+    StudyTimelineEntry entry(String id) =>
+        entries.singleWhere((e) => e.id == 'm:$id');
     // Ezekiel's two weeks are alike, from the fifteenth of each.
-    expect(start('ezekiel-moadim', 'cleanse-2'), day(1, 7));
-    expect(start('ezekiel-moadim', 'chag-1'), day(1, 15));
-    expect(start('ezekiel-moadim', 'chag-7'), day(7, 15));
-    expect(end('ezekiel-moadim', 'chag-7'), day(7, 21));
+    expect(entry('ezekiel-cleanse-2').start, day(1, 7));
+    expect(entry('ezekiel-chag-1').start, day(1, 15));
+    expect(entry('ezekiel-chag-7').start, day(7, 15));
+    expect(entry('ezekiel-chag-7').end, day(7, 21));
     // Hezekiah's pesach a month on, and its week twice over.
-    expect(start('hezekiah-pesach', 'porch'), day(1, 8));
-    expect(start('hezekiah-pesach', 'atonement'), day(1, 17));
-    expect(start('hezekiah-pesach', 'matzot'), day(2, 15));
-    expect(start('hezekiah-pesach', 'other-seven'), day(2, 22));
-    expect(end('hezekiah-pesach', 'other-seven'), day(2, 28));
+    expect(entry('hezekiah-porch').start, day(1, 8));
+    expect(entry('hezekiah-atonement').start, day(1, 17));
+    expect(entry('hezekiah-matzot').start, day(2, 15));
+    expect(entry('hezekiah-other-seven').start, day(2, 22));
+    expect(entry('hezekiah-other-seven').end, day(2, 28));
+    // Solomon's fourteen days and the eighth.
+    expect(entry('solomon-dedication').start, day(7, 8));
+    expect(entry('solomon-chag').start, day(7, 15));
+    expect(entry('solomon-atzeret').start, day(7, 22));
+    // The going out on the morrow of the pesach; the sabbath of the manna.
+    expect(entry('going-out-going-out').start, day(1, 15));
+    expect(entry('going-out-sabbath').start, day(2, 22));
+    expect(entry('going-out-words').start, day(3, 3));
+    expect(entry('second-year-eighth').start, day(1, 8));
+    // The Messiah raised on the day of the ʿomer, the Spirit given on
+    // Shavuot.
+    expect(entry('messiah-raised').start, entry('omer').start);
+    expect(entry('messiah-pentecost').start, entry('shavuot').start);
+    expect(entry('messiah-count').end, entry('count').end);
   });
 
   test('a study links the standard moʿadim, and builds on them a timeline '

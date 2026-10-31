@@ -465,6 +465,86 @@ void main() {
     expect(saved?.formatTime(const TimelineTime(3)), 'Day 3');
   });
 
+  testWidgets('a timeline in readings shows one at a time, or all side by '
+      'side under their titles', (tester) async {
+    const feasts = StudyTimeline(
+      id: 'feasts',
+      title: 'Feasts of Yahweh',
+      scale: TimelineScale.annual,
+    );
+    const booths = StudyTimelineEntry(
+      id: 'booths',
+      title: 'Booths',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 7, day: 15),
+      variant: 'torah',
+    );
+    const chag = StudyTimelineEntry(
+      id: 'chag',
+      title: 'The chag',
+      timelineId: 'feasts',
+      start: TimelineTime(0, month: 7, day: 15),
+      variant: 'ezekiel',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TimelinePage(
+          timeline: feasts,
+          entries: const [booths, chag],
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+          variants: const [
+            TimelineVariant(
+              id: 'torah',
+              title: 'The Torah',
+              shortTitle: 'Torah',
+            ),
+            TimelineVariant(
+              id: 'ezekiel',
+              title: 'Ezekiel\'s house',
+              shortTitle: 'Ezekiel',
+              note: 'As Ezekiel dates them.',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final booth = find.byKey(const ValueKey('timeline-mark-booths'));
+    final ezekiel = find.byKey(const ValueKey('timeline-mark-chag'));
+    // The first reading first.
+    expect(booth, findsOneWidget);
+    expect(ezekiel, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('timeline-variant-ezekiel')));
+    await tester.pumpAndSettle();
+    expect(booth, findsNothing);
+    expect(ezekiel, findsOneWidget);
+    expect(find.text('As Ezekiel dates them.'), findsOneWidget);
+    // Side by side, each in its band beneath its title.
+    await tester.tap(find.byKey(const ValueKey('timeline-variant-all')));
+    await tester.pumpAndSettle();
+    expect(booth, findsOneWidget);
+    expect(ezekiel, findsOneWidget);
+    final torahBand = find.byKey(const ValueKey('timeline-band-The Torah'));
+    final ezekielBand = find.byKey(
+      const ValueKey('timeline-band-Ezekiel\'s house'),
+    );
+    expect(torahBand, findsOneWidget);
+    expect(ezekielBand, findsOneWidget);
+    expect(
+      tester.getTopLeft(torahBand).dy,
+      lessThan(tester.getTopLeft(booth).dy),
+    );
+    expect(
+      tester.getTopLeft(booth).dy,
+      lessThan(tester.getTopLeft(ezekielBand).dy),
+    );
+    expect(
+      tester.getTopLeft(ezekielBand).dy,
+      lessThan(tester.getTopLeft(ezekiel).dy),
+    );
+  });
+
   testWidgets("the timeline page fits to its entries, not a year's calendar, "
       'and zooms into a stretch dragged across', (tester) async {
     const feasts = StudyTimeline(
@@ -1239,7 +1319,10 @@ void main() {
       name: 'w',
     ).addStandardTimeline(standardTimelineById('moadim')!, id: 'moadim');
     final timeline = workspace.timelineById('moadim')!;
-    final entries = workspace.viewOf('moadim');
+    final entries = workspace
+        .viewOf('moadim')
+        .where((e) => e.variant == 'torah')
+        .toList();
     StudyTimelineEntry? tapped;
     TimelineTime? tappedDay;
     await tester.pumpWidget(
@@ -1901,6 +1984,7 @@ void main() {
                   timelines: [created!],
                   entries: workspace.timelineEntries,
                   anchorsFor: workspace.viewOf,
+                  variantsFor: workspace.variantsOf,
                   useEnglishBookNames: true,
                   loadChapter: _chapter,
                 ),
@@ -1915,7 +1999,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('timeline-entry-pin-passion')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('ʿOmer haTenufah (sheaf of the waving)').last);
+    await tester.tap(
+      find.text('ʿOmer haTenufah (sheaf of the waving) · Torah').last,
+    );
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('timeline-entry-offset')),
@@ -1936,6 +2022,7 @@ void main() {
           timeline: workspace.viewTimeline('passion')!,
           entries: view,
           baseTitles: {'m': standard.template.title},
+          variants: workspace.variantsOf('passion'),
           useEnglishBookNames: true,
           onOpenPassage: (_) {},
           reload: () =>

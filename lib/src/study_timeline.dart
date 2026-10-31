@@ -1114,8 +1114,13 @@ class StudyTimelineEntry {
     this.lead,
     this.trail,
     this.style = TimelineSpanStyle.bar,
+    this.variant = '',
     this.extra = const {},
   });
+
+  /// The reading of its timeline it belongs to (see [TimelineVariant]), by
+  /// id: empty for one in every reading.
+  final String variant;
 
   /// Keys this version does not know, kept so that saving does not erase
   /// fields a newer version wrote.
@@ -1228,6 +1233,7 @@ class StudyTimelineEntry {
     lead: lead,
     trail: trail,
     style: style,
+    variant: variant,
   );
 
   bool linksVerse(int book, int chapter, int verse) =>
@@ -1261,6 +1267,7 @@ class StudyTimelineEntry {
     lead: lead,
     trail: trail,
     style: style,
+    variant: variant,
   );
 
   /// The entry on [timeline], its end worked out again from its duration
@@ -1292,6 +1299,7 @@ class StudyTimelineEntry {
     TimelineTaper? Function()? lead,
     TimelineTaper? Function()? trail,
     TimelineSpanStyle? style,
+    String? variant,
   }) => StudyTimelineEntry(
     extra: extra,
     id: id,
@@ -1315,6 +1323,7 @@ class StudyTimelineEntry {
     lead: lead == null ? this.lead : lead(),
     trail: trail == null ? this.trail : trail(),
     style: style ?? this.style,
+    variant: variant ?? this.variant,
   );
 
   Map<String, Object?> toJson() => {
@@ -1347,6 +1356,7 @@ class StudyTimelineEntry {
     if (lead != null) 'lead': lead!.toJson(),
     if (trail != null) 'trail': trail!.toJson(),
     if (style != TimelineSpanStyle.bar) 'style': style.name,
+    if (variant.isNotEmpty) 'variant': variant,
   };
 
   static StudyTimelineEntry? fromJson(Object? value) {
@@ -1402,6 +1412,7 @@ class StudyTimelineEntry {
         'lead',
         'trail',
         'style',
+        'variant',
       }),
       id: id,
       title: title,
@@ -1461,6 +1472,7 @@ class StudyTimelineEntry {
               .where((s) => s.name == value['style'])
               .firstOrNull ??
           TimelineSpanStyle.bar,
+      variant: value['variant'] is String ? value['variant'] as String : '',
     );
     return entry.isValid ? entry : null;
   }
@@ -1670,3 +1682,28 @@ String? timelineMoonOn(int day) => switch (day) {
   15 => 'Full moon',
   _ => null,
 };
+
+/// One reading of a timeline: the feasts as the Torah gives them, or as a
+/// king kept them, or a prophet saw them. A timeline's entries each belong
+/// to one ([StudyTimelineEntry.variant]), or to all; it is shown a reading
+/// at a time, or all side by side.
+@immutable
+class TimelineVariant {
+  const TimelineVariant({
+    required this.id,
+    required this.title,
+    this.shortTitle = '',
+    this.note = '',
+  });
+
+  final String id;
+  final String title;
+
+  /// A short form of [title], for its chip; empty for none.
+  final String shortTitle;
+
+  /// What it is, shown with the timeline while it is the one shown.
+  final String note;
+
+  String get shortLabel => shortTitle.isEmpty ? title : shortTitle;
+}

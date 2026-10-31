@@ -485,11 +485,17 @@ class TimelineChart extends StatelessWidget {
     this.groups = const {},
     this.onToggleGroup,
     this.onTapCluster,
+    this.bands = const [],
   });
 
   final StudyTimeline timeline;
   final List<StudyTimelineEntry> entries;
   final double pixelsPerUnit;
+
+  /// The readings to draw side by side, each its entries (see
+  /// [StudyTimelineEntry.variant]) in a band of its own beneath its title,
+  /// in this order; those in none after them. Empty to draw them together.
+  final List<({String id, String title})> bands;
 
   /// The spans with entries grouped under them (those pinned to them), by
   /// id: how many, and whether they are shown. Each such span's bar has a
@@ -545,37 +551,79 @@ class TimelineChart extends StatelessWidget {
       for (final e in entries)
         if (_isDayBlock(e)) e,
     ];
-    final clusters = _clusters(px);
-    final clustered = {
-      for (final events in clusters.values)
-        for (final e in events) e.id,
-    };
-    // Packed by their marks alone, to keep to as few lanes as may be; each
-    // label then takes what room its lane leaves it.
-    final slots = packTimelineLanes(
-      timeline,
-      [
+    // Side by side, each reading packed in a band of its own beneath its
+    // title; those in none in a last band, untitled.
+    final bandIds = [for (final b in bands) b.id];
+    int bandOf(StudyTimelineEntry e) =>
+        bands.isEmpty || !bandIds.contains(e.variant)
+        ? bands.length
+        : bandIds.indexOf(e.variant);
+    final clusters = <String, List<StudyTimelineEntry>>{};
+    final slots = <TimelineSlot>[];
+    final bandRows = <({String title, int header, int first, int lanes})>[];
+    final bandAt = <int, ({int first, int lanes})>{};
+    var nextLane = 0;
+    for (var b = 0; b <= bands.length; b++) {
+      final inBand = [
         for (final e in entries)
-          if (!clustered.contains(e.id) && !_isDayBlock(e)) e,
-        for (final MapEntry(:key, :value) in clusters.entries)
-          _clusterEntry(key, value),
-      ],
-      x: px,
-      width: (e) => e.isHighSabbath
-          ? _dot + 2
-          : e.isSpan
-          ? 4
-          : _dot,
-      gap: _gap,
-    );
+          if (bandOf(e) == b) e,
+      ];
+      if (inBand.isEmpty) continue;
+      final bandClusters = _clusters(px, inBand);
+      clusters.addAll(bandClusters);
+      final clustered = {
+        for (final events in bandClusters.values)
+          for (final e in events) e.id,
+      };
+      // Packed by their marks alone, to keep to as few lanes as may be;
+      // each label then takes what room its lane leaves it.
+      final packed = packTimelineLanes(
+        timeline,
+        [
+          for (final e in inBand)
+            if (!clustered.contains(e.id) && !_isDayBlock(e)) e,
+          for (final MapEntry(:key, :value) in bandClusters.entries)
+            _clusterEntry(key, value),
+        ],
+        x: px,
+        width: (e) => e.isHighSabbath
+            ? _dot + 2
+            : e.isSpan
+            ? 4
+            : _dot,
+        gap: _gap,
+      );
+      final titled = b < bands.length;
+      final header = nextLane;
+      final first = nextLane + (titled ? 1 : 0);
+      final lanes = packed.isEmpty
+          ? 1
+          : packed.map((s) => s.lane).reduce(math.max) + 1;
+      for (final s in packed) {
+        slots.add((
+          entry: s.entry,
+          lane: s.lane + first,
+          left: s.left,
+          right: s.right,
+        ));
+      }
+      if (titled) {
+        bandRows.add((
+          title: bands[b].title,
+          header: header,
+          first: first,
+          lanes: lanes,
+        ));
+      }
+      bandAt[b] = (first: first, lanes: lanes);
+      nextLane = first + lanes;
+    }
     // Where each mark's room begins, its wedge before it.
     double from(StudyTimelineEntry e) => e.lead == null
         ? double.infinity
         : px(timelineEntrySpread(timeline, e).start);
     final labels = _labelsFor(slots, labelStyle, from);
-    final lanes = slots.isEmpty
-        ? 1
-        : slots.map((s) => s.lane).reduce(math.max) + 1;
+    final lanes = math.max(1, nextLane);
     // Room too for the labels running past the last time.
     final width = slots.fold(
       widthFor(timeline, entries, pixelsPerUnit),
@@ -584,11 +632,11 @@ class TimelineChart extends StatelessWidget {
         slot.left + labels[slot.entry.id]!.width + padding / 2,
       ),
     );
-    final bands = seasons
+    final seasonBands = seasons
         ? timelineSeasonsIn(timeline, extent.start, extent.end)
         : const <({TimelineSeason season, double start, double end})>[];
     // The seasons take a row each for rain and harvest above the lanes.
-    final top = bands.isEmpty ? 0.0 : seasonHeight * 2 + 6;
+    final top = seasonBands.isEmpty ? 0.0 : seasonHeight * 2 + 6;
     final height = top + lanes * laneHeight + axisHeight;
     final axisY = top + lanes * laneHeight + 4;
     return SizedBox(
@@ -648,8 +696,12 @@ class TimelineChart extends StatelessWidget {
               Positioned(
                 left: at.from,
                 width: math.max(2, at.to - at.from),
-                top: 0,
-                height: axisY,
+                top: bands.isEmpty
+                    ? 0
+                    : top + bandAt[bandOf(day)]!.first * laneHeight,
+                height: bands.isEmpty
+                    ? axisY
+                    : bandAt[bandOf(day)]!.lanes * laneHeight,
                 child: _ShabbatonBlock(
                   entry: day,
                   color: switch (timeline.colorOf(day)) {
@@ -665,7 +717,31 @@ class TimelineChart extends StatelessWidget {
                   onTap: onTapEntry == null ? null : () => onTapEntry!(day),
                 ),
               ),
-          for (final band in bands)
+          // Each reading's title, a rule across above its band.
+          for (final row in bandRows)
+            Positioned(
+              left: 0,
+              width: width,
+              top: top + row.header * laneHeight,
+              height: laneHeight,
+              child: Container(
+                key: ValueKey('timeline-band-${row.title}'),
+                alignment: AlignmentDirectional.bottomStart,
+                padding: const EdgeInsetsDirectional.only(start: 8, bottom: 4),
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: theme.colorScheme.outlineVariant),
+                  ),
+                ),
+                child: Text(
+                  row.title,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          for (final band in seasonBands)
             Positioned(
               left: px(band.start),
               width: math.max(1, px(band.end) - px(band.start)),
@@ -827,6 +903,7 @@ class TimelineChart extends StatelessWidget {
 
   Map<String, List<StudyTimelineEntry>> _clusters(
     double Function(double position) px,
+    List<StudyTimelineEntry> entries,
   ) {
     final points = [
       for (final e in entries)
@@ -1957,6 +2034,7 @@ class TimelinePage extends StatefulWidget {
     this.collapseGroups = false,
     this.onOpenEntry,
     this.actions = const [],
+    this.variants = const [],
   });
 
   final StudyTimeline timeline;
@@ -2024,6 +2102,10 @@ class TimelinePage extends StatefulWidget {
   /// More buttons for its app bar, after its own.
   final List<Widget> actions;
 
+  /// The readings its entries are in (see [StudyTimelineEntry.variant]),
+  /// shown one at a time, the first first, or all side by side.
+  final List<TimelineVariant> variants;
+
   @override
   State<TimelinePage> createState() => _TimelinePageState();
 }
@@ -2040,7 +2122,43 @@ class _TimelinePageState extends State<TimelinePage> {
   ({double from, double to})? _drag;
   late String? _selectedId = widget.initialSelectedId;
   late StudyTimeline _timeline = widget.timeline;
-  late List<StudyTimelineEntry> _entries = widget.entries;
+  late List<StudyTimelineEntry> _allEntries = widget.entries;
+
+  /// The reading shown (see [TimelineVariant]), by id; null for all of them
+  /// side by side. One opened on an entry opens on its reading.
+  late String? _variant = switch (widget.entries
+      .where((e) => e.id == widget.initialSelectedId)
+      .firstOrNull
+      ?.variant) {
+    final variant? when variant.isNotEmpty => variant,
+    _ => widget.variants.firstOrNull?.id,
+  };
+
+  /// The note of the reading shown, or where it has none, the timeline's.
+  String get _note => switch (widget.variants
+      .where((v) => v.id == _variant)
+      .firstOrNull
+      ?.note) {
+    final note? when note.isNotEmpty => note,
+    _ => _timeline.note,
+  };
+
+  bool get _sideBySide => widget.variants.isNotEmpty && _variant == null;
+
+  /// The entries of the reading shown, with those in every reading.
+  List<StudyTimelineEntry> get _entries => _variant == null
+      ? _allEntries
+      : [
+          for (final e in _allEntries)
+            if (e.variant.isEmpty || e.variant == _variant) e,
+        ];
+
+  /// Shows the reading [variant], or (null) all side by side, fitted again.
+  void _showVariant(String? variant) => setState(() {
+    _variant = variant;
+    _pixelsPerUnit = null;
+    if (!_entries.any((e) => e.id == _selectedId)) _selectedId = null;
+  });
   late bool _calendar = widget.initialCalendar && widget.timeline.hasMonths;
 
   /// Whether the year is shown as a wheel (see [TimelineWheel]), rather
@@ -2235,7 +2353,7 @@ class _TimelinePageState extends State<TimelinePage> {
     }
     setState(() {
       _timeline = contents.timeline;
-      _entries = contents.entries;
+      _allEntries = contents.entries;
       if (!_entries.any((e) => e.id == _selectedId)) _selectedId = null;
     });
   }
@@ -2330,50 +2448,82 @@ class _TimelinePageState extends State<TimelinePage> {
       for (final e in _entries)
         if (e.category.isNotEmpty) e.category,
     }.toList()..sort();
-    if (categories.isEmpty) return body;
+    final variants = widget.variants;
+    if (categories.isEmpty && variants.isEmpty) return body;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-          child: Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              for (final category in categories)
-                InputChip(
-                  key: ValueKey('timeline-category-$category'),
-                  label: Text(category),
-                  selected: !_hidden.contains(category),
-                  showCheckmark: false,
-                  visualDensity: VisualDensity.compact,
-                  avatar: CircleAvatar(
-                    backgroundColor:
-                        switch (_timeline.categoryColors[category]) {
-                          final index? => timelineCategoryColor(
-                            index,
-                            theme.brightness,
-                          ),
-                          null => theme.colorScheme.outline,
-                        },
+        if (variants.isNotEmpty)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+            child: Row(
+              children: [
+                for (final (variant, title, tooltip) in [
+                  (null, 'Side by side', 'Every reading, side by side'),
+                  for (final v in variants) (v.id, v.shortLabel, v.title),
+                ])
+                  Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 6),
+                    child: Tooltip(
+                      message: tooltip,
+                      child: ChoiceChip(
+                        key: ValueKey('timeline-variant-${variant ?? 'all'}'),
+                        label: Text(title),
+                        avatar: variant == null
+                            ? const Icon(Icons.view_agenda_outlined, size: 18)
+                            : null,
+                        selected: _variant == variant,
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (_) => _showVariant(variant),
+                      ),
+                    ),
                   ),
-                  tooltip: _hidden.contains(category)
-                      ? 'Show $category'
-                      : 'Hide $category',
-                  onSelected: (shown) => setState(() {
-                    if (shown) {
-                      _hidden.remove(category);
-                    } else {
-                      _hidden.add(category);
-                    }
-                  }),
-                  deleteIcon: const Icon(Icons.palette_outlined, size: 18),
-                  deleteButtonTooltipMessage: 'Colour $category',
-                  onDeleted: () => _recolor(category),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
+        // One row, scrolled across, to leave the chart its room on a phone.
+        if (categories.isNotEmpty)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+            child: Row(
+              spacing: 6,
+              children: [
+                for (final category in categories)
+                  InputChip(
+                    key: ValueKey('timeline-category-$category'),
+                    label: Text(category),
+                    selected: !_hidden.contains(category),
+                    showCheckmark: false,
+                    visualDensity: VisualDensity.compact,
+                    avatar: CircleAvatar(
+                      backgroundColor:
+                          switch (_timeline.categoryColors[category]) {
+                            final index? => timelineCategoryColor(
+                              index,
+                              theme.brightness,
+                            ),
+                            null => theme.colorScheme.outline,
+                          },
+                    ),
+                    tooltip: _hidden.contains(category)
+                        ? 'Show $category'
+                        : 'Hide $category',
+                    onSelected: (shown) => setState(() {
+                      if (shown) {
+                        _hidden.remove(category);
+                      } else {
+                        _hidden.add(category);
+                      }
+                    }),
+                    deleteIcon: const Icon(Icons.palette_outlined, size: 18),
+                    deleteButtonTooltipMessage: 'Colour $category',
+                    onDeleted: () => _recolor(category),
+                  ),
+              ],
+            ),
+          ),
         Expanded(child: body),
       ],
     );
@@ -3252,165 +3402,189 @@ class _TimelinePageState extends State<TimelinePage> {
                       ),
                     ),
                   )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: constraints.maxHeight * 0.55,
-                        ),
-                        child: Stack(
-                          children: [
-                            Scrollbar(
-                              controller: _horizontal,
-                              child: SingleChildScrollView(
+                : LayoutBuilder(
+                    // The chart takes up to a little over half of what the
+                    // readings and categories above it leave.
+                    builder: (context, body) => Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: body.maxHeight * 0.55,
+                          ),
+                          child: Stack(
+                            children: [
+                              Scrollbar(
                                 controller: _horizontal,
-                                scrollDirection: Axis.horizontal,
-                                // Picking a stretch, a touch drag is the pick's.
-                                physics: _selecting
-                                    ? const NeverScrollableScrollPhysics()
-                                    : null,
-                                // Room above for the controls over the chart.
-                                padding: const EdgeInsets.only(top: 48),
                                 child: SingleChildScrollView(
-                                  child: GestureDetector(
-                                    key: const ValueKey('timeline-drag-zoom'),
-                                    // A mouse drag doesn't scroll, so always picks.
-                                    supportedDevices: _selecting
-                                        ? null
-                                        : const {PointerDeviceKind.mouse},
-                                    dragStartBehavior: DragStartBehavior.down,
-                                    onHorizontalDragStart: (d) => setState(
-                                      () => _drag = (
-                                        from: d.localPosition.dx,
-                                        to: d.localPosition.dx,
-                                      ),
-                                    ),
-                                    onHorizontalDragUpdate: (d) => setState(
-                                      () => _drag = (
-                                        from: _drag?.from ?? d.localPosition.dx,
-                                        to: d.localPosition.dx,
-                                      ),
-                                    ),
-                                    onHorizontalDragEnd: (_) =>
-                                        _zoomToDrag(ppu, viewport),
-                                    onHorizontalDragCancel: () =>
-                                        setState(() => _drag = null),
-                                    child: Stack(
-                                      children: [
-                                        TimelineChart(
-                                          timeline: _timeline,
-                                          entries: shown,
-                                          pixelsPerUnit: ppu,
-                                          seasons: _timeline.showSeasons,
-                                          faded: _faded,
-                                          selectedId: _selectedId,
-                                          onTapEntry: _show,
-                                          groups: {
-                                            for (final MapEntry(:key, :value)
-                                                in groups.entries)
-                                              key: (
-                                                count: value,
-                                                open: _isOpen(key),
-                                              ),
-                                          },
-                                          onToggleGroup: _toggleGroup,
-                                          onTapCluster: _showCluster,
+                                  controller: _horizontal,
+                                  scrollDirection: Axis.horizontal,
+                                  // Picking a stretch, a touch drag is the pick's.
+                                  physics: _selecting
+                                      ? const NeverScrollableScrollPhysics()
+                                      : null,
+                                  // Room above for the controls over the chart.
+                                  padding: const EdgeInsets.only(top: 48),
+                                  child: SingleChildScrollView(
+                                    child: GestureDetector(
+                                      key: const ValueKey('timeline-drag-zoom'),
+                                      // A mouse drag doesn't scroll, so always picks.
+                                      supportedDevices: _selecting
+                                          ? null
+                                          : const {PointerDeviceKind.mouse},
+                                      dragStartBehavior: DragStartBehavior.down,
+                                      onHorizontalDragStart: (d) => setState(
+                                        () => _drag = (
+                                          from: d.localPosition.dx,
+                                          to: d.localPosition.dx,
                                         ),
-                                        if (_drag case final drag?)
-                                          Positioned(
-                                            left: math.min(drag.from, drag.to),
-                                            width: (drag.to - drag.from).abs(),
-                                            top: 0,
-                                            bottom: 0,
-                                            child: IgnorePointer(
-                                              child: DecoratedBox(
-                                                decoration: BoxDecoration(
-                                                  color: theme
-                                                      .colorScheme
-                                                      .primary
-                                                      .withValues(alpha: 0.12),
-                                                  border: Border.symmetric(
-                                                    vertical: BorderSide(
-                                                      color: theme
-                                                          .colorScheme
-                                                          .primary,
+                                      ),
+                                      onHorizontalDragUpdate: (d) => setState(
+                                        () => _drag = (
+                                          from:
+                                              _drag?.from ?? d.localPosition.dx,
+                                          to: d.localPosition.dx,
+                                        ),
+                                      ),
+                                      onHorizontalDragEnd: (_) =>
+                                          _zoomToDrag(ppu, viewport),
+                                      onHorizontalDragCancel: () =>
+                                          setState(() => _drag = null),
+                                      child: Stack(
+                                        children: [
+                                          TimelineChart(
+                                            timeline: _timeline,
+                                            entries: shown,
+                                            bands: _sideBySide
+                                                ? [
+                                                    for (final v
+                                                        in widget.variants)
+                                                      (
+                                                        id: v.id,
+                                                        title: v.title,
+                                                      ),
+                                                  ]
+                                                : const [],
+                                            pixelsPerUnit: ppu,
+                                            seasons: _timeline.showSeasons,
+                                            faded: _faded,
+                                            selectedId: _selectedId,
+                                            onTapEntry: _show,
+                                            groups: {
+                                              for (final MapEntry(:key, :value)
+                                                  in groups.entries)
+                                                key: (
+                                                  count: value,
+                                                  open: _isOpen(key),
+                                                ),
+                                            },
+                                            onToggleGroup: _toggleGroup,
+                                            onTapCluster: _showCluster,
+                                          ),
+                                          if (_drag case final drag?)
+                                            Positioned(
+                                              left: math.min(
+                                                drag.from,
+                                                drag.to,
+                                              ),
+                                              width: (drag.to - drag.from)
+                                                  .abs(),
+                                              top: 0,
+                                              bottom: 0,
+                                              child: IgnorePointer(
+                                                child: DecoratedBox(
+                                                  decoration: BoxDecoration(
+                                                    color: theme
+                                                        .colorScheme
+                                                        .primary
+                                                        .withValues(
+                                                          alpha: 0.12,
+                                                        ),
+                                                    border: Border.symmetric(
+                                                      vertical: BorderSide(
+                                                        color: theme
+                                                            .colorScheme
+                                                            .primary,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                            Positioned(
-                              top: 0,
-                              right: 8,
-                              child: _zoomBar(viewport),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      Expanded(
-                        child: ListView(
-                          children: [
-                            if (_timeline.note.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  12,
-                                  16,
-                                  4,
-                                ),
-                                child: MarkdownNote(_timeline.note),
+                              Positioned(
+                                top: 0,
+                                right: 8,
+                                child: _zoomBar(viewport),
                               ),
-                            for (final (:entry, :depth) in grouped.rows)
-                              ListTile(
-                                key: ValueKey('timeline-row-${entry.id}'),
-                                selected: entry.id == _selectedId,
-                                // Those grouped under a span set in beneath it.
-                                contentPadding: EdgeInsetsDirectional.only(
-                                  start: 16.0 + 24 * math.min(depth, 4),
-                                  end: 16,
-                                ),
-                                leading: Icon(
-                                  timelineEntryIcon(entry),
-                                  color: timelineEntryColor(
-                                    _timeline,
-                                    entry,
-                                    theme.brightness,
-                                    entry.isSpan
-                                        ? theme.colorScheme.primary
-                                        : theme.colorScheme.tertiary,
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: ListView(
+                            children: [
+                              if (_note.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    12,
+                                    16,
+                                    4,
                                   ),
+                                  child: MarkdownNote(_note),
                                 ),
-                                title: Text(entry.title),
-                                subtitle: Text(
-                                  [
-                                    timelineEntryTime(_timeline, entry),
-                                    ?timelinePinLabel(
+                              for (final (:entry, :depth) in grouped.rows)
+                                ListTile(
+                                  key: ValueKey('timeline-row-${entry.id}'),
+                                  selected: entry.id == _selectedId,
+                                  // Those grouped under a span set in beneath it.
+                                  contentPadding: EdgeInsetsDirectional.only(
+                                    start: 16.0 + 24 * math.min(depth, 4),
+                                    end: 16,
+                                  ),
+                                  leading: Icon(
+                                    timelineEntryIcon(entry),
+                                    color: timelineEntryColor(
                                       _timeline,
                                       entry,
-                                      _entries,
+                                      theme.brightness,
+                                      entry.isSpan
+                                          ? theme.colorScheme.primary
+                                          : theme.colorScheme.tertiary,
                                     ),
-                                    ...entry.verses.map(_reference),
-                                    if (widget.baseTitles[entry.timelineId]
-                                        case final base?)
-                                      'from $base',
-                                  ].join(' · '),
+                                  ),
+                                  title: Text(entry.title),
+                                  subtitle: Text(
+                                    [
+                                      timelineEntryTime(_timeline, entry),
+                                      ?timelinePinLabel(
+                                        _timeline,
+                                        entry,
+                                        _entries,
+                                      ),
+                                      ...entry.verses.map(_reference),
+                                      if (widget.baseTitles[entry.timelineId]
+                                          case final base?)
+                                        'from $base',
+                                    ].join(' · '),
+                                  ),
+                                  onTap: () => _show(entry),
+                                  trailing: _rowActions(
+                                    entry,
+                                    groups[entry.id],
+                                  ),
                                 ),
-                                onTap: () => _show(entry),
-                                trailing: _rowActions(entry, groups[entry.id]),
-                              ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
           ),
         );
