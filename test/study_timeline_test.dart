@@ -1083,6 +1083,11 @@ void main() {
         view.entries.singleWhere((e) => e.id == 'yovel:$id');
     expect(entry('count').start, const TimelineTime(1));
     expect(entry('count').end, entry('yovel').start);
+    // Counted in years, marked in sevens: seven sabbaths of years.
+    expect(entry('count').isCounted, isTrue);
+    expect(view.timeline.yearsIn(entry('count')), 49);
+    expect(view.timeline.daysIn(entry('count')), isNull);
+    expect(view.timeline.yearsIn(entry('shofar')), isNull);
     expect(entry('yovel').start, const TimelineTime(50));
     expect(
       [for (var n = 1; n <= 7; n++) entry('shabbat-$n').start.value],
@@ -1127,6 +1132,18 @@ void main() {
     // Not held: it opens the standard as it is.
     expect(shavuotLink().timelineId, standardLinkTimelineId('yovel'));
     expect(shavuotLink().entryId, 'yovel');
+    StudyTimelineEntry moadim(String id) =>
+        workspace.viewOf('m').singleWhere((e) => e.id == 'm:$id');
+    // The yovel's links to it read back, opening the yovel as it is.
+    expect(workspace.standardLinksBackOutside(moadim('count')), [
+      TimelineLink(standardLinkTimelineId('yovel'), 'count'),
+    ]);
+    expect(
+      workspace
+          .standardLinksBackOutside(moadim('shavuot'))
+          .map((l) => l.entryId),
+      ['yovel', 'prophets-weeks'],
+    );
     workspace = workspace.addStandardTimeline(
       standardTimelineById('yovel')!,
       id: 'y',
@@ -1140,6 +1157,15 @@ void main() {
         .links
         .single;
     expect(back, const TimelineLink('m', 'm:shavuot'));
+    // Held, the yovel's links to it read back from the study's own.
+    expect(workspace.standardLinksBackOutside(moadim('count')), isEmpty);
+    expect(workspace.entriesLinkedTo('m', 'm:count').map((e) => e.id), [
+      'y:count',
+    ]);
+    expect(
+      workspace.entriesLinkedTo('m', 'm:shavuot').map((e) => e.id),
+      unorderedEquals(['y:yovel', 'y:prophets-weeks']),
+    );
   });
 
   test('a study links the standard moʿadim, and builds on them a timeline '

@@ -3640,6 +3640,14 @@ class _ReaderSessionState extends State<_ReaderSession>
             timelineTitle: timelineTitle(e.timelineId),
             back: true,
           ),
+      for (final link in workspace.standardLinksBackOutside(entry))
+        if (!forward.any((f) => f.link == link))
+          (
+            link: link,
+            title: link.title,
+            timelineTitle: timelineTitle(link.timelineId),
+            back: true,
+          ),
     ];
   }
 

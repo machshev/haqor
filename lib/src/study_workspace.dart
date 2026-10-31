@@ -1167,15 +1167,37 @@ class StudyWorkspace {
   }
 
   /// The entries linked to the entry [entryId] on the timeline [timelineId],
-  /// perhaps the Bible timeline ([bibleTimelineId]), in time order.
+  /// perhaps the Bible timeline ([bibleTimelineId]), in time order: the
+  /// study's own, and those of the standard timelines it holds.
   List<StudyTimelineEntry> entriesLinkedTo(String timelineId, String entryId) =>
       [
-        for (final e in timelineEntries)
+        for (final e in [
+          ...timelineEntries,
+          for (final t in timelines)
+            if (t.isStandard) ..._ownEntries(t),
+        ])
           if (e.links.any(
             (link) => link.timelineId == timelineId && link.entryId == entryId,
           ))
             e,
       ]..sort(compareTimelineEntries);
+
+  /// Links back to the entries of the standard timelines the study does
+  /// not hold that link to [entry], one of a standard timeline it holds;
+  /// each opens that standard as it is.
+  List<TimelineLink> standardLinksBackOutside(StudyTimelineEntry entry) {
+    final standardId = timelineById(entry.timelineId)?.standardId;
+    final own = '${entry.timelineId}:';
+    if (standardId == null || !entry.id.startsWith(own)) return const [];
+    final held = {for (final t in timelines) ?t.standardId};
+    return [
+      for (final link in standardLinksBackTo(
+        standardId,
+        entry.id.substring(own.length),
+      ))
+        if (!held.contains(standardTimelineLinkedAs(link.timelineId)?.id)) link,
+    ];
+  }
 
   /// The timeline entries linked to a verse: each timeline's in time order,
   /// the timelines in their stored order.

@@ -56,6 +56,23 @@ StandardTimeline? standardTimelineLinkedAs(String timelineId) =>
     ? standardTimelineById(timelineId.substring(_standardLink.length))
     : null;
 
+/// Links back to each entry of the standard timelines that links to
+/// [entryId] of the standard timeline [standardId], so that every link
+/// between them is read both ways.
+List<TimelineLink> standardLinksBackTo(String standardId, String entryId) {
+  final target = standardLinkTimelineId(standardId);
+  return [
+    for (final standard in standardTimelines)
+      for (final e in standard.entries)
+        if (e.links.any((l) => l.timelineId == target && l.entryId == entryId))
+          TimelineLink(
+            standardLinkTimelineId(standard.id),
+            e.id,
+            title: e.title,
+          ),
+  ];
+}
+
 StudyPassage _ref(int book, int chapter, int verse, [int? endVerse]) =>
     StudyPassage(
       bookIndex: book,
@@ -1993,6 +2010,7 @@ final _yovelFrame = <StudyTimelineEntry>[
     start: const TimelineTime(1),
     end: const TimelineTime(50),
     duration: const TimelineDuration(49, _year),
+    counted: true,
     style: TimelineSpanStyle.arrow,
     verses: [
       _ref(_leviticus, 25, 8),

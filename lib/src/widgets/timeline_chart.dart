@@ -836,6 +836,9 @@ class TimelineChart extends StatelessWidget {
                       null => null,
                     },
                     countedDays: timeline.daysIn(slot.entry) ?? 0,
+                    countedYears: slot.entry.isCounted
+                        ? timeline.yearsIn(slot.entry) ?? 0
+                        : 0,
                     label: label.text,
                     titleWidth: label.title,
                     showTitle: label.title > 0,
@@ -1364,6 +1367,7 @@ class _EntryMark extends StatelessWidget {
     required this.label,
     required this.barWidth,
     this.countedDays = 0,
+    this.countedYears = 0,
     this.titleWidth = 0,
     this.showTitle = true,
     this.stacked = 0,
@@ -1397,6 +1401,11 @@ class _EntryMark extends StatelessWidget {
   /// with its notes for its days (see [StudyTimelineEntry.dayNotes]), clear
   /// of its title, which is [titleWidth] wide.
   final int countedDays;
+
+  /// For a counted span dated by years alone, its years, to mark them
+  /// across its bar in sevens, as the seven sabbaths of years (Leviticus
+  /// 25:8).
+  final int countedYears;
   final double titleWidth;
 
   /// Its category's colour (see [timelineEntryColor]); null for the usual.
@@ -1467,6 +1476,23 @@ class _EntryMark extends StatelessWidget {
                           days: countedDays,
                           counted: entry.isCounted,
                           notes: entry.dayNotes,
+                          skip: titleWidth + 12,
+                          color: bar,
+                          labelStyle: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(color: scheme.onPrimaryContainer),
+                        ),
+                      ),
+                    )
+                  else if (countedYears > 0)
+                    SizedBox(
+                      width: barWidth,
+                      height: double.infinity,
+                      child: CustomPaint(
+                        painter: _DaysPainter(
+                          days: countedYears,
+                          counted: true,
+                          notes: const {},
+                          seven: 'Sabbath',
                           skip: titleWidth + 12,
                           color: bar,
                           labelStyle: Theme.of(context).textTheme.labelSmall
@@ -1596,7 +1622,7 @@ class _GroupToggle extends StatelessWidget {
   }
 }
 
-/// The days of a span across its bar: a faint mark between each two where
+/// The days of a span, or its years, across its bar: a faint mark between each two where
 /// there is room, and for a counted span a stronger one between its weeks;
 /// then its notes for its days, where each day has room for one, or else
 /// a counted span's week numbers, each clear of the title, [skip] pixels
@@ -1609,10 +1635,15 @@ class _DaysPainter extends CustomPainter {
     required this.skip,
     required this.color,
     required this.labelStyle,
+    this.seven = 'Week',
   });
 
   final int days;
   final bool counted;
+
+  /// What each seven of a counted span is called: a week of days, or a
+  /// sabbath of years (Leviticus 25:8).
+  final String seven;
   final Map<int, String> notes;
   final double skip;
   final Color color;
@@ -1664,7 +1695,7 @@ class _DaysPainter extends CustomPainter {
       final left = (w - 1) * 7 * day;
       final width = math.min(7, days - (w - 1) * 7) * day;
       if (left < skip) continue;
-      final text = width >= 56 ? 'Week $w' : '$w';
+      final text = width >= 56 ? '$seven $w' : '$w';
       final painter = TextPainter(
         text: TextSpan(text: text, style: labelStyle),
         maxLines: 1,
@@ -1685,6 +1716,7 @@ class _DaysPainter extends CustomPainter {
   bool shouldRepaint(_DaysPainter old) =>
       old.days != days ||
       old.counted != counted ||
+      old.seven != seven ||
       old.notes != notes ||
       old.skip != skip ||
       old.color != color ||
@@ -2757,11 +2789,26 @@ class _TimelinePageState extends State<TimelinePage> {
     );
   }
 
+  /// A counted span's length in years and in sevens: "49 years: 7 sabbaths
+  /// of years"; null for one not counted in years.
+  String? _countedYears(StudyTimelineEntry span) {
+    final years = span.isCounted ? _timeline.yearsIn(span) : null;
+    if (years == null) return null;
+    final sevens = years ~/ 7;
+    final rest = years % 7;
+    final parts = [
+      if (sevens > 0) '$sevens sabbath${sevens == 1 ? '' : 's'} of years',
+      if (rest > 0) '$rest year${rest == 1 ? '' : 's'}',
+    ];
+    return 'Counted, $years year${years == 1 ? '' : 's'}: '
+        '${parts.join(' and ')}';
+  }
+
   /// A counted span's length in days and in weeks: "50 days: 7 weeks and
   /// 1 day"; null for one not counted.
   String? _countedLength(StudyTimelineEntry span) {
     final days = span.isCounted ? _timeline.daysIn(span) : null;
-    if (days == null) return null;
+    if (days == null) return _countedYears(span);
     final weeks = days ~/ 7;
     final rest = days % 7;
     final parts = [

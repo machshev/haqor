@@ -634,6 +634,22 @@ class StudyTimeline {
     return days == null ? null : days + 1;
   }
 
+  /// The years a span dated by years alone runs, from its start to its
+  /// end, as the forty-nine years of the seven sabbaths of years (Leviticus
+  /// 25:8); null where it is dated finer, or its timeline does not count
+  /// years.
+  int? yearsIn(StudyTimelineEntry span) {
+    final end = span.end;
+    if (end == null ||
+        !countsYears ||
+        span.start.precision != TimelineDurationUnit.years ||
+        end.precision != TimelineDurationUnit.years) {
+      return null;
+    }
+    final years = _astronomical(end.value) - _astronomical(span.start.value);
+    return years > 0 ? years : null;
+  }
+
   /// Where an entry pinned by [pin] to [anchor] starts (see [TimelinePin]):
   /// counted in days from the anchor's first day, day 1 being that day, or
   /// else in months or years from its start; then moved on, given a
@@ -1155,7 +1171,9 @@ class StudyTimelineEntry {
   final bool sabbath;
 
   /// Whether a span's days and weeks are counted and numbered, as the
-  /// fifty days to Pentecost (Leviticus 23:15-16); see [isCounted].
+  /// fifty days to Pentecost (Leviticus 23:15-16), or, dated by years
+  /// alone, its years in sevens, as the seven sabbaths of years (Leviticus
+  /// 25:8); see [isCounted].
   final bool counted;
 
   /// The part of its day an event falls in, where it is dated to the day;

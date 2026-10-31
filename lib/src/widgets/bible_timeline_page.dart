@@ -608,18 +608,45 @@ void openStandardTimeline(
         initialSelectedId: selected,
         showInitialSelected: selected != null,
         onOpenPassage: onOpenPassage,
-        linksOf: (entry) => [
-          for (final link in entry.links)
-            (
-              link: link,
-              title: link.title,
-              timelineTitle:
-                  (standardTimelineLinkedAs(link.timelineId) ?? standard)
-                      .template
-                      .title,
-              back: false,
-            ),
-        ],
+        linksOf: (entry) {
+          // Each as the standards write it: one to its own entries led to
+          // them in the view, and back again.
+          TimelineLink written(TimelineLink link) =>
+              link.timelineId == view.timeline.id &&
+                  link.entryId.startsWith(own)
+              ? TimelineLink(
+                  standardLinkTimelineId(standard.id),
+                  link.entryId.substring(own.length),
+                  title: link.title,
+                )
+              : link;
+          String timelineTitle(TimelineLink link) =>
+              (standardTimelineLinkedAs(link.timelineId) ?? standard)
+                  .template
+                  .title;
+          final forward = [for (final link in entry.links) written(link)];
+          return [
+            for (final link in forward)
+              (
+                link: link,
+                title: link.title,
+                timelineTitle: timelineTitle(link),
+                back: false,
+              ),
+            if (entry.id.startsWith(own))
+              for (final link in standardLinksBackTo(
+                standard.id,
+                entry.id.substring(own.length),
+              ))
+                if (!forward.contains(link))
+                  (
+                    link: link,
+                    title: link.title,
+                    timelineTitle: timelineTitle(link),
+                    back: true,
+                  ),
+          ];
+        },
         onOpenLink: (link) {
           final other = standardTimelineLinkedAs(link.timelineId);
           final entry = other != null
