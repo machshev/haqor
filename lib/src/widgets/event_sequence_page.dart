@@ -1600,10 +1600,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
                                 color: foreground,
                               ),
                             ),
-                          GospelMarks(
-                            books: gospelsOf(entry),
-                            color: foreground,
-                          ),
+                          SequenceSourceMarks(event: entry, color: foreground),
                         ],
                       ),
                     ],
@@ -1875,7 +1872,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
         subtitle: Text(
           [?region, if (first != null) _reference(_passage(first))].join(' · '),
         ),
-        trailing: GospelMarks(books: gospelsOf(entry), color: scheme.onSurface),
+        trailing: SequenceSourceMarks(event: entry, color: scheme.onSurface),
         onTap: () => setState(() => _selected = _selected == e ? null : e),
       ),
     );
@@ -2152,7 +2149,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
                     ),
                   ],
                 ),
-              GospelMarks(books: gospelsOf(entry), color: scheme.onSurface),
+              SequenceSourceMarks(event: entry, color: scheme.onSurface),
             ],
           ),
         ),

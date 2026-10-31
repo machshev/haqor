@@ -1,18 +1,31 @@
 import 'package:flutter/material.dart';
 
 import '../bindings/bindings.dart';
+import '../bible_data.dart';
 
 /// The families the kinds of a sequence's events fall in, each with its
 /// colour: what the chips filter by.
 enum SequenceFamily {
   miracles('Miracles', Icons.auto_awesome, Color(0xFF00897B)),
-  teaching('Teaching', Icons.record_voice_over_outlined, Color(0xFF1E88E5)),
+  teaching(
+    'Teaching and preaching',
+    Icons.record_voice_over_outlined,
+    Color(0xFF1E88E5),
+  ),
   journeys('Journeys', Icons.directions_walk, Color(0xFFEF6C00)),
   callings('Callings', Icons.group_add_outlined, Color(0xFF5E35B1)),
   encounters('Encounters', Icons.handshake_outlined, Color(0xFFD81B60)),
   conflict('Conflict', Icons.gavel, Color(0xFFE53935)),
   revelation('Revelation', Icons.light_mode_outlined, Color(0xFFB28704)),
-  feasts('Feasts', Icons.celebration_outlined, Color(0xFF43A047)),
+  feasts(
+    'Feasts and observances',
+    Icons.celebration_outlined,
+    Color(0xFF43A047),
+  ),
+  births('Birth and childhood', Icons.child_care, Color(0xFF8E24AA)),
+  baptisms('Baptisms', Icons.water_drop_outlined, Color(0xFF0097A7)),
+  ecclesial('Ecclesial life', Icons.groups_outlined, Color(0xFF546E7A)),
+  letters('Letters', Icons.mail_outline, Color(0xFF6D4C41)),
   baptist('John the Baptist', Icons.water_drop_outlined, Color(0xFF00ACC1));
 
   const SequenceFamily(this.label, this.icon, this.color);
@@ -36,6 +49,39 @@ enum SequenceFamily {
 /// A kind of event, as the data writes it (see
 /// [SequenceEventDetailsEntry.kinds]).
 enum SequenceKind {
+  preaching(
+    'preaching',
+    'Preaching',
+    Icons.campaign_outlined,
+    SequenceFamily.teaching,
+  ),
+  testimony(
+    'testimony',
+    'Testimony',
+    Icons.record_voice_over_outlined,
+    SequenceFamily.teaching,
+  ),
+  baptism(
+    'baptism',
+    'Baptism',
+    Icons.water_drop_outlined,
+    SequenceFamily.baptisms,
+  ),
+  ecclesia(
+    'ecclesia',
+    'Ecclesial life',
+    Icons.groups_outlined,
+    SequenceFamily.ecclesial,
+  ),
+  birth('birth', 'Birth', Icons.child_care, SequenceFamily.births),
+  childhood('childhood', 'Childhood', Icons.child_care, SequenceFamily.births),
+  covenant(
+    'covenant',
+    'Covenant observance',
+    Icons.event_outlined,
+    SequenceFamily.feasts,
+  ),
+  letter('letter', 'Letter', Icons.mail_outline, SequenceFamily.letters),
   healing('healing', 'Healing', Icons.healing, SequenceFamily.miracles),
   exorcism('exorcism', 'Casting out', Icons.bolt, SequenceFamily.miracles),
   raising(
@@ -100,6 +146,14 @@ const sequenceRegions = <String, String>{
   'samaria': 'Samaria',
   'perea': 'Perea',
   'judea': 'Judea',
+  'egypt': 'Egypt',
+  'syria': 'Syria',
+  'cyprus': 'Cyprus',
+  'asia-minor': 'Asia Minor',
+  'macedonia': 'Macedonia',
+  'achaia': 'Achaia',
+  'malta': 'Malta',
+  'italy': 'Italy',
 };
 
 /// The lane of [region], in [sequenceRegions]' order; null for none.
@@ -150,6 +204,57 @@ class GospelMarks extends StatelessWidget {
                 color: color.withValues(
                   alpha: books.contains(book) ? 0.95 : 0.25,
                 ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Gospel witnesses keep their comparison marks; other accounts show only
+/// the books actually attached to the event, such as Acts or Galatians.
+class SequenceSourceMarks extends StatelessWidget {
+  const SequenceSourceMarks({
+    super.key,
+    required this.event,
+    required this.color,
+  });
+
+  final BibleEventEntry? event;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final books = {
+      for (final p in event?.passages ?? const <ThematicTarget>[]) p.book,
+    };
+    final gospelBooks = books.where(gospels.containsKey).toSet();
+    final otherBooks =
+        books
+            .where(
+              (b) =>
+                  !gospels.containsKey(b) &&
+                  b > 0 &&
+                  b <= kEnglishBookAbbreviations.length,
+            )
+            .toList()
+          ..sort();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (gospelBooks.isNotEmpty)
+          GospelMarks(books: gospelBooks, color: color),
+        for (final book in otherBooks)
+          Padding(
+            padding: const EdgeInsets.only(left: 3),
+            child: Text(
+              kEnglishBookAbbreviations[book - 1],
+              semanticsLabel: kEnglishBookNames[book - 1],
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: color,
               ),
             ),
           ),

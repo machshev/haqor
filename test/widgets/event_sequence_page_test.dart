@@ -161,6 +161,7 @@ void main() {
     WidgetTester tester, {
     Size size = const Size(900, 1400),
     EventSequenceEntry? sequence,
+    Map<int, BibleEventEntry>? events,
   }) async {
     final shown = sequence ?? _sequence;
     final opened = <StudyPassage>[];
@@ -175,7 +176,7 @@ void main() {
               context,
               sequence: shown,
               sequences: BibleSequences([shown]),
-              events: _events,
+              events: events ?? _events,
               useEnglishBookNames: true,
               onOpenPassage: opened.add,
               basemap: _basemap,
@@ -204,6 +205,68 @@ void main() {
     await tester.tap(key(item));
     await tester.pumpAndSettle();
   }
+
+  testWidgets('Acts kinds, regions, source books and map links work together', (
+    tester,
+  ) async {
+    final rome = _place(803, 'Rome', 41.9, 12.5);
+    final events = {
+      301: _event(301, 'Preaching at Rome', _at(44, 28, 31)),
+      302: _event(302, 'Baptism', _at(44, 16, 15)),
+      303: _event(303, 'Ecclesial life', _at(44, 2, 42)),
+      304: _event(304, 'Letter to Galatians', _at(48, 1, 1)),
+    };
+    final sequence = EventSequenceEntry(
+      key: 'test-acts',
+      title: 'Acts',
+      note: '',
+      expands: null,
+      events: events.keys.toList(),
+      edges: const [],
+      groupings: const [],
+      milestones: const [],
+      details: [
+        _details(301, ['preaching', 'testimony'], 'italy', [rome]),
+        _details(302, ['baptism'], 'macedonia'),
+        _details(303, ['ecclesia'], 'judea', [_jerusalem]),
+        _details(304, ['letter'], ''),
+      ],
+    );
+    await open(
+      tester,
+      sequence: sequence,
+      events: events,
+      size: const Size(360, 900),
+    );
+    for (final family in ['teaching', 'baptisms', 'ecclesial', 'letters']) {
+      expect(key('sequence-kind-$family'), findsOneWidget);
+    }
+    expect(key('sequence-kind-baptist'), findsNothing);
+    expect(find.text('Mt'), findsNothing);
+    expect(find.text('Gal'), findsWidgets);
+    await tester.tap(key('sequence-kind-baptisms'));
+    await tester.pumpAndSettle();
+    expect(opacity(tester, 'sequence-event-302'), 1);
+    expect(opacity(tester, 'sequence-event-301'), lessThan(1));
+    await tester.tap(key('sequence-clear-filters'));
+    await tester.pumpAndSettle();
+    await menu(tester, 'sequence-lanes');
+    expect(find.text('Italy'), findsWidgets);
+    expect(find.text('Macedonia'), findsWidgets);
+    await menu(tester, 'sequence-map-all');
+    final map = tester.widget<SequenceMapPage>(find.byType(SequenceMapPage));
+    expect(map.stops.singleWhere((s) => s.event == 304).places, isEmpty);
+    expect(
+      map.stops.singleWhere((s) => s.event == 301).places.single.label,
+      'Rome',
+    );
+    await tester.tap(key('sequence-map-stop-301'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SequenceMapPage), findsNothing);
+    expect(find.text('Preaching at Rome'), findsWidgets);
+    await menu(tester, 'sequence-lanes');
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('folds into its groups, each unfolded on its own', (
     tester,
