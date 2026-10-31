@@ -255,6 +255,7 @@ class MapPin {
     this.kind = '',
     this.area = const [],
     this.line = const [],
+    this.highlighted = false,
   });
 
   final double latitude;
@@ -287,6 +288,9 @@ class MapPin {
   /// longitude, latitude pairs.
   final List<List<double>> line;
 
+  /// Picked out: ringed, and its label drawn before any other.
+  final bool highlighted;
+
   /// Drawn as ground, named across its middle, rather than as a pin.
   bool get isArea => _areaKinds.contains(kind);
 
@@ -311,7 +315,7 @@ const _wadiScale = 150.0;
 /// One leg of a journey on a [PlaceMap], from one stop to the next.
 @immutable
 class MapLeg {
-  const MapLeg(this.points, {this.bySea = false});
+  const MapLeg(this.points, {this.bySea = false, this.highlighted = false});
 
   /// Longitude, latitude pairs: the stop it leaves, any points it passes, and
   /// the stop it reaches.
@@ -319,6 +323,9 @@ class MapLeg {
 
   /// Drawn dashed, as a voyage.
   final bool bySea;
+
+  /// Picked out: drawn bolder, over the others, which fade.
+  final bool highlighted;
 
   /// The leg as drawn: by land, each stretch between its points along the
   /// highways of [roads] where it keeps to them (see [RoadNetwork.route]),
@@ -341,7 +348,7 @@ class MapLeg {
         changed = true;
       }
     }
-    return changed ? MapLeg(out) : this;
+    return changed ? MapLeg(out, highlighted: highlighted) : this;
   }
 }
 
@@ -358,6 +365,7 @@ class PlaceMap extends StatefulWidget {
     this.relief,
     this.roads,
     this.minSpan = 1.6,
+    this.focus,
   });
 
   final List<MapPin> pins;
@@ -382,6 +390,11 @@ class PlaceMap extends StatefulWidget {
   /// is seen with its surroundings.
   final double minSpan;
 
+  /// Longitude, latitude pairs to bring into view when they change: a place
+  /// picked out, or the way to it. The view moves only as far as it must,
+  /// and zooms out only if they do not fit.
+  final List<double>? focus;
+
   @override
   State<PlaceMap> createState() => _PlaceMapState();
 }
@@ -403,6 +416,8 @@ class _PlaceMapState extends State<PlaceMap> {
   Offset _center = const Offset(35.2, 31.8);
   double _scale = 60;
   bool _fitted = false;
+  // Whether the view is yet to be moved to show the [PlaceMap.focus].
+  bool _focusPending = false;
   // At the start of a gesture.
   late Offset _startCenter;
   late double _startScale;
@@ -494,13 +509,62 @@ class _PlaceMapState extends State<PlaceMap> {
         !_sameLegs(old.legs, widget.legs)) {
       _fitted = false;
     }
+    if (widget.focus != null && !listEquals(old.focus, widget.focus)) {
+      _focusPending = true;
+    }
   }
 
-  static bool _sameLegs(List<MapLeg> a, List<MapLeg> b) =>
-      a.length == b.length &&
-      [
-        for (var i = 0; i < a.length; i++) listEquals(a[i].points, b[i].points),
-      ].every((same) => same);
+  /// The same legs, but for those picked out, which come and go with what
+  /// is picked and are no reason to fit the view again.
+  static bool _sameLegs(List<MapLeg> a, List<MapLeg> b) {
+    final x = a.where((l) => !l.highlighted).toList();
+    final y = b.where((l) => !l.highlighted).toList();
+    if (x.length != y.length) return false;
+    for (var i = 0; i < x.length; i++) {
+      if (!listEquals(x[i].points, y[i].points)) return false;
+    }
+    return true;
+  }
+
+  /// Move the view, as little as it must, to show [focus], zoomed out if it
+  /// does not fit.
+  void _show(Size size) {
+    _focusPending = false;
+    final focus = widget.focus;
+    if (focus == null || focus.length < 2 || size.isEmpty) return;
+    var west = double.infinity, east = -double.infinity;
+    var south = double.infinity, north = -double.infinity;
+    for (var i = 0; i + 1 < focus.length; i += 2) {
+      west = math.min(west, focus[i]);
+      east = math.max(east, focus[i]);
+      south = math.min(south, focus[i + 1]);
+      north = math.max(north, focus[i + 1]);
+    }
+    // A margin of a tenth of the view all round, clear of the zoom buttons.
+    final fits =
+        (east - west) * _xScale * _scale <= size.width * .8 &&
+        (north - south) * _scale <= size.height * .8;
+    if (!fits) {
+      _scale = math
+          .min(
+            size.width * .8 / math.max((east - west) * _xScale, 1e-9),
+            size.height * .8 / math.max(north - south, 1e-9),
+          )
+          .clamp(_minScale, _scale);
+    }
+    final view = _view(size);
+    final marginX = view.width * .1, marginY = view.height * .1;
+    var dx = 0.0, dy = 0.0;
+    if (west < view.left + marginX) dx = west - (view.left + marginX);
+    if (east > view.right - marginX) dx = east - (view.right - marginX);
+    if (south < view.top + marginY) dy = south - (view.top + marginY);
+    if (north > view.bottom - marginY) dy = north - (view.bottom - marginY);
+    if (!fits) {
+      _center = Offset((west + east) / 2, (south + north) / 2);
+    } else {
+      _center += Offset(dx, dy);
+    }
+  }
 
   static bool _samePins(List<MapPin> a, List<MapPin> b) {
     if (a.length != b.length) return false;
@@ -665,6 +729,7 @@ class _PlaceMapState extends State<PlaceMap> {
         // Fitted once, on first layout or when the pins change; a later
         // resize keeps the reader's view.
         if (!_fitted) _fit(size);
+        if (_focusPending) _show(size);
         _colourRelief(size, colors.land, dark);
         return ClipRect(
           child: Stack(
@@ -1101,6 +1166,25 @@ class _MapPainter extends CustomPainter {
         }
         continue;
       }
+      if (pin.highlighted) {
+        canvas
+          ..drawCircle(
+            point,
+            12,
+            Paint()
+              ..color = colors.halo.withValues(alpha: .8)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 5,
+          )
+          ..drawCircle(
+            point,
+            12,
+            Paint()
+              ..color = colors.route
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2.5,
+          );
+      }
       if (pin.primary && !pin.estimated) {
         canvas.drawCircle(point, 7, Paint()..color = colors.pinBorder);
         canvas.drawCircle(
@@ -1133,15 +1217,22 @@ class _MapPainter extends CustomPainter {
         Shadow(color: colors.halo, offset: o, blurRadius: 1.5),
     ];
     for (final pin in [
-      ...pins.where((p) => p.primary && !p.isArea),
-      ...pins.where((p) => !p.primary && !p.isArea),
+      ...pins.where((p) => p.highlighted && !p.isArea),
+      ...pins.where((p) => !p.highlighted && p.primary && !p.isArea),
+      ...pins.where((p) => !p.highlighted && !p.primary && !p.isArea),
     ]) {
       if (pin.label.isEmpty) continue;
       final point = at(pin);
       if (!(Offset.zero & size).contains(point)) continue;
       final style = labelStyle.copyWith(
-        color: colors.label.withValues(alpha: pin.primary ? 1 : .75),
-        fontWeight: pin.primary ? FontWeight.w600 : FontWeight.w400,
+        color: pin.highlighted
+            ? colors.route
+            : colors.label.withValues(alpha: pin.primary ? 1 : .75),
+        fontWeight: pin.highlighted
+            ? FontWeight.w800
+            : pin.primary
+            ? FontWeight.w600
+            : FontWeight.w400,
         shadows: halo(),
       );
       final text = TextPainter(
@@ -1150,7 +1241,7 @@ class _MapPainter extends CustomPainter {
         maxLines: 1,
         ellipsis: '…',
       )..layout(maxWidth: 160);
-      final origin = point + Offset(9, -text.height / 2);
+      final origin = point + Offset(pin.highlighted ? 15 : 9, -text.height / 2);
       final box = (origin & text.size).inflate(1);
       if (drawn.any(box.overlaps)) continue;
       drawn.add(box);
@@ -1210,7 +1301,22 @@ class _MapPainter extends CustomPainter {
       ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
-    for (final leg in legs) {
+    // With one picked out, the rest fade under it.
+    final picking = legs.any((l) => l.highlighted);
+    for (final leg in [
+      ...legs.where((l) => !l.highlighted),
+      ...legs.where((l) => l.highlighted),
+    ]) {
+      halo
+        ..color = colors.halo.withValues(
+          alpha: picking && !leg.highlighted ? .35 : .7,
+        )
+        ..strokeWidth = leg.highlighted ? 7 : 5;
+      line
+        ..color = colors.route.withValues(
+          alpha: picking && !leg.highlighted ? .35 : 1,
+        )
+        ..strokeWidth = leg.highlighted ? 4 : 2.5;
       final points = [
         for (var i = 0; i + 1 < leg.points.length; i += 2)
           screen(leg.points[i], leg.points[i + 1]),
@@ -1293,7 +1399,7 @@ class _MapPainter extends CustomPainter {
           ..drawPath(
             arrow,
             Paint()
-              ..color = colors.route
+              ..color = line.color
               ..style = PaintingStyle.fill,
           );
         break;

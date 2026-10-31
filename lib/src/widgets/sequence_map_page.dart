@@ -15,7 +15,7 @@ typedef SequenceMapStop = ({
 /// they are drawn, each event at its chief place. A line runs from one
 /// event's place to the next's only where the next is known to come after
 /// it: where the order is unknown, no way is drawn.
-class SequenceMapPage extends StatelessWidget {
+class SequenceMapPage extends StatefulWidget {
   const SequenceMapPage({
     super.key,
     required this.title,
@@ -57,8 +57,30 @@ class SequenceMapPage extends StatelessWidget {
   );
 
   @override
+  State<SequenceMapPage> createState() => _SequenceMapPageState();
+}
+
+class _SequenceMapPageState extends State<SequenceMapPage> {
+  /// The index of the event picked out in the list, if any.
+  int? _selected;
+
+  /// The event the picked one is known to follow most nearly, of those
+  /// before it in the list with a place: where the way to it comes from.
+  int? _cameFrom(int i) {
+    final stops = widget.stops;
+    for (var j = i - 1; j >= 0; j--) {
+      if (stops[j].places.isEmpty) continue;
+      if (widget.knownBefore(stops[j].event, stops[i].event)) return j;
+    }
+    return null;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final stops = widget.stops;
+    final selected = _selected;
+    final picked = selected == null ? null : stops[selected].places.firstOrNull;
     // The numbers of the events at each place, by place.
     final numbers = <int, List<int>>{};
     final firstAt = <int, SequencePlaceEntry>{};
@@ -74,35 +96,59 @@ class SequenceMapPage extends StatelessWidget {
           place.location,
           label: '${place.label} (${numbers[id]!.join(', ')})',
           id: id,
+          highlighted: picked?.place.id == id,
         ),
     ];
+    // The way to the picked event, from the place of the one it follows.
+    final from = selected == null || picked == null
+        ? null
+        : _cameFrom(selected);
+    final fromPlace = from == null ? null : stops[from].places.first;
+    final way = fromPlace == null || fromPlace.place.id == picked!.place.id
+        ? null
+        : [
+            fromPlace.location.longitude,
+            fromPlace.location.latitude,
+            picked.location.longitude,
+            picked.location.latitude,
+          ];
     final legs = <MapLeg>[];
-    SequenceMapStop? last;
-    for (final stop in stops) {
+    var wayDrawn = false;
+    int? last;
+    for (final (i, stop) in stops.indexed) {
       final place = stop.places.firstOrNull;
       if (place == null) continue;
-      final from = last?.places.first;
-      if (from != null &&
-          from.place.id != place.place.id &&
-          knownBefore(last!.event, stop.event)) {
+      final previous = last == null ? null : stops[last].places.first;
+      if (previous != null &&
+          previous.place.id != place.place.id &&
+          widget.knownBefore(stops[last!].event, stop.event)) {
+        final isWay = way != null && last == from && i == selected;
+        wayDrawn |= isWay;
         legs.add(
           MapLeg([
-            from.location.longitude,
-            from.location.latitude,
+            previous.location.longitude,
+            previous.location.latitude,
             place.location.longitude,
             place.location.latitude,
-          ]),
+          ], highlighted: isWay),
         );
       }
-      last = stop;
+      last = i;
     }
+    if (way != null && !wayDrawn) legs.add(MapLeg(way, highlighted: true));
+    final focus =
+        way ??
+        (picked == null
+            ? null
+            : [picked.location.longitude, picked.location.latitude]);
     final located = stops.where((s) => s.places.isNotEmpty).length;
+    final open = widget.onOpenEvent;
     return Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title),
+            Text(widget.title),
             Text(
               '$located of ${stops.length} events placed',
               style: theme.textTheme.labelMedium?.copyWith(
@@ -126,16 +172,18 @@ class SequenceMapPage extends StatelessWidget {
                   )
                 : PlaceMap(
                     key: const ValueKey('sequence-map'),
-                    basemap: basemap,
+                    basemap: widget.basemap,
                     pins: pins,
                     legs: legs,
+                    focus: focus,
                   ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(
               'A line joins two places only where the second event is known '
-              'to follow the first.',
+              'to follow the first. Tap an event to pick out its place and '
+              'the way to it.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -151,19 +199,26 @@ class SequenceMapPage extends StatelessWidget {
                 return ListTile(
                   key: ValueKey('sequence-map-stop-${stop.event}'),
                   dense: true,
+                  selected: _selected == i,
                   leading: CircleAvatar(
                     radius: 13,
                     child: Text('${i + 1}', style: theme.textTheme.labelSmall),
                   ),
                   title: Text(stop.title),
                   subtitle: Text(places.isEmpty ? 'No place told' : places),
-                  enabled: stop.places.isNotEmpty || onOpenEvent != null,
-                  onTap: onOpenEvent == null
+                  onTap: () =>
+                      setState(() => _selected = _selected == i ? null : i),
+                  trailing: open == null
                       ? null
-                      : () {
-                          Navigator.pop(context);
-                          onOpenEvent!(stop.event);
-                        },
+                      : IconButton(
+                          key: ValueKey('sequence-map-open-${stop.event}'),
+                          icon: const Icon(Icons.open_in_new),
+                          tooltip: 'Show in the sequence',
+                          onPressed: () {
+                            Navigator.pop(context);
+                            open(stop.event);
+                          },
+                        ),
                 );
               },
             ),

@@ -261,7 +261,7 @@ void main() {
       map.stops.singleWhere((s) => s.event == 301).places.single.label,
       'Rome',
     );
-    await tester.tap(key('sequence-map-stop-301'));
+    await tester.tap(key('sequence-map-open-301'));
     await tester.pumpAndSettle();
     expect(find.byType(SequenceMapPage), findsNothing);
     expect(find.text('Preaching at Rome'), findsWidgets);
@@ -440,9 +440,39 @@ void main() {
       'Capernaum (2, 3)',
     ]);
     expect(placeMap.legs, hasLength(1));
+    expect(placeMap.legs.single.highlighted, isFalse);
 
-    // An event of it picks it out on the sequence.
+    // Tapping an event picks out its place and the way to it, on the map.
     await tester.tap(key('sequence-map-stop-4'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SequenceMapPage), findsOneWidget);
+    var picked = tester.widget<PlaceMap>(key('sequence-map'));
+    expect(
+      picked.pins.where((p) => p.highlighted).map((p) => p.label),
+      ['Capernaum (2, 3)'],
+    );
+    expect(picked.legs.single.highlighted, isTrue);
+    expect(picked.focus, picked.legs.single.points);
+    expect(
+      tester.widget<ListTile>(key('sequence-map-stop-4')).selected,
+      isTrue,
+    );
+
+    // The next, at the same place, picks out the place with no way to it.
+    await tester.tap(key('sequence-map-stop-5'));
+    await tester.pumpAndSettle();
+    picked = tester.widget<PlaceMap>(key('sequence-map'));
+    expect(picked.pins.where((p) => p.highlighted), hasLength(1));
+    expect(picked.legs.where((l) => l.highlighted), isEmpty);
+
+    // Tapped again, it is let go.
+    await tester.tap(key('sequence-map-stop-5'));
+    await tester.pumpAndSettle();
+    picked = tester.widget<PlaceMap>(key('sequence-map'));
+    expect(picked.pins.where((p) => p.highlighted), isEmpty);
+
+    // Its button picks it out on the sequence.
+    await tester.tap(key('sequence-map-open-4'));
     await tester.pumpAndSettle();
     expect(key('sequence-event-4'), findsOneWidget);
     expect(find.text('Before: 3'), findsOneWidget);

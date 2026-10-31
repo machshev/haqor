@@ -863,6 +863,7 @@ MapPin placePin(
   required String label,
   int? id,
   bool primary = true,
+  bool highlighted = false,
 }) => MapPin(
   latitude: location.latitude,
   longitude: location.longitude,
@@ -874,6 +875,7 @@ MapPin placePin(
   kind: location.kind,
   area: location.area,
   line: location.line,
+  highlighted: highlighted,
 );
 
 class _LocationRow extends StatelessWidget {
