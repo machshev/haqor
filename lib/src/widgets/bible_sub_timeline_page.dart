@@ -25,6 +25,15 @@ const bibleDatedSections = {
   'prophets',
 };
 
+/// Related histories that share a date scale and separate bands.
+const bibleHistoryVariants = {
+  'judges': 'Judges',
+  'united-kingdom': 'United Kingdom',
+  'israel-kings': 'Israel',
+  'judah-kings': 'Judah',
+  'prophets': 'Prophets',
+};
+
 /// A section's dated members and the lifetimes that give its births and
 /// deaths context. Nested sections stay behind their summary event. The
 /// enclosing lifetime is omitted so it cannot open itself recursively.
@@ -104,10 +113,19 @@ class BibleSubTimelinePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final related = bibleHistoryVariants.containsKey(section.key);
+    // The opened section is first so it is initially shown alone.
+    final sections = [
+      section,
+      if (related)
+        for (final key in bibleHistoryVariants.keys)
+          for (final other in sequences.all)
+            if (other.key == key && other.key != section.key) other,
+    ];
     final timeline = StudyTimeline(
-      id: 'bible-section:${section.key}',
+      id: related ? 'bible-history' : 'bible-section:${section.key}',
       parentId: bibleTimeline.id,
-      title: section.title,
+      title: related ? 'Judges, kingdoms and prophets' : section.title,
       scale: TimelineScale.calendar,
       categoryColors: bibleTimeline.categoryColors,
       note:
@@ -117,12 +135,36 @@ class BibleSubTimelinePage extends StatelessWidget {
           'reigns and ministries. Event order shows the separate '
           'passage-based ordering.\n\n${section.note}',
     );
-    final entries = [
+    final sourceIds = <String, int>{};
+    final entries = <StudyTimelineEntry>[];
+    for (final history in sections) {
+      // Shared events need separate identities and pins in each band.
+      String entryId(String id) =>
+          history.key == section.key ? id : '${history.key}:$id';
       for (final e in bibleTimelineEntries(
-        bibleSubTimelineEvents(section, events.values),
-      ))
-        e.copyWith(timelineId: timeline.id),
-    ];
+        bibleSubTimelineEvents(history, events.values),
+      )) {
+        final id = entryId(e.id);
+        sourceIds[id] = int.parse(e.id);
+        entries.add(
+          e
+              .copyWith(
+                id: id,
+                timelineId: timeline.id,
+                variant: related ? history.key : '',
+              )
+              .pinnedTo(
+                e.pin == null
+                    ? null
+                    : TimelinePin(
+                        entryId(e.pin!.anchorId),
+                        e.pin!.offset,
+                        weekday: e.pin!.weekday,
+                      ),
+              ),
+        );
+      }
+    }
     // A deep link selects the summary that opens the next nested section.
     final path = focusEventId == null
         ? const <EventSequenceEntry>[]
@@ -138,6 +180,17 @@ class BibleSubTimelinePage extends StatelessWidget {
 
     return TimelinePage(
       timeline: timeline,
+      variants: related
+          ? [
+              for (final history in sections)
+                TimelineVariant(
+                  id: history.key,
+                  title: history.title,
+                  shortTitle: bibleHistoryVariants[history.key]!,
+                  note: '${timeline.note}\n\n${history.note}',
+                ),
+            ]
+          : const [],
       wheelCycle: timelineChronologyCycle(timeline, entries),
       entries: entries,
       useEnglishBookNames: useEnglishBookNames,
@@ -146,7 +199,7 @@ class BibleSubTimelinePage extends StatelessWidget {
       showInitialSelected: initial != null,
       collapseGroups: true,
       onOpenEntry: (entry) {
-        final inner = sequences.expanding[int.tryParse(entry.id)];
+        final inner = sequences.expanding[sourceIds[entry.id]];
         if (inner == null || inner.key == section.key) return false;
         openBibleSection(
           context,

@@ -1361,6 +1361,7 @@ class StudyTimelineEntry {
   }
 
   StudyTimelineEntry copyWith({
+    String? id,
     String? title,
     String? shortTitle,
     String? timelineId,
@@ -1380,7 +1381,7 @@ class StudyTimelineEntry {
     String? variant,
   }) => StudyTimelineEntry(
     extra: extra,
-    id: id,
+    id: id ?? this.id,
     title: title ?? this.title,
     shortTitle: shortTitle ?? this.shortTitle,
     timelineId: timelineId ?? this.timelineId,

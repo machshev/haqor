@@ -159,6 +159,61 @@ void main() {
     },
   );
 
+  testWidgets('histories open alone and combine with independent event pins', (
+    tester,
+  ) async {
+    final histories = [
+      for (final key in bibleHistoryVariants.keys) section(key, [1, 2]),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleSubTimelinePage(
+          section: histories[3],
+          sequences: BibleSequences(histories),
+          events: {
+            1: event(1, 'Reign of Asa', -955, duration: 41),
+            2: event(2, 'Death of Asa', -914),
+          },
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final page = tester.widget<TimelinePage>(find.byType(TimelinePage));
+    expect(page.timeline.id, 'bible-history');
+    expect(page.variants, hasLength(5));
+    expect(page.entries.map((e) => e.id).toSet(), hasLength(10));
+    for (final entry in page.entries.where((e) => e.pin != null)) {
+      final anchor = page.entries.singleWhere(
+        (e) => e.id == entry.pin!.anchorId,
+      );
+      expect(anchor.variant, entry.variant);
+      expect(anchor.start.value, -955);
+    }
+    FilterChip chip(String key) => tester.widget<FilterChip>(
+      find.byKey(ValueKey('timeline-variant-$key')),
+    );
+    expect(chip('judah-kings').selected, isTrue);
+    expect(chip('prophets').selected, isFalse);
+    await tester.tap(find.byKey(const ValueKey('timeline-variant-prophets')));
+    await tester.pumpAndSettle();
+    expect(chip('judah-kings').selected, isTrue);
+    expect(chip('prophets').selected, isTrue);
+    await tester.tap(
+      find.byKey(const ValueKey('timeline-variant-judah-kings')),
+    );
+    await tester.pumpAndSettle();
+    expect(chip('judah-kings').selected, isFalse);
+    expect(chip('prophets').selected, isTrue);
+    await tester.tap(find.byKey(const ValueKey('timeline-variant-all')));
+    await tester.pumpAndSettle();
+    for (final key in bibleHistoryVariants.keys) {
+      expect(chip(key).selected, isTrue);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('deep links traverse a dated parent into a nested narrative', (
     tester,
   ) async {
