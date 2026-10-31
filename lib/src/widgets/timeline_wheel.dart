@@ -23,7 +23,8 @@ class TimelineWheelCycle {
   final String? description;
   final List<String> segments;
 
-  /// Literal days divided into evening and morning, starting at sunset.
+  /// Days divided into evening and morning, including the symbolic days
+  /// of the 7,000-year creation week.
   /// These are schematic halves, not calculated sunrise/sunset times.
   final int dayCount;
 
@@ -73,9 +74,12 @@ TimelineWheelCycle? timelineCycleOf(StudyTimeline timeline) {
         ? '7,000 years'
         : extent.label,
     segments: labels,
+    description: extent == TimelineExtent.creationWeek
+        ? 'Creation week · 7,000 years · Evening → Morning within each 1,000-year day'
+        : null,
     dayCount: extent == TimelineExtent.day
         ? 1
-        : extent == TimelineExtent.week
+        : extent == TimelineExtent.week || extent == TimelineExtent.creationWeek
         ? 7
         : 0,
   );

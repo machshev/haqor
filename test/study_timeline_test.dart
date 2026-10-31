@@ -2,9 +2,26 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/timeline_chart.dart';
+import 'package:haqor/src/widgets/bible_timeline_page.dart';
 import 'package:haqor/src/widgets/timeline_wheel.dart';
 
 void main() {
+  test('Bible creation wheel has evening then morning in all seven days', () {
+    expect(bibleCreationWeek.dayParts, hasLength(14));
+    final custom = timelineCycleOf(
+      const StudyTimeline(
+        id: 'creation',
+        title: 'Creation',
+        scale: TimelineScale.years,
+        extent: TimelineExtent.creationWeek,
+      ),
+    )!;
+    expect(bibleCreationWeek.dayParts, custom.dayParts);
+    expect(bibleCreationWeek.dayParts.first.label, 'Evening');
+    expect(bibleCreationWeek.dayParts.last.label, 'Morning');
+    expect(bibleCreationWeek.dayParts.last.to, 1);
+  });
+
   test(
     'every built-in has its full wheel scale, including older saved links',
     () {
@@ -128,7 +145,9 @@ void main() {
           expect(loaded.isAnnual, isTrue);
         } else {
           expect(wheel!.length, length);
-          if (extent == TimelineExtent.day || extent == TimelineExtent.week) {
+          if (extent == TimelineExtent.day ||
+              extent == TimelineExtent.week ||
+              extent == TimelineExtent.creationWeek) {
             final days = extent == TimelineExtent.day ? 1 : 7;
             expect(wheel.dayParts, hasLength(days * 2));
             for (var day = 0; day < days; day++) {
