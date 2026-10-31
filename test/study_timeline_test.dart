@@ -1009,6 +1009,36 @@ void main() {
     expect(lane('wave'), 1);
   });
 
+  test('Ezekiel\'s moʿadim and Hezekiah\'s pesach come whole, dated as the '
+      'text dates them', () {
+    TimelineTime day(int month, int day) =>
+        TimelineTime(0, month: month, day: day);
+    for (final id in ['ezekiel-moadim', 'hezekiah-pesach']) {
+      final standard = standardTimelineById(id)!;
+      final view = StudyWorkspace.viewOfStandard(standard);
+      expect(view.entries, hasLength(standard.entries.length), reason: id);
+    }
+    TimelineTime? start(String timeline, String id) =>
+        StudyWorkspace.viewOfStandard(
+          standardTimelineById(timeline)!,
+        ).entries.singleWhere((e) => e.id == '$timeline:$id').start;
+    TimelineTime? end(String timeline, String id) =>
+        StudyWorkspace.viewOfStandard(
+          standardTimelineById(timeline)!,
+        ).entries.singleWhere((e) => e.id == '$timeline:$id').end;
+    // Ezekiel's two weeks are alike, from the fifteenth of each.
+    expect(start('ezekiel-moadim', 'cleanse-2'), day(1, 7));
+    expect(start('ezekiel-moadim', 'chag-1'), day(1, 15));
+    expect(start('ezekiel-moadim', 'chag-7'), day(7, 15));
+    expect(end('ezekiel-moadim', 'chag-7'), day(7, 21));
+    // Hezekiah's pesach a month on, and its week twice over.
+    expect(start('hezekiah-pesach', 'porch'), day(1, 8));
+    expect(start('hezekiah-pesach', 'atonement'), day(1, 17));
+    expect(start('hezekiah-pesach', 'matzot'), day(2, 15));
+    expect(start('hezekiah-pesach', 'other-seven'), day(2, 22));
+    expect(end('hezekiah-pesach', 'other-seven'), day(2, 28));
+  });
+
   test('a study links the standard moʿadim, and builds on them a timeline '
       'of its own, placed on its own weeks', () {
     final standard = standardTimelineById('moadim')!;

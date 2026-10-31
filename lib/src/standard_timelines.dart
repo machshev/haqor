@@ -30,7 +30,7 @@ class StandardTimeline {
 }
 
 /// The standard timelines a study may add.
-final standardTimelines = [_moadim];
+final standardTimelines = [_moadim, _ezekielMoadim, _hezekiahPesach];
 
 /// The standard timeline [id], if there is one.
 StandardTimeline? standardTimelineById(String? id) =>
@@ -440,8 +440,9 @@ final _moadim = StandardTimeline(
           'fifteenth day of the month, in the chag, shall he do the like '
           '(kaʾelleh) seven days, according to the sin offering, according '
           'to the burnt offering" (Ezekiel 45:25), the two weeks a pair, '
-          'each with a bull and seven rams a day (Ezekiel 45:23). Gathered at Jerusalem on the first of the month, on the '
-          'second they found the sukkot written, and "proclaimed in all '
+          'each with seven bulls and seven rams a day, and a he-goat for a '
+          'sin offering (Ezekiel 45:23). Gathered at Jerusalem on the first '
+          'of the month, on the second they found the sukkot written, and "proclaimed in all '
           'their cities, and in Jerusalem, saying, Go forth unto the mount" '
           '(Nehemiah 8:14-15).',
     ),
@@ -589,4 +590,426 @@ final _home3 = _home(
   'to their tents (leʾohaleihem)" (2 Chronicles 7:10); "they went unto '
   'their tents joyful and glad of heart" (1 Kings 8:66).',
   [_ref(_kings1, 8, 66), _ref(_chronicles2, 7, 10)],
+);
+
+const _kipper = 'Kipper (a covering)';
+const _qiddush = 'Qiddush (a hallowing)';
+const _aremot = 'ʿAremot (heaps)';
+
+/// The seven bulls, seven rams and he-goat of each day of both of
+/// Ezekiel's weeks (Ezekiel 45:23), alike for both (Ezekiel 45:25).
+const _ezekielDay = '7 bulls, 7 rams, 1 he-goat (Ezekiel 45:23)';
+
+/// The appointed times as Ezekiel gives them, Ezekiel 45:18-25: the
+/// sanctuary covered at the head of the year, and two weeks alike, the
+/// pesach's in the first month and the chag's in the seventh.
+final _ezekielMoadim = StandardTimeline(
+  id: 'ezekiel-moadim',
+  description:
+      'Ezekiel 45:18-25: the sanctuary cleansed at the head of the year, and '
+      'two weeks alike, the pesach\'s in the first month and the chag\'s in '
+      'the seventh, the prince providing for the people.',
+  template: const StudyTimeline(
+    id: '',
+    title: 'Moʿadim beYechezqel (the appointed times in Ezekiel)',
+    scale: TimelineScale.annual,
+    monthNaming: TimelineMonthNaming.numbered,
+    showSeasons: true,
+    categoryColors: {_before: 5, _chag: 0, _qorban: 2, _kipper: 4},
+    note:
+        'The times of the house Ezekiel was shown (Ezekiel 40-48), as he '
+        'dates them: "it shall be the prince\'s part to give burnt '
+        'offerings ... in the chaggim, and in the new moons, and in the '
+        'sabbaths, in all the moʿadim of the house of Israel: he shall '
+        'prepare the sin offering ... to make atonement (lekhapper) for the '
+        'house of Israel" (Ezekiel 45:17). Of the moʿadim of Leviticus 23 '
+        'Ezekiel gives the two weeks, and makes them alike, "he shall do '
+        'the like (kaʾelleh)" (Ezekiel 45:25), with no Shavuot, Yom Teruah '
+        'or Yom haKippurim; the covering is done in the cleansings at the '
+        'head of the year (Ezekiel 45:18-20) and in the sin offering of each '
+        'day of both weeks. Matzot opens the year, "the beginning of months" '
+        '(Exodus 12:2), and the chag of the ingathering is "at the turn of '
+        'the year" (Exodus 34:22); both remember the going out of Egypt '
+        '(Exodus 23:15; Leviticus 23:43), as Ezekiel\'s is a new going out: '
+        '"I will bring you out from the peoples ... into the wilderness of '
+        'the peoples" (Ezekiel 20:34-35). Verses rendered literally.',
+  ),
+  entries: [
+    StudyTimelineEntry(
+      id: 'cleanse-1',
+      title: 'Chitte hammiqdash (cleansing the sanctuary)',
+      shortTitle: 'Chitte hammiqdash',
+      timelineId: '',
+      start: const TimelineTime(0, month: 1, day: 1),
+      category: _kipper,
+      verses: [_ref(_ezekiel, 45, 18, 19)],
+      note:
+          '"In the first month, on the first of the month, thou shalt take a '
+          'young bull without blemish, and thou shalt cleanse (chitteta) the '
+          'sanctuary; and the priest shall take of the blood of the sin '
+          'offering and put it on the posts of the house, and on the four '
+          'corners of the ledge of the altar, and on the posts of the gate '
+          'of the inner court" (Ezekiel 45:18-19).',
+    ),
+    StudyTimelineEntry(
+      id: 'cleanse-2',
+      title: 'Kipper habbayit (covering the house)',
+      shortTitle: 'Kipper habbayit',
+      timelineId: '',
+      start: const TimelineTime(0, month: 1, day: 7),
+      category: _kipper,
+      pin: const TimelinePin('cleanse-1', TimelineDuration(7, _day)),
+      verses: [_ref(_ezekiel, 45, 20)],
+      note:
+          '"And so thou shalt do on the seventh in the month (beshivʿah '
+          'bachodesh) for every one that strayeth, and for the simple: so ye '
+          'shall cover (vekhippartem) the house" (Ezekiel 45:20), as the '
+          'Hebrew reads. The Septuagint reads "in the seventh month, on the '
+          'first of the month" (en tō hebdomō mēni mia tou mēnos): see the '
+          'Kipper habbayit of the seventh month.',
+    ),
+    StudyTimelineEntry(
+      id: 'cleanse-7',
+      title: 'Kipper habbayit (covering the house), as the Septuagint reads',
+      shortTitle: 'Kipper habbayit (LXX)',
+      timelineId: '',
+      start: const TimelineTime(0, month: 7, day: 1),
+      category: _kipper,
+      verses: [_ref(_ezekiel, 45, 20)],
+      note:
+          '"And so shalt thou do in the seventh month, on the first of the '
+          'month (en tō hebdomō mēni mia tou mēnos)" (Ezekiel 45:20, '
+          'Septuagint), where the Hebrew reads "on the seventh in the month" '
+          'of the first. So read, each half of the year opens with the house '
+          'covered on the first of the month, and its week follows at the '
+          'full moon: the day of Yom Teruah (Leviticus 23:24), a covering '
+          'done by the priest, not a calling up of the people.',
+    ),
+    StudyTimelineEntry(
+      id: 'before-1',
+      title: 'Penei Yahweh (before Yahweh): the first month',
+      shortTitle: 'Penei Yahweh, 1st',
+      timelineId: '',
+      start: const TimelineTime(0, month: 1, day: 14),
+      end: const TimelineTime(0, month: 1, day: 21),
+      duration: const TimelineDuration(8, _day),
+      category: _before,
+      style: TimelineSpanStyle.bracket,
+      verses: [_ref(_ezekiel, 46, 9, 10)],
+      note:
+          '"And when the people of the land come before Yahweh (lifnei '
+          'Yahweh) in the moʿadim, he that entereth by the way of the north '
+          'gate to worship shall go out by the way of the south gate ... and '
+          'the prince in the midst of them, when they go in, shall go in" '
+          '(Ezekiel 46:9-10).',
+    ),
+    StudyTimelineEntry(
+      id: 'pesach',
+      title: 'Pesach (the passing over)',
+      shortTitle: 'Pesach',
+      timelineId: '',
+      start: const TimelineTime(0, month: 1, day: 14),
+      part: TimelineDayPart.evening,
+      category: _qorban,
+      pin: const TimelinePin('before-1', TimelineDuration(1, _day)),
+      verses: [_ref(_ezekiel, 45, 21, 22)],
+      note:
+          '"In the first month, on the fourteenth day of the month, the '
+          'pesach shall be to you, a chag of weeks of days (shevuʿot '
+          'yamim); matzot shall be eaten. And the prince shall prepare on '
+          'that day, for himself and for all the people of the land, a bull '
+          'for a sin offering" (Ezekiel 45:21-22). "Weeks of days" is most '
+          'often read "seven days" (shivʿat yamim), as Ezekiel 45:23.',
+    ),
+    StudyTimelineEntry(
+      id: 'chag-1',
+      title: 'Chag (pilgrimage) of seven days: the first month',
+      shortTitle: 'Chag, 1st month',
+      timelineId: '',
+      start: const TimelineTime(0, month: 1, day: 15),
+      end: const TimelineTime(0, month: 1, day: 21),
+      duration: const TimelineDuration(7, _day),
+      category: _chag,
+      pin: const TimelinePin('before-1', TimelineDuration(2, _day)),
+      dayNotes: const {
+        1: _ezekielDay,
+        2: _ezekielDay,
+        3: _ezekielDay,
+        4: _ezekielDay,
+        5: _ezekielDay,
+        6: _ezekielDay,
+        7: _ezekielDay,
+      },
+      verses: [_ref(_ezekiel, 45, 23, 24)],
+      note:
+          '"And the seven days of the chag he shall prepare a burnt offering '
+          'to Yahweh, seven bulls and seven rams without blemish daily the '
+          'seven days, and a he-goat daily for a sin offering; and a meal '
+          'offering, an ephah for a bull and an ephah for a ram, and a hin '
+          'of oil for an ephah" (Ezekiel 45:23-24). Numbers gives two bulls '
+          'a day (Numbers 28:19).',
+    ),
+    StudyTimelineEntry(
+      id: 'before-7',
+      title: 'Penei Yahweh (before Yahweh): the seventh month',
+      shortTitle: 'Penei Yahweh, 7th',
+      timelineId: '',
+      start: const TimelineTime(0, month: 7, day: 15),
+      end: const TimelineTime(0, month: 7, day: 21),
+      duration: const TimelineDuration(7, _day),
+      category: _before,
+      style: TimelineSpanStyle.bracket,
+      verses: [_ref(_ezekiel, 46, 9, 11)],
+      note:
+          'The people of the land before Yahweh "in the moʿadim" (Ezekiel '
+          '46:9), and "in the chaggim and in the moʿadim" (Ezekiel 46:11). '
+          'Ezekiel gives the chag of the seventh month seven days, with no '
+          'eighth.',
+    ),
+    StudyTimelineEntry(
+      id: 'chag-7',
+      title: 'Chag (pilgrimage) of seven days: the seventh month',
+      shortTitle: 'Chag, 7th month',
+      timelineId: '',
+      start: const TimelineTime(0, month: 7, day: 15),
+      end: const TimelineTime(0, month: 7, day: 21),
+      duration: const TimelineDuration(7, _day),
+      category: _chag,
+      pin: const TimelinePin('before-7', TimelineDuration(1, _day)),
+      dayNotes: const {
+        1: _ezekielDay,
+        2: _ezekielDay,
+        3: _ezekielDay,
+        4: _ezekielDay,
+        5: _ezekielDay,
+        6: _ezekielDay,
+        7: _ezekielDay,
+      },
+      verses: [_ref(_ezekiel, 45, 25), _ref(_kings1, 8, 2)],
+      note:
+          '"In the seventh month, on the fifteenth day of the month, in the '
+          'chag, he shall do the like (kaʾelleh) seven days, according to the '
+          'sin offering, according to the burnt offering, and according to '
+          'the meal offering, and according to the oil" (Ezekiel 45:25): the '
+          'week of the first month again. "The chag", as "in the month '
+          'Ethanim, in the chag, which is the seventh month" (1 Kings 8:2). '
+          'Numbers gives thirteen bulls on its first day, falling to seven '
+          '(Numbers 29:13-32).',
+    ),
+  ],
+);
+
+/// Hezekiah's pesach, 2 Chronicles 29-31: in the first year of his reign
+/// the house hallowed through the first month, the pesach kept in the
+/// second, and the chag of the matzot kept twice over.
+final _hezekiahPesach = StandardTimeline(
+  id: 'hezekiah-pesach',
+  description:
+      '2 Chronicles 29-31: the house hallowed from the first of the first '
+      'month, the pesach kept in the second month, the matzot seven days '
+      'and other seven days, and the heaps gathered to the seventh month.',
+  template: const StudyTimeline(
+    id: '',
+    title: 'Pesach Chizqiyyahu (the pesach of Hezekiah)',
+    scale: TimelineScale.annual,
+    monthNaming: TimelineMonthNaming.numbered,
+    showSeasons: true,
+    categoryColors: {_before: 5, _chag: 0, _qorban: 2, _qiddush: 1, _aremot: 6},
+    note:
+        '"In the first year of his reign, in the first month, he opened the '
+        'doors of the house of Yahweh, and repaired them" (2 Chronicles '
+        '29:3), dated as the text dates it. The house was being hallowed '
+        'through the fourteenth of the first month, so the pesach was kept '
+        'in the second, as the Torah allows one unclean or "in a way far '
+        'off" (Numbers 9:10-11); and having kept the matzot seven days they '
+        'kept "other seven days" (2 Chronicles 30:23), fourteen days, as at '
+        'Solomon\'s dedication, "seven days and seven days, fourteen days" '
+        '(1 Kings 8:65): "since the time of Solomon the son of David king '
+        'of Israel there was not the like in Jerusalem" (2 Chronicles '
+        '30:26). As in Ezekiel, the house is cleansed from the first of the '
+        'month (Ezekiel 45:18), and a sin offering of sevens made "for all '
+        'Israel" (2 Chronicles 29:21, 24). Verses rendered literally.',
+  ),
+  entries: [
+    StudyTimelineEntry(
+      id: 'hallow',
+      title: 'Qiddush habbayit (hallowing the house)',
+      shortTitle: 'Qiddush habbayit',
+      timelineId: '',
+      start: const TimelineTime(0, month: 1, day: 1),
+      end: const TimelineTime(0, month: 1, day: 16),
+      duration: const TimelineDuration(16, _day),
+      category: _qiddush,
+      verses: [_ref(_chronicles2, 29, 3, 19)],
+      note:
+          '"And they began on the first of the first month to hallow, and on '
+          'the eighth day of the month they came to the porch of Yahweh; and '
+          'they hallowed the house of Yahweh in eight days, and on the '
+          'sixteenth day of the first month they made an end" (2 Chronicles '
+          '29:17). "Carry forth the uncleanness (hanniddah) out of the holy '
+          'place" (2 Chronicles 29:5).',
+    ),
+    StudyTimelineEntry(
+      id: 'porch',
+      title: 'Ulam Yahweh (the porch of Yahweh)',
+      shortTitle: 'The porch',
+      timelineId: '',
+      start: const TimelineTime(0, month: 1, day: 8),
+      category: _qiddush,
+      pin: const TimelinePin('hallow', TimelineDuration(8, _day)),
+      verses: [_ref(_chronicles2, 29, 16, 17)],
+      note:
+          'The court cleansed in eight days, "and on the eighth day of the '
+          'month they came to the porch of Yahweh" (2 Chronicles 29:17): the '
+          'house within in eight more. "The priests went into the inner part '
+          'of the house of Yahweh to cleanse it, and brought out all the '
+          'uncleanness ... and the Levites took it, to carry it out abroad '
+          'into the brook Kidron" (2 Chronicles 29:16).',
+    ),
+    StudyTimelineEntry(
+      id: 'pesach-1',
+      title: 'Pesach of the first month, not kept',
+      shortTitle: 'Pesach, not kept',
+      timelineId: '',
+      start: const TimelineTime(0, month: 1, day: 14),
+      part: TimelineDayPart.evening,
+      category: _qorban,
+      verses: [_ref(_chronicles2, 30, 2, 3), _ref(_leviticus, 23, 5)],
+      note:
+          'The fourteenth fell within the hallowing: "for they could not keep '
+          'it at that time, because the priests had not hallowed themselves '
+          'enough, and the people had not gathered themselves to Jerusalem" '
+          '(2 Chronicles 30:3).',
+    ),
+    StudyTimelineEntry(
+      id: 'atonement',
+      title: 'Chattat (sin offering) for the kingdom',
+      shortTitle: 'Chattat',
+      timelineId: '',
+      start: const TimelineTime(0, month: 1, day: 17),
+      category: _qorban,
+      pin: const TimelinePin('hallow', TimelineDuration(17, _day)),
+      verses: [_ref(_chronicles2, 29, 20, 24)],
+      note:
+          'The text gives no day: "then Hezekiah the king rose early" (2 '
+          'Chronicles 29:20), after the making an end on the sixteenth, so '
+          'shown the morning after. "Seven bulls, and seven rams, and seven '
+          'lambs, and seven he-goats, for a sin offering for the kingdom, and '
+          'for the sanctuary, and for Judah ... to cover (lekhapper) for all '
+          'Israel" (2 Chronicles 29:21, 24).',
+    ),
+    StudyTimelineEntry(
+      id: 'before',
+      title: 'Penei Yahweh (before Yahweh): the second month',
+      shortTitle: 'Penei Yahweh',
+      timelineId: '',
+      start: const TimelineTime(0, month: 2, day: 14),
+      end: const TimelineTime(0, month: 2, day: 28),
+      duration: const TimelineDuration(15, _day),
+      category: _before,
+      lead: _upHezekiah,
+      trail: _homeHezekiah,
+      style: TimelineSpanStyle.bracket,
+      verses: [_ref(_chronicles2, 30, 1, 13)],
+      note:
+          '"And Hezekiah sent to all Israel and Judah, and wrote letters also '
+          'to Ephraim and Manasseh, that they should come to the house of '
+          'Yahweh at Jerusalem, to keep the pesach to Yahweh God of Israel" '
+          '(2 Chronicles 30:1); "and there gathered at Jerusalem much '
+          'people, to keep the chag of the matzot in the second month, a very '
+          'great congregation" (2 Chronicles 30:13).',
+    ),
+    StudyTimelineEntry(
+      id: 'pesach',
+      title: 'Pesach (the passing over) in the second month',
+      shortTitle: 'Pesach',
+      timelineId: '',
+      start: const TimelineTime(0, month: 2, day: 14),
+      part: TimelineDayPart.evening,
+      category: _qorban,
+      pin: const TimelinePin('before', TimelineDuration(1, _day)),
+      verses: [_ref(_chronicles2, 30, 15, 20), _ref(_numbers, 9, 10, 11)],
+      note:
+          '"Then they killed the pesach on the fourteenth of the second '
+          'month" (2 Chronicles 30:15), as "in the second month, on the '
+          'fourteenth day, between the evenings" (Numbers 9:11). Many "had '
+          'not cleansed themselves, yet did they eat the pesach otherwise '
+          'than it was written; but Hezekiah prayed for them, saying, '
+          'Yahweh the good cover (yekhapper) for every one ... and Yahweh '
+          'hearkened to Hezekiah, and healed the people" (2 Chronicles '
+          '30:18-20).',
+    ),
+    StudyTimelineEntry(
+      id: 'matzot',
+      title: 'Chag haMatzot (pilgrimage of the unleavened)',
+      shortTitle: 'Chag haMatzot',
+      timelineId: '',
+      start: const TimelineTime(0, month: 2, day: 15),
+      end: const TimelineTime(0, month: 2, day: 21),
+      duration: const TimelineDuration(7, _day),
+      category: _chag,
+      pin: const TimelinePin('before', TimelineDuration(2, _day)),
+      verses: [_ref(_chronicles2, 30, 21, 22)],
+      note:
+          '"And the children of Israel that were found at Jerusalem kept the '
+          'chag of the matzot seven days with great gladness" (2 Chronicles '
+          '30:21).',
+    ),
+    StudyTimelineEntry(
+      id: 'other-seven',
+      title: 'Shivʿat yamim acherim (other seven days)',
+      shortTitle: 'Other seven days',
+      timelineId: '',
+      start: const TimelineTime(0, month: 2, day: 22),
+      end: const TimelineTime(0, month: 2, day: 28),
+      duration: const TimelineDuration(7, _day),
+      category: _chag,
+      pin: const TimelinePin('before', TimelineDuration(9, _day)),
+      verses: [
+        _ref(_chronicles2, 30, 23, 27),
+        _ref(_kings1, 8, 65),
+        _ref(_chronicles2, 7, 8, 9),
+      ],
+      note:
+          '"And the whole assembly took counsel to keep other seven days; '
+          'and they kept other seven days with gladness" (2 Chronicles '
+          '30:23). Hezekiah gave a thousand bulls and seven thousand sheep, '
+          'and the princes a thousand bulls and ten thousand sheep (2 '
+          'Chronicles 30:24). Fourteen days, as Solomon\'s "seven days and '
+          'seven days" (1 Kings 8:65).',
+    ),
+    StudyTimelineEntry(
+      id: 'heaps',
+      title: 'ʿAremot (heaps) of the firstfruits and the tithe',
+      shortTitle: 'ʿAremot',
+      timelineId: '',
+      start: const TimelineTime(0, month: 3),
+      end: const TimelineTime(0, month: 7),
+      category: _aremot,
+      verses: [_ref(_chronicles2, 31, 4, 10)],
+      note:
+          '"In the third month they began to lay the foundation of the '
+          'heaps, and in the seventh month they made an end" (2 Chronicles '
+          '31:7): from the wheat harvest of Shavuot to the ingathering of '
+          'Sukkot. "The children of Israel brought in abundance the '
+          'firstfruits of grain, wine, and oil, and honey, and of all the '
+          'increase of the field; and the tithe of all things" (2 Chronicles '
+          '31:5).',
+    ),
+  ],
+);
+
+final _upHezekiah = _up(
+  '"So the runners passed from city to city through the land of Ephraim '
+  'and Manasseh, even unto Zebulun; but they laughed them to scorn ... '
+  'nevertheless men of Asher and Manasseh and of Zebulun humbled '
+  'themselves, and came to Jerusalem" (2 Chronicles 30:10-11).',
+  [_ref(_chronicles2, 30, 6, 11), _ref(_numbers, 9, 10)],
+);
+
+final _homeHezekiah = _home(
+  '"All Israel that were found went out to the cities of Judah, and broke '
+  'the pillars ... then all the children of Israel returned, every man to '
+  'his possession, into their own cities" (2 Chronicles 31:1).',
+  [_ref(_chronicles2, 31, 1)],
 );
