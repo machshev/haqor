@@ -2664,6 +2664,15 @@ pub async fn get_bible_events(bible: SharedBible) {
                             verse: m.verse,
                         })
                         .collect(),
+                    set_aside: s
+                        .set_aside
+                        .into_iter()
+                        .map(|a| crate::signals::SequenceSetAsideEntry {
+                            basis: a.basis,
+                            why: a.why,
+                            events: a.events,
+                        })
+                        .collect(),
                     details: s
                         .details
                         .into_iter()

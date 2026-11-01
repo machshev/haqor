@@ -1,5 +1,6 @@
 import 'bible_data.dart';
 import 'study_workspace.dart';
+import 'verse_counts.dart';
 
 /// A passage named in a sequence ordering's basis, and where in the basis
 /// it is written.
@@ -20,9 +21,12 @@ final _bookAt = RegExp(
   r' (?=\d)',
 );
 
-/// One reference in a book: a chapter, or a chapter and verse, either
-/// running on to a verse or to another chapter's verse.
-final _one = RegExp(r'(\d+)(?::(\d+)(?:[–-](\d+)(?::(\d+))?)?)?');
+/// One reference in a book: a chapter, a run of chapters ("8–9"), or a
+/// chapter and verse, either running on to a verse or to another chapter's
+/// verse.
+final _one = RegExp(
+  r'(\d+)(?::(\d+)(?:[–-](\d+)(?::(\d+))?)?|[–-](\d+)(?![\d:]))?',
+);
 
 /// What may join one reference to the next in the same book: a further
 /// verse of the chapter (", 8"), or a further chapter ("; 2:1", " and 4:1").
@@ -48,9 +52,17 @@ List<BasisReference> basisReferences(String basis) {
       if (ref == null) break;
       final chapter = int.parse(ref.group(1)!);
       final verse = ref.group(2) == null ? null : int.parse(ref.group(2)!);
+      final lastChapter = ref.group(5) == null
+          ? null
+          : int.parse(ref.group(5)!);
       final (endChapter, endVerse) = switch ((ref.group(3), ref.group(4))) {
         (final c?, final v?) => (int.parse(c), int.parse(v)),
         (final v?, null) => (null, int.parse(v)),
+        // A run of chapters, to the last verse of the last.
+        _ when lastChapter != null => (
+          lastChapter,
+          verseCount(bookIndex, lastChapter) ?? 1,
+        ),
         _ => (null, null),
       };
       found.add((
@@ -60,7 +72,7 @@ List<BasisReference> basisReferences(String basis) {
           bookIndex: bookIndex,
           chapter: chapter,
           verse: verse ?? 1,
-          wholeChapter: verse == null,
+          wholeChapter: verse == null && lastChapter == null,
           endChapter: endChapter,
           endVerse: endVerse,
         ),

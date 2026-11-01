@@ -96,6 +96,7 @@ SequenceEdgeEntry _edge(int before, int after) =>
     SequenceEdgeEntry(before: before, after: after, bases: ["Mark's order"]);
 
 final _sequence = EventSequenceEntry(
+  setAside: const [],
   key: 'test-ministry',
   title: 'Ministry',
   note: 'Ordered, not dated.',
@@ -257,6 +258,7 @@ void main() {
       304: _event(304, 'Letter to Galatians', _at(48, 1, 1)),
     };
     final sequence = EventSequenceEntry(
+      setAside: const [],
       key: 'test-acts',
       title: 'Acts',
       note: '',
@@ -594,6 +596,7 @@ void main() {
     await open(
       tester,
       sequence: EventSequenceEntry(
+        setAside: const [],
         key: 'test-branching',
         title: 'Branching',
         note: '',
@@ -657,6 +660,7 @@ void main() {
       [12, 2],
     ];
     final seq = EventSequenceEntry(
+      setAside: const [],
       key: 'test-birth',
       title: 'Birth and childhood of Jesus',
       note: '',
@@ -723,6 +727,7 @@ void main() {
     await open(
       tester,
       sequence: EventSequenceEntry(
+        setAside: const [],
         key: 'test-detour',
         title: 'Detour',
         note: '',
@@ -978,5 +983,43 @@ void main() {
     await tester.tap(key('sequence-menu'));
     await tester.pumpAndSettle();
     expect(key('sequence-years'), findsNothing);
+  });
+
+  testWidgets('an order set aside is told in the panel and drawn apart', (
+    tester,
+  ) async {
+    final sequence = _sequence.copyWith(
+      groupings: [],
+      setAside: [
+        SequenceSetAsideEntry(
+          basis: "Luke's order",
+          why: 'Luke 4:38–5:11 heals first; Mark is kept.',
+          events: [5, 4],
+        ),
+      ],
+    );
+    final opened = await open(tester, sequence: sequence);
+    expect(key('sequence-set-aside-edges'), findsNothing);
+    await tester.tap(key('sequence-event-3'));
+    await tester.pumpAndSettle();
+    expect(find.text('Set aside'), findsNothing);
+
+    await tester.tap(key('sequence-event-4'));
+    await tester.pumpAndSettle();
+    expect(find.text('Set aside'), findsOneWidget);
+    await tester.tap(key('sequence-panel-set-aside'));
+    await tester.pumpAndSettle();
+    expect(key('sequence-set-aside-edges'), findsOneWidget);
+    // The menu turns them off again.
+    await menu(tester, 'sequence-set-aside');
+    expect(key('sequence-set-aside-edges'), findsNothing);
+
+    await tester.tap(key('sequence-set-aside-event-5'));
+    await tester.pumpAndSettle();
+    expect(panelTitle("Peter's Mother-in-law"), findsOneWidget);
+    await tester.tap(key('sequence-basis-Luke 4:38–5:11'));
+    await tester.pumpAndSettle();
+    expect(opened.single.bookIndex, 41);
+    expect(opened.single.reference, '4:38–5:11');
   });
 }

@@ -59,6 +59,13 @@ void main() {
     ]);
   });
 
+  test('reads a run of chapters to the last verse of the last', () {
+    expect(read('Matthew 8–9 gathers ten miracles'), [
+      ('Matthew 8–9', '39 8:1-9:38'),
+    ]);
+    expect(read('Luke 4:31–5:11 tells'), [('Luke 4:31–5:11', '41 4:31-5:11')]);
+  });
+
   test('a name not followed by a chapter is not a reference', () {
     expect(read("Mark's order"), isEmpty);
     expect(read('John the Baptist, then Luke'), isEmpty);

@@ -1244,6 +1244,9 @@ pub struct EventSequenceEntry {
     pub groupings: Vec<SequenceGroupingEntry>,
     /// The feasts and other marks of time its events fall at, in order.
     pub milestones: Vec<SequenceMilestoneEntry>,
+    /// Orders a witness gives that it does not take; they may go against
+    /// `edges`.
+    pub set_aside: Vec<SequenceSetAsideEntry>,
     /// What kind each event is and where; only for events given any.
     pub details: Vec<SequenceEventDetailsEntry>,
 }
@@ -1267,6 +1270,15 @@ pub struct SequenceGroupEntry {
     /// The index of the group it is inside.
     pub parent: Option<u32>,
     /// Its events; empty for a group of groups.
+    pub events: Vec<u32>,
+}
+
+/// An order a witness gives that a sequence does not take, and why.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct SequenceSetAsideEntry {
+    pub basis: String,
+    pub why: String,
+    /// Its events, each before the next.
     pub events: Vec<u32>,
 }
 

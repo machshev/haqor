@@ -35,6 +35,7 @@ EventSequenceEntry sequence(
   int? expands,
   List<SequenceEventDetailsEntry> details = const [],
 }) => EventSequenceEntry(
+  setAside: const [],
   key: key,
   title: key,
   note: '',

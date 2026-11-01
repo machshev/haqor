@@ -12,6 +12,7 @@ EventSequenceEntry _sequence(
   List<SequenceEdgeEntry> edges, {
   int? expands,
 }) => EventSequenceEntry(
+  setAside: const [],
   key: key,
   title: key,
   note: '',

@@ -549,6 +549,7 @@ void _groupingTests() {
     ];
     final sequences = [
       EventSequenceEntry(
+        setAside: const [],
         key: 'ministry',
         title: 'Ministry of Jesus',
         note: 'Ordered, not dated.',
@@ -563,6 +564,7 @@ void _groupingTests() {
         details: const [],
       ),
       EventSequenceEntry(
+        setAside: const [],
         key: 'week',
         title: 'Holy Week',
         note: '',

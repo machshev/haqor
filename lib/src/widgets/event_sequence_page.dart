@@ -714,6 +714,22 @@ class _EventSequencePageState extends State<EventSequencePage> {
   /// Whether the years its events are dated to are marked where the order
   /// reaches them; kept, as the other choices are. For a sequence whose
   /// events are dated to more than one year only.
+  /// Whether the orders it sets aside are drawn beside its own; for this
+  /// page alone.
+  bool _setAsideShown = false;
+
+  /// The edges of the orders it sets aside between nodes drawn, each with
+  /// its basis.
+  List<(int, int, String)> get _setAsideEdges => [
+    for (final s in widget.sequence.setAside)
+      for (var i = 0; i + 1 < s.events.length; i++)
+        if ((_graph.nodeOf[s.events[i]], _graph.nodeOf[s.events[i + 1]]) case (
+          final u?,
+          final v?,
+        ) when u != v)
+          (u, v, s.basis),
+  ];
+
   static bool _lastYears = true;
   bool _years = _lastYears;
   late final bool _hasYears =
@@ -835,8 +851,12 @@ class _EventSequencePageState extends State<EventSequencePage> {
     return _horizontal ? Offset(along, across) : Offset(across, along);
   }
 
-  Size get _canvas =>
-      _horizontal ? Size(_alongEnd, _acrossEnd) : Size(_acrossEnd, _alongEnd);
+  /// The graph's size; with the orders set aside, room beside it for their
+  /// arcs.
+  Size get _canvas {
+    final across = _acrossEnd + (_setAsideShown ? 64 : 0);
+    return _horizontal ? Size(_alongEnd, across) : Size(across, _alongEnd);
+  }
 
   void _centreOnSelected() {
     if (_viewport == Size.zero || _outline) return;
@@ -1321,11 +1341,19 @@ class _EventSequencePageState extends State<EventSequencePage> {
             onSelected: (choice) => switch (choice) {
               'lanes' => _setLanes(!_lanes),
               'years' => _setYears(!_years),
+              'set-aside' => setState(() => _setAsideShown = !_setAsideShown),
               'map' => _openMap(widget.sequence.title, widget.sequence.events),
               'about' => _showNote(),
               _ => null,
             },
             itemBuilder: (context) => [
+              if (widget.sequence.setAside.isNotEmpty && !_outline)
+                CheckedPopupMenuItem(
+                  key: const ValueKey('sequence-set-aside'),
+                  value: 'set-aside',
+                  checked: _setAsideShown,
+                  child: const Text('Orders set aside'),
+                ),
               if (_hasYears)
                 CheckedPopupMenuItem(
                   key: const ValueKey('sequence-years'),
@@ -1731,6 +1759,42 @@ class _EventSequencePageState extends State<EventSequencePage> {
               ),
             ),
           ),
+          if (_setAsideShown)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  key: const ValueKey('sequence-set-aside-edges'),
+                  painter: _SetAsidePainter(
+                    edges: [
+                      for (final (u, v, _) in _setAsideEdges)
+                        (
+                          from:
+                              _cardAt(u) +
+                              (_horizontal
+                                  ? Offset(_cardWidth / 2, _cardAcross)
+                                  : Offset(
+                                      _cardWidth,
+                                      _cardSize(u).height / 2,
+                                    )),
+                          to:
+                              _cardAt(v) +
+                              (_horizontal
+                                  ? Offset(_cardWidth / 2, _cardAcross)
+                                  : Offset(
+                                      _cardWidth,
+                                      _cardSize(v).height / 2,
+                                    )),
+                          lit:
+                              selected != null &&
+                              (u == selected || v == selected),
+                        ),
+                    ],
+                    color: theme.colorScheme.tertiary,
+                    horizontal: _horizontal,
+                  ),
+                ),
+              ),
+            ),
           for (final box in _boxes) _groupTitle(theme, box),
           for (final node in _graph.events)
             Positioned(
@@ -2457,6 +2521,87 @@ class _EventSequencePageState extends State<EventSequencePage> {
     );
   }
 
+  /// The orders set aside that [event] is in: each witness's order of its
+  /// events, the event picked out among them, and why it is not taken.
+  List<Widget> _setAsidePanel(ThemeData theme, int event) {
+    final scheme = theme.colorScheme;
+    final orders = [
+      for (final s in widget.sequence.setAside)
+        if (s.events.contains(event)) s,
+    ];
+    if (orders.isEmpty) return const [];
+    return [
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          Expanded(
+            child: Text('Set aside', style: theme.textTheme.labelLarge),
+          ),
+          if (!_outline)
+            TextButton(
+              key: const ValueKey('sequence-panel-set-aside'),
+              onPressed: () =>
+                  setState(() => _setAsideShown = !_setAsideShown),
+              child: Text(_setAsideShown ? 'Hide' : 'Draw'),
+            ),
+        ],
+      ),
+      for (final (i, s) in orders.indexed)
+        Padding(
+          key: ValueKey('sequence-set-aside-$i'),
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '${s.basis}: ',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    for (final (n, e) in s.events.indexed) ...[
+                      if (n > 0)
+                        TextSpan(
+                          text: ' → ',
+                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        ),
+                      if (e == event)
+                        TextSpan(
+                          text: _title(e),
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        )
+                      else
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.baseline,
+                          baseline: TextBaseline.alphabetic,
+                          child: InkWell(
+                            key: ValueKey('sequence-set-aside-event-$e'),
+                            onTap: () => _reveal(e),
+                            child: Text(
+                              _title(e),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 2),
+              Text.rich(
+                TextSpan(children: _basisSpans(theme, [s.why])),
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+    ];
+  }
+
   /// What an ordering rests on, joined by "; ", each passage it names a
   /// link opening that passage.
   List<InlineSpan> _basisSpans(ThemeData theme, List<String> bases) {
@@ -2872,6 +3017,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
       ],
       if (follows.isNotEmpty) related('Comes after', follows),
       if (precedes.isNotEmpty) related('Comes before', precedes),
+      ..._setAsidePanel(theme, selected),
       if (follows.isEmpty && precedes.isEmpty)
         Padding(
           padding: const EdgeInsets.only(top: 8),
@@ -2985,4 +3131,63 @@ class _EdgePainter extends CustomPainter {
       old.color != color ||
       old.litColor != litColor ||
       old.horizontal != horizontal;
+}
+
+/// The orders a sequence sets aside, each edge a dashed arc out beside the
+/// cards from one card's side to the other's, since it may run against the
+/// order drawn; those of the picked node lit.
+class _SetAsidePainter extends CustomPainter {
+  _SetAsidePainter({
+    required this.edges,
+    required this.color,
+    required this.horizontal,
+  });
+
+  final List<({Offset from, Offset to, bool lit})> edges;
+  final Color color;
+
+  /// Left to right, the arcs bulge below the cards rather than beside them.
+  final bool horizontal;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final edge in edges) {
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = edge.lit ? 2 : 1.4
+        ..color = color.withValues(alpha: edge.lit ? 1 : 0.7);
+      final (from, to) = (edge.from, edge.to);
+      final out = horizontal ? const Offset(0, 1) : const Offset(1, 0);
+      final reach = 24 + (to - from).distance * 0.12;
+      final c1 = from + out * reach;
+      final c2 = to + out * reach;
+      final path = Path()
+        ..moveTo(from.dx, from.dy)
+        ..cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, to.dx, to.dy);
+      for (final metric in path.computeMetrics()) {
+        for (var d = 0.0; d < metric.length; d += 9) {
+          canvas.drawPath(
+            metric.extractPath(d, math.min(d + 5, metric.length)),
+            paint,
+          );
+        }
+      }
+      // The head, pointing back into the later card.
+      final tip = to;
+      final back = to + out * 7;
+      final side = Offset(out.dy, out.dx) * 4;
+      canvas.drawPath(
+        Path()
+          ..moveTo(tip.dx, tip.dy)
+          ..lineTo((back - side).dx, (back - side).dy)
+          ..lineTo((back + side).dx, (back + side).dy)
+          ..close(),
+        Paint()..color = paint.color,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SetAsidePainter old) =>
+      old.edges != edges || old.color != color || old.horizontal != horizontal;
 }

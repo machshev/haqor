@@ -33,6 +33,7 @@ BibleEventEntry event(int id, String title, int year, {int duration = 0}) =>
     );
 EventSequenceEntry section(String key, List<int> events, {int? expands}) =>
     EventSequenceEntry(
+      setAside: const [],
       key: key,
       title: key,
       events: events,
