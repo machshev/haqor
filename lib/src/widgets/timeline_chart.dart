@@ -722,263 +722,306 @@ class TimelineChart extends StatelessWidget {
     double markInset(int lane) => laneHeights[lane] < laneHeight ? 2 : 4;
     double markTop(int lane) => laneTop(lane) + markInset(lane);
     double markHeight(int lane) => laneHeights[lane] - 2 * markInset(lane);
-    return SizedBox(
-      width: width,
-      height: height,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _AxisPainter(
-                timeline: timeline,
-                start: extent.start,
-                end: extent.end,
-                x: px,
-                axisY: axisY,
-                width: width,
-                // Days run from sunset: their nights shaded, zoomed in to them.
-                nights: timeline.hasMonths && pixelsPerUnit / 384 >= 10
-                    ? [
-                        for (final n in timelineNights(
-                          timeline,
-                          extent.start,
-                          extent.end,
-                        ))
-                          (from: px(n.from), to: px(n.to)),
-                      ]
-                    : const [],
-                moons: seasons && pixelsPerUnit / 384 >= 6
-                    ? [
-                        for (final m in timelineMoons(
-                          timeline,
-                          extent.start,
-                          extent.end,
-                        ))
-                          (x: px(m.at), full: m.full),
-                      ]
-                    : const [],
-                guides: [
-                  for (final slot in slots)
-                    if (!slot.entry.isSpan)
-                      (
-                        x: slot.left,
-                        top: markTop(slot.lane) + markHeight(slot.lane) / 2,
-                      ),
-                ],
-                color: theme.colorScheme.outline,
-                labelStyle: labelStyle?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
-          // Each shabbaton its whole day, sundown to sundown, top to axis.
-          for (final day in shabbatons)
-            if ((
-                  from: px(timeline.positionOf(day.start)),
-                  to: px(timeline.endOf(day.start)),
-                )
-                case final at)
-              Positioned(
-                left: at.from,
-                width: math.max(2, at.to - at.from),
-                top: bands.isEmpty ? 0 : laneTop(bandAt[bandOf(day)]!.first),
-                height: bands.isEmpty
-                    ? axisY
-                    : laneTop(
-                            bandAt[bandOf(day)]!.first +
-                                bandAt[bandOf(day)]!.lanes,
-                          ) -
-                          laneTop(bandAt[bandOf(day)]!.first),
-                child: _ShabbatonBlock(
-                  entry: day,
-                  color: switch (timeline.colorOf(day)) {
-                    final index? => timelineCategoryColor(
-                      index,
-                      theme.brightness,
-                    ),
-                    null => null,
-                  },
-                  selected: day.id == selectedId,
-                  faded: faded.contains(day.id),
-                  tooltip: '${day.title} · ${timelineEntryTime(timeline, day)}',
-                  onTap: onTapEntry == null ? null : () => onTapEntry!(day),
-                ),
-              ),
-          // Each reading's title, a rule across above its band.
-          for (final row in bandRows)
-            Positioned(
-              left: 0,
-              width: width,
-              top: laneTop(row.header),
-              height: laneHeight,
-              child: Container(
-                key: ValueKey('timeline-band-${row.title}'),
-                alignment: AlignmentDirectional.bottomStart,
-                padding: const EdgeInsetsDirectional.only(start: 8, bottom: 4),
-                decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(color: theme.colorScheme.outlineVariant),
-                  ),
-                ),
-                child: Text(
-                  row.title,
-                  style: theme.textTheme.labelLarge?.copyWith(
+    VoidCallback? tapOf(TimelineSlot slot) => switch (clusters[slot.entry.id]) {
+      final events? when onTapCluster != null => () => onTapCluster!(events),
+      null when onTapEntry != null => () => onTapEntry!(slot.entry),
+      _ => null,
+    };
+    // A touch just beside a mark is taken as on it: a fingertip is wider
+    // than a narrow span, zoomed out.
+    void tapNear(TapUpDetails details) {
+      if (details.kind == PointerDeviceKind.mouse) return;
+      final at = details.localPosition;
+      VoidCallback? nearest;
+      var best = _touchReach;
+      for (final slot in slots) {
+        final tap = tapOf(slot);
+        if (tap == null) continue;
+        final inset = _inset(slot.entry);
+        final rect = Rect.fromLTWH(
+          slot.left - inset,
+          markTop(slot.lane),
+          labels[slot.entry.id]!.width + inset,
+          markHeight(slot.lane),
+        );
+        final dx = math.max(
+          0.0,
+          math.max(rect.left - at.dx, at.dx - rect.right),
+        );
+        final dy = math.max(
+          0.0,
+          math.max(rect.top - at.dy, at.dy - rect.bottom),
+        );
+        final distance = math.sqrt(dx * dx + dy * dy);
+        if (distance <= best) {
+          best = distance;
+          nearest = tap;
+        }
+      }
+      nearest?.call();
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapUp: onTapEntry == null && onTapCluster == null ? null : tapNear,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _AxisPainter(
+                  timeline: timeline,
+                  start: extent.start,
+                  end: extent.end,
+                  x: px,
+                  axisY: axisY,
+                  width: width,
+                  // Days run from sunset: their nights shaded, zoomed in to them.
+                  nights: timeline.hasMonths && pixelsPerUnit / 384 >= 10
+                      ? [
+                          for (final n in timelineNights(
+                            timeline,
+                            extent.start,
+                            extent.end,
+                          ))
+                            (from: px(n.from), to: px(n.to)),
+                        ]
+                      : const [],
+                  moons: seasons && pixelsPerUnit / 384 >= 6
+                      ? [
+                          for (final m in timelineMoons(
+                            timeline,
+                            extent.start,
+                            extent.end,
+                          ))
+                            (x: px(m.at), full: m.full),
+                        ]
+                      : const [],
+                  guides: [
+                    for (final slot in slots)
+                      if (!slot.entry.isSpan)
+                        (
+                          x: slot.left,
+                          top: markTop(slot.lane) + markHeight(slot.lane) / 2,
+                        ),
+                  ],
+                  color: theme.colorScheme.outline,
+                  labelStyle: labelStyle?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
             ),
-          for (final band in seasonBands)
-            Positioned(
-              left: px(band.start),
-              width: math.max(1, px(band.end) - px(band.start)),
-              top:
-                  2 +
-                  (band.season.kind == TimelineSeasonKind.rain
-                      ? 0
-                      : seasonHeight + 2),
-              height: seasonHeight,
-              child: _SeasonBand(season: band.season),
-            ),
-          // The days leading up to a span and trailing after it, as wedges
-          // in its row, opening it.
-          for (final slot in slots)
-            if (slot.entry.isSpan &&
-                (slot.entry.lead != null || slot.entry.trail != null))
-              for (final (taper, days, before) in [
-                (
-                  slot.entry.lead,
-                  timelineEntryTapers(timeline, slot.entry).lead,
-                  true,
-                ),
-                (
-                  slot.entry.trail,
-                  timelineEntryTapers(timeline, slot.entry).trail,
-                  false,
-                ),
-              ])
-                if ((taper, days) case (final taper?, final days?))
-                  if ((
-                        from: px(timeline.positionOf(days.from)),
-                        to: px(timeline.endOf(days.to)),
-                      )
-                      case final at)
-                    Positioned(
-                      left: at.from,
-                      width: math.max(2, at.to - at.from),
-                      top: markTop(slot.lane),
-                      height: markHeight(slot.lane),
-                      child: Opacity(
-                        opacity: faded.contains(slot.entry.id) ? 0.45 : 1,
-                        child: _Wedge(
-                          key: ValueKey(
-                            'timeline-${before ? 'lead' : 'trail'}-'
-                            '${slot.entry.id}',
-                          ),
-                          rising: before,
-                          thin: _SpanPainter.isThin(slot.entry.style),
-                          title: taper.title,
-                          color: switch (timeline.colorOf(slot.entry)) {
-                            final index? => timelineCategoryColor(
-                              index,
-                              theme.brightness,
-                            ),
-                            null => theme.colorScheme.primary,
-                          },
-                          selected: slot.entry.id == selectedId,
-                          tooltip: [
-                            if (taper.title.isNotEmpty) taper.title,
-                            slot.entry.title,
-                            '${timeline.formatTime(days.from)} – '
-                                '${timeline.formatTime(days.to)}',
-                          ].join(' · '),
-                          onTap: onTapEntry == null
-                              ? null
-                              : () => onTapEntry!(slot.entry),
-                        ),
-                      ),
-                    ),
-          for (final slot in slots)
-            if (labels[slot.entry.id]! case final label)
-              Positioned(
-                // An event's mark is centred on its time.
-                left: slot.left - _inset(slot.entry),
-                top: markTop(slot.lane),
-                width: label.width + _inset(slot.entry),
-                height: markHeight(slot.lane),
-                child: Opacity(
-                  opacity: faded.contains(slot.entry.id) ? 0.45 : 1,
-                  child: _EntryMark(
-                    entry: slot.entry,
-                    barWidth: math.max(
-                      4,
-                      px(timelineEntryReach(timeline, slot.entry).end) -
-                          slot.left,
-                    ),
-                    color: switch (timeline.colorOf(slot.entry)) {
+            // Each shabbaton its whole day, sundown to sundown, top to axis.
+            for (final day in shabbatons)
+              if ((
+                    from: px(timeline.positionOf(day.start)),
+                    to: px(timeline.endOf(day.start)),
+                  )
+                  case final at)
+                Positioned(
+                  left: at.from,
+                  width: math.max(2, at.to - at.from),
+                  top: bands.isEmpty ? 0 : laneTop(bandAt[bandOf(day)]!.first),
+                  height: bands.isEmpty
+                      ? axisY
+                      : laneTop(
+                              bandAt[bandOf(day)]!.first +
+                                  bandAt[bandOf(day)]!.lanes,
+                            ) -
+                            laneTop(bandAt[bandOf(day)]!.first),
+                  child: _ShabbatonBlock(
+                    entry: day,
+                    color: switch (timeline.colorOf(day)) {
                       final index? => timelineCategoryColor(
                         index,
                         theme.brightness,
                       ),
                       null => null,
                     },
-                    countedDays: timeline.daysIn(slot.entry) ?? 0,
-                    countedYears: slot.entry.isCounted
-                        ? timeline.yearsIn(slot.entry) ?? 0
-                        : 0,
-                    label: label.text,
-                    titleWidth: label.title,
-                    showTitle: label.title > 0,
-                    selected:
-                        slot.entry.id == selectedId ||
-                        (clusters[slot.entry.id]?.any(
-                              (e) => e.id == selectedId,
-                            ) ??
-                            false),
-                    stacked: clusters[slot.entry.id]?.length ?? 0,
-                    dot: _dotOf(slot.entry),
-                    tooltip: switch (clusters[slot.entry.id]) {
-                      // The events it stands for, as many as are short.
-                      final events? => [
-                        for (final e in events.take(8)) e.title,
-                        if (events.length > 8) '… ${events.length - 8} more',
-                      ].join('\n'),
-                      // Its title too where the label doesn't show it whole.
-                      null when slot.entry.isHighSabbath || !label.whole =>
-                        '${slot.entry.title} · ${timelineEntryTime(timeline, slot.entry)}',
-                      null => timelineEntryTime(timeline, slot.entry),
-                    },
-                    onTap: switch (clusters[slot.entry.id]) {
-                      final events? when onTapCluster != null =>
-                        () => onTapCluster!(events),
-                      null when onTapEntry != null => () => onTapEntry!(
-                        slot.entry,
-                      ),
-                      _ => null,
-                    },
-                    group: switch (groups[slot.entry.id]) {
-                      final group? when label.group => _GroupToggle(
-                        key: ValueKey('timeline-group-${slot.entry.id}'),
-                        count: group.count,
-                        open: group.open,
-                        dense: true,
-                        onPressed: onToggleGroup == null
-                            ? null
-                            : () => onToggleGroup!(slot.entry),
-                      ),
-                      _ => null,
-                    },
+                    selected: day.id == selectedId,
+                    faded: faded.contains(day.id),
+                    tooltip:
+                        '${day.title} · ${timelineEntryTime(timeline, day)}',
+                    onTap: onTapEntry == null ? null : () => onTapEntry!(day),
+                  ),
+                ),
+            // Each reading's title, a rule across above its band.
+            for (final row in bandRows)
+              Positioned(
+                left: 0,
+                width: width,
+                top: laneTop(row.header),
+                height: laneHeight,
+                child: Container(
+                  key: ValueKey('timeline-band-${row.title}'),
+                  alignment: AlignmentDirectional.bottomStart,
+                  padding: const EdgeInsetsDirectional.only(
+                    start: 8,
+                    bottom: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      top: BorderSide(color: theme.colorScheme.outlineVariant),
+                    ),
+                  ),
+                  child: Text(
+                    row.title,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ),
-        ],
+            for (final band in seasonBands)
+              Positioned(
+                left: px(band.start),
+                width: math.max(1, px(band.end) - px(band.start)),
+                top:
+                    2 +
+                    (band.season.kind == TimelineSeasonKind.rain
+                        ? 0
+                        : seasonHeight + 2),
+                height: seasonHeight,
+                child: _SeasonBand(season: band.season),
+              ),
+            // The days leading up to a span and trailing after it, as wedges
+            // in its row, opening it.
+            for (final slot in slots)
+              if (slot.entry.isSpan &&
+                  (slot.entry.lead != null || slot.entry.trail != null))
+                for (final (taper, days, before) in [
+                  (
+                    slot.entry.lead,
+                    timelineEntryTapers(timeline, slot.entry).lead,
+                    true,
+                  ),
+                  (
+                    slot.entry.trail,
+                    timelineEntryTapers(timeline, slot.entry).trail,
+                    false,
+                  ),
+                ])
+                  if ((taper, days) case (final taper?, final days?))
+                    if ((
+                          from: px(timeline.positionOf(days.from)),
+                          to: px(timeline.endOf(days.to)),
+                        )
+                        case final at)
+                      Positioned(
+                        left: at.from,
+                        width: math.max(2, at.to - at.from),
+                        top: markTop(slot.lane),
+                        height: markHeight(slot.lane),
+                        child: Opacity(
+                          opacity: faded.contains(slot.entry.id) ? 0.45 : 1,
+                          child: _Wedge(
+                            key: ValueKey(
+                              'timeline-${before ? 'lead' : 'trail'}-'
+                              '${slot.entry.id}',
+                            ),
+                            rising: before,
+                            thin: _SpanPainter.isThin(slot.entry.style),
+                            title: taper.title,
+                            color: switch (timeline.colorOf(slot.entry)) {
+                              final index? => timelineCategoryColor(
+                                index,
+                                theme.brightness,
+                              ),
+                              null => theme.colorScheme.primary,
+                            },
+                            selected: slot.entry.id == selectedId,
+                            tooltip: [
+                              if (taper.title.isNotEmpty) taper.title,
+                              slot.entry.title,
+                              '${timeline.formatTime(days.from)} – '
+                                  '${timeline.formatTime(days.to)}',
+                            ].join(' · '),
+                            onTap: onTapEntry == null
+                                ? null
+                                : () => onTapEntry!(slot.entry),
+                          ),
+                        ),
+                      ),
+            for (final slot in slots)
+              if (labels[slot.entry.id]! case final label)
+                Positioned(
+                  // An event's mark is centred on its time.
+                  left: slot.left - _inset(slot.entry),
+                  top: markTop(slot.lane),
+                  width: label.width + _inset(slot.entry),
+                  height: markHeight(slot.lane),
+                  child: Opacity(
+                    opacity: faded.contains(slot.entry.id) ? 0.45 : 1,
+                    child: _EntryMark(
+                      entry: slot.entry,
+                      barWidth: math.max(
+                        4,
+                        px(timelineEntryReach(timeline, slot.entry).end) -
+                            slot.left,
+                      ),
+                      color: switch (timeline.colorOf(slot.entry)) {
+                        final index? => timelineCategoryColor(
+                          index,
+                          theme.brightness,
+                        ),
+                        null => null,
+                      },
+                      countedDays: timeline.daysIn(slot.entry) ?? 0,
+                      countedYears: slot.entry.isCounted
+                          ? timeline.yearsIn(slot.entry) ?? 0
+                          : 0,
+                      label: label.text,
+                      titleWidth: label.title,
+                      showTitle: label.title > 0,
+                      selected:
+                          slot.entry.id == selectedId ||
+                          (clusters[slot.entry.id]?.any(
+                                (e) => e.id == selectedId,
+                              ) ??
+                              false),
+                      stacked: clusters[slot.entry.id]?.length ?? 0,
+                      dot: _dotOf(slot.entry),
+                      tooltip: switch (clusters[slot.entry.id]) {
+                        // The events it stands for, as many as are short.
+                        final events? => [
+                          for (final e in events.take(8)) e.title,
+                          if (events.length > 8) '… ${events.length - 8} more',
+                        ].join('\n'),
+                        // Its title too where the label doesn't show it whole.
+                        null when slot.entry.isHighSabbath || !label.whole =>
+                          '${slot.entry.title} · ${timelineEntryTime(timeline, slot.entry)}',
+                        null => timelineEntryTime(timeline, slot.entry),
+                      },
+                      onTap: tapOf(slot),
+                      group: switch (groups[slot.entry.id]) {
+                        final group? when label.group => _GroupToggle(
+                          key: ValueKey('timeline-group-${slot.entry.id}'),
+                          count: group.count,
+                          open: group.open,
+                          dense: true,
+                          onPressed: onToggleGroup == null
+                              ? null
+                              : () => onToggleGroup!(slot.entry),
+                        ),
+                        _ => null,
+                      },
+                    ),
+                  ),
+                ),
+          ],
+        ),
       ),
     );
   }
 
   /// The least gap between two marks in a lane.
   static const _gap = 8.0;
+
+  /// How far beside a mark a touch may land and still be taken as on it.
+  static const _touchReach = 16.0;
 
   /// The most events stacked one above another at a time before they are
   /// drawn as one mark, with their number.

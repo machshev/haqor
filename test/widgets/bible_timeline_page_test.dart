@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -684,6 +685,36 @@ void _groupingTests() {
       expect(find.byType(EventSequencePage), findsNothing);
       expect(find.byType(BibleTimelinePage), findsNothing);
       expect(find.text('Open'), findsOneWidget);
+    });
+
+    testWidgets('a touch just beside a narrow span opens it', (tester) async {
+      await open(tester);
+      await _zoomIn(tester);
+      final mark = find.byKey(
+        const ValueKey('timeline-mark-sequence:ministry'),
+      );
+      await tester.ensureVisible(mark);
+      await tester.pumpAndSettle();
+      // Clear of the left edge, nothing drawn just before it.
+      await tester.dragFrom(
+        tester.getCenter(mark) + const Offset(0, 200),
+        const Offset(200, 0),
+      );
+      await tester.pumpAndSettle();
+      final rect = tester.getRect(mark);
+      // Too narrow to be sure of under a fingertip.
+      expect(rect.width, lessThan(16));
+      final beside = rect.centerLeft - const Offset(10, 0);
+
+      // Clicked beside it with a mouse, nothing.
+      await tester.tapAt(beside, kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(find.byType(EventSequencePage), findsNothing);
+
+      // Touched beside it, it opens.
+      await tester.tapAt(beside);
+      await tester.pumpAndSettle();
+      expect(find.byType(EventSequencePage), findsOneWidget);
     });
 
     testWidgets('turn between top to bottom and left to right, kept', (
