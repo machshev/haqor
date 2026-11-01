@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../basis_references.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../event_sequence.dart';
@@ -170,6 +171,11 @@ class _EventSequencePageState extends State<EventSequencePage> {
   final _families = <SequenceFamily>{};
   int? _person;
   String? _track;
+
+  /// The Gospel lit, by book, and whether only the events it alone
+  /// tells.
+  int? _gospel;
+  bool _gospelOnly = false;
   late final List<String> _tracks = {
     for (final d in widget.sequence.details) ...d.tracks,
   }.toList();
@@ -758,10 +764,21 @@ class _EventSequencePageState extends State<EventSequencePage> {
       [...events]..sort((a, b) => (_order[a] ?? 0).compareTo(_order[b] ?? 0));
 
   bool get _filtering =>
-      _families.isNotEmpty || _person != null || _track != null;
+      _families.isNotEmpty ||
+      _person != null ||
+      _track != null ||
+      _gospel != null;
 
   /// Whether [event] is of a kind lit and has the person lit.
   bool _lit(int event) {
+    if (_gospel case final book?) {
+      final told = gospelsOf(widget.events[event]);
+      if (_gospelOnly
+          ? !(told.length == 1 && told.contains(book))
+          : !told.contains(book)) {
+        return false;
+      }
+    }
     if (_track != null &&
         !(_details[event]?.tracks.contains(_track) ?? false)) {
       return false;
@@ -844,15 +861,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
                     label: Text(_title(m.event)),
                     onPressed: () {
                       Navigator.pop(sheet);
-                      if (_outline) {
-                        setState(() {
-                          _unfoldTo(m.event);
-                          _rebuild();
-                          _selected = m.event;
-                        });
-                      } else {
-                        _reveal(m.event);
-                      }
+                      _reveal(m.event);
                     },
                   ),
                 ],
@@ -894,14 +903,130 @@ class _EventSequencePageState extends State<EventSequencePage> {
         ),
     ],
     knownBefore: (a, b) => _full.after(a).contains(b),
-    onOpenEvent: _outline
-        ? (e) => setState(() {
-            _unfoldTo(e);
-            _rebuild();
-            _selected = e;
-          })
-        : _reveal,
+    onOpenEvent: _reveal,
   );
+
+  /// What [event] is found by: its title, its people and places, its
+  /// tracks and region, lower-cased.
+  String _searchText(int event) {
+    final entry = widget.events[event];
+    final details = _details[event];
+    return [
+      _title(event),
+      for (final p in entry?.people ?? const <NameSummaryEntry>[]) p.name,
+      for (final p in details?.places ?? const <SequencePlaceEntry>[]) p.label,
+      ...?details?.tracks,
+      ?sequenceRegions[details?.region ?? ''],
+      for (final p in entry?.passages ?? const <ThematicTarget>[])
+        _reference(_passage(p)),
+    ].join(' ').toLowerCase();
+  }
+
+  /// A sheet finding an event by any words of its title, people or
+  /// places; the one tapped picked out, its groups unfolded.
+  void _search() => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheet) {
+      var query = '';
+      return StatefulBuilder(
+        builder: (sheet, setSheet) {
+          final theme = Theme.of(sheet);
+          final words = query.toLowerCase().split(RegExp(r'\s+'))
+            ..removeWhere((w) => w.isEmpty);
+          final found = [
+            for (final e in _full.drawnOrder)
+              if (words.every(_searchText(e).contains)) e,
+          ];
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(sheet).bottom,
+            ),
+            child: SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(sheet).height * 0.7,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: TextField(
+                        key: const ValueKey('sequence-search-field'),
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.search),
+                          hintText: 'Find an event, person or place',
+                          helperText: '${_events(found.length)} found',
+                          border: const OutlineInputBorder(),
+                        ),
+                        onChanged: (text) => setSheet(() => query = text),
+                        onSubmitted: (_) {
+                          if (found.isEmpty) return;
+                          Navigator.pop(sheet);
+                          _reveal(found.first);
+                        },
+                      ),
+                    ),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: [
+                          for (final e in found)
+                            ListTile(
+                              key: ValueKey('sequence-found-$e'),
+                              dense: true,
+                              leading: Icon(
+                                kindsOf(_details[e]).firstOrNull?.icon ??
+                                    Icons.circle_outlined,
+                                color: kindsOf(
+                                  _details[e],
+                                ).firstOrNull?.family.ink(theme.colorScheme),
+                              ),
+                              title: Text(_title(e)),
+                              subtitle: Text(
+                                [
+                                  if (_tree?.leafOf[e] case final leaf?)
+                                    _tree![leaf].title,
+                                  if (widget.events[e]?.passages.firstOrNull
+                                      case final p?)
+                                    _reference(_passage(p)),
+                                ].join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: SequenceSourceMarks(
+                                event: widget.events[e],
+                                color: theme.colorScheme.onSurface,
+                              ),
+                              onTap: () {
+                                Navigator.pop(sheet);
+                                _reveal(e);
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+
+  /// The Gospels telling any of its events, in canonical order.
+  late final List<int> _gospelsTelling = [
+    for (final book in gospels.keys)
+      if (widget.sequence.events.any(
+        (e) => gospelsOf(widget.events[e]).contains(book),
+      ))
+        book,
+  ];
 
   /// The people taking part in its events, the most often first.
   late final List<(NameSummaryEntry, int)> _people = () {
@@ -979,6 +1104,12 @@ class _EventSequencePageState extends State<EventSequencePage> {
           ],
         ),
         actions: [
+          IconButton(
+            key: const ValueKey('sequence-search'),
+            tooltip: 'Find an event',
+            icon: const Icon(Icons.search),
+            onPressed: _search,
+          ),
           if (_details.values.any((d) => d.places.isNotEmpty))
             IconButton(
               key: const ValueKey('sequence-map'),
@@ -1067,7 +1198,8 @@ class _EventSequencePageState extends State<EventSequencePage> {
     if (_trees.isEmpty &&
         families.isEmpty &&
         _people.isEmpty &&
-        _tracks.isEmpty) {
+        _tracks.isEmpty &&
+        _gospelsTelling.length < 2) {
       return null;
     }
     final person = _person;
@@ -1159,6 +1291,61 @@ class _EventSequencePageState extends State<EventSequencePage> {
                         onDeleted: () => setState(() => _person = null),
                       ),
               ),
+            if (_gospelsTelling.length > 1)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: PopupMenuButton<(int, bool)>(
+                  key: const ValueKey('sequence-gospel'),
+                  tooltip: 'Light what a Gospel tells',
+                  onSelected: (choice) => setState(() {
+                    _gospel = choice.$1;
+                    _gospelOnly = choice.$2;
+                  }),
+                  itemBuilder: (context) => [
+                    for (final only in [false, true]) ...[
+                      if (only) const PopupMenuDivider(),
+                      for (final book in _gospelsTelling)
+                        CheckedPopupMenuItem(
+                          key: ValueKey(
+                            'sequence-gospel-$book${only ? '-only' : ''}',
+                          ),
+                          value: (book, only),
+                          checked: _gospel == book && _gospelOnly == only,
+                          child: Text(
+                            only
+                                ? 'Only in ${kEnglishBookNames[book - 1]}'
+                                : 'Told by ${kEnglishBookNames[book - 1]}',
+                          ),
+                        ),
+                    ],
+                  ],
+                  child: _gospel == null
+                      ? Chip(
+                          visualDensity: density,
+                          materialTapTargetSize: tap,
+                          avatar: const Icon(
+                            Icons.menu_book_outlined,
+                            size: 18,
+                          ),
+                          label: const Text('Gospel'),
+                        )
+                      : InputChip(
+                          visualDensity: density,
+                          materialTapTargetSize: tap,
+                          avatar: const Icon(Icons.menu_book, size: 18),
+                          label: Text(
+                            '${_gospelOnly ? 'Only ' : ''}'
+                            '${gospels[_gospel]}',
+                          ),
+                          selected: true,
+                          showCheckmark: false,
+                          onDeleted: () => setState(() {
+                            _gospel = null;
+                            _gospelOnly = false;
+                          }),
+                        ),
+                ),
+              ),
             for (final family in SequenceFamily.values)
               if (families.contains(family))
                 Padding(
@@ -1199,6 +1386,8 @@ class _EventSequencePageState extends State<EventSequencePage> {
                   _families.clear();
                   _person = null;
                   _track = null;
+                  _gospel = null;
+                  _gospelOnly = false;
                 }),
               ),
           ],
@@ -1989,9 +2178,97 @@ class _EventSequencePageState extends State<EventSequencePage> {
     );
   }
 
-  Widget _heading(ThemeData theme, String title) => Row(
+  /// What an ordering rests on, joined by "; ", each passage it names a
+  /// link opening that passage.
+  List<InlineSpan> _basisSpans(ThemeData theme, List<String> bases) {
+    final scheme = theme.colorScheme;
+    final plain = TextStyle(color: scheme.onSurfaceVariant);
+    final spans = <InlineSpan>[];
+    for (final (i, basis) in bases.indexed) {
+      if (i > 0) spans.add(TextSpan(text: '; ', style: plain));
+      var at = 0;
+      for (final ref in basisReferences(basis)) {
+        if (ref.start > at) {
+          spans.add(
+            TextSpan(text: basis.substring(at, ref.start), style: plain),
+          );
+        }
+        final text = basis.substring(ref.start, ref.end);
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: InkWell(
+              key: ValueKey('sequence-basis-$text'),
+              onTap: () => _openPassage(ref.passage),
+              child: Text(
+                text,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.primary,
+                  decoration: TextDecoration.underline,
+                  decorationColor: scheme.primary.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+          ),
+        );
+        at = ref.end;
+      }
+      if (at < basis.length) {
+        spans.add(TextSpan(text: basis.substring(at), style: plain));
+      }
+    }
+    return spans;
+  }
+
+  /// The event before [event] in the order drawn, none folded, or after
+  /// it; while filtering, the nearest lit one.
+  int? _step(int event, int by) {
+    final order = _full.drawnOrder;
+    for (
+      var i = (_order[event] ?? -1) + by;
+      i >= 0 && i < order.length;
+      i += by
+    ) {
+      if (!_filtering || _lit(order[i])) return order[i];
+    }
+    return null;
+  }
+
+  /// The buttons stepping from [event] to the one before it and after it.
+  List<Widget> _steps(int event) {
+    final previous = _step(event, -1);
+    final next = _step(event, 1);
+    final where = '${(_order[event] ?? 0) + 1} of ${_full.events.length}';
+    return [
+      IconButton(
+        key: const ValueKey('sequence-previous'),
+        tooltip: previous == null
+            ? 'The first event'
+            : 'Previous: ${_title(previous)}',
+        visualDensity: VisualDensity.compact,
+        onPressed: previous == null ? null : () => _reveal(previous),
+        icon: const Icon(Icons.chevron_left),
+      ),
+      Text(where, style: Theme.of(context).textTheme.labelSmall),
+      IconButton(
+        key: const ValueKey('sequence-next'),
+        tooltip: next == null ? 'The last event' : 'Next: ${_title(next)}',
+        visualDensity: VisualDensity.compact,
+        onPressed: next == null ? null : () => _reveal(next),
+        icon: const Icon(Icons.chevron_right),
+      ),
+    ];
+  }
+
+  Widget _heading(
+    ThemeData theme,
+    String title, {
+    List<Widget> actions = const [],
+  }) => Row(
     children: [
       Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
+      ...actions,
       IconButton(
         tooltip: 'Close',
         visualDensity: VisualDensity.compact,
@@ -2077,13 +2354,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
       for (final e in members)
         InkWell(
           key: ValueKey('sequence-member-$e'),
-          onTap: () => _outline
-              ? setState(() {
-                  _unfoldTo(e);
-                  _rebuild();
-                  _selected = e;
-                })
-              : _reveal(e),
+          onTap: () => _reveal(e),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 3),
             child: Row(
@@ -2141,13 +2412,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
         for (final (event, bases) in list)
           InkWell(
             key: ValueKey('sequence-related-$event'),
-            onTap: () => _outline
-                ? setState(() {
-                    _unfoldTo(event);
-                    _rebuild();
-                    _selected = event;
-                  })
-                : _reveal(event),
+            onTap: () => _reveal(event),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 3),
               child: Text.rich(
@@ -2158,9 +2423,10 @@ class _EventSequencePageState extends State<EventSequencePage> {
                       style: TextStyle(color: scheme.primary),
                     ),
                     TextSpan(
-                      text: ' — ${bases.join('; ')}',
+                      text: ' — ',
                       style: TextStyle(color: scheme.onSurfaceVariant),
                     ),
+                    ..._basisSpans(theme, bases),
                   ],
                 ),
                 style: theme.textTheme.bodySmall,
@@ -2178,7 +2444,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
         if (p.kind == 'person') p,
     ];
     return [
-      _heading(theme, _title(selected)),
+      _heading(theme, _title(selected), actions: _steps(selected)),
       if (kinds.isNotEmpty || region != null)
         Padding(
           padding: const EdgeInsets.only(bottom: 6),

@@ -769,4 +769,113 @@ void main() {
     expect(long.via, isNotNull);
     expect((long.via.across - long.from.dx).abs(), greaterThan(width / 2));
   });
+
+  /// The title the panel heads, of the event picked out.
+  Finder panelTitle(String title) =>
+      find.descendant(of: key('sequence-panel'), matching: find.text(title));
+
+  testWidgets('steps to the event before and after, kept to those lit', (
+    tester,
+  ) async {
+    await open(tester);
+    await tester.tap(key('sequence-fold-toggle'));
+    await tester.pumpAndSettle();
+    await tester.tap(key('sequence-event-1'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 of 5'), findsOneWidget);
+    expect(
+      tester.widget<IconButton>(key('sequence-previous')).onPressed,
+      isNull,
+    );
+    await tester.tap(key('sequence-next'));
+    await tester.pumpAndSettle();
+    expect(panelTitle('Water to Wine'), findsOneWidget);
+    expect(find.text('2 of 5'), findsOneWidget);
+
+    // Lit only by Mark, the next steps over John's events.
+    await tester.tap(key('sequence-previous'));
+    await tester.pumpAndSettle();
+    await tester.tap(key('sequence-gospel'));
+    await tester.pumpAndSettle();
+    await tester.tap(key('sequence-gospel-41'));
+    await tester.pumpAndSettle();
+    await tester.tap(key('sequence-next'));
+    await tester.pumpAndSettle();
+    expect(panelTitle('Fishers of Men'), findsOneWidget);
+  });
+
+  testWidgets('finds an event by its people, unfolding to it', (tester) async {
+    await open(tester);
+    expect(key('sequence-event-5'), findsNothing);
+    await tester.tap(key('sequence-search'));
+    await tester.pumpAndSettle();
+    await tester.enterText(key('sequence-search-field'), 'peter');
+    await tester.pumpAndSettle();
+    expect(key('sequence-found-4'), findsOneWidget);
+    expect(key('sequence-found-5'), findsOneWidget);
+    expect(key('sequence-found-1'), findsNothing);
+    // By a passage too.
+    await tester.enterText(key('sequence-search-field'), 'john 2:13');
+    await tester.pumpAndSettle();
+    expect(key('sequence-found-3'), findsOneWidget);
+    expect(key('sequence-found-2'), findsNothing);
+    await tester.enterText(key('sequence-search-field'), 'peter mother');
+    await tester.pumpAndSettle();
+    await tester.tap(key('sequence-found-5'));
+    await tester.pumpAndSettle();
+    expect(key('sequence-event-5'), findsOneWidget);
+    expect(panelTitle("Peter's Mother-in-law"), findsOneWidget);
+  });
+
+  testWidgets('lights what a Gospel tells, or tells alone', (tester) async {
+    final events = {
+      ..._events,
+      2: _events[2]!.copyWith(passages: [_at(43, 2, 1), _at(41, 1, 21)]),
+    };
+    await open(tester, events: events);
+    await tester.tap(key('sequence-fold-toggle'));
+    await tester.pumpAndSettle();
+    await tester.tap(key('sequence-gospel'));
+    await tester.pumpAndSettle();
+    await tester.tap(key('sequence-gospel-43'));
+    await tester.pumpAndSettle();
+    expect(opacity(tester, 'sequence-event-2'), 1);
+    expect(opacity(tester, 'sequence-event-3'), 1);
+    expect(opacity(tester, 'sequence-event-1'), lessThan(1));
+
+    await tester.tap(key('sequence-gospel'));
+    await tester.pumpAndSettle();
+    await tester.tap(key('sequence-gospel-43-only'));
+    await tester.pumpAndSettle();
+    expect(find.text('Only Jn'), findsOneWidget);
+    expect(opacity(tester, 'sequence-event-2'), lessThan(1));
+    expect(opacity(tester, 'sequence-event-3'), 1);
+
+    await tester.tap(key('sequence-clear-filters'));
+    await tester.pumpAndSettle();
+    expect(opacity(tester, 'sequence-event-1'), 1);
+    expect(find.text('Gospel'), findsOneWidget);
+  });
+
+  testWidgets('opens the passages an ordering rests on', (tester) async {
+    final sequence = _sequence.copyWith(
+      groupings: [],
+      edges: [
+        SequenceEdgeEntry(
+          before: 1,
+          after: 2,
+          bases: ["Mark's order", 'Mark 1:14; John 2:1-2: then'],
+        ),
+        ..._sequence.edges.skip(1),
+      ],
+    );
+    final opened = await open(tester, sequence: sequence);
+    await tester.tap(key('sequence-event-2'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining("Mark's order; "), findsOneWidget);
+    await tester.tap(key('sequence-basis-John 2:1-2'));
+    await tester.pumpAndSettle();
+    expect(opened.single.bookIndex, 42);
+    expect(opened.single.reference, '2:1–2');
+  });
 }
