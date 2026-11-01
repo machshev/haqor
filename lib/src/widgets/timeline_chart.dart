@@ -2280,6 +2280,20 @@ class _TimelinePageState extends State<TimelinePage> {
 
   /// The stretch being dragged across the chart, in its pixels.
   ({double from, double to})? _drag;
+
+  /// The touches down on the chart, where they are on the screen; two or
+  /// more pinch it, zooming it and moving it as they do.
+  final _touches = <int, Offset>{};
+
+  /// Where a pinch last stood: its middle, across the view, and its span.
+  ({double focus, double span})? _pinch;
+
+  /// A trackpad pinch's scale when last zoomed by.
+  double _panZoomScale = 1;
+
+  /// Whether a pinch holds the chart, the drags that would scroll it held
+  /// off.
+  bool get _pinching => _pinch != null;
   late String? _selectedId = widget.initialSelectedId;
   late StudyTimeline _timeline = widget.timeline;
   late List<StudyTimelineEntry> _allEntries = widget.entries;
@@ -2631,7 +2645,9 @@ class _TimelinePageState extends State<TimelinePage> {
 
   /// Zooms by [factor], keeping the time [at] pixels into the view where
   /// it is: the middle, unless given, as under the mouse for its wheel.
-  void _zoom(double factor, double viewport, {double? at}) {
+  /// Given [from] too, the time that was there is moved to [at], as a
+  /// pinch's middle moves.
+  void _zoom(double factor, double viewport, {double? at, double? from}) {
     final current =
         _pixelsPerUnit ??
         _scaleFor(timelineFocus(_timeline, _entries), viewport);
@@ -2640,9 +2656,9 @@ class _TimelinePageState extends State<TimelinePage> {
     // of turns of the wheel zooms about the same time.
     final scrolled =
         _zoomedOffset ?? (_horizontal.hasClients ? _horizontal.offset : 0);
-    final time = (scrolled + focus - TimelineChart.padding) / current;
+    final time = (scrolled + (from ?? focus) - TimelineChart.padding) / current;
     final next = (current * factor).clamp(_minScale(viewport), 1e6);
-    if (next == current) return;
+    if (next == current && (from ?? focus) == focus) return;
     final offset = math.max(0.0, time * next + TimelineChart.padding - focus);
     setState(() {
       _pixelsPerUnit = next;
@@ -2673,6 +2689,66 @@ class _TimelinePageState extends State<TimelinePage> {
         at: event.localPosition.dx - scrolled,
       );
     });
+  }
+
+  /// Where on the screen the view of the chart starts, taken as a pinch
+  /// starts. (Its moves are placed on the chart as it stood when it
+  /// started, not as it has since been zoomed and scrolled.)
+  double _viewLeft = 0;
+
+  /// Takes where the view of the chart starts from [event], just hit.
+  void _placeView(PointerEvent event) {
+    final scrolled =
+        _zoomedOffset ?? (_horizontal.hasClients ? _horizontal.offset : 0);
+    _viewLeft = event.position.dx - event.localPosition.dx + scrolled;
+  }
+
+  /// The middle across the view, and the span, of the first two touches.
+  ({double focus, double span}) _pinchOf() {
+    final [a, b, ...] = _touches.values.toList();
+    return (focus: (a.dx + b.dx) / 2 - _viewLeft, span: (a - b).distance);
+  }
+
+  /// Follows the touches on the chart: a second down starts a pinch, the
+  /// drags that would scroll held off while it lasts.
+  void _touchDown(PointerDownEvent event) {
+    if (event.kind != PointerDeviceKind.touch) return;
+    _touches[event.pointer] = event.position;
+    if (_touches.length != 2) return;
+    _placeView(event);
+    setState(() => _pinch = _pinchOf());
+  }
+
+  /// Zooms by the pinch as its touches move, about its middle, moved as
+  /// that moves.
+  void _touchMove(PointerMoveEvent event, double viewport) {
+    if (!_touches.containsKey(event.pointer)) return;
+    _touches[event.pointer] = event.position;
+    final last = _pinch;
+    if (last == null) return;
+    final now = _pinchOf();
+    _pinch = now;
+    if (last.span <= 0 || now.span <= 0) return;
+    _zoom(now.span / last.span, viewport, at: now.focus, from: last.focus);
+  }
+
+  /// Ends the pinch once fewer than two touches are left.
+  void _touchUp(PointerEvent event) {
+    if (_touches.remove(event.pointer) == null) return;
+    if (_touches.length >= 2) {
+      _pinch = _pinchOf();
+    } else if (_pinching) {
+      setState(() => _pinch = null);
+    }
+  }
+
+  /// Zooms by a trackpad's pinch, about where it is; its two-finger drag is
+  /// left to scroll the chart.
+  void _panZoom(PointerPanZoomUpdateEvent event, double viewport) {
+    final factor = event.scale / _panZoomScale;
+    _panZoomScale = event.scale;
+    if (factor == 1 || factor <= 0) return;
+    _zoom(factor, viewport, at: event.position.dx + event.pan.dx - _viewLeft);
   }
 
   /// Zooms into the stretch dragged across the chart drawn at [ppu], as
@@ -3739,7 +3815,7 @@ class _TimelinePageState extends State<TimelinePage> {
                       child: CustomScrollView(
                         key: const ValueKey('timeline-page-scroll'),
                         // Picking a stretch, a drag is the pick's.
-                        physics: _selecting
+                        physics: _selecting || _pinching
                             ? const NeverScrollableScrollPhysics()
                             : null,
                         slivers: [
@@ -3751,16 +3827,28 @@ class _TimelinePageState extends State<TimelinePage> {
                                   child: SingleChildScrollView(
                                     controller: _horizontal,
                                     scrollDirection: Axis.horizontal,
-                                    physics: _selecting
+                                    physics: _selecting || _pinching
                                         ? const NeverScrollableScrollPhysics()
                                         : null,
                                     // Room above for the controls over the chart.
                                     padding: const EdgeInsets.only(top: 48),
                                     // The mouse wheel zooms, about the time
-                                    // under the mouse.
+                                    // under the mouse, as a pinch does,
+                                    // of two touches or on a trackpad.
                                     child: Listener(
                                       onPointerSignal: (event) =>
                                           _zoomByWheel(event, viewport),
+                                      onPointerDown: _touchDown,
+                                      onPointerMove: (event) =>
+                                          _touchMove(event, viewport),
+                                      onPointerUp: _touchUp,
+                                      onPointerCancel: _touchUp,
+                                      onPointerPanZoomStart: (event) {
+                                        _panZoomScale = 1;
+                                        _placeView(event);
+                                      },
+                                      onPointerPanZoomUpdate: (event) =>
+                                          _panZoom(event, viewport),
                                       child: GestureDetector(
                                         key: const ValueKey(
                                           'timeline-drag-zoom',

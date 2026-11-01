@@ -720,6 +720,40 @@ void main() {
     await tester.pumpAndSettle();
     expect(x('booths') - x('trumpets'), closeTo(span, 2));
 
+    // Two touches pinch it, the time between them kept between them.
+    await tester.tap(find.byTooltip('Fit to entries'));
+    await tester.pumpAndSettle();
+    final middle = x('trumpets') + 5 + 20;
+    final left = await tester.startGesture(Offset(middle - 20, y), pointer: 7);
+    final right = await tester.startGesture(Offset(middle + 20, y), pointer: 8);
+    await tester.pump();
+    for (var i = 0; i < 4; i++) {
+      await left.moveBy(const Offset(-5, 0));
+      await right.moveBy(const Offset(5, 0));
+      await tester.pump();
+    }
+    await left.up();
+    await right.up();
+    await tester.pumpAndSettle();
+    expect(x('booths') - x('trumpets'), closeTo(span * 2, 2));
+    expect(x('trumpets') + 5, closeTo(middle - 40, 2));
+
+    // As does a trackpad, about where it is.
+    await tester.tap(find.byTooltip('Fit to entries'));
+    await tester.pumpAndSettle();
+    final pad = TestPointer(9, PointerDeviceKind.trackpad);
+    await tester.sendEventToBinding(pad.panZoomStart(Offset(under, y)));
+    await tester.sendEventToBinding(
+      pad.panZoomUpdate(Offset(under, y), scale: 1.5),
+    );
+    await tester.sendEventToBinding(
+      pad.panZoomUpdate(Offset(under, y), scale: 2),
+    );
+    await tester.sendEventToBinding(pad.panZoomEnd());
+    await tester.pumpAndSettle();
+    expect(x('booths') - x('trumpets'), closeTo(span * 2, 2));
+    expect(x('trumpets') + 5, closeTo(under - 10, 2));
+
     // A touch drag scrolls too, unless picking a stretch is turned on.
     await tester.tap(find.byTooltip('Fit to entries'));
     await tester.pumpAndSettle();
