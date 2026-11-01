@@ -1636,6 +1636,49 @@ void main() {
     expect(tapped?.id, 'moadim:sukkot-1');
   });
 
+  testWidgets('the year wheel zoomed on a phone spreads down its height', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 700) * 3;
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final workspace = const StudyWorkspace(
+      id: 'w',
+      name: 'w',
+    ).addStandardTimeline(standardTimelineById('moadim')!, id: 'moadim');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TimelineWheel(
+            timeline: workspace.timelineById('moadim')!,
+            entries: workspace.viewOf('moadim'),
+            year: 0,
+          ),
+        ),
+      ),
+    );
+    Rect rectOf(Type type) => tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey('timeline-wheel')),
+        matching: find.byType(type),
+      ),
+    );
+    // The view takes the phone's height, the wheel its width, centred.
+    final clip = rectOf(ClipRect);
+    var wheel = rectOf(CustomPaint);
+    expect(clip.height, greaterThan(clip.width + 100));
+    expect(wheel.width, closeTo(clip.width, 0.01));
+    expect(wheel.center, offsetMoreOrLessEquals(clip.center));
+    // Zoomed in, it overflows the sides but is still whole top to bottom,
+    // not cut to a square of the phone's width.
+    await tester.tap(find.byTooltip('Zoom in'));
+    await tester.pump();
+    wheel = rectOf(CustomPaint);
+    expect(wheel.width, greaterThan(clip.width));
+    expect(wheel.top, greaterThanOrEqualTo(clip.top));
+    expect(wheel.bottom, lessThanOrEqualTo(clip.bottom));
+  });
+
   testWidgets('categories colour entries, which a key shows and hides, and '
       'recolours', (tester) async {
     var feasts = const StudyTimeline(

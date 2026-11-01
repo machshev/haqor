@@ -449,7 +449,10 @@ class _TimelineWheelState extends State<TimelineWheel> {
   double _zoom = 1;
   Offset _pan = Offset.zero;
 
-  /// The side of the view, as last laid out.
+  /// The view, as last laid out, and the side of the unzoomed wheel: the
+  /// view's shorter side. The view fills the space it is given, so a zoomed
+  /// wheel spreads across all of it rather than a square of its shorter side.
+  Size _view = Size.zero;
   double _side = 0;
 
   /// Where a drag last stood, and a pinch's scale and twist.
@@ -459,10 +462,15 @@ class _TimelineWheelState extends State<TimelineWheel> {
 
   bool get _moved => _turn != 0 || _zoom != 1;
 
-  /// [pan] held so the wheel covers the view.
+  /// [pan] held so the wheel covers the view along each axis it overflows,
+  /// and centred along each it does not.
   Offset _clamp(Offset pan) {
-    final over = _side * (_zoom - 1);
-    return Offset(pan.dx.clamp(-over, 0.0), pan.dy.clamp(-over, 0.0));
+    double axis(double offset, double view) {
+      final over = _side * _zoom - view;
+      return over > 0 ? offset.clamp(-over, 0.0) : -over / 2;
+    }
+
+    return Offset(axis(pan.dx, _view.width), axis(pan.dy, _view.height));
   }
 
   /// Zooms by [factor], [focal] in view staying put.
@@ -474,7 +482,7 @@ class _TimelineWheelState extends State<TimelineWheel> {
   }
 
   void _zoomBy(double factor) =>
-      setState(() => _zoomAt(Offset(_side / 2, _side / 2), factor));
+      setState(() => _zoomAt(_view.center(Offset.zero), factor));
 
   void _reset() => setState(() {
     _turn = 0;
@@ -566,17 +574,14 @@ class _TimelineWheelState extends State<TimelineWheel> {
         : null;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final side = math.max(
-          0.0,
-          math.min(
-                constraints.maxWidth,
-                constraints.maxHeight - (key == null ? 0 : 28),
-              ) -
-              16,
+        final view = Size(
+          math.max(0.0, constraints.maxWidth - 16),
+          math.max(0.0, constraints.maxHeight - (key == null ? 0 : 28) - 16),
         );
-        _side = side;
+        _view = view;
+        _side = view.shortestSide;
         _pan = _clamp(_pan);
-        final size = Size.square(side * _zoom);
+        final size = Size.square(_side * _zoom);
         final layout = TimelineWheelLayout(
           timeline: timeline,
           year: year,
@@ -588,7 +593,7 @@ class _TimelineWheelState extends State<TimelineWheel> {
           theme: theme,
           turn: _turn,
           zoom: _zoom,
-          visible: _zoom == 1 ? null : (-_pan & Size.square(side)),
+          visible: _zoom == 1 ? null : (-_pan & view),
         );
         // The zoom, on a ground of its own over the wheel zoomed beneath.
         final zoom = Material(
@@ -668,8 +673,8 @@ class _TimelineWheelState extends State<TimelineWheel> {
                           );
                       },
                       child: ClipRect(
-                        child: SizedBox.square(
-                          dimension: side,
+                        child: SizedBox.fromSize(
+                          size: view,
                           child: OverflowBox(
                             alignment: Alignment.topLeft,
                             minWidth: 0,
