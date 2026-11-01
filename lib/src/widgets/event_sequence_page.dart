@@ -8,6 +8,7 @@ import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../event_sequence.dart';
 import '../study_workspace.dart';
+import 'event_parallels_page.dart';
 import 'markdown_note.dart';
 import 'place_map.dart' show Basemap;
 import 'sequence_map_page.dart';
@@ -80,6 +81,7 @@ class EventSequencePage extends StatefulWidget {
     required this.onOpenPassage,
     this.focusEventId,
     this.basemap,
+    this.sendVerseTextsRequest,
   });
 
   final EventSequenceEntry sequence;
@@ -101,6 +103,9 @@ class EventSequencePage extends StatefulWidget {
   /// its own.
   final Basemap? basemap;
 
+  /// How the verses of its parallels reach Rust; a test passes its own.
+  final void Function(GetVerseTexts)? sendVerseTextsRequest;
+
   static Future<void> open(
     BuildContext context, {
     required EventSequenceEntry sequence,
@@ -110,6 +115,7 @@ class EventSequencePage extends StatefulWidget {
     required ValueChanged<StudyPassage> onOpenPassage,
     int? focusEventId,
     Basemap? basemap,
+    void Function(GetVerseTexts)? sendVerseTextsRequest,
   }) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => EventSequencePage(
@@ -120,6 +126,7 @@ class EventSequencePage extends StatefulWidget {
         onOpenPassage: onOpenPassage,
         focusEventId: focusEventId,
         basemap: basemap,
+        sendVerseTextsRequest: sendVerseTextsRequest,
       ),
     ),
   );
@@ -739,6 +746,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
         },
         focusEventId: focus,
         basemap: widget.basemap,
+        sendVerseTextsRequest: widget.sendVerseTextsRequest,
       );
 
   /// The sequence's note, and its grouping's: what it orders, and how.
@@ -2539,6 +2547,8 @@ class _EventSequencePageState extends State<EventSequencePage> {
           ),
       ],
     );
+    // Told more than once, its accounts can be read side by side.
+    final parallel = (entry?.passages.length ?? 0) > 1;
     final follows = _full.directlyBefore(selected);
     final precedes = _full.directlyAfter(selected);
     final region = sequenceRegions[details?.region ?? ''];
@@ -2600,7 +2610,10 @@ class _EventSequencePageState extends State<EventSequencePage> {
           ),
         ],
       ),
-      if (inner != null || milestone != null || places.isNotEmpty) ...[
+      if (inner != null ||
+          milestone != null ||
+          places.isNotEmpty ||
+          parallel) ...[
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -2614,6 +2627,20 @@ class _EventSequencePageState extends State<EventSequencePage> {
                 label: Text(
                   'Open ${inner.title}: ${inner.events.length} events',
                 ),
+              ),
+            if (parallel)
+              FilledButton.tonalIcon(
+                key: const ValueKey('sequence-panel-parallels'),
+                onPressed: () => EventParallelsPage.open(
+                  context,
+                  title: _title(selected),
+                  passages: entry.passages,
+                  useEnglishBookNames: widget.useEnglishBookNames,
+                  onOpenPassage: _openPassage,
+                  sendVerseTextsRequest: widget.sendVerseTextsRequest,
+                ),
+                icon: const Icon(Icons.view_column_outlined),
+                label: Text('Side by side: ${entry!.passages.length}'),
               ),
             if (milestone != null)
               OutlinedButton.icon(

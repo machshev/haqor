@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/event_sequence.dart';
 import 'package:haqor/src/study_workspace.dart';
+import 'package:haqor/src/widgets/event_parallels_page.dart';
 import 'package:haqor/src/widgets/event_sequence_page.dart';
 import 'package:haqor/src/widgets/place_map.dart';
 import 'package:haqor/src/widgets/sequence_map_page.dart';
@@ -181,6 +182,7 @@ void main() {
               useEnglishBookNames: true,
               onOpenPassage: opened.add,
               basemap: _basemap,
+              sendVerseTextsRequest: (_) {},
             ),
             child: const Text('Open'),
           ),
@@ -916,5 +918,26 @@ void main() {
     final graph = tester.getRect(key('sequence-graph'));
     expect(panel.left, greaterThanOrEqualTo(graph.right));
     expect(panel.height, greaterThan(graph.height * 0.8));
+  });
+
+  testWidgets('an event told more than once is read side by side', (
+    tester,
+  ) async {
+    final events = {
+      ..._events,
+      4: _events[4]!.copyWith(passages: [_at(41, 1, 16), _at(40, 4, 18)]),
+    };
+    await open(tester, events: events);
+    await tester.tap(key('sequence-fold-toggle'));
+    await tester.pumpAndSettle();
+    await tester.tap(key('sequence-event-5'));
+    await tester.pumpAndSettle();
+    expect(key('sequence-panel-parallels'), findsNothing);
+    await tester.tap(key('sequence-event-4'));
+    await tester.pumpAndSettle();
+    await tester.tap(key('sequence-panel-parallels'));
+    await tester.pumpAndSettle();
+    expect(find.byType(EventParallelsPage), findsOneWidget);
+    expect(find.text('2 accounts'), findsOneWidget);
   });
 }
