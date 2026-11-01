@@ -940,4 +940,43 @@ void main() {
     expect(find.byType(EventParallelsPage), findsOneWidget);
     expect(find.text('2 accounts'), findsOneWidget);
   });
+
+  testWidgets('marks the years where the order reaches them, kept', (
+    tester,
+  ) async {
+    final events = {
+      for (final e in _events.values)
+        e.id: e.copyWith(year: e.id <= 2 ? 26 : (e.id == 3 ? 28 : 27)),
+    };
+    await open(tester, events: events);
+    await tester.tap(key('sequence-fold-toggle'));
+    await tester.pumpAndSettle();
+    expect(find.text('AD 26'), findsOneWidget);
+    expect(find.text('AD 28'), findsOneWidget);
+    // Not marked back from 28 to 27.
+    expect(find.text('AD 27'), findsNothing);
+    final mark = tester.getTopLeft(key('sequence-year-28')).dy;
+    expect(mark, lessThan(tester.getTopLeft(key('sequence-event-3')).dy));
+    expect(mark, greaterThan(tester.getTopLeft(key('sequence-event-2')).dy));
+
+    await tester.tap(key('sequence-outline'));
+    await tester.pumpAndSettle();
+    expect(key('sequence-outline-year-26'), findsOneWidget);
+    expect(key('sequence-outline-year-28'), findsOneWidget);
+    await tester.tap(key('sequence-outline'));
+    await tester.pumpAndSettle();
+
+    await menu(tester, 'sequence-years');
+    expect(find.text('AD 26'), findsNothing);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(eventSequenceYearsKey), isFalse);
+    await menu(tester, 'sequence-years');
+  });
+
+  testWidgets('a sequence of one year marks none', (tester) async {
+    await open(tester);
+    await tester.tap(key('sequence-menu'));
+    await tester.pumpAndSettle();
+    expect(key('sequence-years'), findsNothing);
+  });
 }

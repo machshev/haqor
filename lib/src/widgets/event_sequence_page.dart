@@ -45,6 +45,9 @@ const _groupInset = 6.0;
 /// The room a feast's mark takes before the row of its event.
 const _milestoneSpace = 30.0;
 
+/// The room a year's mark takes before the first row reaching it.
+const _yearSpace = 20.0;
+
 /// The room the lanes' names take above them, top to bottom.
 const _laneHeader = 26.0;
 
@@ -58,6 +61,7 @@ const _sidePanelWidth = 380.0;
 const eventSequenceHorizontalKey = 'event_sequence_horizontal';
 const eventSequenceLanesKey = 'event_sequence_lanes';
 const eventSequenceOutlineKey = 'event_sequence_outline';
+const eventSequenceYearsKey = 'event_sequence_years';
 
 /// A sequence of the Bible's events drawn as what is known to come before
 /// what: each event below those it follows, joined by the orderings that
@@ -351,6 +355,8 @@ class _EventSequencePageState extends State<EventSequencePage> {
       final horizontal = prefs.getBool(eventSequenceHorizontalKey);
       final lanes = prefs.getBool(eventSequenceLanesKey);
       final outline = prefs.getBool(eventSequenceOutlineKey);
+      final years = prefs.getBool(eventSequenceYearsKey);
+      if (years != null && years != _years) _setYears(years, save: false);
       if (lanes != null && lanes != _lanes) _setLanes(lanes, save: false);
       if (outline != null && outline != _outline) {
         _setOutline(outline, save: false);
@@ -532,6 +538,9 @@ class _EventSequencePageState extends State<EventSequencePage> {
   /// The feasts drawn, by the row of their event.
   var _milestoneRows = <int, SequenceMilestoneEntry>{};
 
+  /// The years marked, by the first row reaching each.
+  var _yearRows = <int, int>{};
+
   double get _slot =>
       _horizontal ? _cardAcross + _gapStack : _cardWidth + _gapAcross;
 
@@ -558,6 +567,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
     _milestoneRows = {
       for (final m in widget.sequence.milestones) ?graph.row[m.event]: m,
     };
+    _yearRows = _years ? _markYears(graph) : const {};
     final headerAlong = _horizontal ? _groupPad : _groupHeader;
     final laned = graph.lanes.isNotEmpty;
 
@@ -634,6 +644,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
     final tight = <int>{};
     for (final MapEntry(key: r, value: edges) in between.entries) {
       if (_milestoneRows.containsKey(r + 1) ||
+          _yearRows.containsKey(r + 1) ||
           turning.contains(r) ||
           !edges.every(stackable)) {
         continue;
@@ -649,6 +660,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
     for (var r = 0; r < graph.rows.length; r++) {
       at += _groupPad * (ends[r - 1]?.length ?? 0);
       at += headerAlong * (starts[r]?.length ?? 0);
+      if (_yearRows.containsKey(r)) at += _yearSpace;
       if (_milestoneRows.containsKey(r)) at += _milestoneSpace;
       rowAt.add(at);
       at +=
@@ -685,6 +697,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
         alongStart:
             rowAt[first] -
             (_milestoneRows.containsKey(first) ? _milestoneSpace : 0) -
+            (_yearRows.containsKey(first) ? _yearSpace : 0) -
             headerAlong * outerFirst,
         alongEnd: rowAt[last] + _rowAlong[last] + _groupPad * outerLast - 4,
         acrossStart: _horizontal
@@ -696,6 +709,124 @@ class _EventSequencePageState extends State<EventSequencePage> {
     // The outer first, so that the inner lie over them.
     boxes.sort((a, b) => a.depth.compareTo(b.depth));
     _boxes = boxes;
+  }
+
+  /// Whether the years its events are dated to are marked where the order
+  /// reaches them; kept, as the other choices are. For a sequence whose
+  /// events are dated to more than one year only.
+  static bool _lastYears = true;
+  bool _years = _lastYears;
+  late final bool _hasYears =
+      {for (final e in widget.sequence.events) ?widget.events[e]?.year}.length >
+      1;
+
+  void _setYears(bool years, {bool save = true}) {
+    _lastYears = years;
+    setState(() {
+      _years = years;
+      _measure();
+    });
+    if (save) _save(eventSequenceYearsKey, years);
+  }
+
+  /// The year [node] is dated to: its event's, or for a folded group its
+  /// first event's.
+  int? _yearOf(int node) => switch (nodeGroup(node)) {
+    final g? =>
+      _tree!
+          .eventsOf(g)
+          .map((e) => widget.events[e]?.year)
+          .nonNulls
+          .fold<int?>(null, (a, b) => a == null ? b : math.min(a, b)),
+    null => widget.events[node]?.year,
+  };
+
+  /// The first row of [graph] reaching each year: a row's year the one
+  /// most of its nodes are dated to (the earliest of those tied), marked
+  /// where it passes the last year marked, so that an event the order sets
+  /// apart from its year does not mark the years back and forth.
+  Map<int, int> _markYears(SequenceGraph graph) {
+    if (!_hasYears) return const {};
+    final marks = <int, int>{};
+    int? last;
+    for (final (r, nodes) in graph.rows.indexed) {
+      final count = <int, int>{};
+      for (final n in nodes) {
+        if (_yearOf(n) case final y?) count[y] = (count[y] ?? 0) + 1;
+      }
+      if (count.isEmpty) continue;
+      final year = count.entries
+          .reduce(
+            (a, b) => b.value > a.value || (b.value == a.value && b.key < a.key)
+                ? b
+                : a,
+          )
+          .key;
+      if (last == null || year > last) {
+        marks[r] = last = year;
+      }
+    }
+    return marks;
+  }
+
+  /// A year's mark across the graph, before the first row reaching it: a
+  /// faint rule, its year at its end.
+  Widget _yearMark(ThemeData theme, int row, int year, Size canvas) {
+    final scheme = theme.colorScheme;
+    final at =
+        _rowAt[row] -
+        (_milestoneRows.containsKey(row) ? _milestoneSpace : 0) -
+        _yearSpace;
+    final label = Text(
+      formatEraYear(year.toDouble()),
+      style: theme.textTheme.labelSmall?.copyWith(
+        color: scheme.onSurfaceVariant,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+    final line = ColoredBox(color: scheme.outlineVariant);
+    if (_horizontal) {
+      return Positioned(
+        key: ValueKey('sequence-year-$year'),
+        left: at,
+        top: 0,
+        width: _yearSpace,
+        height: canvas.height,
+        child: Stack(
+          children: [
+            Positioned(
+              left: _yearSpace / 2,
+              top: 22,
+              bottom: 0,
+              width: 1,
+              child: line,
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 4,
+              child: Center(child: RotatedBox(quarterTurns: 3, child: label)),
+            ),
+          ],
+        ),
+      );
+    }
+    return Positioned(
+      key: ValueKey('sequence-year-$year'),
+      left: 0,
+      top: at,
+      width: canvas.width,
+      height: _yearSpace,
+      child: Row(
+        children: [
+          Expanded(child: SizedBox(height: 1, child: line)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: label,
+          ),
+        ],
+      ),
+    );
   }
 
   Offset _cardAt(int node) {
@@ -1189,11 +1320,19 @@ class _EventSequencePageState extends State<EventSequencePage> {
             key: const ValueKey('sequence-menu'),
             onSelected: (choice) => switch (choice) {
               'lanes' => _setLanes(!_lanes),
+              'years' => _setYears(!_years),
               'map' => _openMap(widget.sequence.title, widget.sequence.events),
               'about' => _showNote(),
               _ => null,
             },
             itemBuilder: (context) => [
+              if (_hasYears)
+                CheckedPopupMenuItem(
+                  key: const ValueKey('sequence-years'),
+                  value: 'years',
+                  checked: _years,
+                  child: const Text('Mark the years'),
+                ),
               if (_hasRegions && !_outline)
                 CheckedPopupMenuItem(
                   key: const ValueKey('sequence-lanes'),
@@ -1533,6 +1672,8 @@ class _EventSequencePageState extends State<EventSequencePage> {
         children: [
           if (_graph.lanes.isNotEmpty) ..._laneStripes(theme, canvas),
           for (final box in _boxes) _groupBox(theme, box),
+          for (final MapEntry(key: row, value: year) in _yearRows.entries)
+            _yearMark(theme, row, year, canvas),
           for (final MapEntry(key: row, value: m) in _milestoneRows.entries)
             _milestoneMark(theme, row, m, canvas),
           Positioned.fill(
@@ -2096,8 +2237,16 @@ class _EventSequencePageState extends State<EventSequencePage> {
   Widget _outlineView(ThemeData theme) {
     final tree = _tree;
     final items = <Widget>[];
+    int? lastYear;
     void events(List<int> list, int depth) {
       for (final e in _ordered(list)) {
+        if (_years && _hasYears) {
+          if (widget.events[e]?.year case final y?
+              when lastYear == null || y > lastYear!) {
+            lastYear = y;
+            items.add(_outlineYear(theme, y, depth));
+          }
+        }
         if (_milestones[e] case final m?) {
           items.add(_outlineMilestone(theme, m, depth));
         }
@@ -2166,6 +2315,24 @@ class _EventSequencePageState extends State<EventSequencePage> {
       ),
     );
   }
+
+  Widget _outlineYear(ThemeData theme, int year, int depth) => Padding(
+    key: ValueKey('sequence-outline-year-$year'),
+    padding: EdgeInsetsDirectional.fromSTEB(16.0 + 16 * depth, 10, 16, 2),
+    child: Row(
+      children: [
+        Text(
+          formatEraYear(year.toDouble()),
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(width: 8),
+        const Expanded(child: Divider()),
+      ],
+    ),
+  );
 
   Widget _outlineMilestone(
     ThemeData theme,
