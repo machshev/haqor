@@ -400,6 +400,7 @@ class PlaceMap extends StatefulWidget {
     this.minSpan = 1.6,
     this.focus,
     this.fitFocus = false,
+    this.jerusalemDetail = false,
   });
 
   final List<MapPin> pins;
@@ -436,6 +437,11 @@ class PlaceMap extends StatefulWidget {
   /// shown across a quarter of [minSpan].
   final bool fitFocus;
 
+  /// Show the reconstruction of Jerusalem around AD 30 from the start, and
+  /// keep it shown: for maps of Jesus' time. Otherwise it is offered, near
+  /// Jerusalem, as an opt-in layer.
+  final bool jerusalemDetail;
+
   @override
   State<PlaceMap> createState() => _PlaceMapState();
 }
@@ -469,9 +475,15 @@ class _PlaceMapState extends State<PlaceMap> {
   static const _maxScale = 180000.0;
   bool _jerusalem = false;
 
+  // The painted city under the Jerusalem outlines, read once for all maps.
+  static Future<ui.Image>? _cityLoad;
+  ui.Image? _cityImage;
+  bool _cityAsked = false;
+
   @override
   void initState() {
     super.initState();
+    _jerusalem = widget.jerusalemDetail;
     _basemap = widget.basemap;
     _relief = widget.relief;
     _roads = widget.roads;
@@ -568,9 +580,29 @@ class _PlaceMapState extends State<PlaceMap> {
     }
   }
 
+  /// Read the painted city, once the Jerusalem layer is shown on the bundled
+  /// basemap.
+  void _paintCity() {
+    if (!_jerusalem || _cityAsked || widget.basemap != null) return;
+    _cityAsked = true;
+    (_cityLoad ??= () async {
+      final data = await rootBundle.load(jerusalemImageAsset);
+      final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+      return (await codec.getNextFrame()).image;
+    }()).then(
+      (image) {
+        if (mounted) setState(() => _cityImage = image);
+      },
+      onError: (_) {
+        _cityLoad = null;
+      },
+    );
+  }
+
   @override
   void didUpdateWidget(PlaceMap old) {
     super.didUpdateWidget(old);
+    if (widget.jerusalemDetail && !old.jerusalemDetail) _jerusalem = true;
     if (old.seaRoutes != widget.seaRoutes) {
       _seaRoutes = widget.seaRoutes;
       _fitted = false;
@@ -817,6 +849,7 @@ class _PlaceMapState extends State<PlaceMap> {
         if (!_fitted) _fit(size);
         if (_focusPending) _show(size);
         _colourRelief(size, colors.land, dark);
+        _paintCity();
         return ClipRect(
           child: Stack(
             children: [
@@ -869,6 +902,8 @@ class _PlaceMapState extends State<PlaceMap> {
                       painter: _MapPainter(
                         basemap: _basemap,
                         jerusalem: _jerusalem,
+                        city: _jerusalem ? _cityImage : null,
+                        dark: dark,
                         relief: [
                           for (final layer in _relief ?? const <Relief>[])
                             if (_reliefImages[layer] case final image?)
@@ -932,6 +967,8 @@ class _PlaceMapState extends State<PlaceMap> {
                                 icon: const Icon(Icons.info_outline, size: 18),
                                 onPressed: () => showJerusalemMapNotes(context),
                               ),
+                            ],
+                            if (_jerusalem && !widget.jerusalemDetail) ...[
                               IconButton(
                                 tooltip: 'Hide Jerusalem reconstruction',
                                 icon: const Icon(Icons.close, size: 18),
@@ -1135,6 +1172,8 @@ class _MapPainter extends CustomPainter {
   _MapPainter({
     required this.basemap,
     required this.jerusalem,
+    required this.city,
+    required this.dark,
     required this.relief,
     required this.pins,
     required this.legs,
@@ -1146,6 +1185,10 @@ class _MapPainter extends CustomPainter {
 
   final Basemap? basemap;
   final bool jerusalem;
+
+  /// The painted city under the Jerusalem outlines, once read.
+  final ui.Image? city;
+  final bool dark;
 
   /// The relief layers coloured so far, coarsest first.
   final List<(Relief, ui.Image)> relief;
@@ -1230,6 +1273,20 @@ class _MapPainter extends CustomPainter {
       );
       // Over the rivers, which run on through the lakes they feed.
       canvas.drawPath(paths.lakes, Paint()..color = colors.sea);
+    }
+    if (city case final city?) {
+      paintJerusalemImage(
+        canvas,
+        city,
+        Rect.fromLTRB(
+          jerusalemBounds.left * _xScale,
+          -jerusalemBounds.bottom,
+          jerusalemBounds.right * _xScale,
+          -jerusalemBounds.top,
+        ),
+        scale: scale,
+        dark: dark,
+      );
     }
 
     // The places' ground and courses under every pin: candidates under the
@@ -1578,6 +1635,8 @@ class _MapPainter extends CustomPainter {
   bool shouldRepaint(_MapPainter old) =>
       old.basemap != basemap ||
       old.jerusalem != jerusalem ||
+      old.city != city ||
+      old.dark != dark ||
       !listEquals(old.relief, relief) ||
       old.pins != pins ||
       old.legs != legs ||

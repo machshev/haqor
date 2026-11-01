@@ -1,250 +1,101 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Original, schematic reconstruction in geographic coordinates. These are
-/// approximate footprints, not digitized excavation plans. See
-/// doc/jerusalem-map.md for dating, evidence and uncertainties.
-class JerusalemFeature {
-  const JerusalemFeature(this.label, this.kind, this.points, this.labelAt);
-  final String label;
-  final String kind;
-  final List<double> points;
-  final Offset labelAt; // longitude, latitude
+import '../jerusalem_plan.dart';
+
+export '../jerusalem_plan.dart' show PlanFeature;
+
+/// A feature of the plan; see [jerusalemPlan].
+typedef JerusalemFeature = PlanFeature;
+
+extension JerusalemFeatureLabel on PlanFeature {
+  /// Where the label goes: longitude, latitude.
+  Offset get labelAt => Offset(at.$1, at.$2);
 }
 
-const jerusalemBounds = Rect.fromLTRB(35.224, 31.768, 35.247, 31.784);
-const jerusalemFeatures = <JerusalemFeature>[
-  JerusalemFeature('First Wall · approximate', 'wall', [
-    35.2280,
-    31.7770,
-    35.2300,
-    31.7766,
-    35.2337,
-    31.7767,
-    35.2355,
-    31.7754,
-    35.2361,
-    31.7730,
-    35.2355,
-    31.7710,
-    35.2340,
-    31.7700,
-    35.2310,
-    31.7698,
-    35.2275,
-    31.7705,
-    35.2268,
-    31.7730,
-    35.2270,
-    31.7752,
-    35.2280,
-    31.7770,
-  ], Offset(35.2281, 31.7701)),
-  JerusalemFeature('Second Wall · conjectural', 'wall', [
-    35.2280,
-    31.7770,
-    35.2308,
-    31.7775,
-    35.2316,
-    31.7794,
-    35.2324,
-    31.7810,
-    35.2348,
-    31.7808,
-  ], Offset(35.2312, 31.7800)),
-  JerusalemFeature('Temple precinct', 'precinct', [
-    35.2342,
-    31.7757,
-    35.2371,
-    31.7760,
-    35.2379,
-    31.7807,
-    35.2347,
-    31.7810,
-    35.2342,
-    31.7757,
-  ], Offset(35.2360, 31.7796)),
-  JerusalemFeature('Sanctuary', 'building', [
-    35.2348,
-    31.7777,
-    35.2355,
-    31.7777,
-    35.2355,
-    31.7784,
-    35.2348,
-    31.7784,
-    35.2348,
-    31.7777,
-  ], Offset(35.2351, 31.7787)),
-  JerusalemFeature('Court of Women / treasury', 'building', [
-    35.2356,
-    31.7777,
-    35.2362,
-    31.7777,
-    35.2362,
-    31.7784,
-    35.2356,
-    31.7784,
-    35.2356,
-    31.7777,
-  ], Offset(35.2360, 31.7774)),
-  JerusalemFeature('Royal portico', 'building', [
-    35.2344,
-    31.7760,
-    35.2370,
-    31.7763,
-    35.2370,
-    31.7766,
-    35.2344,
-    31.7763,
-    35.2344,
-    31.7760,
-  ], Offset(35.2357, 31.7756)),
-  JerusalemFeature('Solomon’s portico', 'building', [
-    35.2370,
-    31.7764,
-    35.2376,
-    31.7805,
-    35.2378,
-    31.7805,
-    35.2372,
-    31.7764,
-    35.2370,
-    31.7764,
-  ], Offset(35.2388, 31.7793)),
-  JerusalemFeature('Antonia · alternative trial tradition', 'building', [
-    35.2338,
-    31.7807,
-    35.2353,
-    31.7807,
-    35.2353,
-    31.7815,
-    35.2338,
-    31.7815,
-    35.2338,
-    31.7807,
-  ], Offset(35.2339, 31.7820)),
-  JerusalemFeature('Herod’s palace · likely praetorium', 'building', [
-    35.2270,
-    31.7738,
-    35.2290,
-    31.7738,
-    35.2290,
-    31.7768,
-    35.2270,
-    31.7768,
-    35.2270,
-    31.7738,
-  ], Offset(35.2272, 31.7733)),
-  JerusalemFeature('Upper City', 'district', [], Offset(35.2302, 31.7748)),
-  JerusalemFeature(
-    'Lower City / City of David',
-    'district',
-    [],
-    Offset(35.2353, 31.7728),
-  ),
-  JerusalemFeature('Bethesda pools', 'pool', [
-    35.2353,
-    31.7817,
-    35.2360,
-    31.7817,
-    35.2360,
-    31.7824,
-    35.2353,
-    31.7824,
-    35.2353,
-    31.7817,
-  ], Offset(35.2365, 31.7827)),
-  JerusalemFeature('Pool of Siloam · sent man’s destination', 'pool', [
-    35.2345,
-    31.7701,
-    35.2354,
-    31.7701,
-    35.2354,
-    31.7706,
-    35.2345,
-    31.7706,
-    35.2345,
-    31.7701,
-  ], Offset(35.2362, 31.7695)),
-  JerusalemFeature('Kidron valley', 'valley', [
-    35.2390,
-    31.7840,
-    35.2390,
-    31.7810,
-    35.2390,
-    31.7780,
-    35.2376,
-    31.7745,
-    35.2368,
-    31.7715,
-    35.2360,
-    31.7690,
-  ], Offset(35.2393, 31.7745)),
-  JerusalemFeature('Tyropoeon valley', 'valley', [
-    35.2315,
-    31.7820,
-    35.2327,
-    31.7790,
-    35.2336,
-    31.7760,
-    35.2338,
-    31.7730,
-    35.2349,
-    31.7702,
-  ], Offset(35.2332, 31.7740)),
-  JerusalemFeature('Hinnom valley', 'valley', [
-    35.2250,
-    31.7780,
-    35.2250,
-    31.7740,
-    35.2257,
-    31.7710,
-    35.2280,
-    31.7688,
-    35.2320,
-    31.7682,
-    35.2360,
-    31.7690,
-  ], Offset(35.2291, 31.7687)),
-  JerusalemFeature(
-    'Golgotha / tomb · traditional vicinity',
-    'site',
-    [],
-    Offset(35.2297, 31.7785),
-  ),
-  JerusalemFeature(
-    'Garden Tomb · alternative tradition',
-    'site',
-    [],
-    Offset(35.2298, 31.7838),
-  ),
-  JerusalemFeature(
-    'Upper room · estimated',
-    'site',
-    [],
-    Offset(35.2285, 31.7718),
-  ),
-  JerusalemFeature(
-    'High-priestly quarter · estimated',
-    'site',
-    [],
-    Offset(35.2325, 31.7715),
-  ),
-  JerusalemFeature(
-    'Gethsemane · traditional vicinity',
-    'site',
-    [],
-    Offset(35.2397, 31.7793),
-  ),
-  JerusalemFeature('Mount of Olives', 'district', [], Offset(35.2450, 31.7790)),
-  JerusalemFeature(
-    'Southern steps / Huldah gates',
-    'site',
-    [],
-    Offset(35.2355, 31.7752),
-  ),
-];
+final jerusalemBounds = Rect.fromLTRB(
+  jerusalemBox.$1,
+  jerusalemBox.$2,
+  jerusalemBox.$3,
+  jerusalemBox.$4,
+);
+const jerusalemFeatures = jerusalemPlan;
+
+/// The city painted from the plan over the ground's relief, by
+/// tool/build_jerusalem_image.dart, filling [jerusalemBounds].
+const jerusalemImageAsset = 'assets/map/jerusalem_ad30.jpg';
+
+/// The scale, logical pixels to a degree of latitude, from which the city is
+/// drawn, and that by which it has faded fully in.
+const _cityFrom = 9000.0, _cityFull = 14000.0;
+
+/// Draw the painted city [image] over [rect], in map units, fading in as the
+/// map zooms to it and out at its edges into the map around it; dimmed for a
+/// dark theme.
+void paintJerusalemImage(
+  Canvas canvas,
+  ui.Image image,
+  Rect rect, {
+  required double scale,
+  required bool dark,
+}) {
+  if (scale < _cityFrom) return;
+  final opacity = ((scale - _cityFrom) / (_cityFull - _cityFrom)).clamp(
+    0.0,
+    1.0,
+  );
+  canvas.saveLayer(
+    rect,
+    Paint()..color = Color.fromRGBO(0, 0, 0, dark ? opacity * .85 : opacity),
+  );
+  canvas.drawImageRect(
+    image,
+    Offset.zero & Size(image.width.toDouble(), image.height.toDouble()),
+    rect,
+    Paint()
+      ..filterQuality = FilterQuality.medium
+      ..colorFilter = dark
+          ? const ColorFilter.matrix([
+              .55, 0, 0, 0, 0, //
+              0, .55, 0, 0, 0,
+              0, 0, .58, 0, 0,
+              0, 0, 0, 1, 0,
+            ])
+          : null,
+  );
+  // Fade the edges out, so the city sits in the map rather than on it.
+  final fade = rect.shortestSide * .08;
+  final edges = [
+    (
+      Rect.fromLTWH(rect.left, rect.top, fade, rect.height),
+      Alignment.centerLeft,
+    ),
+    (
+      Rect.fromLTWH(rect.right - fade, rect.top, fade, rect.height),
+      Alignment.centerRight,
+    ),
+    (Rect.fromLTWH(rect.left, rect.top, rect.width, fade), Alignment.topCenter),
+    (
+      Rect.fromLTWH(rect.left, rect.bottom - fade, rect.width, fade),
+      Alignment.bottomCenter,
+    ),
+  ];
+  for (final (edge, from) in edges) {
+    canvas.drawRect(
+      edge,
+      Paint()
+        ..blendMode = BlendMode.dstOut
+        ..shader = LinearGradient(
+          begin: from,
+          end: -from,
+          colors: const [Color(0xFF000000), Color(0x00000000)],
+        ).createShader(edge),
+    );
+  }
+  canvas.restore();
+}
 
 /// Draw in screen space so line widths and labels remain readable on zoom.
 void paintJerusalem(
@@ -266,7 +117,8 @@ void paintJerusalem(
   final labels = <Rect>[...reserved];
   for (final f in jerusalemFeatures) {
     final color = switch (f.kind) {
-      'pool' => const Color(0xFF398AAD),
+      'pool' || 'aqueduct' => const Color(0xFF398AAD),
+      'road' => const Color(0xFFB07A3A),
       'valley' => const Color(0xFF9C8D73),
       'precinct' => const Color(0xFFC69C4D),
       _ => ink,
@@ -288,12 +140,22 @@ void paintJerusalem(
       final paint = Paint()
         ..color = color.withValues(alpha: .65)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = (f.kind == 'wall' ? 2.5 : 1.2);
-      if (f.kind == 'wall') {
+        ..strokeWidth = switch (f.kind) {
+          'wall' => 2.5,
+          'road' || 'bridge' => 2,
+          _ => 1.2,
+        };
+      // Walls dashed, the aqueduct dotted.
+      final (dash, gap) = switch (f.kind) {
+        'wall' => (6.0, 4.0),
+        'aqueduct' => (2.0, 3.0),
+        _ => (0.0, 0.0),
+      };
+      if (dash > 0) {
         for (final metric in path.computeMetrics()) {
-          for (double d = 0; d < metric.length; d += 10) {
+          for (double d = 0; d < metric.length; d += dash + gap) {
             canvas.drawPath(
-              metric.extractPath(d, (d + 6).clamp(0, metric.length)),
+              metric.extractPath(d, (d + dash).clamp(0, metric.length)),
               paint,
             );
           }
@@ -392,6 +254,8 @@ Future<void> showJerusalemMapNotes(BuildContext context) => showDialog<void>(
           children: [
             const Text(
               'A geographic reconstruction for exploring Gospel events. Zoom in for the Temple courts. Dashed walls and building outlines are approximate; hollow event markers identify estimated sites. Route lines join events, not excavated streets.\n\n'
+              'The painting beneath is drawn from this plan over the real relief, with the Tyropoeon cut below its later fill. Walls, the Temple, palace, fortress, pools and ways follow the outlines; houses, trees and tombs are filled in for texture, not placed from excavation.\n\n'
+              'The stepped pilgrims’ road from the Siloam pool to the Temple’s south-west corner was excavated from 2004 to 2019 and dated by coins under its paving to Pilate’s time. The Siloam pool shown is the Second Temple pool found in 2004. The lower aqueduct, from Solomon’s Pools, is traced to Wilson’s Arch. The Kidron bridge follows the Mishnah’s causeway of arches (Parah 3:6); no remains of it are known.\n\n'
               'The First and Second Walls are shown. The Second Wall’s course is disputed. The Third Wall, begun under Agrippa I after Jesus’ ministry, and today’s Ottoman walls are omitted.\n\n'
               'The western palace is the working location of Pilate’s headquarters; Antonia is shown as an alternative tradition. The upper room, high-priestly houses, Herod Antipas’ lodging and exact tomb site are uncertain. The Holy Sepulchre vicinity is used for Golgotha and the nearby tomb; the Garden Tomb is shown only as an alternative.\n\n'
               'Siloam is included as a landmark: John 9 records the healed man going there, not Jesus. The Temple precinct is well located; its interior courts are reconstructed.',
@@ -409,6 +273,14 @@ Future<void> showJerusalemMapNotes(BuildContext context) => showDialog<void>(
               (
                 'Second Temple Jerusalem · archaeology',
                 'https://jewishvirtuallibrary.org/jsource/Archaeology/Jerusalem.html',
+              ),
+              (
+                'The street from the Siloam pool · Tel Aviv, 2019',
+                'https://doi.org/10.1080/03344355.2019.1650491',
+              ),
+              (
+                'The causeway over the Kidron · Mishnah Parah 3:6',
+                'https://www.sefaria.org/Mishnah_Parah.3.6',
               ),
             ])
               TextButton(

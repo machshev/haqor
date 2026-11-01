@@ -33,6 +33,7 @@ class SequenceMapPage extends StatefulWidget {
     this.passages = const {},
     this.tracks = const {},
     this.initialTrack,
+    this.jerusalemDetail = false,
   });
 
   /// Supplied by tests; otherwise loaded through the existing core signal.
@@ -43,6 +44,10 @@ class SequenceMapPage extends StatefulWidget {
   /// With no assignments the existing chronological map is retained.
   final Map<int, List<String>> tracks;
   final String? initialTrack;
+
+  /// Show Jerusalem as it was around AD 30 throughout; see
+  /// [PlaceMap.jerusalemDetail].
+  final bool jerusalemDetail;
 
   final String title;
   final List<SequenceMapStop> stops;
@@ -66,6 +71,7 @@ class SequenceMapPage extends StatefulWidget {
     Map<int, List<ThematicTarget>> passages = const {},
     Map<int, List<String>> tracks = const {},
     String? initialTrack,
+    bool jerusalemDetail = false,
   }) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => SequenceMapPage(
@@ -77,6 +83,7 @@ class SequenceMapPage extends StatefulWidget {
         passages: passages,
         tracks: tracks,
         initialTrack: initialTrack,
+        jerusalemDetail: jerusalemDetail,
       ),
     ),
   );
@@ -432,6 +439,7 @@ class _SequenceMapPageState extends State<SequenceMapPage> {
                     legs: legs,
                     focus: focus,
                     fitFocus: true,
+                    jerusalemDetail: widget.jerusalemDetail,
                   ),
           ),
           if (selected != null)

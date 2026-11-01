@@ -1,7 +1,9 @@
 import 'dart:math' as math;
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:haqor/src/widgets/place_map.dart';
 import 'package:haqor/src/widgets/jerusalem_map.dart';
 
@@ -16,6 +18,9 @@ void main() {
       expect(labels, contains('Temple precinct'));
       expect(labels, contains('Siloam'));
       expect(labels, contains('Antonia'));
+      expect(labels, contains('Pilgrims'));
+      expect(labels, contains('aqueduct'));
+      expect(labels, contains('Kidron bridge'));
       for (final f in jerusalemFeatures) {
         expect(f.points.length.isEven, isTrue);
         expect(jerusalemBounds.inflate(.002).contains(f.labelAt), isTrue);
@@ -101,4 +106,35 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  test('the painted city fills the bounds, square on screen', () {
+    final bytes = File(jerusalemImageAsset).readAsBytesSync();
+    final image = img.decodeJpg(bytes)!;
+    final aspect =
+        jerusalemBounds.width *
+        math.cos(32 * math.pi / 180) /
+        jerusalemBounds.height;
+    expect(image.width / image.height, closeTo(aspect, .005));
+  });
+
+  testWidgets('maps of Jesus\' time keep the city detail shown', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PlaceMap(
+            basemap: Basemap.parse('{"land":[],"lakes":[],"rivers":[]}'),
+            pins: const [
+              MapPin(longitude: 35.2355, latitude: 31.776, label: 'Temple'),
+            ],
+            jerusalemDetail: true,
+          ),
+        ),
+      ),
+    );
+    expect(find.byTooltip('About this reconstruction'), findsOneWidget);
+    expect(find.byTooltip('Hide Jerusalem reconstruction'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

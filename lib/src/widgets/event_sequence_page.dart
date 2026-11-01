@@ -864,12 +864,23 @@ class _EventSequencePageState extends State<EventSequencePage> {
     },
   );
 
+  /// The sequences of Jesus' ministry, death and resurrection, whose maps
+  /// show Jerusalem as it was around AD 30 throughout.
+  static const _jesusTime = {
+    'ministry',
+    'holy-week',
+    'priestly-hearings',
+    'roman-hearings',
+    'resurrection-appearances',
+  };
+
   /// The map of [events], titled [title].
   void _openMap(String title, List<int> events) => SequenceMapPage.open(
     context,
     title: title,
     tracks: {for (final e in events) e: _details[e]?.tracks ?? const []},
     initialTrack: _track,
+    jerusalemDetail: _jesusTime.contains(widget.sequence.key),
     passages: {
       for (final e in events) e: widget.events[e]?.passages ?? const [],
     },
