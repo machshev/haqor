@@ -136,6 +136,7 @@ final _moadim = StandardTimeline(
       _qiddush: 1,
       _aremot: 6,
       _masa: 7,
+      _evel: 6,
       _torah: 4,
     },
     note:
@@ -1032,6 +1033,7 @@ final _homeHezekiah = _home(
 );
 
 const _masa = 'Masaʿ (a journeying)';
+const _evel = 'Evel (mourning)';
 const _torah = 'Torah (a teaching)';
 const _messiah = 'Mashiach (the anointed)';
 
@@ -1061,8 +1063,8 @@ List<StudyTimelineEntry> _read(
 const _torahReading = 'torah';
 
 /// The readings of the moʿadim, in the order of the text: the Torah's;
-/// the year of the going out, and the second year; Solomon's, Hezekiah's
-/// and Ezekiel's; and the Messiah's.
+/// the year of the going out, the second year and the fortieth;
+/// Solomon's, Hezekiah's and Ezekiel's; and the Messiah's.
 final _readings = <({TimelineVariant variant, List<StudyTimelineEntry> entries})>[
   (
     variant: const TimelineVariant(
@@ -1087,8 +1089,11 @@ final _readings = <({TimelineVariant variant, List<StudyTimelineEntry> entries})
           'work of the mishkan to the year\'s end. The text dates the going '
           'out, Sin and Sinai; the rest is reckoned from them by the days it '
           'gives, each from the morrow of the last, the soonest the text '
-          'allows. The ʿomer and Shavuot were not yet kept, "when ye come into '
-          'the land" (Leviticus 23:10); the text does not tie Shavuot to '
+          'allows. The camps of Numbers 33 are tents; those the text leaves '
+          'between two dated, from Elim to Rephidim, are windows, hatched, '
+          'from the soonest to the latest the text allows. The ʿomer and '
+          'Shavuot were not yet kept, "when ye come into the land" '
+          '(Leviticus 23:10); the text does not tie Shavuot to '
           'Sinai, though counted from the morrow of the pesach the fiftieth '
           'day falls in the first days of the third month. Verses rendered '
           'literally.',
@@ -1106,7 +1111,8 @@ final _readings = <({TimelineVariant variant, List<StudyTimelineEntry> entries})
           'days and the eighth day, the pesach kept at Sinai, and one kept a '
           'month on by those unclean, whence Hezekiah\'s; then from Sinai to '
           'Kadesh, the month of flesh, Miriam shut out, and the forty days of '
-          'the spies. As Ezekiel\'s altar: '
+          'the spies. The camps of Numbers 33:16-18 are tents. As '
+          'Ezekiel\'s altar: '
           '"seven days shall they cover the altar ... and when these days are '
           'fulfilled, on the eighth day and onward" (Ezekiel 43:26-27). The '
           'text dates the raising, the pesach, the counting and the going on; '
@@ -1116,6 +1122,26 @@ final _readings = <({TimelineVariant variant, List<StudyTimelineEntry> entries})
           'morrow of the last. Verses rendered literally.',
     ),
     entries: _secondYearEntries,
+  ),
+  (
+    variant: const TimelineVariant(
+      id: 'fortieth-year',
+      title: 'The fortieth year: Numbers 20-36, Deuteronomy 1-34',
+      shortTitle: 'Fortieth year',
+      note:
+          '"These are the journeys (masʿei) of the children of Israel ... '
+          'and Moses wrote their goings out according to their journeys by '
+          'the commandment of Yahweh" (Numbers 33:1-2): from Kadesh in the '
+          'first month, by Hor hahar, where Aaron died on the first of the '
+          'fifth month, round Edom and through Moab to the plains by the '
+          'Jordan, and Moses\' words there on the first of the eleventh. The '
+          'text dates Aaron\'s death and the words; the stations between it '
+          'leaves undated, so each is shown as a window, hatched, from the '
+          'soonest to the latest it allows. The stations of the thirty-eight '
+          'years before, from Ritmah to Ezion-geber (Numbers 33:18-35), are '
+          'undated by any year, and not shown. Verses rendered literally.',
+    ),
+    entries: _fortiethYearEntries,
   ),
   (
     variant: const TimelineVariant(
@@ -1293,6 +1319,57 @@ final _goingOutEntries = <StudyTimelineEntry>[
         'eat matzot" (Exodus 12:15).',
   ),
   StudyTimelineEntry(
+    id: 'succoth',
+    title: 'Sukkot (booths)',
+    shortTitle: 'Sukkot',
+    timelineId: '',
+    start: const TimelineTime(0, month: 1, day: 15),
+    camp: true,
+    category: _masa,
+    pin: const TimelinePin('going-out', TimelineDuration(1, _day)),
+    verses: [_ref(_numbers, 33, 5), _ref(_exodus, 12, 37)],
+    note:
+        '"And the children of Israel removed from Rameses, and pitched in '
+        'Sukkot" (Numbers 33:5); "about six hundred thousand on foot that '
+        'were men, beside little ones" (Exodus 12:37). The first camp, at '
+        'the end of the day they went out.',
+  ),
+  StudyTimelineEntry(
+    id: 'etham',
+    title: 'Etham, in the edge of the wilderness',
+    shortTitle: 'Etham',
+    timelineId: '',
+    start: const TimelineTime(0, month: 1, day: 16),
+    camp: true,
+    category: _masa,
+    pin: const TimelinePin('succoth', TimelineDuration(2, _day)),
+    verses: [_ref(_numbers, 33, 6), _ref(_exodus, 13, 20, 22)],
+    note:
+        '"And they departed from Sukkot, and pitched in Etham, which is in '
+        'the edge (biqtseh) of the wilderness" (Numbers 33:6); "and Yahweh '
+        'went before them by day in a pillar of a cloud ... and by night in '
+        'a pillar of fire" (Exodus 13:21). Undated: a day on from Sukkot, '
+        'the soonest the text allows.',
+  ),
+  StudyTimelineEntry(
+    id: 'pi-hahiroth',
+    title: 'Pi hachirot, before Baal-zephon',
+    shortTitle: 'Pi hachirot',
+    timelineId: '',
+    start: const TimelineTime(0, month: 1, day: 17),
+    camp: true,
+    category: _masa,
+    pin: const TimelinePin('etham', TimelineDuration(2, _day)),
+    verses: [_ref(_numbers, 33, 7), _ref(_exodus, 14, 1, 4)],
+    note:
+        '"Speak unto the children of Israel, that they turn (veyashuvu) '
+        'and pitch before Pi hachirot, between Migdol and the sea, before '
+        'Baal-zephon" (Exodus 14:2); "and they removed from Etham, and '
+        'turned again unto Pi hachirot" (Numbers 33:7). Undated: a day on '
+        'from Etham, the soonest the text allows; camped there until the '
+        'sea, which the rabbis place on the twenty-first.',
+  ),
+  StudyTimelineEntry(
     id: 'sea',
     title: 'Yam Suf (the sea of reeds)',
     shortTitle: 'Yam Suf',
@@ -1349,14 +1426,47 @@ final _goingOutEntries = <StudyTimelineEntry>[
         'place it.',
   ),
   StudyTimelineEntry(
+    id: 'elim',
+    title: 'Elim (great trees): twelve springs, seventy palms',
+    shortTitle: 'Elim',
+    timelineId: '',
+    start: const TimelineTime(0, month: 1, day: 25),
+    end: const TimelineTime(0, month: 2, day: 13),
+    category: _masa,
+    style: TimelineSpanStyle.hatched,
+    verses: [_ref(_exodus, 15, 27), _ref(_numbers, 33, 9)],
+    note:
+        '"And they came to Elim, where were twelve springs of water, and '
+        'threescore and ten palm trees: and they pitched there by the '
+        'waters" (Exodus 15:27). Undated: a window, from the morrow of '
+        'Marah to two camps before the wilderness of Sin on the fifteenth '
+        'of the second month.',
+  ),
+  StudyTimelineEntry(
+    id: 'by-the-sea',
+    title: 'ʿAl Yam Suf (by the sea of reeds) again',
+    shortTitle: 'By Yam Suf',
+    timelineId: '',
+    start: const TimelineTime(0, month: 1, day: 26),
+    end: const TimelineTime(0, month: 2, day: 14),
+    category: _masa,
+    style: TimelineSpanStyle.hatched,
+    verses: [_ref(_numbers, 33, 10)],
+    note:
+        '"And they removed from Elim, and pitched by Yam Suf" (Numbers '
+        '33:10), a camp Exodus does not name. Undated: a window, from a day '
+        'after Elim\'s soonest to the eve of the wilderness of Sin.',
+  ),
+  StudyTimelineEntry(
     id: 'sin',
     title: 'Midbar Sin (the wilderness of Sin): the quail',
     shortTitle: 'Wilderness of Sin',
     timelineId: '',
     start: const TimelineTime(0, month: 2, day: 15),
     part: TimelineDayPart.evening,
+    camp: true,
     category: _masa,
-    verses: [_ref(_exodus, 16, 1, 13)],
+    verses: [_ref(_exodus, 16, 1, 13), _ref(_numbers, 33, 11)],
     note:
         '"They came to the wilderness of Sin ... on the fifteenth day of the '
         'second month after their going out of the land of Egypt" (Exodus '
@@ -1400,22 +1510,61 @@ final _goingOutEntries = <StudyTimelineEntry>[
         'The seventh from the first morning of manna, as reckoned.',
   ),
   StudyTimelineEntry(
-    id: 'amalek',
-    title: 'Rephidim: Amalek',
-    shortTitle: 'Amalek',
+    id: 'dophkah',
+    title: 'Dofqah',
+    shortTitle: 'Dofqah',
     timelineId: '',
     start: const TimelineTime(0, month: 2, day: 23),
+    end: const TimelineTime(0, month: 2, day: 27),
+    category: _masa,
+    style: TimelineSpanStyle.hatched,
+    verses: [_ref(_numbers, 33, 12)],
+    note:
+        '"And they took their journey out of the wilderness of Sin, and '
+        'encamped in Dofqah" (Numbers 33:12), a camp Exodus does not name, '
+        'going "after their journeys (lemasʿehem)" (Exodus 17:1). Undated: '
+        'a window, from the morrow of the first sabbath to three camps '
+        'before Sinai.',
+  ),
+  StudyTimelineEntry(
+    id: 'alush',
+    title: 'Alush',
+    shortTitle: 'Alush',
+    timelineId: '',
+    start: const TimelineTime(0, month: 2, day: 24),
+    end: const TimelineTime(0, month: 2, day: 28),
+    category: _masa,
+    style: TimelineSpanStyle.hatched,
+    verses: [_ref(_numbers, 33, 13)],
+    note:
+        '"And they departed from Dofqah, and encamped in Alush" (Numbers '
+        '33:13), a camp Exodus does not name. Undated: a window, a day '
+        'after Dofqah\'s, to two camps before Sinai.',
+  ),
+  StudyTimelineEntry(
+    id: 'amalek',
+    title: 'Rephidim: no water, and Amalek',
+    shortTitle: 'Rephidim',
+    timelineId: '',
+    start: const TimelineTime(0, month: 2, day: 25),
     end: const TimelineTime(0, month: 2, day: 29),
     category: _masa,
-    style: TimelineSpanStyle.dotted,
-    verses: [_ref(_exodus, 17, 1, 16), _ref(_numbers, 33, 12, 14)],
+    style: TimelineSpanStyle.hatched,
+    verses: [
+      _ref(_exodus, 17, 1, 16),
+      _ref(_numbers, 33, 14),
+      _ref(_exodus, 19, 2),
+    ],
     note:
-        '"Choose us out men, and go out, fight with Amalek: tomorrow I will '
-        'stand on the top of the hill" (Exodus 17:9); "and his hands were '
-        'steady until the going down of the sun" (Exodus 17:12). Undated: '
-        'after the first sabbath in the wilderness of Sin, by Dophkah and '
-        'Alush (Numbers 33:12-14), and before Sinai on the first of the '
-        'third month.',
+        '"And they removed from Alush, and encamped at Rephidim, where was '
+        'no water for the people to drink" (Numbers 33:14); "and he called '
+        'the name of the place Massah and Meribah" (Exodus 17:7); "choose '
+        'us out men, and go out, fight with Amalek: tomorrow I will stand '
+        'on the top of the hill" (Exodus 17:9); "and his hands were steady '
+        'until the going down of the sun" (Exodus 17:12). Undated: a '
+        'window, after Dofqah and Alush, to the eve of Sinai on the first '
+        'of the third month, "for they were departed from Rephidim" '
+        '(Exodus 19:2).',
   ),
   StudyTimelineEntry(
     id: 'sinai',
@@ -1423,8 +1572,9 @@ final _goingOutEntries = <StudyTimelineEntry>[
     shortTitle: 'Sinai',
     timelineId: '',
     start: const TimelineTime(0, month: 3, day: 1),
+    camp: true,
     category: _masa,
-    verses: [_ref(_exodus, 19, 1, 2)],
+    verses: [_ref(_exodus, 19, 1, 2), _ref(_numbers, 33, 15)],
     note:
         '"In the third month (bachodesh hashlishi) after the children of '
         'Israel were gone out of the land of Egypt, on this day (bayyom '
@@ -1817,6 +1967,27 @@ final _secondYearEntries = <StudyTimelineEntry>[
         '10:33).',
   ),
   StudyTimelineEntry(
+    id: 'kibroth',
+    title: 'Qivrot hattaʾavah (the graves of the craving)',
+    shortTitle: 'Qivrot hattaʾavah',
+    timelineId: '',
+    start: const TimelineTime(0, month: 2, day: 22),
+    camp: true,
+    category: _masa,
+    pin: const TimelinePin('three-days', TimelineDuration(3, _day)),
+    verses: [
+      _ref(_numbers, 33, 16),
+      _ref(_numbers, 11, 3),
+      _ref(_numbers, 11, 34),
+    ],
+    note:
+        '"And they removed from the wilderness of Sinai, and pitched at '
+        'Qivrot hattaʾavah" (Numbers 33:16), the resting place at the end '
+        'of the three days; "because there they buried the people that '
+        'craved" (Numbers 11:34). Numbers 11:3 names the burning there '
+        'Taberah, a name the stations do not give.',
+  ),
+  StudyTimelineEntry(
     id: 'quail',
     title: 'Qivrot hattaʾavah (the graves of the craving): a month of flesh',
     shortTitle: 'A month of flesh',
@@ -1842,6 +2013,21 @@ final _secondYearEntries = <StudyTimelineEntry>[
         'reckon it (Taʿanit 29a).',
   ),
   StudyTimelineEntry(
+    id: 'hazeroth',
+    title: 'Chatserot (enclosures)',
+    shortTitle: 'Chatserot',
+    timelineId: '',
+    start: const TimelineTime(0, month: 3, day: 24),
+    camp: true,
+    category: _masa,
+    pin: const TimelinePin('quail', TimelineDuration(31, _day)),
+    verses: [_ref(_numbers, 11, 35), _ref(_numbers, 33, 17)],
+    note:
+        '"The people journeyed from Qivrot hattaʾavah unto Chatserot; and '
+        'abode at Chatserot" (Numbers 11:35). On the morrow of the month '
+        'of flesh, the soonest the text allows.',
+  ),
+  StudyTimelineEntry(
     id: 'miriam',
     title: 'Miriam shut out seven days',
     shortTitle: 'Miriam shut out',
@@ -1858,6 +2044,31 @@ final _secondYearEntries = <StudyTimelineEntry>[
         'her be received in again. And Miriam was shut out from the camp '
         'seven days: and the people journeyed not till Miriam was brought '
         'in again" (Numbers 12:14-15), at Hazeroth.',
+  ),
+  StudyTimelineEntry(
+    id: 'rithmah',
+    title: 'Ritmah (broom), in the wilderness of Paran',
+    shortTitle: 'Ritmah',
+    timelineId: '',
+    start: const TimelineTime(0, month: 4, day: 1),
+    camp: true,
+    category: _masa,
+    pin: const TimelinePin('miriam', TimelineDuration(8, _day)),
+    verses: [
+      _ref(_numbers, 12, 16),
+      _ref(_numbers, 33, 18),
+      _ref(_numbers, 13, 26),
+    ],
+    note:
+        '"And they departed from Chatserot, and pitched in Ritmah" '
+        '(Numbers 33:18); "afterward the people removed from Chatserot, and '
+        'pitched in the wilderness of Paran" (Numbers 12:16), whence the '
+        'spies went and returned "unto the wilderness of Paran, to Kadesh" '
+        '(Numbers 13:26). Read, as the rabbis read it, as the camp at '
+        'Kadesh (Rashi on Numbers 33:18). On the morrow of Miriam\'s seven '
+        'days, the soonest the text allows. The stations after it, to '
+        'Ezion-geber (Numbers 33:19-35), are undated, in the thirty-eight '
+        'years.',
   ),
   StudyTimelineEntry(
     id: 'spies',
@@ -1925,6 +2136,220 @@ final _secondYearEntries = <StudyTimelineEntry>[
         'Kadesh many days" (Deuteronomy 1:46). The morning after the night '
         'of weeping, the same day as the day runs from sunset.',
   ),
+];
+
+/// The fortieth year, from Kadesh to the plains of Moab, by the stations
+/// of Numbers 33:36-49.
+final _fortiethYearEntries = <StudyTimelineEntry>[
+  StudyTimelineEntry(
+    id: 'kadesh',
+    title: 'Midbar Tsin (the wilderness of Zin), which is Kadesh',
+    shortTitle: 'Kadesh',
+    timelineId: '',
+    start: const TimelineTime(0, month: 1, day: 1),
+    end: const TimelineTime(0, month: 1, day: 30),
+    category: _masa,
+    style: TimelineSpanStyle.hatched,
+    verses: [_ref(_numbers, 20, 1), _ref(_numbers, 33, 36)],
+    note:
+        '"Then came the children of Israel, the whole congregation, into '
+        'the wilderness of Zin in the first month: and the people abode in '
+        'Kadesh; and Miriam died there, and was buried there" (Numbers '
+        '20:1); "they removed from Ezion-geber, and pitched in the '
+        'wilderness of Zin, which is Kadesh" (Numbers 33:36). The text '
+        'gives the month and not the day, nor the year, which is read as '
+        'the fortieth from Aaron\'s death after it (Numbers 33:38): a '
+        'window, the first month. The rabbis set Miriam\'s death on the '
+        'tenth (Shulchan Arukh, Orach Chayyim 580:2).',
+  ),
+  StudyTimelineEntry(
+    id: 'hor',
+    title: 'Hor hahar (Hor the mountain)',
+    shortTitle: 'Hor hahar',
+    timelineId: '',
+    start: const TimelineTime(0, month: 1, day: 2),
+    end: const TimelineTime(0, month: 4, day: 29),
+    category: _masa,
+    style: TimelineSpanStyle.hatched,
+    verses: [_ref(_numbers, 20, 14, 22), _ref(_numbers, 33, 37)],
+    note:
+        '"And they removed from Kadesh, and pitched in Hor hahar, in the '
+        'edge of the land of Edom" (Numbers 33:37), after the water of '
+        'Meribah and Edom\'s refusal (Numbers 20:2-21). Undated: a window, '
+        'from a day after Kadesh\'s soonest to the eve of Aaron\'s death.',
+  ),
+  StudyTimelineEntry(
+    id: 'aaron',
+    title: 'Aaron dies in Hor hahar',
+    shortTitle: 'Aaron dies',
+    timelineId: '',
+    start: const TimelineTime(0, month: 5, day: 1),
+    category: _evel,
+    verses: [_ref(_numbers, 33, 38, 39), _ref(_numbers, 20, 23, 28)],
+    note:
+        '"And Aaron the priest went up into Hor hahar at the commandment of '
+        'Yahweh, and died there, in the fortieth year after the children of '
+        'Israel were come out of the land of Egypt, in the fifth month, on '
+        'the first of the month. And Aaron was a hundred and twenty and '
+        'three years old" (Numbers 33:38-39); "and Moses stripped Aaron of '
+        'his garments, and put them upon Eleazar his son" (Numbers 20:28).',
+  ),
+  StudyTimelineEntry(
+    id: 'aaron-mourned',
+    title: 'Vayyivku et Aharon (and they wept for Aaron): thirty days',
+    shortTitle: 'Aaron mourned',
+    timelineId: '',
+    start: const TimelineTime(0, month: 5, day: 2),
+    end: const TimelineTime(0, month: 6, day: 1),
+    duration: const TimelineDuration(30, _day),
+    counted: true,
+    category: _evel,
+    pin: const TimelinePin('aaron', TimelineDuration(2, _day)),
+    verses: [_ref(_numbers, 20, 29)],
+    note:
+        '"And when all the congregation saw that Aaron was dead, they wept '
+        'for Aaron thirty days, even all the house of Israel" (Numbers '
+        '20:29). Reckoned from the morrow of his death.',
+  ),
+  ..._fortiethYearStations,
+  StudyTimelineEntry(
+    id: 'words',
+    title: 'Elleh haddevarim (these are the words)',
+    shortTitle: 'These are the words',
+    timelineId: '',
+    start: const TimelineTime(0, month: 11, day: 1),
+    category: _torah,
+    verses: [_ref(_deuteronomy, 1, 1, 5)],
+    note:
+        '"And it came to pass in the fortieth year, in the eleventh month, '
+        'on the first of the month, that Moses spake unto the children of '
+        'Israel, according unto all that Yahweh had given him in commandment '
+        'unto them ... beyond the Jordan, in the land of Moab" (Deuteronomy '
+        '1:3, 5).',
+  ),
+  StudyTimelineEntry(
+    id: 'moses',
+    title: 'Moses dies in the land of Moab',
+    shortTitle: 'Moses dies',
+    timelineId: '',
+    start: const TimelineTime(0, month: 12, day: 7),
+    end: const TimelineTime(0, month: 12, day: 7),
+    duration: const TimelineDuration(1, _day),
+    category: _evel,
+    style: TimelineSpanStyle.dotted,
+    verses: [
+      _ref(_deuteronomy, 34, 1, 8),
+      _ref(_joshua, 1, 11),
+      _ref(_joshua, 4, 19),
+    ],
+    note:
+        '"So Moses the servant of Yahweh died there in the land of Moab, '
+        'according to the word of Yahweh" (Deuteronomy 34:5); "and the '
+        'children of Israel wept for Moses in the plains of Moab thirty '
+        'days" (Deuteronomy 34:8). The text gives no day: placed, dotted, '
+        'where the rabbis place it, on the seventh of the twelfth month '
+        '(Kiddushin 38a), so that the thirty days and the three of Joshua '
+        '1:11 end at the crossing, "on the tenth of the first month" '
+        '(Joshua 4:19).',
+  ),
+];
+
+/// The stations from Hor hahar to the plains of Moab, Numbers 33:41-49,
+/// each a window: from a day after the last's soonest, the first on the
+/// morrow of the mourning for Aaron, to the latest that leaves a day for
+/// each after it before the words on the first of the eleventh month.
+final _fortiethYearStations = [
+  for (final (i, s) in const [
+    (
+      id: 'zalmonah',
+      title: 'Tsalmonah',
+      verse: 41,
+      note:
+          '"And they departed from Hor hahar, and pitched in Tsalmonah" '
+          '(Numbers 33:41), going "by the way of Yam Suf, to compass the '
+          'land of Edom", where the serpents bit and the serpent of '
+          'bronze was set up (Numbers 21:4-9).',
+    ),
+    (
+      id: 'punon',
+      title: 'Punon',
+      verse: 42,
+      note:
+          '"And they departed from Tsalmonah, and pitched in Punon" '
+          '(Numbers 33:42).',
+    ),
+    (
+      id: 'oboth',
+      title: 'Ovot (water-skins)',
+      verse: 43,
+      note:
+          '"And they departed from Punon, and pitched in Ovot" (Numbers '
+          '33:43; 21:10).',
+    ),
+    (
+      id: 'iye-abarim',
+      title: 'ʿIyyei haʿavarim (the ruins of the crossings)',
+      verse: 44,
+      note:
+          '"And they departed from Ovot, and pitched in ʿIyyei '
+          'haʿavarim, in the border of Moab" (Numbers 33:44); thence by '
+          'the brook Zered and over the Arnon (Numbers 21:11-13), "the '
+          'days in which we came from Kadesh-barnea, until we were come '
+          'over the brook Zered, were thirty and eight years" '
+          '(Deuteronomy 2:14).',
+    ),
+    (
+      id: 'dibon-gad',
+      title: 'Divon Gad',
+      verse: 45,
+      note:
+          '"And they departed from ʿIyyim, and pitched in Divon Gad" '
+          '(Numbers 33:45). Numbers 21:16-20 names on the way Beer, '
+          'Mattanah, Nachaliel and Bamot, as the stations do not.',
+    ),
+    (
+      id: 'almon-diblathaim',
+      title: 'ʿAlmon Divlatayemah',
+      verse: 46,
+      note:
+          '"And they removed from Divon Gad, and encamped in ʿAlmon '
+          'Divlatayemah" (Numbers 33:46).',
+    ),
+    (
+      id: 'abarim',
+      title: 'Harei haʿavarim (the mountains of the crossings), before Nebo',
+      verse: 47,
+      note:
+          '"And they removed from ʿAlmon Divlatayemah, and pitched in '
+          'the mountains of Abarim, before Nebo" (Numbers 33:47); and '
+          'Sihon and Og were smitten (Numbers 21:21-35).',
+    ),
+    (
+      id: 'plains',
+      title: 'ʿArvot Moʾav (the plains of Moab)',
+      verse: 48,
+      note:
+          '"And they departed from the mountains of Abarim, and pitched '
+          'in the plains of Moab by Jordan near Jericho ... from '
+          'Beth-jeshimoth unto Abel-shittim" (Numbers 33:48-49), where '
+          'Balaam blessed them and the rest of Numbers was spoken.',
+    ),
+  ].indexed)
+    StudyTimelineEntry(
+      id: s.id,
+      title: s.title,
+      shortTitle: s.title.split(' (').first,
+      timelineId: '',
+      start: TimelineTime(0, month: 6, day: 2 + i),
+      end: TimelineTime(0, month: 10, day: 22 + i),
+      category: _masa,
+      style: TimelineSpanStyle.hatched,
+      verses: [_ref(_numbers, 33, s.verse, s.verse == 48 ? 49 : null)],
+      note:
+          '${s.note} Undated: a window, between the mourning for Aaron '
+          'and the words of the eleventh month, a day for each camp '
+          'either side.',
+    ),
 ];
 
 /// Solomon's dedication of the house, in the seventh month.

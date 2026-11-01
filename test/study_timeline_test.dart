@@ -1299,6 +1299,29 @@ void main() {
     expect(entry('second-year-spies').start, day(4, 1));
     expect(entry('second-year-spies').end, day(5, 11));
     expect(entry('second-year-weeping').start, day(5, 12));
+    // The camps of Numbers 33: those the text leaves undated between two
+    // pinned each a day from the last, and those between two dated
+    // windows, hatched, from the soonest to the latest.
+    expect(entry('going-out-succoth').start, day(1, 15));
+    expect(entry('going-out-etham').start, day(1, 16));
+    expect(entry('going-out-pi-hahiroth').start, day(1, 17));
+    expect(entry('going-out-elim').end, day(2, 13));
+    expect(entry('going-out-amalek').start, day(2, 25));
+    expect(entry('going-out-amalek').end, day(2, 29));
+    expect(entry('second-year-kibroth').start, day(2, 22));
+    expect(entry('second-year-hazeroth').start, day(3, 24));
+    expect(entry('second-year-rithmah').start, day(4, 1));
+    expect(entry('fortieth-year-aaron-mourned').end, day(6, 1));
+    expect(entry('fortieth-year-zalmonah').start, day(6, 2));
+    expect(entry('fortieth-year-plains').start, day(6, 9));
+    expect(entry('fortieth-year-plains').end, day(10, 29));
+    expect(entry('fortieth-year-words').start, day(11, 1));
+    for (final id in ['elim', 'by-the-sea', 'dophkah', 'alush', 'amalek']) {
+      expect(entry('going-out-$id').style, TimelineSpanStyle.hatched);
+    }
+    for (final id in ['succoth', 'etham', 'pi-hahiroth', 'sin', 'sinai']) {
+      expect(entry('going-out-$id').isCamp, isTrue, reason: id);
+    }
     // The Messiah raised on the day of the ʿomer, the Spirit given on
     // Shavuot.
     expect(entry('messiah-raised').start, entry('omer').start);
@@ -1822,6 +1845,23 @@ void main() {
       StudyTimelineEntry.fromJson({...span.toJson(), 'style': 'zigzag'})?.style,
       TimelineSpanStyle.bar,
     );
+  });
+
+  test('an event keeps whether it is a camp; a span is never one', () {
+    const event = StudyTimelineEntry(
+      id: 'sukkot',
+      title: 'Sukkot',
+      timelineId: 'journeys',
+      start: TimelineTime(0, month: 1, day: 15),
+    );
+    expect(event.toJson().containsKey('camp'), isFalse);
+    final camp = StudyTimelineEntry.fromJson(
+      event.copyWith(camp: true).toJson(),
+    )!;
+    expect(camp.camp, isTrue);
+    expect(camp.isCamp, isTrue);
+    expect(camp.pinnedTo(null).camp, isTrue);
+    expect(camp.withTime(start: camp.start, end: camp.start).isCamp, isFalse);
   });
 
   test('a study without timelines stores none', () {

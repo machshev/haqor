@@ -82,7 +82,11 @@ enum TimelineSpanStyle {
   arrow('Arrow'),
 
   /// A thin bar with stops at its ends: a period grouping what is in it.
-  bracket('Bracket');
+  bracket('Bracket'),
+
+  /// A light bar hatched across: a window the text bounds, within which
+  /// it falls on a day it does not give.
+  hatched('Hatched');
 
   const TimelineSpanStyle(this.label);
 
@@ -1180,6 +1184,7 @@ class StudyTimelineEntry {
     this.verses = const [],
     this.note = '',
     this.sabbath = false,
+    this.camp = false,
     this.counted = false,
     this.part,
     this.category = '',
@@ -1230,6 +1235,10 @@ class StudyTimelineEntry {
   /// its day coloured as one in the calendar. Spans are not.
   final bool sabbath;
 
+  /// Whether this event is a camp: a station of a journey, where a people
+  /// pitched (Numbers 33:1-2), drawn as a tent. Spans are not.
+  final bool camp;
+
   /// Whether a span's days and weeks are counted and numbered, as the
   /// fifty days to Pentecost (Leviticus 23:15-16), or, dated by years
   /// alone, its years in sevens, as the seven sabbaths of years (Leviticus
@@ -1271,6 +1280,7 @@ class StudyTimelineEntry {
 
   bool get isSpan => end != null;
   bool get isHighSabbath => sabbath && !isSpan;
+  bool get isCamp => camp && !isSpan;
   bool get isCounted => counted && isSpan;
   TimelineTime get last => end ?? start;
   String get key => 'timeline-entry-$id';
@@ -1301,6 +1311,7 @@ class StudyTimelineEntry {
     verses: verses,
     note: note,
     sabbath: sabbath,
+    camp: camp,
     counted: counted,
     part: part,
     category: category,
@@ -1335,6 +1346,7 @@ class StudyTimelineEntry {
     verses: verses,
     note: note,
     sabbath: sabbath,
+    camp: camp,
     counted: counted,
     part: part,
     category: category,
@@ -1369,6 +1381,7 @@ class StudyTimelineEntry {
     List<StudyPassage>? verses,
     String? note,
     bool? sabbath,
+    bool? camp,
     bool? counted,
     TimelineDayPart? Function()? part,
     String? category,
@@ -1392,6 +1405,7 @@ class StudyTimelineEntry {
     verses: verses ?? this.verses,
     note: note ?? this.note,
     sabbath: sabbath ?? this.sabbath,
+    camp: camp ?? this.camp,
     counted: counted ?? this.counted,
     part: part == null ? this.part : part(),
     category: category ?? this.category,
@@ -1422,6 +1436,7 @@ class StudyTimelineEntry {
     if (verses.isNotEmpty) 'verses': _versesJson(verses),
     if (note.isNotEmpty) 'note': note,
     if (sabbath) 'sabbath': true,
+    if (camp) 'camp': true,
     if (counted) 'counted': true,
     if (part != null) 'part': part!.name,
     if (category.isNotEmpty) 'category': category,
@@ -1479,6 +1494,7 @@ class StudyTimelineEntry {
         'verses',
         'note',
         'sabbath',
+        'camp',
         'counted',
         'part',
         'category',
@@ -1522,6 +1538,7 @@ class StudyTimelineEntry {
       ],
       note: value['note'] is String ? value['note'] as String : '',
       sabbath: value['sabbath'] == true,
+      camp: value['camp'] == true,
       counted: value['counted'] == true,
       part: TimelineDayPart.values
           .where((p) => p.name == value['part'])

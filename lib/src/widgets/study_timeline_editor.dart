@@ -652,7 +652,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
 
   /// The days leading up to the span and trailing after it.
   late final _TaperDraft _lead, _trail;
-  late bool _span, _byDuration, _sabbath, _counted;
+  late bool _span, _byDuration, _sabbath, _camp, _counted;
   late TimelineSpanStyle _style;
 
   /// The part of its day an event falls in; null for the whole day.
@@ -783,6 +783,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
     _shortTitle = TextEditingController(text: e.shortTitle);
     _span = e.isSpan;
     _sabbath = e.sabbath;
+    _camp = e.camp;
     _counted = e.counted;
     _style = e.style;
     _part = e.part;
@@ -1009,6 +1010,7 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
             verses: _verses,
             note: _note.text.trim(),
             sabbath: sabbath,
+            camp: _camp && !_span,
             counted: _span && _counted && timeline.hasMonths,
             part: () => _span || start.day == null ? null : _part,
             category: _category.text.trim(),
@@ -1717,6 +1719,19 @@ class _StudyTimelineEntryEditorState extends State<StudyTimelineEntryEditor> {
                     _sabbath = on;
                     _error = null;
                   }),
+                ),
+              if (!_span)
+                SwitchListTile(
+                  key: const ValueKey('timeline-entry-camp'),
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.holiday_village_outlined),
+                  title: const Text('Machaneh (a camp)'),
+                  subtitle: const Text(
+                    'A station of a journey, where they pitched (Numbers '
+                    '33:1-2), drawn as a tent.',
+                  ),
+                  value: _camp,
+                  onChanged: (on) => setState(() => _camp = on),
                 ),
               if (_span) ...[
                 const SizedBox(height: 16),

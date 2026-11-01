@@ -1312,6 +1312,32 @@ class _SpanPainter extends CustomPainter {
             }
           }
         }
+      case TimelineSpanStyle.hatched:
+        final box = RRect.fromRectAndRadius(
+          Offset.zero & size,
+          const Radius.circular(4),
+        );
+        canvas
+          ..drawRRect(box, Paint()..color = color.withValues(alpha: 0.08))
+          ..save()
+          ..clipRRect(box);
+        // Lines leaning across it, apart by the height of a few days.
+        final hatch = Paint()
+          ..color = color.withValues(alpha: selected ? 0.55 : 0.35)
+          ..strokeWidth = 1;
+        final h = size.height;
+        for (var x = -h; x < w; x += 6) {
+          canvas.drawLine(Offset(x, h), Offset(x + h, 0), hatch);
+        }
+        canvas
+          ..restore()
+          ..drawRRect(
+            box.deflate(0.5),
+            Paint()
+              ..color = line.color.withValues(alpha: selected ? 1 : 0.5)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = selected ? 2 : 1,
+          );
       case TimelineSpanStyle.arrow:
         final y = size.height - 3;
         final head = math.min(6.0, w / 3);
@@ -1355,6 +1381,50 @@ class _SpanPainter extends CustomPainter {
   @override
   bool shouldRepaint(_SpanPainter old) =>
       old.style != style || old.color != color || old.selected != selected;
+}
+
+/// A camp's mark (see [StudyTimelineEntry.camp]): a tent, its door open at
+/// the foot, filling its box.
+class TimelineCampPainter extends CustomPainter {
+  const TimelineCampPainter({required this.color, this.outline});
+
+  final Color color;
+
+  /// Drawn round it when the camp is selected; null for none.
+  final Color? outline;
+
+  /// The tent filling [box].
+  static Path tent(Rect box) {
+    final w = box.width, h = box.height;
+    return Path()
+      ..moveTo(box.left + w / 2, box.top + h * 0.08)
+      ..lineTo(box.right, box.bottom)
+      ..lineTo(box.left + w * 0.6, box.bottom)
+      ..lineTo(box.left + w / 2, box.top + h * 0.6)
+      ..lineTo(box.left + w * 0.4, box.bottom)
+      ..lineTo(box.left, box.bottom)
+      ..close();
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = tent(Offset.zero & size);
+    canvas.drawPath(path, Paint()..color = color);
+    if (outline case final outline?) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = outline
+          ..style = PaintingStyle.stroke
+          ..strokeJoin = StrokeJoin.round
+          ..strokeWidth = 1.5,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(TimelineCampPainter old) =>
+      old.color != color || old.outline != outline;
 }
 
 class _WedgePainter extends CustomPainter {
@@ -1682,6 +1752,16 @@ class _EntryMark extends StatelessWidget {
                       Icons.star,
                       size: dot,
                       color: selected ? scheme.onSurface : dotColor,
+                    )
+                  else if (entry.isCamp)
+                    SizedBox.square(
+                      dimension: dot,
+                      child: CustomPaint(
+                        painter: TimelineCampPainter(
+                          color: dotColor,
+                          outline: selected ? scheme.onSurface : null,
+                        ),
+                      ),
                     )
                   else
                     Container(

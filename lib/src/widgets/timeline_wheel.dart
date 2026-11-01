@@ -1141,21 +1141,40 @@ class _WheelPainter extends CustomPainter {
           ..strokeWidth = 1,
       );
     }
-    // The spans as arcs.
+    // The spans as arcs; a window (hatched) faint, ticked across.
     for (final mark in layout.marks.where((m) => m.entry.isSpan)) {
       final selected = mark.entry.id == layout.selectedId;
       final color = layout.colorOf(mark.entry);
+      final hatched = mark.entry.style == TimelineSpanStyle.hatched;
+      final width = layout.spanStrokeWidth(mark);
+      final radius = r * mark.radius;
       canvas.drawArc(
-        Rect.fromCircle(center: centre, radius: r * mark.radius),
+        Rect.fromCircle(center: centre, radius: radius),
         angle(mark.from),
         angle(mark.to) - angle(mark.from),
         false,
         Paint()
-          ..color = color.withValues(alpha: color.a * (selected ? 1 : 0.6))
+          ..color = color.withValues(
+            alpha: color.a * (hatched ? 0.22 : (selected ? 1 : 0.6)),
+          )
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
-          ..strokeWidth = layout.spanStrokeWidth(mark),
+          ..strokeWidth = width,
       );
+      if (hatched && radius > 0) {
+        final tick = Paint()
+          ..color = color.withValues(alpha: color.a * (selected ? 1 : 0.7))
+          ..strokeWidth = 1.2;
+        // A tick every few pixels along the arc, leaning with the year.
+        final step = 6 / (2 * math.pi * radius);
+        for (var f = mark.from; f <= mark.to; f += step) {
+          canvas.drawLine(
+            layout.point(radius - width / 2, f),
+            layout.point(radius + width / 2, f + step * 0.6),
+            tick,
+          );
+        }
+      }
     }
     // The events as dots, a high Sabbath's, or an event's on one, a star.
     for (final mark in layout.marks.where((m) => !m.entry.isSpan)) {
@@ -1174,6 +1193,11 @@ class _WheelPainter extends CustomPainter {
               ..strokeJoin = StrokeJoin.round
               ..strokeWidth = 1.5,
           );
+      } else if (mark.entry.isCamp) {
+        canvas.drawPath(
+          TimelineCampPainter.tent(Rect.fromCircle(center: dot, radius: 6)),
+          Paint()..color = color,
+        );
       } else {
         canvas.drawCircle(dot, 5, Paint()..color = color);
       }
