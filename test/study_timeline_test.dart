@@ -1275,7 +1275,30 @@ void main() {
     expect(entry('going-out-going-out').start, day(1, 15));
     expect(entry('going-out-sabbath').start, day(2, 22));
     expect(entry('going-out-words').start, day(3, 3));
+    // The sea on the seventh of matzot, as the rabbis place it, and Marah
+    // three days from its morrow.
+    expect(entry('going-out-sea').start, day(1, 21));
+    expect(entry('going-out-marah').start, day(1, 22));
+    expect(entry('going-out-marah').end, day(1, 24));
     expect(entry('second-year-eighth').start, day(1, 8));
+    // Moses in the mount from the seventh day of the cloud, and each forty
+    // after from the morrow of the last.
+    expect(entry('going-out-covenant').start, day(3, 4));
+    expect(entry('going-out-mount').start, day(3, 11));
+    expect(entry('going-out-mount').end, day(4, 20));
+    expect(entry('going-out-broken').start, day(4, 20));
+    expect(entry('going-out-fallen').start, day(4, 21));
+    expect(entry('going-out-fallen').end, day(6, 1));
+    expect(entry('going-out-tablets').start, day(6, 2));
+    expect(entry('going-out-tablets').end, day(7, 12));
+    // From Sinai to Kadesh: a month of flesh, Miriam's seven days, and
+    // the forty of the spies.
+    expect(entry('second-year-quail').start, day(2, 23));
+    expect(entry('second-year-quail').end, day(3, 23));
+    expect(entry('second-year-miriam').start, day(3, 24));
+    expect(entry('second-year-spies').start, day(4, 1));
+    expect(entry('second-year-spies').end, day(5, 11));
+    expect(entry('second-year-weeping').start, day(5, 12));
     // The Messiah raised on the day of the ʿomer, the Spirit given on
     // Shavuot.
     expect(entry('messiah-raised').start, entry('omer').start);

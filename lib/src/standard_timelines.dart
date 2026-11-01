@@ -1075,14 +1075,19 @@ final _readings = <({TimelineVariant variant, List<StudyTimelineEntry> entries})
   (
     variant: const TimelineVariant(
       id: 'going-out',
-      title: 'The going out: Exodus 12-20',
+      title: 'The going out: Exodus 12-39',
       shortTitle: 'Going out',
       note:
           'The first year, "this month shall be to you the beginning of '
           'months" (Exodus 12:2): the lamb taken on the tenth, the pesach on '
           'the fourteenth, the going out on the fifteenth, the manna and the '
           'first sabbath in the second month, and the words at Sinai in the '
-          'third. The ʿomer and Shavuot were not yet kept, "when ye come into '
+          'third; then Moses in the mount forty days, the calf, forty days '
+          'fallen down before Yahweh, forty with the second tablets, and the '
+          'work of the mishkan to the year\'s end. The text dates the going '
+          'out, Sin and Sinai; the rest is reckoned from them by the days it '
+          'gives, each from the morrow of the last, the soonest the text '
+          'allows. The ʿomer and Shavuot were not yet kept, "when ye come into '
           'the land" (Leviticus 23:10); the text does not tie Shavuot to '
           'Sinai, though counted from the morrow of the pesach the fiftieth '
           'day falls in the first days of the third month. Verses rendered '
@@ -1093,19 +1098,22 @@ final _readings = <({TimelineVariant variant, List<StudyTimelineEntry> entries})
   (
     variant: const TimelineVariant(
       id: 'second-year',
-      title: 'The second year: Exodus 40, Leviticus 8-9, Numbers 1-10',
+      title: 'The second year: Exodus 40, Leviticus 8-10, Numbers 1-14',
       shortTitle: 'Second year',
       note:
           '"In the first month in the second year, on the first of the month, '
           'the mishkan was raised up" (Exodus 40:17): the priests filled seven '
           'days and the eighth day, the pesach kept at Sinai, and one kept a '
-          'month on by those unclean, whence Hezekiah\'s. As Ezekiel\'s altar: '
+          'month on by those unclean, whence Hezekiah\'s; then from Sinai to '
+          'Kadesh, the month of flesh, Miriam shut out, and the forty days of '
+          'the spies. As Ezekiel\'s altar: '
           '"seven days shall they cover the altar ... and when these days are '
           'fulfilled, on the eighth day and onward" (Ezekiel 43:26-27). The '
           'text dates the raising, the pesach, the counting and the going on; '
           'the filling and the princes\' days are reckoned from the raising, '
-          'when the anointing was commanded (Exodus 40:9-15). Verses rendered '
-          'literally.',
+          'when the anointing was commanded (Exodus 40:9-15), and the way '
+          'from Sinai to Kadesh by the days the text gives, each from the '
+          'morrow of the last. Verses rendered literally.',
     ),
     entries: _secondYearEntries,
   ),
@@ -1289,15 +1297,56 @@ final _goingOutEntries = <StudyTimelineEntry>[
     title: 'Yam Suf (the sea of reeds)',
     shortTitle: 'Yam Suf',
     timelineId: '',
-    start: const TimelineTime(0, month: 1),
+    start: const TimelineTime(0, month: 1, day: 21),
+    end: const TimelineTime(0, month: 1, day: 21),
+    duration: const TimelineDuration(1, _day),
     category: _masa,
-    verses: [_ref(_exodus, 14, 21, 31), _ref(_numbers, 33, 5, 8)],
+    style: TimelineSpanStyle.dotted,
+    verses: [
+      _ref(_exodus, 14, 5, 9),
+      _ref(_exodus, 14, 21, 31),
+      _ref(_exodus, 13, 6),
+      _ref(_numbers, 33, 5, 8),
+    ],
     note:
-        'The text gives no day, only the first month: from Rameses to '
-        'Succoth, to Etham, to Pi-hahiroth, "and they passed through the '
-        'midst of the sea into the wilderness, and went three days\' journey '
-        'in the wilderness of Etham, and pitched in Marah" (Numbers '
-        '33:5-8).',
+        'From Rameses to Succoth, to Etham, to Pi-hahiroth, "and they '
+        'passed through the midst of the sea into the wilderness" (Numbers '
+        '33:5-8); "and Yahweh caused the sea to go back by a strong east '
+        'wind all the night" (Exodus 14:21). The text gives no day, only '
+        'the first month: placed, dotted, where the rabbis place it, on the '
+        'twenty-first, the seventh day of matzot (Seder Olam 5; Sotah 12b). '
+        'Their grounds: "on the seventh day shall be a chag to Yahweh" '
+        '(Exodus 13:6), set apart as the first and nowhere explained, read '
+        'as the day of the song of the sea; and Moses had asked "three '
+        'days\' journey into the wilderness" (Exodus 5:3), so that when '
+        '"it was told the king of Egypt that the people fled" (Exodus '
+        '14:5), the Mekhilta reckons Pharaoh\'s officers went with them '
+        'three days, from the fifteenth, told him on the fourth, and Egypt '
+        'pursued two days more, overtaking them at the sea, three camps '
+        'from Rameses (Numbers 33:5-7). Grounds that fit, not a date the '
+        'text gives.',
+  ),
+  StudyTimelineEntry(
+    id: 'marah',
+    title: 'Marah (bitter): three days without water',
+    shortTitle: 'Marah',
+    timelineId: '',
+    start: const TimelineTime(0, month: 1, day: 22),
+    end: const TimelineTime(0, month: 1, day: 24),
+    duration: const TimelineDuration(3, _day),
+    counted: true,
+    category: _masa,
+    style: TimelineSpanStyle.dotted,
+    pin: const TimelinePin('sea', TimelineDuration(2, _day)),
+    verses: [_ref(_exodus, 15, 22, 27), _ref(_numbers, 33, 8, 9)],
+    note:
+        '"And they went three days in the wilderness, and found no water. '
+        'And when they came to Marah, they could not drink of the waters of '
+        'Marah, for they were bitter" (Exodus 15:22-23); "there he made for '
+        'them a statute and an ordinance, and there he proved them ... for '
+        'I am Yahweh that healeth thee" (Exodus 15:25-26). The three days '
+        'from the morrow of the sea, placed, as the sea is, where the rabbis '
+        'place it.',
   ),
   StudyTimelineEntry(
     id: 'sin',
@@ -1351,6 +1400,24 @@ final _goingOutEntries = <StudyTimelineEntry>[
         'The seventh from the first morning of manna, as reckoned.',
   ),
   StudyTimelineEntry(
+    id: 'amalek',
+    title: 'Rephidim: Amalek',
+    shortTitle: 'Amalek',
+    timelineId: '',
+    start: const TimelineTime(0, month: 2, day: 23),
+    end: const TimelineTime(0, month: 2, day: 29),
+    category: _masa,
+    style: TimelineSpanStyle.dotted,
+    verses: [_ref(_exodus, 17, 1, 16), _ref(_numbers, 33, 12, 14)],
+    note:
+        '"Choose us out men, and go out, fight with Amalek: tomorrow I will '
+        'stand on the top of the hill" (Exodus 17:9); "and his hands were '
+        'steady until the going down of the sun" (Exodus 17:12). Undated: '
+        'after the first sabbath in the wilderness of Sin, by Dophkah and '
+        'Alush (Numbers 33:12-14), and before Sinai on the first of the '
+        'third month.',
+  ),
+  StudyTimelineEntry(
     id: 'sinai',
     title: 'Midbar Sinai (the wilderness of Sinai)',
     shortTitle: 'Sinai',
@@ -1401,17 +1468,185 @@ final _goingOutEntries = <StudyTimelineEntry>[
     part: TimelineDayPart.daytime,
     category: _torah,
     pin: const TimelinePin('before', TimelineDuration(1, _day)),
-    verses: [
-      _ref(_exodus, 19, 16, 19),
-      _ref(_exodus, 20, 1, 17),
-      _ref(_exodus, 24, 18),
-    ],
+    verses: [_ref(_exodus, 19, 16, 19), _ref(_exodus, 20, 1, 17)],
     note:
         '"And it came to pass on the third day, when it was morning, that '
         'there were voices and lightnings ... and the voice of the shofar '
         'exceeding loud" (Exodus 19:16); "and God spake all these words" '
-        '(Exodus 20:1). Then Moses was in the mount "forty days and forty '
-        'nights" (Exodus 24:18), undated.',
+        '(Exodus 20:1).',
+  ),
+  StudyTimelineEntry(
+    id: 'covenant',
+    title: 'Dam habberit (the blood of the covenant)',
+    shortTitle: 'The covenant',
+    timelineId: '',
+    start: const TimelineTime(0, month: 3, day: 4),
+    part: TimelineDayPart.daytime,
+    category: _qorban,
+    pin: const TimelinePin('words', TimelineDuration(2, _day)),
+    verses: [_ref(_exodus, 24, 3, 11)],
+    note:
+        '"And Moses wrote all the words of Yahweh, and rose up early in the '
+        'morning, and builded an altar under the mount, and twelve pillars" '
+        '(Exodus 24:4); "behold the blood of the covenant (dam habberit), '
+        'which Yahweh hath cut with you" (Exodus 24:8); and the elders "saw '
+        'the God of Israel ... and did eat and drink" (Exodus 24:10-11). '
+        'The morning read as the morrow of the words.',
+  ),
+  StudyTimelineEntry(
+    id: 'cloud',
+    title: 'Heʿanan (the cloud) covers the mount six days',
+    shortTitle: 'The cloud, six days',
+    timelineId: '',
+    start: const TimelineTime(0, month: 3, day: 5),
+    end: const TimelineTime(0, month: 3, day: 10),
+    duration: const TimelineDuration(6, _day),
+    counted: true,
+    category: _torah,
+    pin: const TimelinePin('covenant', TimelineDuration(2, _day)),
+    verses: [_ref(_exodus, 24, 12, 16)],
+    note:
+        '"Come up to me into the mount, and be there: and I will give thee '
+        'tablets of stone" (Exodus 24:12); "and the glory of Yahweh abode '
+        'upon mount Sinai, and the cloud covered it six days: and the '
+        'seventh day he called unto Moses out of the midst of the cloud" '
+        '(Exodus 24:16). Reckoned from the morrow of the covenant; some of '
+        'the rabbis set the six days before the words (Yoma 4a).',
+  ),
+  StudyTimelineEntry(
+    id: 'mount',
+    title: 'Bahar (in the mount): forty days and forty nights',
+    shortTitle: 'In the mount',
+    timelineId: '',
+    start: const TimelineTime(0, month: 3, day: 11),
+    end: const TimelineTime(0, month: 4, day: 20),
+    duration: const TimelineDuration(40, _day),
+    counted: true,
+    category: _torah,
+    pin: const TimelinePin('cloud', TimelineDuration(7, _day)),
+    verses: [
+      _ref(_exodus, 24, 18),
+      _ref(_exodus, 31, 18),
+      _ref(_deuteronomy, 9, 9, 11),
+    ],
+    note:
+        '"And Moses went into the midst of the cloud, and gat him up into '
+        'the mount: and Moses was in the mount forty days and forty nights" '
+        '(Exodus 24:18); "I abode in the mount forty days and forty nights, '
+        'I neither did eat bread nor drink water ... and it came to pass at '
+        'the end of forty days and forty nights, that Yahweh gave me the '
+        'two tablets of stone" (Deuteronomy 9:9, 11). From the seventh day '
+        'of the cloud; the rabbis reckon from the seventh of the third '
+        'month to the seventeenth of the fourth (Taʿanit 28b).',
+  ),
+  StudyTimelineEntry(
+    id: 'calf',
+    title: 'ʿEgel masekhah (a molten calf): "tomorrow is a chag"',
+    shortTitle: 'The calf',
+    timelineId: '',
+    start: const TimelineTime(0, month: 4, day: 20),
+    category: _qorban,
+    pin: const TimelinePin('mount', TimelineDuration(40, _day)),
+    verses: [_ref(_exodus, 32, 1, 6), _ref(_deuteronomy, 9, 12)],
+    note:
+        '"The people saw that Moses delayed (boshesh) to come down out of '
+        'the mount" (Exodus 32:1); "Aaron made proclamation, and said, '
+        'Tomorrow is a chag to Yahweh. And they rose up early on the '
+        'morrow, and offered burnt offerings" (Exodus 32:5-6); "arise, get '
+        'thee down quickly ... they have made them a molten image" '
+        '(Deuteronomy 9:12). Shown on the last of the forty, when Moses '
+        'came down to it.',
+  ),
+  StudyTimelineEntry(
+    id: 'broken',
+    title: 'Hallukhot (the tablets) broken',
+    shortTitle: 'Tablets broken',
+    timelineId: '',
+    start: const TimelineTime(0, month: 4, day: 20),
+    category: _torah,
+    pin: const TimelinePin('mount', TimelineDuration(40, _day)),
+    verses: [_ref(_exodus, 32, 15, 29), _ref(_deuteronomy, 9, 15, 17)],
+    note:
+        '"As soon as he came nigh unto the camp, that he saw the calf, and '
+        'the dancing: and Moses\' anger waxed hot, and he cast the tablets '
+        'out of his hands, and brake them beneath the mount" (Exodus '
+        '32:19); "and there fell of the people that day about three '
+        'thousand men" (Exodus 32:28).',
+  ),
+  StudyTimelineEntry(
+    id: 'fallen',
+    title: 'Vaʾetnappal (and I fell down): forty days and forty nights',
+    shortTitle: 'Fallen down',
+    timelineId: '',
+    start: const TimelineTime(0, month: 4, day: 21),
+    end: const TimelineTime(0, month: 6, day: 1),
+    duration: const TimelineDuration(40, _day),
+    counted: true,
+    category: _kipper,
+    pin: const TimelinePin('broken', TimelineDuration(2, _day)),
+    verses: [
+      _ref(_exodus, 32, 30, 34),
+      _ref(_deuteronomy, 9, 18, 21),
+      _ref(_deuteronomy, 9, 25, 29),
+    ],
+    note:
+        '"And it came to pass on the morrow, that Moses said unto the '
+        'people ... now I will go up unto Yahweh; peradventure I shall '
+        'make a covering (akhapperah) for your sin" (Exodus 32:30); "and I '
+        'fell down before Yahweh, as at the first, forty days and forty '
+        'nights: I did neither eat bread, nor drink water" (Deuteronomy '
+        '9:18). Read as forty of their own, as the rabbis read them (Seder '
+        'Olam 6); some read them as the forty with the second tablets.',
+  ),
+  StudyTimelineEntry(
+    id: 'tablets',
+    title: 'Luchot shenim (two tablets) hewn: forty days and forty nights',
+    shortTitle: 'The second tablets',
+    timelineId: '',
+    start: const TimelineTime(0, month: 6, day: 2),
+    end: const TimelineTime(0, month: 7, day: 12),
+    duration: const TimelineDuration(40, _day),
+    counted: true,
+    category: _torah,
+    pin: const TimelinePin('fallen', TimelineDuration(41, _day)),
+    verses: [
+      _ref(_exodus, 34, 1, 9),
+      _ref(_exodus, 34, 27, 35),
+      _ref(_deuteronomy, 10, 1, 5),
+      _ref(_deuteronomy, 10, 10),
+    ],
+    note:
+        '"Hew thee two tablets of stone like unto the first ... and be '
+        'ready in the morning, and come up in the morning unto mount Sinai" '
+        '(Exodus 34:1-2); "and he was there with Yahweh forty days and '
+        'forty nights; he did neither eat bread, nor drink water" (Exodus '
+        '34:28); "I stayed in the mount, according to the first days, forty '
+        'days and forty nights" (Deuteronomy 10:10). And he came down, "the '
+        'skin of his face shone" (Exodus 34:29). The rabbis end the forty '
+        'on Yom haKippurim, the tenth of the seventh month (Seder Olam 6).',
+  ),
+  StudyTimelineEntry(
+    id: 'work',
+    title: 'Melekhet hammishkan (the work of the dwelling)',
+    shortTitle: 'The work of the mishkan',
+    timelineId: '',
+    start: const TimelineTime(0, month: 7, day: 13),
+    end: const TimelineTime(0, month: 12, day: 29),
+    category: _qiddush,
+    style: TimelineSpanStyle.dotted,
+    pin: const TimelinePin('tablets', TimelineDuration(41, _day)),
+    verses: [
+      _ref(_exodus, 35, 1, 5),
+      _ref(_exodus, 36, 3, 7),
+      _ref(_exodus, 39, 32, 43),
+    ],
+    note:
+        '"And Moses gathered all the congregation of the children of '
+        'Israel together" (Exodus 35:1); "and they brought yet unto him '
+        'free offerings every morning" (Exodus 36:3); "thus was finished '
+        'all the work of the mishkan of the tent of meeting" (Exodus '
+        '39:32). Undated: from Moses\' coming down to the raising on the '
+        'first of the first month of the second year (Exodus 40:2, 17).',
   ),
 ];
 
@@ -1468,6 +1703,22 @@ final _secondYearEntries = <StudyTimelineEntry>[
         'their faces" (Leviticus 9:24).',
   ),
   StudyTimelineEntry(
+    id: 'strange-fire',
+    title: 'Esh zarah (strange fire): Nadab and Abihu',
+    shortTitle: 'Strange fire',
+    timelineId: '',
+    start: const TimelineTime(0, month: 1, day: 8),
+    category: _qorban,
+    pin: const TimelinePin('eighth', TimelineDuration(1, _day)),
+    verses: [_ref(_leviticus, 10, 1, 7), _ref(_leviticus, 10, 19)],
+    note:
+        '"And Nadab and Abihu ... offered strange fire (esh zarah) before '
+        'Yahweh, which he commanded them not. And there went out fire from '
+        'before Yahweh, and devoured them" (Leviticus 10:1-2); "behold, '
+        'this day have they offered their sin offering" (Leviticus 10:19): '
+        'the eighth day.',
+  ),
+  StudyTimelineEntry(
     id: 'princes',
     title: 'Chanukkat hammizbeach (the dedicating of the altar): the princes',
     shortTitle: 'The princes',
@@ -1510,7 +1761,7 @@ final _secondYearEntries = <StudyTimelineEntry>[
     timelineId: '',
     start: const TimelineTime(0, month: 2, day: 1),
     category: _masa,
-    verses: [_ref(_numbers, 1, 1, 3)],
+    verses: [_ref(_numbers, 1, 1, 3), _ref(_numbers, 1, 18)],
     note:
         '"On the first of the second month, in the second year after they '
         'were come out of the land of Egypt, saying, Lift up the head of all '
@@ -1546,6 +1797,133 @@ final _secondYearEntries = <StudyTimelineEntry>[
         'the twentieth of the month, that the cloud was taken up from over '
         'the mishkan of the testimony; and the children of Israel journeyed '
         'from the wilderness of Sinai" (Numbers 10:11-12).',
+  ),
+  StudyTimelineEntry(
+    id: 'three-days',
+    title: 'Derekh sheloshet yamim (three days\' journey)',
+    shortTitle: 'Three days\' journey',
+    timelineId: '',
+    start: const TimelineTime(0, month: 2, day: 20),
+    end: const TimelineTime(0, month: 2, day: 22),
+    duration: const TimelineDuration(3, _day),
+    counted: true,
+    category: _masa,
+    pin: const TimelinePin('onward', TimelineDuration(1, _day)),
+    verses: [_ref(_numbers, 10, 33, 36)],
+    note:
+        '"And they departed from the mount of Yahweh three days\' journey: '
+        'and the ark of the covenant of Yahweh went before them in the three '
+        'days\' journey, to search out a resting place for them" (Numbers '
+        '10:33).',
+  ),
+  StudyTimelineEntry(
+    id: 'quail',
+    title: 'Qivrot hattaʾavah (the graves of the craving): a month of flesh',
+    shortTitle: 'A month of flesh',
+    timelineId: '',
+    start: const TimelineTime(0, month: 2, day: 23),
+    end: const TimelineTime(0, month: 3, day: 23),
+    duration: const TimelineDuration(30, _day),
+    counted: true,
+    category: _masa,
+    pin: const TimelinePin('three-days', TimelineDuration(4, _day)),
+    verses: [
+      _ref(_numbers, 11, 1, 3),
+      _ref(_numbers, 11, 18, 23),
+      _ref(_numbers, 11, 31, 35),
+    ],
+    note:
+        '"Ye shall not eat one day, nor two days ... but a month of days '
+        '(chodesh yamim), until it come out at your nostrils" (Numbers '
+        '11:19-20); "and the people stood up all that day, and all that '
+        'night, and all the next day, and they gathered the quails" '
+        '(Numbers 11:32). After the burning at Taberah (Numbers 11:1-3), '
+        'undated; reckoned from the morrow of the three days, as the rabbis '
+        'reckon it (Taʿanit 29a).',
+  ),
+  StudyTimelineEntry(
+    id: 'miriam',
+    title: 'Miriam shut out seven days',
+    shortTitle: 'Miriam shut out',
+    timelineId: '',
+    start: const TimelineTime(0, month: 3, day: 24),
+    end: const TimelineTime(0, month: 3, day: 30),
+    duration: const TimelineDuration(7, _day),
+    counted: true,
+    category: _kipper,
+    pin: const TimelinePin('quail', TimelineDuration(31, _day)),
+    verses: [_ref(_numbers, 11, 35), _ref(_numbers, 12, 1, 16)],
+    note:
+        '"Let her be shut out from the camp seven days, and after that let '
+        'her be received in again. And Miriam was shut out from the camp '
+        'seven days: and the people journeyed not till Miriam was brought '
+        'in again" (Numbers 12:14-15), at Hazeroth.',
+  ),
+  StudyTimelineEntry(
+    id: 'spies',
+    title: 'Latur et haʾarets (to search the land): forty days',
+    shortTitle: 'The spies',
+    timelineId: '',
+    start: const TimelineTime(0, month: 4, day: 1),
+    end: const TimelineTime(0, month: 5, day: 11),
+    duration: const TimelineDuration(40, _day),
+    counted: true,
+    category: _masa,
+    pin: const TimelinePin('miriam', TimelineDuration(8, _day)),
+    verses: [
+      _ref(_numbers, 12, 16),
+      _ref(_numbers, 13, 1, 3),
+      _ref(_numbers, 13, 17, 26),
+      _ref(_deuteronomy, 1, 2),
+    ],
+    note:
+        '"Afterward the people removed from Hazeroth, and pitched in the '
+        'wilderness of Paran" (Numbers 12:16); "now the days were the days '
+        'of the first-ripe grapes" (Numbers 13:20); "and they returned from '
+        'searching the land at the end of forty days" (Numbers 13:25), to '
+        'Kadesh. In the second year: "the days in which we came from '
+        'Kadesh-barnea, until we were come over the brook Zered, were '
+        'thirty and eight years" (Deuteronomy 2:14).',
+  ),
+  StudyTimelineEntry(
+    id: 'weeping',
+    title: 'Vayyivku haʿam (and the people wept) that night',
+    shortTitle: 'The weeping',
+    timelineId: '',
+    start: const TimelineTime(0, month: 5, day: 12),
+    part: TimelineDayPart.night,
+    category: _masa,
+    pin: const TimelinePin('spies', TimelineDuration(41, _day)),
+    verses: [
+      _ref(_numbers, 14, 1, 4),
+      _ref(_numbers, 14, 26, 35),
+      _ref(_deuteronomy, 2, 14),
+    ],
+    note:
+        '"And all the congregation lifted up their voice, and cried; and '
+        'the people wept that night" (Numbers 14:1); "after the number of '
+        'the days in which ye searched the land, forty days, each day for '
+        'a year, shall ye bear your iniquities, forty years" (Numbers '
+        '14:34). The rabbis set the weeping on the ninth of the fifth month '
+        '(Taʿanit 29a).',
+  ),
+  StudyTimelineEntry(
+    id: 'hormah',
+    title: 'ʿAd hachormah (unto Hormah): going up unbidden',
+    shortTitle: 'Unto Hormah',
+    timelineId: '',
+    start: const TimelineTime(0, month: 5, day: 12),
+    part: TimelineDayPart.daytime,
+    category: _masa,
+    pin: const TimelinePin('weeping', TimelineDuration(1, _day)),
+    verses: [_ref(_numbers, 14, 39, 45), _ref(_deuteronomy, 1, 41, 46)],
+    note:
+        '"And they rose up early in the morning, and gat them up into the '
+        'top of the mountain ... then the Amalekites came down, and the '
+        'Canaanites ... and smote them, and discomfited them, even unto '
+        'Hormah (ʿad hachormah)" (Numbers 14:40, 45); "so ye abode in '
+        'Kadesh many days" (Deuteronomy 1:46). The morning after the night '
+        'of weeping, the same day as the day runs from sunset.',
   ),
 ];
 
