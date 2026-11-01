@@ -854,7 +854,7 @@ void main() {
     await tester.tap(key('sequence-clear-filters'));
     await tester.pumpAndSettle();
     expect(opacity(tester, 'sequence-event-1'), 1);
-    expect(find.text('Gospel'), findsOneWidget);
+    expect(key('sequence-gospel-none'), findsOneWidget);
   });
 
   testWidgets('opens the passages an ordering rests on', (tester) async {
@@ -877,5 +877,44 @@ void main() {
     await tester.pumpAndSettle();
     expect(opened.single.bookIndex, 42);
     expect(opened.single.reference, '2:1–2');
+  });
+
+  testWidgets('lights the orderings one witness gives', (tester) async {
+    final sequence = _sequence.copyWith(
+      groupings: [],
+      edges: [
+        for (final e in _sequence.edges)
+          SequenceEdgeEntry(
+            before: e.before,
+            after: e.after,
+            bases: [
+              "Robertson's harmony (1922)",
+              if (e.before >= 3) "Mark's order",
+            ],
+          ),
+      ],
+    );
+    await open(tester, sequence: sequence);
+    await tester.tap(key('sequence-witness'));
+    await tester.pumpAndSettle();
+    // The witness ordering the most first.
+    expect(
+      tester.getTopLeft(key("sequence-witness-Robertson's harmony (1922)")).dy,
+      lessThan(tester.getTopLeft(key("sequence-witness-Mark's order")).dy),
+    );
+    expect(find.text("Mark's order · 3 events"), findsOneWidget);
+    await tester.tap(key("sequence-witness-Mark's order"));
+    await tester.pumpAndSettle();
+    expect(opacity(tester, 'sequence-event-3'), 1);
+    expect(opacity(tester, 'sequence-event-5'), 1);
+    expect(opacity(tester, 'sequence-event-2'), lessThan(1));
+  });
+
+  testWidgets('wide, the panel stands beside the graph', (tester) async {
+    await open(tester, size: const Size(1400, 900));
+    final panel = tester.getRect(key('sequence-panel'));
+    final graph = tester.getRect(key('sequence-graph'));
+    expect(panel.left, greaterThanOrEqualTo(graph.right));
+    expect(panel.height, greaterThan(graph.height * 0.8));
   });
 }

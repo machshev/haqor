@@ -47,6 +47,11 @@ const _milestoneSpace = 30.0;
 /// The room the lanes' names take above them, top to bottom.
 const _laneHeader = 26.0;
 
+/// How wide the view need be for the panel to stand beside the graph, and
+/// how wide it then is.
+const _sidePanelFrom = 1000.0;
+const _sidePanelWidth = 380.0;
+
 /// Where the choices of drawing left to right, in region lanes, and as an
 /// outline are kept.
 const eventSequenceHorizontalKey = 'event_sequence_horizontal';
@@ -176,6 +181,27 @@ class _EventSequencePageState extends State<EventSequencePage> {
   /// tells.
   int? _gospel;
   bool _gospelOnly = false;
+
+  /// The witness whose orderings are lit: a basis, "Mark's order".
+  String? _witness;
+
+  /// The witnesses ordering more than one pair of its events, those
+  /// ordering the most first, and the events each orders.
+  late final Map<String, Set<int>> _witnesses = () {
+    final events = <String, Set<int>>{};
+    final pairs = <String, int>{};
+    for (final edge in widget.sequence.edges) {
+      for (final b in edge.bases) {
+        (events[b] ??= {}).addAll([edge.before, edge.after]);
+        pairs[b] = (pairs[b] ?? 0) + 1;
+      }
+    }
+    final kept = [
+      for (final b in pairs.keys)
+        if (pairs[b]! > 1) b,
+    ]..sort((a, b) => pairs[b]!.compareTo(pairs[a]!));
+    return {for (final b in kept) b: events[b]!};
+  }();
   late final List<String> _tracks = {
     for (final d in widget.sequence.details) ...d.tracks,
   }.toList();
@@ -767,10 +793,15 @@ class _EventSequencePageState extends State<EventSequencePage> {
       _families.isNotEmpty ||
       _person != null ||
       _track != null ||
-      _gospel != null;
+      _gospel != null ||
+      _witness != null;
 
   /// Whether [event] is of a kind lit and has the person lit.
   bool _lit(int event) {
+    if (_witness case final w?
+        when !(_witnesses[w]?.contains(event) ?? false)) {
+      return false;
+    }
     if (_gospel case final book?) {
       final told = gospelsOf(widget.events[event]);
       if (_gospelOnly
@@ -1178,12 +1209,34 @@ class _EventSequencePageState extends State<EventSequencePage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          ?bar,
-          Expanded(child: _outline ? _outlineView(theme) : _graphPane()),
-          _panel(theme),
-        ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final view = Expanded(
+            child: _outline ? _outlineView(theme) : _graphPane(),
+          );
+          // Wide, the panel stands beside the graph, the whole height.
+          if (constraints.maxWidth >= _sidePanelFrom) {
+            return Column(
+              children: [
+                ?bar,
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      view,
+                      const VerticalDivider(width: 1),
+                      SizedBox(
+                        width: _sidePanelWidth,
+                        child: _panel(theme, side: true),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
+          return Column(children: [?bar, view, _panel(theme)]);
+        },
       ),
     );
   }
@@ -1199,7 +1252,8 @@ class _EventSequencePageState extends State<EventSequencePage> {
         families.isEmpty &&
         _people.isEmpty &&
         _tracks.isEmpty &&
-        _gospelsTelling.length < 2) {
+        _gospelsTelling.length < 2 &&
+        _witnesses.isEmpty) {
       return null;
     }
     final person = _person;
@@ -1320,14 +1374,13 @@ class _EventSequencePageState extends State<EventSequencePage> {
                     ],
                   ],
                   child: _gospel == null
-                      ? Chip(
+                      ? const Chip(
+                          key: ValueKey('sequence-gospel-none'),
                           visualDensity: density,
                           materialTapTargetSize: tap,
-                          avatar: const Icon(
-                            Icons.menu_book_outlined,
-                            size: 18,
-                          ),
-                          label: const Text('Gospel'),
+                          padding: EdgeInsets.symmetric(horizontal: 2),
+                          labelPadding: EdgeInsets.zero,
+                          label: Icon(Icons.menu_book_outlined, size: 18),
                         )
                       : InputChip(
                           visualDensity: density,
@@ -1343,6 +1396,49 @@ class _EventSequencePageState extends State<EventSequencePage> {
                             _gospel = null;
                             _gospelOnly = false;
                           }),
+                        ),
+                ),
+              ),
+            if (_witnesses.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: PopupMenuButton<String>(
+                  key: const ValueKey('sequence-witness'),
+                  tooltip: 'Light the orderings one witness gives',
+                  onSelected: (w) => setState(() => _witness = w),
+                  itemBuilder: (context) => [
+                    for (final MapEntry(key: w, value: events)
+                        in _witnesses.entries)
+                      CheckedPopupMenuItem(
+                        key: ValueKey('sequence-witness-$w'),
+                        value: w,
+                        checked: _witness == w,
+                        child: Text('$w · ${_events(events.length)}'),
+                      ),
+                  ],
+                  child: _witness == null
+                      ? const Chip(
+                          key: ValueKey('sequence-witness-none'),
+                          visualDensity: density,
+                          materialTapTargetSize: tap,
+                          padding: EdgeInsets.symmetric(horizontal: 2),
+                          labelPadding: EdgeInsets.zero,
+                          label: Icon(Icons.timeline, size: 18),
+                        )
+                      : InputChip(
+                          visualDensity: density,
+                          materialTapTargetSize: tap,
+                          avatar: const Icon(Icons.timeline, size: 18),
+                          label: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 180),
+                            child: Text(
+                              _witness!,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          selected: true,
+                          showCheckmark: false,
+                          onDeleted: () => setState(() => _witness = null),
                         ),
                 ),
               ),
@@ -1388,6 +1484,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
                   _track = null;
                   _gospel = null;
                   _gospelOnly = false;
+                  _witness = null;
                 }),
               ),
           ],
@@ -1465,13 +1562,17 @@ class _EventSequencePageState extends State<EventSequencePage> {
                             ),
                           },
                           lit:
-                              selected != null &&
-                              (({u, v}.every(
-                                    (e) => e == selected || before.contains(e),
-                                  )) ||
-                                  ({u, v}.every(
-                                    (e) => e == selected || after.contains(e),
-                                  ))),
+                              (_witness != null &&
+                                  _graph.basesOf(u, v).contains(_witness)) ||
+                              (selected != null &&
+                                  (({u, v}.every(
+                                        (e) =>
+                                            e == selected || before.contains(e),
+                                      )) ||
+                                      ({u, v}.every(
+                                        (e) =>
+                                            e == selected || after.contains(e),
+                                      )))),
                         ),
                   ],
                   color: scheme.outlineVariant,
@@ -2129,7 +2230,7 @@ class _EventSequencePageState extends State<EventSequencePage> {
   /// Beneath the graph: what to do, or the picked event's verses, what it
   /// is known to follow and precede and on what basis, or the picked
   /// group's events.
-  Widget _panel(ThemeData theme) {
+  Widget _panel(ThemeData theme, {bool side = false}) {
     final selected = _selected;
     final scheme = theme.colorScheme;
     final children = <Widget>[];
@@ -2156,9 +2257,12 @@ class _EventSequencePageState extends State<EventSequencePage> {
       color: scheme.surfaceContainerLow,
       child: SafeArea(
         top: false,
+        left: !side,
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.4,
+            maxHeight: side
+                ? double.infinity
+                : MediaQuery.sizeOf(context).height * 0.4,
           ),
           child: SingleChildScrollView(
             key: const ValueKey('sequence-panel'),

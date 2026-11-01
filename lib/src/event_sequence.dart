@@ -218,6 +218,9 @@ class SequenceGraph {
       if (_next[event]?.contains(e) ?? false) (e, _bases[(event, e)]!),
   ];
 
+  /// What says [u] comes before [v], where an edge joins them.
+  List<String> basesOf(int u, int v) => _bases[(u, v)] ?? const [];
+
   /// The nodes whose order to [event] is unknown.
   int unorderedWith(int event) =>
       events.length - 1 - before(event).length - after(event).length;
