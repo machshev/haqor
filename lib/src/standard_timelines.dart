@@ -1196,7 +1196,7 @@ final _readings = <({TimelineVariant variant, List<StudyTimelineEntry> entries})
           'dates them: "it shall be the prince\'s part to give burnt '
           'offerings ... in the chaggim, and in the new moons, and in the '
           'sabbaths, in all the moʿadim of the house of Israel: he shall '
-          'prepare the sin offering ... to make atonement (lekhapper) for the '
+          'prepare the sin offering ... to make a covering (lekhapper) for the '
           'house of Israel" (Ezekiel 45:17). Of the moʿadim of Leviticus 23 '
           'Ezekiel gives the two weeks, and makes them alike, "he shall do '
           'the like (kaʾelleh)" (Ezekiel 45:25), with no Shavuot, Yom Teruah '
