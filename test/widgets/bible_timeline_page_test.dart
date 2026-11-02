@@ -542,7 +542,7 @@ void _groupingTests() {
       _event(1, 'Creation of all things', -4004),
       _event(266, 'John the Baptist Begins Ministry', 26),
       _event(267, 'John Baptizes Jesus', 26),
-      _event(443, 'Holy Week', 30, passages: [mark(11, 1)]),
+      _event(443, 'The Last Week of the Ministry', 30, passages: [mark(11, 1)]),
       _event(452, 'The Last Supper', 30, passages: [mark(14, 12)]),
       _event(460, 'Resurrection and Ascension', 30),
       _event(400, 'Paul arrives at Rome', 60),
@@ -566,7 +566,7 @@ void _groupingTests() {
       EventSequenceEntry(
         setAside: const [],
         key: 'week',
-        title: 'Holy Week',
+        title: 'The Last Week of the Ministry',
         note: '',
         expands: 443,
         events: [452, 460],
@@ -670,7 +670,7 @@ void _groupingTests() {
       expect(find.text('Comes after'), findsOneWidget);
       expect(find.textContaining("— Mark's order"), findsNWidgets(2));
 
-      // Holy Week opens its own sequence.
+      // The last week of the ministry opens its own sequence.
       await tester.tap(find.byKey(const ValueKey('sequence-related-443')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('sequence-open-inner')));
