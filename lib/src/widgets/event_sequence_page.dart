@@ -2534,14 +2534,11 @@ class _EventSequencePageState extends State<EventSequencePage> {
       const SizedBox(height: 8),
       Row(
         children: [
-          Expanded(
-            child: Text('Set aside', style: theme.textTheme.labelLarge),
-          ),
+          Expanded(child: Text('Set aside', style: theme.textTheme.labelLarge)),
           if (!_outline)
             TextButton(
               key: const ValueKey('sequence-panel-set-aside'),
-              onPressed: () =>
-                  setState(() => _setAsideShown = !_setAsideShown),
+              onPressed: () => setState(() => _setAsideShown = !_setAsideShown),
               child: Text(_setAsideShown ? 'Hide' : 'Draw'),
             ),
         ],
