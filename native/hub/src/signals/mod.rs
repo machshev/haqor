@@ -38,12 +38,17 @@ pub struct ProgressSnapshot {}
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub struct FlushProgress {}
 
-/// Ask the native layer to merge this device's progress with the trusted LAN
+/// Ask the native layer to merge this device's progress with the trusted
 /// sync server. The token is deliberately never persisted by Rust; Dart keeps
 /// it in the platform preference store and sends it only for this request.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct SyncProgress {
-    pub server_url: String,
+    /// Addresses tried in order until one answers, for example the overlay
+    /// network's address and then the home network's.
+    pub server_urls: Vec<String>,
+    /// SHA-256 fingerprint of the server's certificate, from the join link.
+    /// Required for `https://` addresses; empty for plain `http://` ones.
+    pub cert_pin: String,
     pub token: String,
 }
 
@@ -118,6 +123,9 @@ pub struct TutorGlossOverrideStats {
 pub struct ProgressSyncStatus {
     pub success: bool,
     pub message: String,
+    /// The address that answered, so Dart can try it first next time; empty
+    /// when none did.
+    pub server_url: String,
 }
 
 /// Sent in place of a request's usual reply when Rust could not answer it, so

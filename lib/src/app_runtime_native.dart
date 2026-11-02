@@ -28,6 +28,7 @@ Future<Widget> initializeAppRuntime() async {
     resetProgress: canResetProgress ? startWithFreshProgress : null,
     onReady: () {
       unawaited(migrateLegacyFlaggedWords());
+      progressSyncReady = true;
       unawaited(syncProgressNow());
     },
     initialFailure: failure,

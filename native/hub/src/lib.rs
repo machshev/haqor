@@ -6,6 +6,7 @@ mod functions;
 mod memorise;
 mod prophecy;
 mod signals;
+mod sync_client;
 mod word_search;
 
 use std::future::Future;

@@ -5,6 +5,7 @@ import 'src/app_runtime.dart';
 import 'src/app_settings.dart';
 import 'src/boot_failure.dart';
 import 'src/boot_status.dart';
+import 'src/tutor/sync_join.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +25,7 @@ Future<void> main() async {
   }
   await loadThemeMode();
   runApp(Haqor(home: home));
+  listenForSyncJoinLinks();
   // The boot screen stays up until something has actually been drawn; taking it
   // down any earlier trades a described wait for a blank one.
   WidgetsBinding.instance.addPostFrameCallback((_) => bootFinished());
@@ -42,6 +44,7 @@ class Haqor extends StatelessWidget {
         title: 'הָקוֹר',
         debugShowCheckedModeBanner: false,
         scaffoldMessengerKey: appMessengerKey,
+        navigatorKey: appNavigatorKey,
         themeMode: mode,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
