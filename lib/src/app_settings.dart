@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:rinf/rinf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_update_ui.dart';
 import 'bindings/bindings.dart';
 import 'prefs_read.dart';
 import 'reading_presets.dart';
@@ -880,6 +881,11 @@ class _AppSettingsSheetState extends State<_AppSettingsSheet> {
         trailing: const Icon(Icons.chevron_right),
         onTap: () => showProgressSyncSettings(context),
       ),
+      const SizedBox(height: 12),
+    ],
+    if (appUpdateSupported) ...[
+      const _SectionLabel('Updates'),
+      const UpdateSettings(),
       const SizedBox(height: 12),
     ],
     const _SectionLabel('Admin'),

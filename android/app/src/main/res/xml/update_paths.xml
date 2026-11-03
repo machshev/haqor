@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the in-app updater shares with Android's installer: the downloaded
+     release APK, and nothing else. -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

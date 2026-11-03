@@ -44,6 +44,22 @@ standard Unix tools available. An optional tag, for example `v0.9.4`, selects a
 specific release. The script verifies the downloaded bundle against the release's
 `SHA256SUMS` before updating `pkgs/haqor/release.json`; review and commit that file.
 
+## Updating
+
+Once a day Haqor asks GitHub whether a newer release has been published, and
+offers it with an **Update** button (turn this off, or check by hand, under
+Settings → App → Updates). On Android it downloads the APK for the device,
+checks it against the release's `SHA256SUMS` and opens Android's installer;
+the first time, Android asks you to allow Haqor to install apps. On Windows
+and Linux it downloads and verifies the release, replaces its own files and
+restarts, as long as it can write to the folder it was unpacked into; failing
+that, and on macOS and iOS, it opens the download in the browser. Progress and
+settings are kept. The web app updates itself, and the Nix package updates
+with the flake.
+
+Android users can also let [Obtainium](https://obtainium.imranr.dev/) track
+`https://github.com/machshev/haqor` for background updates.
+
 See [doc/RELEASING.md](doc/RELEASING.md) for how releases are built and signed.
 
 # Why the name Haqor?

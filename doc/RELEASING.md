@@ -116,3 +116,18 @@ to create a GitHub Release.
   so the released code and bundled databases come from the same core release.
   See `doc/LOCAL_CORE_DEVELOPMENT.md` when developing against a local core
   checkout.
+
+## What the in-app updater relies on
+
+Installed apps find updates through the GitHub API's latest release
+(`lib/src/app_update.dart`), so a release reaches them as soon as it is
+published, and drafts and pre-releases never do. Keep these stable, or
+existing installs stop updating:
+
+- the tag `v<version>`, and file names `haqor-<version>-<platform suffix>`
+  as the publish job stamps them;
+- `SHA256SUMS` beside them, which every download is checked against;
+- the Android release keystore: Android installs an update only when it is
+  signed with the same key as the installed app;
+- the Windows zip and Linux tarball holding the bundle at their root, with the
+  executable named as the installed one.

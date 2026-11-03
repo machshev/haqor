@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'src/app_runtime.dart';
+import 'src/app_update_ui.dart';
 import 'src/app_settings.dart';
 import 'src/boot_failure.dart';
 import 'src/boot_status.dart';
@@ -26,6 +29,7 @@ Future<void> main() async {
   await loadThemeMode();
   runApp(Haqor(home: home));
   listenForSyncJoinLinks();
+  unawaited(checkForUpdatesOnStartup());
   // The boot screen stays up until something has actually been drawn; taking it
   // down any earlier trades a described wait for a blank one.
   WidgetsBinding.instance.addPostFrameCallback((_) => bootFinished());
