@@ -147,6 +147,16 @@ void main() {
       expect(forgotten.tryOrder, config.servers);
     });
 
+    test('flag plain-HTTP addresses, which would be shared on', () async {
+      expect((await loadProgressSyncConfig()).usesPlainHttp, isTrue);
+      final https = ProgressSyncConfig(
+        servers: const ['https://10.0.0.2:8788'],
+        pin: _pin,
+        token: _token,
+      );
+      expect(https.usesPlainHttp, isFalse);
+    });
+
     test('with no addresses turn sync off', () async {
       await saveProgressSyncConfig(ProgressSyncConfig.empty);
       final config = await loadProgressSyncConfig();

@@ -61,6 +61,12 @@ class ProgressSyncConfig {
 
   bool get isConfigured => servers.isNotEmpty && token.isNotEmpty;
 
+  /// Whether any address is plain `http://`. Such settings predate HTTPS
+  /// join links, and sharing them would pass plain HTTP on to the next
+  /// device.
+  bool get usesPlainHttp =>
+      servers.any((s) => s.trim().toLowerCase().startsWith('http://'));
+
   /// Servers in the order to try them: the one that answered last first,
   /// then the rest in their configured order.
   List<String> get tryOrder => [
@@ -355,6 +361,28 @@ class _ProgressSyncSheetState extends State<_ProgressSyncSheet> {
           'Scan this code with the other device\'s camera, or send it the '
           'link. Anyone with it can read and change your progress.',
         ),
+        if (_saved.usesPlainHttp) ...[
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                size: 20,
+                color: theme.colorScheme.error,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'This device syncs over plain HTTP, so it can only share '
+                  'plain HTTP. Join this device with a link from the server '
+                  '(haqor-sync-join) first, then share that.',
+                  style: TextStyle(color: theme.colorScheme.error),
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 12),
         if (_showQr)
           Center(
