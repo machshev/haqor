@@ -126,6 +126,72 @@ void main() {
     ]);
   });
 
+  testWidgets('linked Peshitta English selects the exact Aramaic words', (
+    tester,
+  ) async {
+    final selected = <List<TranslationWordEntry>>[];
+    var verseChosen = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VerseRow(
+            entry: const VerseEntry(
+              verse: 1,
+              text: 'כתבא דילידותה דישוע משיחא ברה דדויד ברה דאברהמ',
+              glosses: [],
+              morphologies: [],
+              names: [],
+              roots: [],
+              ketivs: [],
+              crossReferenceScores: [],
+            ),
+            isSelected: false,
+            hebrewNumerals: false,
+            onTap: () {},
+            onWordTap: (_, _, _, _) {},
+            readerText: ReaderText.english,
+            translation: [
+              for (final (position, text) in [
+                'The book',
+                'of the genealogy',
+                'of Jesus',
+                'the Messiah',
+                'son',
+                'of David',
+                'son',
+                'of Abraham',
+              ].indexed) ...[
+                if (position > 0)
+                  const TranslationSpanEntry(
+                    text: ' ',
+                    supplied: false,
+                    words: [],
+                  ),
+                TranslationSpanEntry(
+                  text: text,
+                  supplied: false,
+                  words: [at(position)],
+                ),
+              ],
+            ],
+            onTranslationWordsSelected: selected.add,
+            onTranslationVerseSelected: () => verseChosen++,
+          ),
+        ),
+      ),
+    );
+    await drag(
+      tester,
+      TextDirection.ltr,
+      (text) => text.indexOf('Jesus') + 1,
+      (text) => text.indexOf('Messiah') + 3,
+    );
+    expect(selected, [
+      [at(2), at(3)],
+    ]);
+    expect(verseChosen, 0);
+  });
+
   testWidgets('a highlight in English naming no words chooses its verse', (
     tester,
   ) async {
