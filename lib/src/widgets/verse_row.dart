@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../app_settings.dart';
@@ -180,6 +183,8 @@ class VerseRow extends StatefulWidget {
     this.translationCommentary,
     this.selectedPositions = const {},
     this.translationWordSelected,
+    this.onSourceWordsSelected,
+    this.onTranslationWordsSelected,
     this.studyPassageHighlightColor,
     this.ketivDisplay = KetivDisplay.superscript,
     this.syntaxMarks,
@@ -261,6 +266,14 @@ class VerseRow extends StatefulWidget {
   /// whether an English word renders one of them.
   final Set<int> selectedPositions;
   final bool Function(TranslationWordEntry word)? translationWordSelected;
+
+  /// Text selected by dragging (or double-clicking) over the running text,
+  /// snapped to whole words when the pointer lifts: the first and last
+  /// lexical positions in the source, or every original word the selected
+  /// English renders.
+  final void Function(int first, int last)? onSourceWordsSelected;
+  final void Function(List<TranslationWordEntry> words)?
+  onTranslationWordsSelected;
   final Color? studyPassageHighlightColor;
   final KetivDisplay ketivDisplay;
 
@@ -460,6 +473,61 @@ class _VerseRowState extends State<VerseRow> {
 
   /// Which ketiv readings the reader has tapped open, by their position.
   final Set<int> _revealed = {};
+
+  // The native selections in the running texts, and where each word lies in
+  // their characters, so a selection can be snapped to the words it touches.
+  TextSelection? _sourceSelection;
+  TextSelection? _translationSelection;
+  List<(int, int, int)> _sourceWordOffsets = const [];
+  List<(int, int, TranslationSpanEntry)> _translationOffsets = const [];
+
+  /// The character extents of [spans], as SelectableText counts them (a placeholder being one character).
+  static List<(int, int)> _extents(List<InlineSpan> spans) {
+    var offset = 0;
+    return [
+      for (final span in spans)
+        (
+          offset,
+          offset += span.toPlainText(includeSemanticsLabels: false).length,
+        ),
+    ];
+  }
+
+  /// When the pointer lifts, the words a selection touches, reported whole;
+  /// the reader then shows them, and the restyled text drops its own
+  /// character selection.
+  void _reportSelection({required bool source}) {
+    // After the gesture has settled the selection, once this pointer event
+    // has been handled.
+    scheduleMicrotask(() {
+      if (!mounted) return;
+      final selection = source ? _sourceSelection : _translationSelection;
+      if (selection == null || !selection.isValid || selection.isCollapsed) {
+        return;
+      }
+      bool touches((int, int) extent) =>
+          extent.$1 < selection.end && extent.$2 > selection.start;
+      if (source) {
+        _sourceSelection = null;
+        final positions = [
+          for (final (start, end, position) in _sourceWordOffsets)
+            if (touches((start, end))) position,
+        ];
+        if (positions.isEmpty) return;
+        widget.onSourceWordsSelected?.call(
+          positions.reduce(math.min),
+          positions.reduce(math.max),
+        );
+      } else {
+        _translationSelection = null;
+        final words = [
+          for (final (start, end, span) in _translationOffsets)
+            if (touches((start, end))) ...span.words,
+        ];
+        if (words.isNotEmpty) widget.onTranslationWordsSelected?.call(words);
+      }
+    });
+  }
 
   /// The spans that show one ketiv, in whichever presentation is configured.
   ///
@@ -914,6 +982,8 @@ class _VerseRowState extends State<VerseRow> {
       final anchors = widget.ketivDisplay == KetivDisplay.hidden
           ? const <int, List<({KetivEntry ketiv, bool before})>>{}
           : ketivAnchors(_words, widget.entry.ketivs);
+      // The index in [spans] of each word with a lexical position.
+      final wordSpans = <(int, int)>[];
       for (var i = 0; i < _words.length; i++) {
         if (i > 0 && startsClause(displayNamePositions[i])) {
           // A clause begins: the gap carries a faint rule.
@@ -932,6 +1002,9 @@ class _VerseRowState extends State<VerseRow> {
         for (final anchor in anchors[i] ?? const []) {
           if (anchor.before) spans.addAll(_ketivSpans(anchor.ketiv, wordStyle));
         }
+        if (displayNamePositions[i] case final position?) {
+          wordSpans.add((spans.length, position));
+        }
         spans.add(
           TextSpan(
             text: displayWords[i],
@@ -949,9 +1022,18 @@ class _VerseRowState extends State<VerseRow> {
           }
         }
       }
-      source = SelectableText.rich(
-        TextSpan(children: spans),
-        textDirection: widget.sourceDirection,
+      final extents = _extents(spans);
+      _sourceWordOffsets = [
+        for (final (index, position) in wordSpans)
+          (extents[index].$1, extents[index].$2, position),
+      ];
+      source = Listener(
+        onPointerUp: (_) => _reportSelection(source: true),
+        child: SelectableText.rich(
+          TextSpan(children: spans),
+          textDirection: widget.sourceDirection,
+          onSelectionChanged: (selection, _) => _sourceSelection = selection,
+        ),
       );
     }
 
@@ -982,30 +1064,39 @@ class _VerseRowState extends State<VerseRow> {
         height: 1.6,
         color: wordStyle.color,
       );
-      return SelectableText.rich(
-        TextSpan(
-          style: style,
-          children: [
-            if (withMarks)
-              WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
-                child: verseMarksFor(
-                  const EdgeInsets.only(right: 6),
-                  TextDirection.ltr,
-                ),
-              ),
-            for (final (i, span)
-                in (translation ?? const <TranslationSpanEntry>[]).indexed)
-              TextSpan(
-                text: span.text,
-                style: translationSpanStyle(span),
-                recognizer: i < _translationRecognizers.length
-                    ? _translationRecognizers[i]
-                    : null,
-              ),
-          ],
+      final entries = translation ?? const <TranslationSpanEntry>[];
+      final spans = <InlineSpan>[
+        if (withMarks)
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: verseMarksFor(
+              const EdgeInsets.only(right: 6),
+              TextDirection.ltr,
+            ),
+          ),
+        for (final (i, span) in entries.indexed)
+          TextSpan(
+            text: span.text,
+            style: translationSpanStyle(span),
+            recognizer: i < _translationRecognizers.length
+                ? _translationRecognizers[i]
+                : null,
+          ),
+      ];
+      final extents = _extents(spans);
+      final first = withMarks ? 1 : 0;
+      _translationOffsets = [
+        for (final (i, span) in entries.indexed)
+          (extents[first + i].$1, extents[first + i].$2, span),
+      ];
+      return Listener(
+        onPointerUp: (_) => _reportSelection(source: false),
+        child: SelectableText.rich(
+          TextSpan(style: style, children: spans),
+          textDirection: TextDirection.ltr,
+          onSelectionChanged: (selection, _) =>
+              _translationSelection = selection,
         ),
-        textDirection: TextDirection.ltr,
       );
     }
 

@@ -4357,6 +4357,12 @@ class _ReaderSessionState extends State<_ReaderSession>
     setState(() => _selectionAnchor = _selectionFocus = point);
   }
 
+  /// Select the words a highlight touched, in place of any selection.
+  void _selectWordRange(_WordPoint first, _WordPoint last) => setState(() {
+    _selectionAnchor = first;
+    _selectionFocus = last;
+  });
+
   /// Extend the selection to a tapped word; in another book, start it again
   /// there.
   void _extendWordSelection(int book, int chapter, int verse, int position) {
@@ -4405,7 +4411,7 @@ class _ReaderSessionState extends State<_ReaderSession>
                   style: theme.textTheme.titleSmall,
                 ),
                 Text(
-                  'Tap another word, in either text, to end the selection there.',
+                  'Highlight words, or tap one, in either text to change the selection.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -6512,6 +6518,22 @@ class _ReaderSessionState extends State<_ReaderSession>
                         if (selection.containsWord(b, c, entry.verse, position))
                           position,
                     },
+              onSourceWordsSelected: (first, last) => _selectWordRange(
+                (book: b, chapter: c, verse: entry.verse, position: first),
+                (book: b, chapter: c, verse: entry.verse, position: last),
+              ),
+              onTranslationWordsSelected: (words) {
+                final points = [
+                  for (final word in words)
+                    (
+                      book: b,
+                      chapter: word.chapter,
+                      verse: word.verse,
+                      position: word.position,
+                    ),
+                ]..sort(_compareWordPoints);
+                _selectWordRange(points.first, points.last);
+              },
               translationWordSelected: selection == null
                   ? null
                   : (word) => selection.containsWord(

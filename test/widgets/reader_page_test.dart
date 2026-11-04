@@ -3751,6 +3751,28 @@ void commentaryTests() {
     );
   });
 
+  testWidgets('a highlight in either text becomes the selection', (
+    tester,
+  ) async {
+    await _pumpCommentaryReader(tester);
+    VerseRow row(int verse) => tester.widget<VerseRow>(_verse(1, 1, verse));
+    row(2).onSourceWordsSelected!(3, 5);
+    await tester.pumpAndSettle();
+    expect(find.text('Bereshit 1:2 · words 4–6'), findsOneWidget);
+    expect(row(2).selectedPositions, {3, 4, 5});
+
+    // A new highlight replaces it, whatever order its words come in.
+    row(4).onTranslationWordsSelected!(const [
+      TranslationWordEntry(chapter: 1, verse: 4, position: 2),
+      TranslationWordEntry(chapter: 1, verse: 3, position: 9),
+    ]);
+    await tester.pumpAndSettle();
+    expect(find.text('Bereshit 1:3 word 10–4 word 3'), findsOneWidget);
+    expect(row(2).selectedPositions, isEmpty);
+    expect(row(3).selectedPositions, {9, 10});
+    expect(row(4).selectedPositions, {0, 1, 2});
+  });
+
   testWidgets('escape or cancel drops a word selection', (tester) async {
     await _pumpCommentaryReader(tester);
     VerseRow row() => tester.widget<VerseRow>(_verse(1, 1, 2));
