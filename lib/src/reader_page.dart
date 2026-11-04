@@ -18,6 +18,7 @@ import 'bindings/bindings.dart' hide StudyItem;
 import 'issue_reporting.dart';
 import 'prefs_read.dart';
 import 'memorise/memorise_page.dart';
+import 'passage_selection.dart';
 import 'surface.dart';
 import 'study_workspace.dart';
 import 'study_workspace_store.dart';
@@ -31,6 +32,7 @@ import 'widgets/cross_references_sheet.dart';
 import 'widgets/greek_word_sheet.dart';
 import 'widgets/markdown_note.dart';
 import 'widgets/name_details.dart';
+import 'widgets/passage_picking.dart';
 import 'widgets/bible_timeline_page.dart';
 import 'widgets/places_page.dart';
 import 'widgets/apologetics_page.dart';
@@ -38,7 +40,6 @@ import 'widgets/archaeology_page.dart';
 import 'widgets/prophecy_page.dart';
 import 'widgets/side_scroll.dart';
 import 'widgets/study_workspace_panel.dart';
-import 'widgets/study_passage_editor.dart';
 import 'widgets/study_section_editor.dart';
 import 'widgets/study_timeline_editor.dart';
 import 'widgets/timeline_chart.dart';
@@ -174,15 +175,6 @@ class _Section {
 }
 
 typedef _ChapterRequest = (int, int, bool, bool, bool, bool, bool, bool);
-
-/// One original word: its 0-based book, chapter, verse and lexical position.
-typedef _WordPoint = ({int book, int chapter, int verse, int position});
-
-int _compareWordPoints(_WordPoint a, _WordPoint b) => a.chapter != b.chapter
-    ? a.chapter.compareTo(b.chapter)
-    : a.verse != b.verse
-    ? a.verse.compareTo(b.verse)
-    : a.position.compareTo(b.position);
 
 class _SelectedWord {
   const _SelectedWord({
@@ -703,6 +695,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     commentaryStore: _commentaryStore,
     commentaryInText: _commentaryInText,
     onCommentaryInTextChanged: _setCommentaryInText,
+    onRevealReader: () {
+      setState(() => _activeTabId = tab.id);
+      if (_mobileLayout == true) _showReaderPage();
+    },
     commentaryDocked:
         _commentaryVisible && _mobileLayout != true && tab.id == _activeTabId,
     onCommentaryToggled: () {
@@ -1874,6 +1870,7 @@ class _ReaderSession extends StatefulWidget {
     this.commentaryDocked = false,
     this.onCommentaryToggled,
     this.onCommentaryInTextChanged,
+    this.onRevealReader,
     required this.proximity,
     this.sendChapterRequest,
     this.sendSyntaxTreesRequest,
@@ -1920,6 +1917,10 @@ class _ReaderSession extends StatefulWidget {
   final bool commentaryDocked;
   final VoidCallback? onCommentaryToggled;
   final ValueChanged<bool>? onCommentaryInTextChanged;
+
+  /// Brings this reader to the front, as when a passage is to be chosen in
+  /// it from a phone's study page.
+  final VoidCallback? onRevealReader;
 
   /// Test seam: how a [GetChapter] request reaches the Rust side. Defaults to
   /// the real rinf signal; widget tests substitute a stub that answers via
@@ -3221,28 +3222,35 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
   }
 
+  /// A study passage and its note; the passage is chosen in the reader.
   Future<StudyPassage?> _askForStudyPassage(
     StudyWorkspace workspace,
     StudyPassage passage, {
     required bool creating,
-  }) => showDialog<StudyPassage>(
-    context: context,
-    builder: (_) => StudyPassageEditor(
-      initial: passage,
-      creating: creating,
-      useEnglishBookNames: _englishBookNames,
-      loadChapter: _loadStudyChapter,
-      isDuplicate: (ref) =>
+  }) async {
+    final draft = await _passageNoteDialog(
+      title: creating ? 'Bookmark passage' : 'Edit passage',
+      confirmLabel: creating ? 'Bookmark' : 'Save',
+      passages: [passage],
+      text: passage.note,
+      noteLabel: 'Passage note',
+      validate: (passages) =>
           (_studyWorkspaces.where((w) => w.id == workspace.id).firstOrNull ??
                   workspace)
               .passages
               .any(
                 (p) =>
-                    p.locationKey == ref.locationKey &&
+                    p.locationKey == passages.single.locationKey &&
                     (creating || p.locationKey != passage.locationKey),
-              ),
-    ),
-  );
+              )
+          ? 'This reference is already bookmarked in this study.'
+          : null,
+    );
+    if (draft == null) return null;
+    return passage
+        .withReference(draft.passages.single)
+        .copyWith(note: draft.text);
+  }
 
   Future<void> _bookmarkCurrentStudyPassage(String? groupId) async {
     final workspace = _activeStudyWorkspace;
@@ -4334,136 +4342,202 @@ class _ReaderSessionState extends State<_ReaderSession>
     );
   }
 
-  // --- commentary -----------------------------------------------------------
+  // --- choosing passages in the reader --------------------------------------
 
-  // A span of original words chosen for a note, from the word it was started
-  // at to the one last tapped, in either order, within one book. It is chosen
-  // in the Hebrew, Aramaic or Greek, or in the English by the words those
-  // render.
-  _WordPoint? _selectionAnchor;
-  _WordPoint? _selectionFocus;
+  // A passage being chosen in the reader: words tapped or highlighted in the
+  // original or the English (which chooses the original words it renders),
+  // or verses tapped, widened to verses or the chapter as asked. Chosen for
+  // a new note, or, while [_pick] waits, for a dialog left to choose it.
+  PassageSelection? _selection;
+  Completer<StudyPassage?>? _pick;
+  String? _pickTitle;
 
-  StudyPassage? get _wordSelection {
-    final anchor = _selectionAnchor, focus = _selectionFocus;
-    if (anchor == null || focus == null) return null;
-    final (start, end) = _compareWordPoints(anchor, focus) <= 0
-        ? (anchor, focus)
-        : (focus, anchor);
-    return StudyPassage(
-      bookIndex: start.book,
-      chapter: start.chapter,
-      verse: start.verse,
-      endChapter: end.chapter,
-      endVerse: end.verse,
-      startWord: start.position,
-      endWord: end.position,
-    );
-  }
+  StudyPassage? get _wordSelection => _selection?.passage;
 
-  void _startWordSelection(int book, int chapter, int verse, int position) {
+  void _select(PassageSelection? selection) =>
+      setState(() => _selection = selection);
+
+  /// A word tapped while a passage is being chosen.
+  void _tapSelectionWord(int book, int chapter, int verse, int position) {
     final point = (
       book: book,
       chapter: chapter,
       verse: verse,
       position: position,
     );
-    setState(() => _selectionAnchor = _selectionFocus = point);
+    _select(_selection?.tapWord(point) ?? PassageSelection.word(point));
   }
 
-  /// Select the words a highlight touched, in place of any selection.
-  void _selectWordRange(_WordPoint first, _WordPoint last) => setState(() {
-    _selectionAnchor = first;
-    _selectionFocus = last;
-  });
-
-  /// Extend the selection to a tapped word; in another book, start it again
-  /// there.
-  void _extendWordSelection(int book, int chapter, int verse, int position) {
-    final point = (
-      book: book,
-      chapter: chapter,
-      verse: verse,
-      position: position,
-    );
+  /// Ends the choice: [passage] to the dialog waiting for it, if any, and
+  /// the selection gone either way.
+  void _finishSelection([StudyPassage? passage]) {
+    final pick = _pick;
     setState(() {
-      if (_selectionAnchor?.book != book) _selectionAnchor = point;
-      _selectionFocus = point;
+      _selection = null;
+      _pick = null;
+      _pickTitle = null;
     });
+    if (pick != null && !pick.isCompleted) pick.complete(passage);
   }
 
-  void _clearWordSelection() =>
-      setState(() => _selectionAnchor = _selectionFocus = null);
+  /// Choose a passage in the reader, starting from [initial] (opened there)
+  /// or the reader's own place: what is open over the reader closes, the
+  /// reader can go anywhere, and the passage comes back when "Use passage"
+  /// is pressed; null when cancelled.
+  Future<StudyPassage?> _pickPassage({
+    required String title,
+    StudyPassage? initial,
+  }) {
+    _pick?.complete(null);
+    final pick = _pick = Completer<StudyPassage?>();
+    final route = ModalRoute.of(context);
+    if (route != null) Navigator.of(context).popUntil((r) => r == route);
+    widget.onRevealReader?.call();
+    setState(() {
+      _pickTitle = title;
+      _selection = initial == null ? null : PassageSelection.of(initial);
+    });
+    if (initial != null) {
+      _navigateTo(
+        initial.bookIndex,
+        initial.chapter,
+        verse: initial.wholeChapter ? null : initial.verse,
+      );
+    }
+    return pick.future;
+  }
 
-  /// Write a note on the selected words; the selection stays should the
-  /// editor be cancelled.
+  /// A dialog for a note on passages, which leaves to choose each passage in
+  /// the reader ([_pickPassage]) and opens again with it, keeping the note
+  /// as written. Null when cancelled.
+  Future<({List<StudyPassage> passages, String text})?> _passageNoteDialog({
+    required String title,
+    required String confirmLabel,
+    required List<StudyPassage> passages,
+    String text = '',
+    String noteLabel = 'Note',
+    bool noteRequired = false,
+    bool multiple = false,
+    String? Function(List<StudyPassage> passages)? validate,
+  }) async {
+    var current = passages;
+    var note = text;
+    while (mounted) {
+      final result = await showPassageNoteDialog(
+        context,
+        title: title,
+        confirmLabel: confirmLabel,
+        passages: current,
+        text: note,
+        noteLabel: noteLabel,
+        noteRequired: noteRequired,
+        multiple: multiple,
+        useEnglishBookNames: _englishBookNames,
+        validate: validate,
+      );
+      switch (result) {
+        case null:
+          return null;
+        case PassageNoteSaved(:final passages, :final text):
+          return (passages: passages, text: text);
+        case PassageNotePick(:final passages, :final text, :final index):
+          current = passages;
+          note = text;
+          final picked = await _pickPassage(
+            title:
+                '$title: ${index == null ? 'add a passage' : 'choose the passage'}',
+            initial: index == null ? null : passages[index],
+          );
+          if (picked == null || !mounted) continue;
+          current = [
+            for (final (i, p) in current.indexed) i == index ? picked : p,
+            if (index == null &&
+                !current.any((p) => p.locationKey == picked.locationKey))
+              picked,
+          ];
+      }
+    }
+    return null;
+  }
+
+  /// Write a note on the chosen passage; the choice stays should the editor
+  /// be cancelled.
   Future<void> _commentOnWordSelection() async {
     final selection = _wordSelection;
     if (selection == null) return;
-    if (await _addCommentary(selection) && mounted) _clearWordSelection();
+    if (await _addCommentary(selection) && mounted) _finishSelection();
   }
 
   Future<void> _linkWordSelection() async {
     final selection = _wordSelection;
     if (selection == null) return;
-    if (await _linkToCommentary(selection) && mounted) _clearWordSelection();
+    if (await _linkToCommentary(selection) && mounted) _finishSelection();
   }
 
-  Widget _wordSelectionBar(StudyPassage selection) {
+  Widget _selectionBar(PassageSelection selection) => PassageSelectionBar(
+    selection: selection,
+    title: _pickTitle,
+    useEnglishBookNames: _englishBookNames,
+    onScopeChanged: (scope) => _select(selection.withScope(scope)),
+    actions: [
+      TextButton(
+        onPressed: () => _finishSelection(),
+        child: const Text('Cancel'),
+      ),
+      if (_pick != null)
+        FilledButton(
+          key: const ValueKey('passage-pick-done'),
+          onPressed: () => _finishSelection(selection.passage),
+          child: const Text('Use passage'),
+        )
+      else ...[
+        if (widget.commentaryStore.notes.isNotEmpty)
+          TextButton(
+            key: const ValueKey('word-selection-link'),
+            onPressed: _linkWordSelection,
+            child: const Text('Link to a note'),
+          ),
+        FilledButton.icon(
+          key: const ValueKey('word-selection-comment'),
+          onPressed: _commentOnWordSelection,
+          icon: const Icon(Icons.add_comment_outlined),
+          label: const Text('Add commentary'),
+        ),
+      ],
+    ],
+  );
+
+  /// While a passage is chosen for a dialog but nothing is chosen yet.
+  Widget _pickPrompt() {
     final theme = Theme.of(context);
     return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Material(
-          key: const ValueKey('word-selection-bar'),
-          elevation: 6,
-          borderRadius: BorderRadius.circular(12),
-          color: theme.colorScheme.surfaceContainerHigh,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  '${bookDisplayName(selection.bookIndex, useEnglish: _englishBookNames)} '
-                  '${selection.reference}',
-                  style: theme.textTheme.titleSmall,
+      child: Material(
+        key: const ValueKey('passage-pick-prompt'),
+        elevation: 6,
+        borderRadius: BorderRadius.circular(12),
+        color: theme.colorScheme.surfaceContainerHigh,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  '${_pickTitle ?? 'Choose a passage'}: tap a word or a verse',
                 ),
-                Text(
-                  'Highlight words, or tap one, in either text to change the selection.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: _clearWordSelection,
-                      child: const Text('Cancel'),
-                    ),
-                    if (widget.commentaryStore.notes.isNotEmpty)
-                      TextButton(
-                        key: const ValueKey('word-selection-link'),
-                        onPressed: _linkWordSelection,
-                        child: const Text('Link to a note'),
-                      ),
-                    const SizedBox(width: 4),
-                    FilledButton.icon(
-                      key: const ValueKey('word-selection-comment'),
-                      onPressed: _commentOnWordSelection,
-                      icon: const Icon(Icons.add_comment_outlined),
-                      label: const Text('Add commentary'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+              ),
+              TextButton(
+                onPressed: () => _finishSelection(),
+                child: const Text('Cancel'),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+
+  // --- commentary -----------------------------------------------------------
 
   /// The commentary on the chapter at the top of the reader: docked beside
   /// it where there is room, else in a sheet.
@@ -4534,51 +4608,22 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
   }
 
-  /// The passage editor without a note, choosing one of a note's passages.
-  Future<StudyPassage?> _askForCommentaryPassage(
-    StudyPassage initial, {
-    required bool adding,
-  }) async {
-    final chosen = await showDialog<StudyPassage>(
-      context: context,
-      builder: (_) => StudyPassageEditor(
-        initial: StudyPassage(
-          bookIndex: initial.bookIndex,
-          chapter: initial.chapter,
-          verse: initial.verse,
-          wholeChapter: initial.wholeChapter,
-          endChapter: initial.endChapter,
-          endVerse: initial.endVerse,
-          startWord: initial.startWord,
-          endWord: initial.endWord,
-        ),
-        creating: adding,
-        useEnglishBookNames: _englishBookNames,
-        loadChapter: _loadStudyChapter,
-        isDuplicate: (_) => false,
-        title: adding ? 'Link another passage' : 'Change passage',
-        confirmLabel: adding ? 'Link' : 'Done',
-        showNote: false,
-      ),
-    );
-    return chosen?.copyWith(note: '');
-  }
-
   /// Write a commentary note on [anchor]. Whether a note was written.
   Future<bool> _addCommentary(StudyPassage anchor) async {
-    final draft = await showCommentaryDialog(
-      context,
-      anchors: [anchor],
-      creating: true,
-      useEnglishBookNames: _englishBookNames,
-      editPassage: _askForCommentaryPassage,
+    final draft = await _passageNoteDialog(
+      title: 'Add commentary',
+      confirmLabel: 'Add',
+      passages: [anchor],
+      noteLabel: 'Commentary',
+      noteRequired: true,
+      multiple: true,
     );
     if (draft == null || !mounted) return false;
     final now = DateTime.now();
     widget.commentaryStore.put(
       CommentaryNote(
         id: newCommentaryId(),
-        anchors: draft.anchors,
+        anchors: draft.passages,
         text: draft.text,
         created: now,
         updated: now,
@@ -4588,17 +4633,20 @@ class _ReaderSessionState extends State<_ReaderSession>
   }
 
   Future<void> _editCommentary(CommentaryNote note) async {
-    final draft = await showCommentaryDialog(
-      context,
-      anchors: note.anchors,
+    final draft = await _passageNoteDialog(
+      title: 'Edit commentary',
+      confirmLabel: 'Save',
+      passages: note.anchors,
       text: note.text,
-      creating: false,
-      useEnglishBookNames: _englishBookNames,
-      editPassage: _askForCommentaryPassage,
+      noteLabel: 'Commentary',
+      noteRequired: true,
+      multiple: true,
     );
     if (draft == null || !mounted) return;
     final current = widget.commentaryStore.byId(note.id) ?? note;
-    _saveCommentary(current.copyWith(anchors: draft.anchors, text: draft.text));
+    _saveCommentary(
+      current.copyWith(anchors: draft.passages, text: draft.text),
+    );
   }
 
   void _saveCommentary(CommentaryNote note) {
@@ -5478,8 +5526,9 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
 
     final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.escape && _selectionAnchor != null) {
-      _clearWordSelection();
+    if (key == LogicalKeyboardKey.escape &&
+        (_selection != null || _pick != null)) {
+      _finishSelection();
       return KeyEventResult.handled;
     }
     final distance = key == LogicalKeyboardKey.arrowUp
@@ -6006,7 +6055,14 @@ class _ReaderSessionState extends State<_ReaderSession>
     switch (action) {
       case _WordMenuAction.selectWords:
         if (position != null) {
-          _startWordSelection(bookIndex, chapter, verse, position);
+          _select(
+            PassageSelection.word((
+              book: bookIndex,
+              chapter: chapter,
+              verse: verse,
+              position: position,
+            )),
+          );
         }
       case _WordMenuAction.addHeading:
         await _addStudyHeadingAt(bookIndex, chapter, verse);
@@ -6166,14 +6222,16 @@ class _ReaderSessionState extends State<_ReaderSession>
       child: Stack(
         children: [
           _buildScrollView(),
-          if (_wordSelection case final selection?)
-            // At the top, clear of notices at the foot of the screen.
+          // At the top, clear of notices at the foot of the screen.
+          if (_selection case final selection?)
             Positioned(
               left: 12,
               right: 12,
               top: 8,
-              child: _wordSelectionBar(selection),
-            ),
+              child: _selectionBar(selection),
+            )
+          else if (_pick != null)
+            Positioned(left: 12, right: 12, top: 8, child: _pickPrompt()),
           if (_loadingPrev)
             const Positioned(
               top: 0,
@@ -6535,20 +6593,26 @@ class _ReaderSessionState extends State<_ReaderSession>
               entry: entry,
               isSelected: isSelected,
               hebrewNumerals: _hebrewNumerals,
-              onTap: () => setState(() {
-                if (isSelected) {
-                  _selectedBook = null;
-                  _selectedChapter = null;
-                  _selectedVerse = null;
-                } else {
-                  _selectedBook = b;
-                  _selectedChapter = c;
-                  _selectedVerse = entry.verse;
-                }
-              }),
+              onTap: () => _pick != null
+                  // Choosing a passage for a dialog, a verse tapped is chosen.
+                  ? _select(
+                      _selection?.tapVerse(b, c, entry.verse) ??
+                          PassageSelection.verse(b, c, entry.verse),
+                    )
+                  : setState(() {
+                      if (isSelected) {
+                        _selectedBook = null;
+                        _selectedChapter = null;
+                        _selectedVerse = null;
+                      } else {
+                        _selectedBook = b;
+                        _selectedChapter = c;
+                        _selectedVerse = entry.verse;
+                      }
+                    }),
               onWordTap: (word, readerGloss, position, root) {
-                if (_selectionAnchor != null && position != null) {
-                  _extendWordSelection(b, c, entry.verse, position);
+                if ((_selection != null || _pick != null) && position != null) {
+                  _tapSelectionWord(b, c, entry.verse, position);
                   return;
                 }
                 if (_rapidReading) {
@@ -6620,9 +6684,21 @@ class _ReaderSessionState extends State<_ReaderSession>
                         if (selection.containsWord(b, c, entry.verse, position))
                           position,
                     },
-              onSourceWordsSelected: (first, last) => _selectWordRange(
-                (book: b, chapter: c, verse: entry.verse, position: first),
-                (book: b, chapter: c, verse: entry.verse, position: last),
+              onSourceWordsSelected: (first, last) => _select(
+                PassageSelection(
+                  anchor: (
+                    book: b,
+                    chapter: c,
+                    verse: entry.verse,
+                    position: first,
+                  ),
+                  focus: (
+                    book: b,
+                    chapter: c,
+                    verse: entry.verse,
+                    position: last,
+                  ),
+                ),
               ),
               onTranslationWordsSelected: (words) {
                 final points = [
@@ -6633,8 +6709,10 @@ class _ReaderSessionState extends State<_ReaderSession>
                       verse: word.verse,
                       position: word.position,
                     ),
-                ]..sort(_compareWordPoints);
-                _selectWordRange(points.first, points.last);
+                ]..sort(compareWordPoints);
+                _select(
+                  PassageSelection(anchor: points.first, focus: points.last),
+                );
               },
               translationWordSelected: selection == null
                   ? null
@@ -6687,8 +6765,8 @@ class _ReaderSessionState extends State<_ReaderSession>
               translation: translation.spans,
               translationPending: translation.pending,
               onTranslationWordTap: (target) {
-                if (_selectionAnchor != null) {
-                  _extendWordSelection(
+                if (_selection != null || _pick != null) {
+                  _tapSelectionWord(
                     b,
                     target.chapter,
                     target.verse,

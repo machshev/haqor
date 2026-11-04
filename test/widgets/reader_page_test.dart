@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:haqor/src/app_settings.dart' show ReaderText;
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/commentary.dart';
+import 'package:haqor/src/passage_selection.dart';
 import 'package:haqor/src/reader_page.dart';
 import 'package:haqor/src/study_workspace.dart' as study;
 import 'package:haqor/src/widgets/chapter_context_sheet.dart';
@@ -2227,14 +2228,15 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Edit reference and note'));
     await tester.pumpAndSettle();
-    final endVerse = find.ancestor(
-      of: find.text('End verse'),
-      matching: find.byType(DropdownButtonFormField<int>),
-    );
-    await tester.tap(endVerse);
+    // The passage is chosen in the reader: verse 1, widened to verse 2.
+    await tester.tap(find.byKey(const ValueKey('passage-chip-0')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('2').last);
+    expect(find.text('Edit passage: choose the passage'), findsOneWidget);
+    tester.widget<VerseRow>(_verse(1, 1, 2)).onTap();
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('passage-pick-done')));
+    await tester.pumpAndSettle();
+    expect(find.text('Bereshit 1:1–2'), findsWidgets);
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     final edited = study
@@ -3869,11 +3871,11 @@ void commentaryTests() {
     expect(find.byKey(const ValueKey('verse-commentary-3')), findsNothing);
   });
 
-  testWidgets('a passage is added to a note with the passage selector', (
+  testWidgets('a passage is added to a note by choosing it in the reader', (
     tester,
   ) async {
     final saved = <SaveCommentaryNote>[];
-    final rust = await _pumpCommentaryReader(tester, saved: saved);
+    await _pumpCommentaryReader(tester, saved: saved);
     final time = DateTime.fromMillisecondsSinceEpoch(1);
     _deliverCommentary([
       CommentaryNote(
@@ -3885,12 +3887,12 @@ void commentaryTests() {
       ),
     ]);
     await tester.pumpAndSettle();
-    Future<void> settle() async {
-      for (var i = 0; i < 5; i++) {
-        rust.deliverAll();
-        await tester.pumpAndSettle();
-      }
-    }
+    VerseRow row(int verse) => tester.widget<VerseRow>(_verse(1, 1, verse));
+    Finder segment(String label) => find.descendant(
+      of: find.byKey(const ValueKey('passage-scope')),
+      matching: find.text(label),
+    );
+    final bar = find.byKey(const ValueKey('word-selection-bar'));
 
     await tester.tap(find.byKey(const ValueKey('verse-commentary-3')));
     await tester.pumpAndSettle();
@@ -3898,44 +3900,114 @@ void commentaryTests() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Edit commentary'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add passage'));
-    await settle();
-    expect(find.text('Link another passage'), findsOneWidget);
-    // The selector, without its own note, choosing words of 1:4.
-    expect(find.text('Passage note'), findsNothing);
-    await tester.tap(find.text('Verse or verse range'));
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      ),
+      'Light, rewritten',
+    );
+    await tester.tap(find.byKey(const ValueKey('passage-add')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Phrase').last);
-    await settle();
-    await tester.tap(find.byKey(const ValueKey('Start verse-3-20')));
+    // The dialog and the sheet give way to the reader, which asks for a
+    // word or a verse.
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(CommentaryPanel), findsNothing);
+    expect(find.byKey(const ValueKey('passage-pick-prompt')), findsOneWidget);
+
+    // A word starts a span of words, and another ends it.
+    row(4).onWordTap('מלה', null, 1, 'מלל');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('4').last);
-    await settle();
-    await tester.tap(find.byKey(const ValueKey('End verse-3-20')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('4').last);
-    await settle();
-    for (final word in [
-      find.byTooltip('Word 2').first,
-      find.byTooltip('Word 4').last,
-    ]) {
-      await tester.ensureVisible(word);
-      await tester.pumpAndSettle();
-      await tester.tap(word);
-    }
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Link'));
+    row(4).onWordTap('מלה', null, 3, 'מלל');
     await tester.pumpAndSettle();
     expect(find.text('Bereshit 1:4 · words 2–4'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    expect(row(4).selectedPositions, {1, 2, 3});
+
+    // It widens to its verse and its chapter, and narrows back.
+    await tester.tap(segment('Verse'));
     await tester.pumpAndSettle();
     expect(
-      (jsonDecode(saved.last.noteJson) as Map<String, dynamic>)['anchors'],
-      [
-        {'book': 0, 'chapter': 1, 'verse': 3},
-        {'book': 0, 'chapter': 1, 'verse': 4, 'startWord': 1, 'endWord': 3},
-      ],
+      find.descendant(of: bar, matching: find.text('Bereshit 1:4')),
+      findsOneWidget,
     );
+    expect(row(4).selectedPositions, hasLength(11));
+    await tester.tap(segment('Chapter'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: bar, matching: find.text('Bereshit 1')),
+      findsOneWidget,
+    );
+    expect(row(2).selectedPositions, hasLength(11));
+    await tester.tap(segment('Words'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bereshit 1:4 · words 2–4'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('passage-pick-done')));
+    await tester.pumpAndSettle();
+    // Back in the dialog, the note as it was left.
+    expect(find.text('Bereshit 1:4 · words 2–4'), findsOneWidget);
+    expect(find.text('Light, rewritten'), findsOneWidget);
+    expect(find.byKey(const ValueKey('word-selection-bar')), findsNothing);
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    final json = jsonDecode(saved.last.noteJson) as Map<String, dynamic>;
+    expect(json['text'], 'Light, rewritten');
+    expect(json['anchors'], [
+      {'book': 0, 'chapter': 1, 'verse': 3},
+      {'book': 0, 'chapter': 1, 'verse': 4, 'startWord': 1, 'endWord': 3},
+    ]);
+  });
+
+  testWidgets('choosing a passage starts from it, takes verses, and can be '
+      'cancelled', (tester) async {
+    await _pumpCommentaryReader(tester);
+    final time = DateTime.fromMillisecondsSinceEpoch(1);
+    _deliverCommentary([
+      CommentaryNote(
+        id: 'light',
+        anchors: const [
+          study.StudyPassage(
+            bookIndex: 0,
+            chapter: 1,
+            verse: 3,
+            startWord: 2,
+            endWord: 4,
+          ),
+        ],
+        text: 'Light',
+        created: time,
+        updated: time,
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    VerseRow row(int verse) => tester.widget<VerseRow>(_verse(1, 1, verse));
+
+    await tester.tap(find.byKey(const ValueKey('verse-commentary-3')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Commentary options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit commentary'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('passage-chip-0')));
+    await tester.pumpAndSettle();
+    expect(row(3).selectedPositions, {2, 3, 4});
+    // Verses tapped choose a range of verses.
+    row(5).onTap();
+    await tester.pumpAndSettle();
+    row(6).onTap();
+    await tester.pumpAndSettle();
+    expect(find.text('Bereshit 1:5–6'), findsOneWidget);
+    // Words can't be had back from verses alone.
+    final words = tester.widget<SegmentedButton<PassageScope>>(
+      find.byKey(const ValueKey('passage-scope')),
+    );
+    expect(words.segments.first.enabled, isFalse);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    // The dialog is back, its passage unchanged.
+    expect(find.text('Bereshit 1:3 · words 3–5'), findsOneWidget);
+    expect(find.byKey(const ValueKey('word-selection-bar')), findsNothing);
   });
 
   testWidgets('escape or cancel drops a word selection', (tester) async {

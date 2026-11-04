@@ -4,6 +4,7 @@ import '../bible_data.dart';
 import '../commentary.dart';
 import '../study_workspace.dart';
 import 'markdown_note.dart';
+import 'passage_picking.dart';
 
 /// What can be done with a commentary note from its menu.
 enum CommentaryAction { edit, addToStudy, delete }
@@ -12,9 +13,7 @@ enum CommentaryAction { edit, addToStudy, delete }
 String commentaryReference(
   StudyPassage anchor, {
   required bool useEnglishBookNames,
-}) =>
-    '${bookDisplayName(anchor.bookIndex, useEnglish: useEnglishBookNames)} '
-    '${anchor.reference}';
+}) => passageReference(anchor, useEnglishBookNames: useEnglishBookNames);
 
 /// The passages a note is on, each opening its passage: "Genesis 1:3 ·
 /// 2:4", the book named where it changes, and not at all while it is
@@ -438,161 +437,6 @@ class _CommentaryPageState extends State<CommentaryPage> {
         );
       },
     ),
-  );
-}
-
-/// A commentary note as the dialog leaves it.
-typedef CommentaryDraft = ({List<StudyPassage> anchors, String text});
-
-/// The passage editor without a note, to change one of a note's passages or
-/// add another; null when cancelled.
-typedef CommentaryPassageEditor =
-    Future<StudyPassage?> Function(
-      StudyPassage initial, {
-      required bool adding,
-    });
-
-/// Write or edit a commentary note. Its passages are already chosen, so they
-/// show as chips above the note (each changing its passage, or unlinking it
-/// while others remain), and the note has the focus.
-Future<CommentaryDraft?> showCommentaryDialog(
-  BuildContext context, {
-  required List<StudyPassage> anchors,
-  required bool creating,
-  required bool useEnglishBookNames,
-  required CommentaryPassageEditor editPassage,
-  String text = '',
-}) => showDialog<CommentaryDraft>(
-  context: context,
-  builder: (_) => _CommentaryDialog(
-    anchors: anchors,
-    text: text,
-    creating: creating,
-    useEnglishBookNames: useEnglishBookNames,
-    editPassage: editPassage,
-  ),
-);
-
-class _CommentaryDialog extends StatefulWidget {
-  const _CommentaryDialog({
-    required this.anchors,
-    required this.text,
-    required this.creating,
-    required this.useEnglishBookNames,
-    required this.editPassage,
-  });
-
-  final List<StudyPassage> anchors;
-  final String text;
-  final bool creating;
-  final bool useEnglishBookNames;
-  final CommentaryPassageEditor editPassage;
-
-  @override
-  State<_CommentaryDialog> createState() => _CommentaryDialogState();
-}
-
-class _CommentaryDialogState extends State<_CommentaryDialog> {
-  late final List<StudyPassage> _anchors = List.of(widget.anchors);
-  late final _text = TextEditingController(text: widget.text);
-  String? _error;
-
-  @override
-  void dispose() {
-    _text.dispose();
-    super.dispose();
-  }
-
-  Future<void> _change(int index) async {
-    final changed = await widget.editPassage(_anchors[index], adding: false);
-    if (changed == null || !mounted) return;
-    setState(() => _anchors[index] = changed);
-  }
-
-  Future<void> _add() async {
-    final added = await widget.editPassage(_anchors.last, adding: true);
-    if (added == null || !mounted) return;
-    if (_anchors.any((a) => a.locationKey == added.locationKey)) return;
-    setState(() => _anchors.add(added));
-  }
-
-  void _save() {
-    final text = _text.text.trim();
-    if (text.isEmpty) {
-      setState(() => _error = 'Write the note.');
-      return;
-    }
-    Navigator.pop<CommentaryDraft>(context, (anchors: _anchors, text: text));
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.creating ? 'Add commentary' : 'Edit commentary'),
-    content: SizedBox(
-      width: 540,
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final (i, anchor) in _anchors.indexed)
-                  InputChip(
-                    key: ValueKey('commentary-anchor-$i'),
-                    avatar: const Icon(Icons.menu_book_outlined, size: 16),
-                    label: Text(
-                      commentaryReference(
-                        anchor,
-                        useEnglishBookNames: widget.useEnglishBookNames,
-                      ),
-                    ),
-                    tooltip: 'Change this passage',
-                    onPressed: () => _change(i),
-                    onDeleted: _anchors.length > 1
-                        ? () => setState(() => _anchors.removeAt(i))
-                        : null,
-                    deleteButtonTooltipMessage: 'Unlink this passage',
-                  ),
-                ActionChip(
-                  avatar: const Icon(Icons.add_link, size: 16),
-                  label: const Text('Add passage'),
-                  onPressed: _add,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            MarkdownNoteField(
-              controller: _text,
-              label: 'Commentary',
-              minLines: 4,
-              maxLines: 12,
-              autofocus: true,
-            ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-          ],
-        ),
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        onPressed: _save,
-        child: Text(widget.creating ? 'Add' : 'Save'),
-      ),
-    ],
   );
 }
 
