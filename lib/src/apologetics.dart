@@ -1,0 +1,112 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
+import 'bindings/bindings.dart';
+
+/// Haqor's apologetics, asked of Rust once and kept: there are few enough to
+/// hold whole, and the reader finds a chapter's and a verse's from them.
+class ApologeticsStore extends ChangeNotifier {
+  ApologeticsStore();
+
+  /// The one the app shares.
+  static final instance = ApologeticsStore();
+
+  static int _nextRequestId = 1;
+
+  StreamSubscription<dynamic>? _sub;
+  int _requestId = 0;
+  List<ApologeticSubjectEntry>? _subjects;
+  List<ApologeticEntry> _entries = const [];
+
+  /// The entries each verse marks, keyed by [_verseKey].
+  Map<int, List<ApologeticEntry>> _marks = const {};
+
+  /// Whether the reply has come.
+  bool get loaded => _subjects != null;
+  List<ApologeticSubjectEntry> get subjects => _subjects ?? const [];
+  List<ApologeticEntry> get entries => _entries;
+
+  /// Asks Rust for them, once; [send] stands in for the signal, for tests.
+  void load({void Function(GetApologetics)? send}) {
+    if (_sub != null || loaded) return;
+    _sub = Apologetics.rustSignalStream.listen((pack) {
+      final reply = pack.message;
+      if (reply.requestId != _requestId) return;
+      set(reply.subjects, reply.entries);
+    });
+    final request = GetApologetics(requestId: _requestId = _nextRequestId++);
+    if (send != null) {
+      send(request);
+    } else {
+      request.sendSignalToRust();
+    }
+  }
+
+  /// Holds [subjects] and [entries], as a reply from Rust does.
+  void set(
+    List<ApologeticSubjectEntry> subjects,
+    List<ApologeticEntry> entries,
+  ) {
+    _subjects = subjects;
+    _entries = entries;
+    final marks = <int, List<ApologeticEntry>>{};
+    for (final e in entries) {
+      for (final p in e.passages) {
+        (marks[_verseKey(p.book, p.chapter, p.verse)] ??= []).add(e);
+      }
+    }
+    _marks = marks;
+    notifyListeners();
+  }
+
+  static int _verseKey(int book, int chapter, int verse) =>
+      (book << 16) | (chapter << 8) | verse;
+
+  ApologeticEntry? byKey(String key) =>
+      _entries.where((e) => e.key == key).firstOrNull;
+
+  ApologeticSubjectEntry? subject(String key) =>
+      subjects.where((s) => s.key == key).firstOrNull;
+
+  /// The entries marking chapters [first] to [last] of [book] (counted from
+  /// one, as Rust counts books): those with a passage there.
+  List<ApologeticEntry> touching(int book, int first, int last) => [
+    for (final e in _entries)
+      if (e.passages.any((p) => passageTouches(p, book, first, last))) e,
+  ];
+
+  /// The entries marked at a verse: those with a passage starting there, or
+  /// running into its chapter from before when it is the first verse.
+  List<ApologeticEntry> markedAt(int book, int chapter, int verse) {
+    final here = _marks[_verseKey(book, chapter, verse)] ?? const [];
+    if (verse != 1) return here;
+    final carried = [
+      for (final e in _entries)
+        if (e.passages.any(
+          (p) =>
+              p.book == book && p.chapter < chapter && p.lastChapter >= chapter,
+        ))
+          e,
+    ];
+    return carried.isEmpty ? here : {...here, ...carried}.toList();
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+}
+
+/// Whether [p] lies at least partly in chapters [first] to [last] of [book].
+bool passageTouches(PassageSpan p, int book, int first, int last) =>
+    p.book == book && p.chapter <= last && p.lastChapter >= first;
+
+/// What an entry is, as the reader sees it.
+String apologeticKindLabel(String kind) => switch (kind) {
+  'evidence' => 'Evidence',
+  'doctrine' => 'Teaching',
+  'passage' => 'Disputed passage',
+  _ => kind,
+};

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
+import 'apologetics_page.dart';
 import 'archaeology_page.dart';
 import 'chapter_span.dart';
 import 'name_details.dart';
@@ -13,7 +14,8 @@ enum ChapterContextTab {
   crossReferences('Cross refs', Icons.link),
   places('Places', Icons.map_outlined),
   people('People', Icons.people_outline),
-  archaeology('Archaeology', Icons.account_balance_outlined);
+  archaeology('Archaeology', Icons.account_balance_outlined),
+  apologetics('Apologetics', Icons.shield_outlined);
 
   const ChapterContextTab(this.label, this.icon);
 
@@ -47,8 +49,8 @@ enum ChapterContextScope {
 }
 
 /// What surrounds a chapter, one tab each: its cross references, the places
-/// it names on a map, the people it names and how they are related, and the
-/// finds bearing on it. It can widen to the chapters nearby or the book.
+/// it names on a map, the people it names and how they are related, the
+/// finds bearing on it, and the apologetics on its passages. It can widen to the chapters nearby or the book.
 class ChapterContextSheet extends StatefulWidget {
   const ChapterContextSheet({
     super.key,
@@ -214,6 +216,14 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
         onNavigateToPassage: widget.onNavigateToPassage,
         sendRequest: widget.sendArtifactsRequest,
         showTitle: false,
+      ),
+      ChapterContextTab.apologetics => ChapterApologeticsSheet(
+        key: key,
+        bookIndex: widget.bookIndex,
+        chapter: first,
+        lastChapter: last,
+        useEnglishBookNames: widget.useEnglishBookNames,
+        onNavigateToPassage: widget.onNavigateToPassage,
       ),
     };
   }

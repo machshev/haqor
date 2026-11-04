@@ -1,6 +1,7 @@
 //! This `hub` crate is the
 //! entry point of the Rust logic.
 
+mod apologetics;
 mod archaeology;
 mod commentary;
 mod functions;
@@ -234,6 +235,7 @@ async fn main() {
         get_thematic_overview,
         prophecy::get_verse_prophecies,
         prophecy::get_prophecies,
+        apologetics::get_apologetics,
         archaeology::get_artifacts,
         archaeology::get_chapter_artifacts,
         get_syntax_trees,

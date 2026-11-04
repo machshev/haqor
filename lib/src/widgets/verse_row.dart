@@ -174,6 +174,8 @@ class VerseRow extends StatefulWidget {
     this.studyNote = false,
     this.studyTimeline,
     this.onStudyTimeline,
+    this.apologetics,
+    this.onApologetics,
     this.studyWordHighlightColors = const {},
     this.studyFormHighlightColors = const {},
     this.studyPhraseHighlightColors = const {},
@@ -246,6 +248,11 @@ class VerseRow extends StatefulWidget {
   /// as a marker that [onStudyTimeline] opens; null for none.
   final String? studyTimeline;
   final VoidCallback? onStudyTimeline;
+
+  /// The titles of the apologetics marking this verse, shown as a marker that
+  /// [onApologetics] opens; null for none.
+  final String? apologetics;
+  final VoidCallback? onApologetics;
   final Map<String, Color> studyWordHighlightColors;
   final Map<String, Color> studyFormHighlightColors;
 
@@ -819,6 +826,25 @@ class _VerseRowState extends State<VerseRow> {
                     child: Icon(
                       Icons.timeline,
                       size: 14,
+                      color: theme.colorScheme.tertiary,
+                    ),
+                  ),
+                ),
+              ),
+            if (widget.apologetics != null)
+              Padding(
+                padding: stacked
+                    ? const EdgeInsets.only(bottom: 4)
+                    : const EdgeInsets.only(right: 2),
+                child: Tooltip(
+                  message: widget.apologetics!,
+                  child: InkWell(
+                    key: ValueKey('verse-apologetics-${widget.entry.verse}'),
+                    onTap: widget.onApologetics,
+                    customBorder: const CircleBorder(),
+                    child: Icon(
+                      Icons.shield_outlined,
+                      size: 13,
                       color: theme.colorScheme.tertiary,
                     ),
                   ),

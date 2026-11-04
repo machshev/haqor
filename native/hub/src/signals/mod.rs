@@ -2364,3 +2364,72 @@ pub struct WordSearchResults {
     pub request_id: u32,
     pub matches: Vec<WordSearchEntry>,
 }
+
+/// A subject of Haqor's apologetics (see `haqor_core::bible::ApologeticSubject`).
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ApologeticSubjectEntry {
+    pub key: String,
+    pub title: String,
+    pub note: String,
+}
+
+/// A work an [`ApologeticPointEntry`] cites.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ApologeticSourceEntry {
+    pub title: String,
+    pub author: String,
+    /// Where in the work, or empty.
+    pub loc: String,
+    /// Its words, or empty.
+    pub quote: String,
+}
+
+/// One step of an [`ApologeticEntry`]'s argument.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ApologeticPointEntry {
+    pub claim: String,
+    pub passages: Vec<PassageSpan>,
+    pub sources: Vec<ApologeticSourceEntry>,
+}
+
+/// An objection to an [`ApologeticEntry`] and its answer.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ApologeticObjectionEntry {
+    pub objection: String,
+    pub answer: String,
+    pub passages: Vec<PassageSpan>,
+}
+
+/// An entry of Haqor's apologetics (see `haqor_core::bible::Apologetic`).
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ApologeticEntry {
+    pub id: u32,
+    pub key: String,
+    /// An [`ApologeticSubjectEntry`]'s key.
+    pub subject: String,
+    /// `evidence`, `doctrine` or `passage`.
+    pub kind: String,
+    pub title: String,
+    pub summary: String,
+    /// The verses the reader marks with it.
+    pub passages: Vec<PassageSpan>,
+    pub points: Vec<ApologeticPointEntry>,
+    pub objections: Vec<ApologeticObjectionEntry>,
+    /// Other entries' keys.
+    pub related: Vec<String>,
+}
+
+/// Ask for all of Haqor's apologetics: there are few enough to send whole,
+/// and the reader finds a chapter's from them itself.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetApologetics {
+    pub request_id: u32,
+}
+
+/// Reply to [`GetApologetics`]: the subjects in order, and every entry.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct Apologetics {
+    pub request_id: u32,
+    pub subjects: Vec<ApologeticSubjectEntry>,
+    pub entries: Vec<ApologeticEntry>,
+}

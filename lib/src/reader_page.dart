@@ -9,6 +9,7 @@ import 'package:rinf/rinf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'about_page.dart';
+import 'apologetics.dart';
 import 'app_settings.dart';
 import 'bible_data.dart';
 import 'christadelphian_readings.dart';
@@ -32,6 +33,7 @@ import 'widgets/markdown_note.dart';
 import 'widgets/name_details.dart';
 import 'widgets/bible_timeline_page.dart';
 import 'widgets/places_page.dart';
+import 'widgets/apologetics_page.dart';
 import 'widgets/archaeology_page.dart';
 import 'widgets/prophecy_page.dart';
 import 'widgets/side_scroll.dart';
@@ -252,6 +254,7 @@ enum _ReaderMenuAction {
   timeline,
   prophecy,
   archaeology,
+  apologetics,
   tutor,
   memorise,
   reportIssue,
@@ -313,6 +316,7 @@ class BibleReaderPage extends StatefulWidget {
     this.saveStudyState,
     this.sendCommentaryRequest,
     this.saveCommentaryNote,
+    this.sendApologeticsRequest,
     this.deleteCommentaryNote,
     this.sendWordInfoRequest,
     this.sendGreekWordRequest,
@@ -332,6 +336,10 @@ class BibleReaderPage extends StatefulWidget {
   final void Function(GetStudyState request)? sendStudyStateRequest;
   final void Function(SaveStudyState request)? saveStudyState;
   final void Function(GetCommentaryNotes request)? sendCommentaryRequest;
+
+  /// Stands in for the request for the apologetics, which the reader marks
+  /// verses with, for tests.
+  final void Function(GetApologetics request)? sendApologeticsRequest;
   final void Function(SaveCommentaryNote request)? saveCommentaryNote;
   final void Function(DeleteCommentaryNote request)? deleteCommentaryNote;
   final void Function(GetWordInfo request)? sendWordInfoRequest;
@@ -447,6 +455,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       delete: widget.deleteCommentaryNote,
     )..addListener(_onStudyStoreChanged);
     _commentaryStore.start();
+    ApologeticsStore.instance.load(send: widget.sendApologeticsRequest);
     commentaryInText().then((shown) {
       if (mounted) setState(() => _commentaryInText = shown);
     });
@@ -1386,6 +1395,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _ReaderMenuAction.timeline,
     _ReaderMenuAction.prophecy,
     _ReaderMenuAction.archaeology,
+    _ReaderMenuAction.apologetics,
     _ReaderMenuAction.tutor,
     _ReaderMenuAction.memorise,
     if (_activeReader?._adminMode ?? false) _ReaderMenuAction.reportIssue,
@@ -1415,6 +1425,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           Icons.account_balance_outlined,
           'Bible archaeology',
         ),
+        _ReaderMenuAction.apologetics => (Icons.shield_outlined, 'Apologetics'),
         _ReaderMenuAction.tutor => (Icons.school_outlined, 'Tutor'),
         _ReaderMenuAction.memorise => (Icons.psychology_outlined, 'Memorise'),
         _ReaderMenuAction.reportIssue => (
@@ -2096,6 +2107,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    ApologeticsStore.instance.addListener(_apologeticsChanged);
     _sub = ChapterText.rustSignalStream.listen((pack) {
       final msg = pack.message;
       final fetchKey = (
@@ -5606,9 +5618,14 @@ class _ReaderSessionState extends State<_ReaderSession>
     widget.onPassageChanged();
   }
 
+  void _apologeticsChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     _positionSaveTimer?.cancel();
+    ApologeticsStore.instance.removeListener(_apologeticsChanged);
     _scrollController.dispose();
     _sub?.cancel();
     _lexiconOverrideSub?.cancel();
@@ -6226,6 +6243,13 @@ class _ReaderSessionState extends State<_ReaderSession>
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
         );
+      case _ReaderMenuAction.apologetics:
+        ApologeticsPage.open(
+          context,
+          useEnglishBookNames: _englishBookNames,
+          onNavigateToPassage: (book, chapter, verse) =>
+              _navigateTo(book, chapter, verse: verse),
+        );
       case _ReaderMenuAction.tutor:
         Navigator.of(
           context,
@@ -6500,6 +6524,11 @@ class _ReaderSessionState extends State<_ReaderSession>
               for (final note in chapterCommentary)
                 if (note.marginVerse(b, c) == entry.verse) note,
             ];
+            final apologetics = ApologeticsStore.instance.markedAt(
+              b + 1,
+              c,
+              entry.verse,
+            );
             final translation = _translationFor(b, c, entry.verse);
             final verseRow = VerseRow(
               key: section.verseKeys[entry.verse],
@@ -6573,6 +6602,16 @@ class _ReaderSessionState extends State<_ReaderSession>
                   : timelineEntries.map((e) => e.title).join('\n'),
               onStudyTimeline: () =>
                   _showStudyTimelineEntriesAt(b, c, entry.verse),
+              apologetics: apologetics.isEmpty
+                  ? null
+                  : apologetics.map((e) => e.title).join('\n'),
+              onApologetics: () => openApologeticsAt(
+                context,
+                apologetics,
+                useEnglishBookNames: _englishBookNames,
+                onNavigateToPassage: (book, chapter, verse) =>
+                    _navigateTo(book, chapter, verse: verse),
+              ),
               commentaryCount: markedCommentary,
               selectedPositions: selection == null
                   ? const {}
