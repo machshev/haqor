@@ -161,6 +161,36 @@ pub struct StudyState {
     pub active_workspace_id: String,
 }
 
+/// Request the reader's commentary notes, answered by [`CommentaryNotes`].
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetCommentaryNotes {}
+
+/// Save one commentary note, a JSON object the app owns, under its id.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SaveCommentaryNote {
+    pub id: String,
+    pub note_json: String,
+}
+
+/// Delete the commentary note `id`; the deletion syncs to other devices.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct DeleteCommentaryNote {
+    pub id: String,
+}
+
+/// One saved commentary note.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct CommentaryNoteEntry {
+    pub id: String,
+    pub note_json: String,
+}
+
+/// Every commentary note not deleted, sent on request and after a sync.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct CommentaryNotes {
+    pub notes: Vec<CommentaryNoteEntry>,
+}
+
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetVerseText {
     pub book: u8,

@@ -2,6 +2,7 @@
 //! entry point of the Rust logic.
 
 mod archaeology;
+mod commentary;
 mod functions;
 mod memorise;
 mod prophecy;
@@ -267,6 +268,9 @@ async fn main() {
         save_tutor_gloss,
         get_tutor_gloss_override_stats,
         optimize_tutor_gloss_overrides,
+        commentary::get_commentary_notes,
+        commentary::save_commentary_note,
+        commentary::delete_commentary_note,
         memorise::get_memory_passages,
         memorise::save_memory_passage,
         memorise::delete_memory_passage,

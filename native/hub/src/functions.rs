@@ -365,7 +365,9 @@ pub async fn sync_progress(bible: SharedBible, data_dir: PathBuf) {
         match result {
             Ok(server_url) => {
                 debug_print!("progress sync: completed successfully");
-                send_study_state(&lock(&bible));
+                let bible = lock(&bible);
+                send_study_state(&bible);
+                crate::commentary::send_commentary_notes(&bible);
                 ProgressSyncStatus {
                     success: true,
                     message: format!("Study and progress synced via {server_url}."),
