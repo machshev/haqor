@@ -7,6 +7,7 @@ import 'bindings/bindings.dart';
 /// The `RequestFailed.request` names Rust answers with, one per request a
 /// page waits on.
 const String requestStudyState = 'study_state';
+const String requestCommentaryNotes = 'commentary_notes';
 const String requestVerseText = 'verse_text';
 const String requestNextStudyItem = 'next_study_item';
 const String requestSubmitReview = 'submit_review';

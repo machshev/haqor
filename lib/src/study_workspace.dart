@@ -393,6 +393,7 @@ class StudyNote {
     required this.text,
     this.groupId,
     this.order = 0,
+    this.commentaryId,
     this.extra = const {},
   });
 
@@ -401,9 +402,16 @@ class StudyNote {
   final Map<String, Object?> extra;
 
   final String id;
+
+  /// The note's own text, or for a linked commentary note a copy of its
+  /// text, shown should the commentary note be deleted (and by versions
+  /// that do not know commentary).
   final String text;
   final String? groupId;
   final int order;
+
+  /// The commentary note this links to, which shows in its place.
+  final String? commentaryId;
 
   StudyNote copyWith({String? text, String? Function()? groupId, int? order}) =>
       StudyNote(
@@ -412,6 +420,7 @@ class StudyNote {
         text: text ?? this.text,
         groupId: groupId == null ? this.groupId : groupId(),
         order: order ?? this.order,
+        commentaryId: commentaryId,
       );
 
   Map<String, Object?> toJson() => {
@@ -420,6 +429,7 @@ class StudyNote {
     'text': text,
     if (groupId != null) 'group': groupId,
     'order': order,
+    if (commentaryId != null) 'commentary': commentaryId,
   };
 
   static StudyNote? fromJson(Object? value) {
@@ -430,11 +440,20 @@ class StudyNote {
       return null;
     }
     return StudyNote(
-      extra: _extraKeys(value, const {'id', 'text', 'group', 'order'}),
+      extra: _extraKeys(value, const {
+        'id',
+        'text',
+        'group',
+        'order',
+        'commentary',
+      }),
       id: id,
       text: text,
       groupId: value['group'] is String ? value['group'] as String : null,
       order: value['order'] is int ? value['order'] as int : 0,
+      commentaryId: value['commentary'] is String && value['commentary'] != ''
+          ? value['commentary'] as String
+          : null,
     );
   }
 }
@@ -1604,6 +1623,24 @@ class StudyWorkspace {
   StudyWorkspace removeNote(StudyNote note) => copyWith(
     notes: notes.where((candidate) => candidate.id != note.id).toList(),
   );
+
+  /// Whether the study links to the commentary note [commentaryId].
+  bool linksCommentary(String commentaryId) =>
+      notes.any((note) => note.commentaryId == commentaryId);
+
+  /// The study with its links to the commentary note [commentaryId] holding
+  /// [text] as their copy; itself when none needs it.
+  StudyWorkspace withCommentaryText(String commentaryId, String text) {
+    if (!notes.any((n) => n.commentaryId == commentaryId && n.text != text)) {
+      return this;
+    }
+    return copyWith(
+      notes: [
+        for (final note in notes)
+          note.commentaryId == commentaryId ? note.copyWith(text: text) : note,
+      ],
+    );
+  }
 
   StudyWorkspace reorderItems(String? groupId, int oldIndex, int newIndex) {
     final items = itemsIn(groupId);
