@@ -271,7 +271,7 @@ enum _WordMenuAction {
 enum _StudyHeadingAction { edit, addSubheading, delete }
 
 /// What a docked side panel shows, switched between when more than one is open.
-enum _SidePanelView { study, word, crossReferences }
+enum _SidePanelView { study, word, crossReferences, chapterContext }
 
 /// One open word inspector, with its own lexical-navigation history.
 class _WordPane {
@@ -396,6 +396,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   // requests so asking for the same verse again reopens it.
   ({int book, int chapter, int verse})? _crossReferenceTarget;
   int _crossReferenceRequest = 0;
+  // Where there is room the chapter context docks beside the reader too, and
+  // follows the active reader's chapter; a phone shows it as a sheet.
+  bool _chapterContextVisible = false;
+  final GlobalKey _chapterContextKey = GlobalKey();
   double _sidePanelWidth = 360;
   bool _loaded = false;
   bool _mobileBarHidden = false;
@@ -641,6 +645,14 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       setState(() => _activeTabId = tab.id);
       _requestCrossReferences(bookIndex, chapter, verse);
     },
+    chapterContextDocked:
+        _chapterContextVisible &&
+        _mobileLayout != true &&
+        tab.id == _activeTabId,
+    onChapterContextToggled: () {
+      setState(() => _activeTabId = tab.id);
+      _toggleChapterContext();
+    },
     proximity: _proximity,
     onWordInfoRequested: (selected, {newPane = false}) {
       setState(() => _activeTabId = tab.id);
@@ -681,12 +693,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   Widget _studyWorkspacePanel() =>
       _activeReader?._studyWorkspacePanel() ?? const SizedBox.shrink();
 
-  /// The single side panel of the focus and split layouts: study, word and
-  /// cross references, whichever are open, switched between.
+  /// The single side panel of the focus and split layouts: study, word, cross
+  /// references and chapter context, whichever are open, switched between.
   Widget? _tiledAuxiliaryPanel() => _sidePanel([
     if (_studyWorkspaceVisible) _SidePanelView.study,
     if (_selectedWord != null) _SidePanelView.word,
     if (_crossReferencesVisible) _SidePanelView.crossReferences,
+    if (_chapterContextVisible) _SidePanelView.chapterContext,
   ]);
 
   /// A side panel showing one of [views], with a switcher when there are
@@ -699,6 +712,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _SidePanelView.study => _studyWorkspacePanel(),
       _SidePanelView.word => _wordInspector(showNavigation: single),
       _SidePanelView.crossReferences => _crossReferencesPanel(),
+      _SidePanelView.chapterContext => _chapterContextPanel(),
     };
     if (single) return body;
     return Column(
@@ -737,6 +751,35 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   Future<void> _closeCrossReferences() async {
     if (_crossReferencesPageSelected) await _showPage(_activeReaderPage);
     if (mounted) setState(() => _crossReferencesVisible = false);
+  }
+
+  /// Docks the chapter context beside the reader, or brings it forward when
+  /// another view of the side panel is showing; showing, it hides it.
+  void _toggleChapterContext() {
+    setState(() {
+      if (_chapterContextVisible &&
+          _sidePanelView == _SidePanelView.chapterContext) {
+        _chapterContextVisible = false;
+      } else {
+        _chapterContextVisible = true;
+        _sidePanelView = _SidePanelView.chapterContext;
+      }
+    });
+  }
+
+  Widget _chapterContextPanel() {
+    final reader = _activeReader;
+    return _movablePanel(
+      _chapterContextKey,
+      Material(
+        color: Theme.of(context).colorScheme.surface,
+        child:
+            reader?._chapterContextSheet(
+              onClose: () => setState(() => _chapterContextVisible = false),
+            ) ??
+            const SizedBox.shrink(),
+      ),
+    );
   }
 
   /// A panel that moves between a phone's pages and the side panel under
@@ -898,10 +941,17 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                         icon: Icon(Icons.menu_book_outlined),
                         label: Text('Word'),
                       ),
-                      _SidePanelView.crossReferences => const ButtonSegment(
+                      _SidePanelView.crossReferences => ButtonSegment(
                         value: _SidePanelView.crossReferences,
-                        icon: Icon(Icons.link),
-                        label: Text('Links'),
+                        icon: const Icon(Icons.link),
+                        label: views.length > 3 ? null : const Text('Links'),
+                        tooltip: 'Cross references',
+                      ),
+                      _SidePanelView.chapterContext => ButtonSegment(
+                        value: _SidePanelView.chapterContext,
+                        icon: const Icon(Icons.explore_outlined),
+                        label: views.length > 3 ? null : const Text('Context'),
+                        tooltip: 'Chapter context',
                       ),
                     },
                 ],
@@ -1187,7 +1237,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       case _ResolvedReaderLayout.split:
         if (!_studyWorkspaceVisible &&
             _selectedWord == null &&
-            !_crossReferencesVisible) {
+            !_crossReferencesVisible &&
+            !_chapterContextVisible) {
           return reader;
         }
         return LayoutBuilder(
@@ -1219,11 +1270,14 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                   constraints.maxWidth - (_studyWorkspaceVisible ? 301 : 0),
                 ),
                 // The word inspector, with its prompt while no word is chosen,
-                // sharing the side with cross references when they are open.
+                // sharing the side with cross references and the chapter
+                // context when they are open.
                 child: _sidePanel([
-                  if (_selectedWord != null || !_crossReferencesVisible)
+                  if (_selectedWord != null ||
+                      (!_crossReferencesVisible && !_chapterContextVisible))
                     _SidePanelView.word,
                   if (_crossReferencesVisible) _SidePanelView.crossReferences,
+                  if (_chapterContextVisible) _SidePanelView.chapterContext,
                 ]),
               ),
             ],
@@ -1705,6 +1759,8 @@ class _ReaderSession extends StatefulWidget {
     required this.onWorkspaceTilesChanged,
     required this.onWordInfoRequested,
     required this.onCrossReferencesRequested,
+    this.chapterContextDocked = false,
+    this.onChapterContextToggled,
     required this.studyStore,
     required this.proximity,
     this.sendChapterRequest,
@@ -1737,6 +1793,11 @@ class _ReaderSession extends StatefulWidget {
   /// of a chapter: docked beside the reader where there is room.
   final void Function(int bookIndex, int chapter, int? verse)
   onCrossReferencesRequested;
+
+  /// Whether the workspace shows this reader's chapter context docked beside
+  /// it, and how the reader's button shows or hides it there.
+  final bool chapterContextDocked;
+  final VoidCallback? onChapterContextToggled;
 
   /// Test seam: how a [GetChapter] request reaches the Rust side. Defaults to
   /// the real rinf signal; widget tests substitute a stub that answers via
@@ -2197,7 +2258,9 @@ class _ReaderSessionState extends State<_ReaderSession>
     ),
     _ReaderBarAction.chapterContext => IconButton(
       key: const ValueKey('reader-chapter-context'),
+      isSelected: widget.chapterContextDocked,
       icon: const Icon(Icons.explore_outlined),
+      selectedIcon: const Icon(Icons.explore),
       onPressed: () => _runBarAction(action),
       tooltip: 'Cross references, places, people and archaeology',
     ),
@@ -4098,55 +4161,66 @@ class _ReaderSessionState extends State<_ReaderSession>
   ChapterContextScope _chapterContextScope = ChapterContextScope.chapter;
 
   /// The places, people and archaeological finds of the chapter at the top
-  /// of the reader, a tab each.
+  /// of the reader, a tab each: docked beside the reader where there is
+  /// room, else in a sheet.
   Future<void> _showChapterContext() async {
+    final dock = widget.onChapterContextToggled;
+    if (dock != null && MediaQuery.sizeOf(context).width >= 900) {
+      dock();
+      return;
+    }
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
       builder: (sheetContext) => SizedBox(
         height: MediaQuery.sizeOf(sheetContext).height * 0.82,
-        child: ChapterContextSheet(
-          bookIndex: _bookIndex,
-          chapter: _chapter,
-          initialTab: _chapterContextTab,
-          onTabChanged: (tab) => _chapterContextTab = tab,
-          initialScope: _chapterContextScope,
-          onScopeChanged: (scope) => _chapterContextScope = scope,
-          useEnglishBookNames: _englishBookNames,
-          ntSyriac: _ntSyriac,
-          ntGreek: _ntGreek,
-          onNtGreekChanged: _setNtGreek,
-          bookmarks: _nameBookmarks,
-          onNavigateToPassage: (book, chapter, verse) =>
-              _navigateTo(book, chapter, verse: verse),
-          crossReferencesBuilder: (context, first, last) =>
-              CrossReferencesPanel(
-                book: _bookIndex + 1,
-                chapter: _chapter,
-                chapterSpan: (first, last),
-                useEnglishBookNames: _englishBookNames,
-                ntSyriac: _ntSyriac,
-                ntGreek: _ntGreek,
-                onNtGreekChanged: _setNtGreek,
-                isLinkBookmarked: _isStudyLinkBookmarked,
-                onToggleLinkBookmark: _toggleStudyLinkBookmark,
-                minScore: _crossReferenceMinScore,
-                onMinScoreChanged: _setCrossReferenceMinScore,
-                // A linked verse opens in the reader, in place of the sheet.
-                onNavigateToPassage: (book, chapter, verse) {
-                  Navigator.of(context).maybePop();
-                  _navigateTo(book, chapter, verse: verse);
-                },
-                sendVerseTextsRequest: widget.sendVerseTextsRequest,
-                sendQuotationsRequest: widget.sendQuotationsRequest,
-                sendThematicOverviewRequest: widget.sendThematicOverviewRequest,
-                sendProphecyOverviewRequest: widget.sendProphecyOverviewRequest,
-              ),
-        ),
+        child: _chapterContextSheet(),
       ),
     );
   }
+
+  /// The chapter context of the chapter at the top of the reader. With
+  /// [onClose] it is docked: closing hides it, and a linked verse opens in
+  /// the reader beside it rather than in place of a sheet.
+  Widget _chapterContextSheet({VoidCallback? onClose}) => ChapterContextSheet(
+    bookIndex: _bookIndex,
+    chapter: _chapter,
+    initialTab: _chapterContextTab,
+    onTabChanged: (tab) => _chapterContextTab = tab,
+    initialScope: _chapterContextScope,
+    onScopeChanged: (scope) => _chapterContextScope = scope,
+    onClose: onClose,
+    useEnglishBookNames: _englishBookNames,
+    ntSyriac: _ntSyriac,
+    ntGreek: _ntGreek,
+    onNtGreekChanged: _setNtGreek,
+    bookmarks: _nameBookmarks,
+    onNavigateToPassage: (book, chapter, verse) =>
+        _navigateTo(book, chapter, verse: verse),
+    crossReferencesBuilder: (context, first, last) => CrossReferencesPanel(
+      book: _bookIndex + 1,
+      chapter: _chapter,
+      chapterSpan: (first, last),
+      useEnglishBookNames: _englishBookNames,
+      ntSyriac: _ntSyriac,
+      ntGreek: _ntGreek,
+      onNtGreekChanged: _setNtGreek,
+      isLinkBookmarked: _isStudyLinkBookmarked,
+      onToggleLinkBookmark: _toggleStudyLinkBookmark,
+      minScore: _crossReferenceMinScore,
+      onMinScoreChanged: _setCrossReferenceMinScore,
+      // A linked verse opens in the reader, in place of a sheet.
+      onNavigateToPassage: (book, chapter, verse) {
+        if (onClose == null) Navigator.of(context).maybePop();
+        _navigateTo(book, chapter, verse: verse);
+      },
+      sendVerseTextsRequest: widget.sendVerseTextsRequest,
+      sendQuotationsRequest: widget.sendQuotationsRequest,
+      sendThematicOverviewRequest: widget.sendThematicOverviewRequest,
+      sendProphecyOverviewRequest: widget.sendProphecyOverviewRequest,
+    ),
+  );
 
   Future<void> _showStudyWorkspaceSheet() async {
     await showModalBottomSheet<void>(

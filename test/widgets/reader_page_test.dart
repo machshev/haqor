@@ -11,6 +11,7 @@ import 'package:haqor/src/app_settings.dart' show ReaderText;
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/reader_page.dart';
 import 'package:haqor/src/study_workspace.dart' as study;
+import 'package:haqor/src/widgets/chapter_context_sheet.dart';
 import 'package:haqor/src/widgets/cross_references_sheet.dart';
 import 'package:haqor/src/widgets/greek_word_sheet.dart';
 import 'package:haqor/src/widgets/lexicon_source.dart';
@@ -2530,7 +2531,9 @@ void crossReferenceDockTests() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.byType(CrossReferencesPanel), findsOneWidget);
-    expect(find.byType(BottomSheet), findsOneWidget);
+    // Where there is room it docks beside the reader.
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byType(ChapterContextSheet), findsOneWidget);
     final request = rust.quotationRequests.single;
     expect(
       (request.book, request.firstChapter, request.lastChapter),
@@ -2547,6 +2550,45 @@ void crossReferenceDockTests() {
       ),
       (1, 50),
     );
+
+    // The reader's button hides it again.
+    await tester.tap(find.byKey(const ValueKey('reader-chapter-context')));
+    await tester.pump();
+    expect(find.byType(ChapterContextSheet), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the docked chapter context closes from its own header', (
+    tester,
+  ) async {
+    await _pumpWorkspace(tester, const Size(1366, 744));
+    await tester.tap(find.byKey(const ValueKey('reader-chapter-context')));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(ChapterContextSheet), findsOneWidget);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(ChapterContextSheet),
+        matching: find.byTooltip('Close'),
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(ChapterContextSheet), findsNothing);
+    // The workspace route is still there.
+    expect(find.byKey(const ValueKey('reader-chapter-context')), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a phone shows the chapter context in a sheet', (tester) async {
+    await _pumpWorkspace(tester, const Size(420, 800));
+    // Too narrow for the bar, it is in the reader's menu.
+    await tester.tap(find.byKey(const ValueKey('reader-view-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Chapter context'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byType(ChapterContextSheet), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

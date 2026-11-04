@@ -68,6 +68,7 @@ class ChapterContextSheet extends StatefulWidget {
     this.sendPeopleRequest,
     this.sendArtifactsRequest,
     this.crossReferencesBuilder,
+    this.onClose,
   });
 
   /// Zero-based, as the reader counts books.
@@ -102,6 +103,10 @@ class ChapterContextSheet extends StatefulWidget {
   /// the sheet has no cross-references tab.
   final Widget Function(BuildContext context, int first, int last)?
   crossReferencesBuilder;
+
+  /// What its close button does: by default it leaves the sheet's route, but
+  /// docked beside the reader it hides the panel.
+  final VoidCallback? onClose;
 
   @override
   State<ChapterContextSheet> createState() => _ChapterContextSheetState();
@@ -160,8 +165,9 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
 
   Widget _tab(ChapterContextTab tab) {
     final (first, last) = _span(_scope);
-    // A new span is a new request.
-    final key = ValueKey((tab, first, last));
+    // A new span is a new request, as is another book, which a docked panel
+    // follows the reader to.
+    final key = ValueKey((tab, widget.bookIndex, first, last));
     return switch (tab) {
       ChapterContextTab.crossReferences => KeyedSubtree(
         key: key,
@@ -227,57 +233,76 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(title, style: theme.textTheme.titleMedium),
-                ),
-                if (scopes.length > 1)
-                  SegmentedButton<ChapterContextScope>(
-                    key: const ValueKey('chapter-context-scope'),
-                    showSelectedIcon: false,
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    segments: [
-                      for (final scope in scopes)
-                        ButtonSegment(
-                          value: scope,
-                          label: Text(scope.label),
-                          tooltip: chapterSpanName(
-                            widget.bookIndex,
-                            _span(scope).$1,
-                            _span(scope).$2,
-                            useEnglish: widget.useEnglishBookNames,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final scope = scopes.length > 1
+                  ? SegmentedButton<ChapterContextScope>(
+                      key: const ValueKey('chapter-context-scope'),
+                      showSelectedIcon: false,
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      segments: [
+                        for (final scope in scopes)
+                          ButtonSegment(
+                            value: scope,
+                            label: Text(scope.label),
+                            tooltip: chapterSpanName(
+                              widget.bookIndex,
+                              _span(scope).$1,
+                              _span(scope).$2,
+                              useEnglish: widget.useEnglishBookNames,
+                            ),
+                          ),
+                      ],
+                      selected: {
+                        scopes.firstWhere((s) => _span(s) == _span(_scope)),
+                      },
+                      onSelectionChanged: (picked) => _setScope(picked.single),
+                    )
+                  : null;
+              // Docked in a narrow side panel, the scope goes under the
+              // title.
+              final narrow = constraints.maxWidth < 480;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: theme.textTheme.titleMedium,
                           ),
                         ),
-                    ],
-                    selected: {
-                      scopes.firstWhere((s) => _span(s) == _span(_scope)),
-                    },
-                    onSelectionChanged: (picked) => _setScope(picked.single),
-                  ),
-                IconButton(
-                  tooltip: 'Close',
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).maybePop(),
+                        if (scope != null && !narrow) scope,
+                        IconButton(
+                          tooltip: 'Close',
+                          icon: const Icon(Icons.close),
+                          onPressed:
+                              widget.onClose ??
+                              () => Navigator.of(context).maybePop(),
+                        ),
+                      ],
+                    ),
+                    if (scope != null && narrow)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: scope,
+                      ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
-          TabBar(
-            controller: _tabs,
-            tabs: [
-              for (final tab in _shown)
-                Tab(
-                  key: ValueKey('chapter-context-${tab.name}'),
-                  icon: Icon(tab.icon),
-                  text: tab.label,
-                ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) => _tabBar(
+              // Docked in a narrow side panel the labels would be squeezed.
+              scrollable: constraints.maxWidth < 440,
+            ),
           ),
           Expanded(
             child: TabBarView(
@@ -293,6 +318,20 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
       ),
     );
   }
+
+  Widget _tabBar({required bool scrollable}) => TabBar(
+    controller: _tabs,
+    isScrollable: scrollable,
+    tabAlignment: scrollable ? TabAlignment.start : null,
+    tabs: [
+      for (final tab in _shown)
+        Tab(
+          key: ValueKey('chapter-context-${tab.name}'),
+          icon: Icon(tab.icon),
+          text: tab.label,
+        ),
+    ],
+  );
 }
 
 /// Keeps a tab's reply from Rust while another tab is shown, so switching
