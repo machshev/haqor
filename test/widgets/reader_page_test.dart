@@ -3671,28 +3671,54 @@ void commentaryTests() {
     expect(find.byKey(const ValueKey('verse-commentary-3')), findsNothing);
   });
 
-  testWidgets('a word menu writes commentary on that word as a phrase', (
+  testWidgets('words chosen in either text, across verses, anchor a note', (
     tester,
   ) async {
     final saved = <SaveCommentaryNote>[];
     await _pumpCommentaryReader(tester, saved: saved);
-    final verse = _verse(1, 1, 2);
-    tester.widget<VerseRow>(verse).onWordMenu!(
-      'מלה',
-      null,
-      3,
-      'מלל',
-      const Offset(300, 200),
+    VerseRow row(int verse) => tester.widget<VerseRow>(_verse(1, 1, verse));
+    row(3).onWordMenu!('מלה', null, 6, 'מלל', const Offset(300, 200));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Select words for commentary'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('word-selection-bar')), findsOneWidget);
+    expect(find.text('Bereshit 1:3 · words 7–7'), findsOneWidget);
+    expect(row(3).selectedPositions, {6});
+
+    // A tap on an English word ends the span at the word it renders, here
+    // before the first.
+    row(3).onTranslationWordTap!(
+      const TranslationWordEntry(chapter: 1, verse: 3, position: 4),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add commentary on this word'));
+    expect(find.text('Bereshit 1:3 · words 5–7'), findsOneWidget);
+    final english = row(3).translationWordSelected!;
+    expect(
+      english(const TranslationWordEntry(chapter: 1, verse: 3, position: 4)),
+      isTrue,
+    );
+    expect(
+      english(const TranslationWordEntry(chapter: 1, verse: 3, position: 3)),
+      isFalse,
+    );
+
+    // A tap on a Hebrew word moves that end there, a verse back, rather than
+    // opening the word.
+    row(2).onWordTap('מלה', null, 2, 'מלל');
+    await tester.pumpAndSettle();
+    expect(find.byType(WordInfoSheet), findsNothing);
+    expect(row(2).selectedPositions, {for (var p = 2; p < 11; p++) p});
+    expect(row(3).selectedPositions, {0, 1, 2, 3, 4, 5, 6});
+    expect(find.text('Bereshit 1:2 word 3–3 word 7'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('word-selection-comment')));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.descendant(
         of: find.byType(AlertDialog),
         matching: find.byType(TextField),
       ),
-      'On this word',
+      'On these words',
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Add'));
     await tester.pumpAndSettle();
@@ -3703,13 +3729,46 @@ void commentaryTests() {
       'book': 0,
       'chapter': 1,
       'verse': 2,
-      'startWord': 3,
-      'endWord': 3,
+      'endVerse': 3,
+      'startWord': 2,
+      'endWord': 6,
     });
-    // Its word is underlined in the text.
-    expect(tester.widget<VerseRow>(verse).commentaryPositions, {
-      anchor['startWord'],
-    });
+    expect(find.byKey(const ValueKey('word-selection-bar')), findsNothing);
+    expect(row(3).selectedPositions, isEmpty);
+    // Its words are underlined in both texts.
+    expect(row(3).commentaryPositions, {0, 1, 2, 3, 4, 5, 6});
+    expect(
+      row(3).translationCommentary!(
+        const TranslationWordEntry(chapter: 1, verse: 2, position: 1),
+      ),
+      isFalse,
+    );
+    expect(
+      row(3).translationCommentary!(
+        const TranslationWordEntry(chapter: 1, verse: 2, position: 2),
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets('escape or cancel drops a word selection', (tester) async {
+    await _pumpCommentaryReader(tester);
+    VerseRow row() => tester.widget<VerseRow>(_verse(1, 1, 2));
+    for (final cancel in [true, false]) {
+      row().onWordMenu!('מלה', null, 3, 'מלל', const Offset(300, 200));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Select words for commentary'));
+      await tester.pumpAndSettle();
+      expect(row().selectedPositions, {3});
+      if (cancel) {
+        await tester.tap(find.text('Cancel'));
+      } else {
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      }
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('word-selection-bar')), findsNothing);
+      expect(row().selectedPositions, isEmpty);
+    }
   });
 
   testWidgets('a wide reader shows commentary in its margin, which the bar '

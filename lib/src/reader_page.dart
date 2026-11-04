@@ -173,6 +173,15 @@ class _Section {
 
 typedef _ChapterRequest = (int, int, bool, bool, bool, bool, bool, bool);
 
+/// One original word: its 0-based book, chapter, verse and lexical position.
+typedef _WordPoint = ({int book, int chapter, int verse, int position});
+
+int _compareWordPoints(_WordPoint a, _WordPoint b) => a.chapter != b.chapter
+    ? a.chapter.compareTo(b.chapter)
+    : a.verse != b.verse
+    ? a.verse.compareTo(b.verse)
+    : a.position.compareTo(b.position);
+
 class _SelectedWord {
   const _SelectedWord({
     required this.word,
@@ -269,7 +278,7 @@ enum _WordMenuAction {
   searchNear,
   bookmarkRoot,
   bookmarkForm,
-  addCommentary,
+  selectWords,
   addHeading,
   addTimelineEntry,
 }
@@ -4314,6 +4323,117 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   // --- commentary -----------------------------------------------------------
 
+  // A span of original words chosen for a note, from the word it was started
+  // at to the one last tapped, in either order, within one book. It is chosen
+  // in the Hebrew, Aramaic or Greek, or in the English by the words those
+  // render.
+  _WordPoint? _selectionAnchor;
+  _WordPoint? _selectionFocus;
+
+  StudyPassage? get _wordSelection {
+    final anchor = _selectionAnchor, focus = _selectionFocus;
+    if (anchor == null || focus == null) return null;
+    final (start, end) = _compareWordPoints(anchor, focus) <= 0
+        ? (anchor, focus)
+        : (focus, anchor);
+    return StudyPassage(
+      bookIndex: start.book,
+      chapter: start.chapter,
+      verse: start.verse,
+      endChapter: end.chapter,
+      endVerse: end.verse,
+      startWord: start.position,
+      endWord: end.position,
+    );
+  }
+
+  void _startWordSelection(int book, int chapter, int verse, int position) {
+    final point = (
+      book: book,
+      chapter: chapter,
+      verse: verse,
+      position: position,
+    );
+    setState(() => _selectionAnchor = _selectionFocus = point);
+  }
+
+  /// Extend the selection to a tapped word; in another book, start it again
+  /// there.
+  void _extendWordSelection(int book, int chapter, int verse, int position) {
+    final point = (
+      book: book,
+      chapter: chapter,
+      verse: verse,
+      position: position,
+    );
+    setState(() {
+      if (_selectionAnchor?.book != book) _selectionAnchor = point;
+      _selectionFocus = point;
+    });
+  }
+
+  void _clearWordSelection() =>
+      setState(() => _selectionAnchor = _selectionFocus = null);
+
+  /// Write a note on the selected words; the selection stays should the
+  /// editor be cancelled.
+  Future<void> _commentOnWordSelection() async {
+    final selection = _wordSelection;
+    if (selection == null) return;
+    if (await _addCommentary(selection) && mounted) _clearWordSelection();
+  }
+
+  Widget _wordSelectionBar(StudyPassage selection) {
+    final theme = Theme.of(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Material(
+          key: const ValueKey('word-selection-bar'),
+          elevation: 6,
+          borderRadius: BorderRadius.circular(12),
+          color: theme.colorScheme.surfaceContainerHigh,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '${bookDisplayName(selection.bookIndex, useEnglish: _englishBookNames)} '
+                  '${selection.reference}',
+                  style: theme.textTheme.titleSmall,
+                ),
+                Text(
+                  'Tap another word, in either text, to end the selection there.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: _clearWordSelection,
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 4),
+                    FilledButton.icon(
+                      key: const ValueKey('word-selection-comment'),
+                      onPressed: _commentOnWordSelection,
+                      icon: const Icon(Icons.add_comment_outlined),
+                      label: const Text('Add commentary'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// The commentary on the chapter at the top of the reader: docked beside
   /// it where there is room, else in a sheet.
   Future<void> _showCommentary() async {
@@ -4414,9 +4534,10 @@ class _ReaderSessionState extends State<_ReaderSession>
   );
 
   /// Write a commentary note on [anchor], which the editor can change.
-  Future<void> _addCommentary(StudyPassage anchor) async {
+  /// Whether a note was written.
+  Future<bool> _addCommentary(StudyPassage anchor) async {
     final edited = await _askForCommentary(anchor, creating: true);
-    if (edited == null || !mounted) return;
+    if (edited == null || !mounted) return false;
     final now = DateTime.now();
     widget.commentaryStore.put(
       CommentaryNote(
@@ -4427,6 +4548,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         updated: now,
       ),
     );
+    return true;
   }
 
   Future<void> _editCommentary(CommentaryNote note) async {
@@ -5292,6 +5414,10 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
 
     final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape && _selectionAnchor != null) {
+      _clearWordSelection();
+      return KeyEventResult.handled;
+    }
     final distance = key == LogicalKeyboardKey.arrowUp
         ? -verseRowScrollExtent(fontSize: _fontSize, fontFamily: _fontFamily)
         : key == LogicalKeyboardKey.arrowDown
@@ -5764,11 +5890,12 @@ class _ReaderSessionState extends State<_ReaderSession>
           ),
         ),
         const PopupMenuDivider(),
-        const PopupMenuItem(
-          value: _WordMenuAction.addCommentary,
-          child: ListTile(
+        PopupMenuItem(
+          value: _WordMenuAction.selectWords,
+          enabled: position != null,
+          child: const ListTile(
             leading: Icon(Icons.add_comment_outlined),
-            title: Text('Add commentary on this word'),
+            title: Text('Select words for commentary'),
           ),
         ),
         PopupMenuItem(
@@ -5796,17 +5923,10 @@ class _ReaderSessionState extends State<_ReaderSession>
     );
     if (!mounted || action == null) return;
     switch (action) {
-      case _WordMenuAction.addCommentary:
-        // The word as a phrase, which the editor can widen.
-        await _addCommentary(
-          StudyPassage(
-            bookIndex: bookIndex,
-            chapter: chapter,
-            verse: verse,
-            startWord: position,
-            endWord: position,
-          ),
-        );
+      case _WordMenuAction.selectWords:
+        if (position != null) {
+          _startWordSelection(bookIndex, chapter, verse, position);
+        }
       case _WordMenuAction.addHeading:
         await _addStudyHeadingAt(bookIndex, chapter, verse);
       case _WordMenuAction.addTimelineEntry:
@@ -5966,6 +6086,14 @@ class _ReaderSessionState extends State<_ReaderSession>
       child: Stack(
         children: [
           _buildScrollView(),
+          if (_wordSelection case final selection?)
+            // At the top, clear of notices at the foot of the screen.
+            Positioned(
+              left: 12,
+              right: 12,
+              top: 8,
+              child: _wordSelectionBar(selection),
+            ),
           if (_loadingPrev)
             const Positioned(
               top: 0,
@@ -6231,6 +6359,11 @@ class _ReaderSessionState extends State<_ReaderSession>
     final chapterCommentary = widget.commentaryInText
         ? widget.commentaryStore.notesInChapter(b, c)
         : const <CommentaryNote>[];
+    final phraseCommentary = [
+      for (final note in chapterCommentary)
+        if (note.anchor.isPhrase) note,
+    ];
+    final selection = _wordSelection;
     // Each study heading stands before the first verse it covers here.
     final headingsBefore = <int, List<StudyReaderHeading>>{};
     for (final heading in workspace?.readerHeadings(b, c) ?? const []) {
@@ -6316,6 +6449,10 @@ class _ReaderSessionState extends State<_ReaderSession>
                 }
               }),
               onWordTap: (word, readerGloss, position, root) {
+                if (_selectionAnchor != null && position != null) {
+                  _extendWordSelection(b, c, entry.verse, position);
+                  return;
+                }
                 if (_rapidReading) {
                   if (position != null) {
                     _toggleReveal(b, c, entry.verse, position);
@@ -6368,6 +6505,31 @@ class _ReaderSessionState extends State<_ReaderSession>
               onStudyTimeline: () =>
                   _showStudyTimelineEntriesAt(b, c, entry.verse),
               commentaryCount: verseCommentary.length,
+              selectedPositions: selection == null
+                  ? const {}
+                  : {
+                      for (final position in lexicalPositions.whereType<int>())
+                        if (selection.containsWord(b, c, entry.verse, position))
+                          position,
+                    },
+              translationWordSelected: selection == null
+                  ? null
+                  : (word) => selection.containsWord(
+                      b,
+                      word.chapter,
+                      word.verse,
+                      word.position,
+                    ),
+              translationCommentary: phraseCommentary.isEmpty
+                  ? null
+                  : (word) => phraseCommentary.any(
+                      (note) => note.anchor.containsWord(
+                        b,
+                        word.chapter,
+                        word.verse,
+                        word.position,
+                      ),
+                    ),
               onCommentary: _showCommentary,
               commentaryPositions: {
                 for (final note in chapterCommentary)
@@ -6403,6 +6565,15 @@ class _ReaderSessionState extends State<_ReaderSession>
               translation: translation.spans,
               translationPending: translation.pending,
               onTranslationWordTap: (target) {
+                if (_selectionAnchor != null) {
+                  _extendWordSelection(
+                    b,
+                    target.chapter,
+                    target.verse,
+                    target.position,
+                  );
+                  return;
+                }
                 final word = _translatedWord(b, target);
                 if (word == null) return;
                 _showWordInfo(

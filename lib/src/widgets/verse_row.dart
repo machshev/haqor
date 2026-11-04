@@ -177,6 +177,9 @@ class VerseRow extends StatefulWidget {
     this.commentaryCount = 0,
     this.onCommentary,
     this.commentaryPositions = const {},
+    this.translationCommentary,
+    this.selectedPositions = const {},
+    this.translationWordSelected,
     this.studyPassageHighlightColor,
     this.ketivDisplay = KetivDisplay.superscript,
     this.syntaxMarks,
@@ -250,6 +253,14 @@ class VerseRow extends StatefulWidget {
   final int commentaryCount;
   final VoidCallback? onCommentary;
   final Set<int> commentaryPositions;
+
+  /// Whether an English word renders a word with commentary on it.
+  final bool Function(TranslationWordEntry word)? translationCommentary;
+
+  /// The words chosen for a note: their lexical positions in this verse, and
+  /// whether an English word renders one of them.
+  final Set<int> selectedPositions;
+  final bool Function(TranslationWordEntry word)? translationWordSelected;
   final Color? studyPassageHighlightColor;
   final KetivDisplay ketivDisplay;
 
@@ -627,9 +638,13 @@ class _VerseRowState extends State<VerseRow> {
     // A word's syntax role shows as an underline, which leaves the colours of
     // study highlights (a background) and proper names (the letters) as they
     // are.
+    final selectionColor = theme.colorScheme.primary.withValues(alpha: 0.3);
     final syntaxMarks = widget.syntaxMarks;
     TextStyle styleForWord(String word, int lexicalPosition) {
-      final style = lexicalStyleForWord(word, lexicalPosition);
+      final lexical = lexicalStyleForWord(word, lexicalPosition);
+      final style = widget.selectedPositions.contains(lexicalPosition)
+          ? lexical.copyWith(backgroundColor: selectionColor)
+          : lexical;
       final role = syntaxMarks?.roles[lexicalPosition];
       if (role == null) {
         if (!widget.commentaryPositions.contains(lexicalPosition)) {
@@ -943,6 +958,24 @@ class _VerseRowState extends State<VerseRow> {
     // The English, in the app's own type, a little smaller than the
     // Hebrew. Supplied words are in italics, as literal translations print
     // them; a word rendering Hebrew opens that word's details.
+    // An English word shows the selection and the commentary of the words
+    // it renders.
+    TextStyle? translationSpanStyle(TranslationSpanEntry span) {
+      final selected = widget.translationWordSelected;
+      final commentary = widget.translationCommentary;
+      final isSelected = selected != null && span.words.any(selected);
+      final hasCommentary = commentary != null && span.words.any(commentary);
+      if (!span.supplied && !isSelected && !hasCommentary) return null;
+      return TextStyle(
+        fontStyle: span.supplied ? FontStyle.italic : null,
+        backgroundColor: isSelected ? selectionColor : null,
+        decoration: hasCommentary ? TextDecoration.underline : null,
+        decorationStyle: hasCommentary ? TextDecorationStyle.dotted : null,
+        decorationColor: hasCommentary ? theme.colorScheme.secondary : null,
+        decorationThickness: hasCommentary ? 2 : null,
+      );
+    }
+
     Widget english({required bool withMarks}) {
       final style = theme.textTheme.bodyLarge?.copyWith(
         fontSize: widget.fontSize * 0.8,
@@ -965,9 +998,7 @@ class _VerseRowState extends State<VerseRow> {
                 in (translation ?? const <TranslationSpanEntry>[]).indexed)
               TextSpan(
                 text: span.text,
-                style: span.supplied
-                    ? const TextStyle(fontStyle: FontStyle.italic)
-                    : null,
+                style: translationSpanStyle(span),
                 recognizer: i < _translationRecognizers.length
                     ? _translationRecognizers[i]
                     : null,
