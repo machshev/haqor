@@ -3,12 +3,94 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:haqor/src/commentary.dart';
 import 'package:haqor/src/study_workspace.dart';
 import 'package:haqor/src/widgets/study_workspace_panel.dart';
 
 void main() {
   linkTileTests();
   sectionTileTests();
+
+  testWidgets('a linked commentary note shows as it now is, or its copy', (
+    tester,
+  ) async {
+    const workspace = StudyWorkspace(
+      id: 's',
+      name: 'Study',
+      notes: [
+        StudyNote(id: 'live', text: 'old copy', commentaryId: 'c1'),
+        StudyNote(id: 'gone', text: 'kept copy', commentaryId: 'c2', order: 1),
+      ],
+    );
+    final time = DateTime.fromMillisecondsSinceEpoch(1);
+    final live = CommentaryNote(
+      id: 'c1',
+      anchor: const StudyPassage(bookIndex: 0, chapter: 1, verse: 3),
+      text: 'current text',
+      created: time,
+      updated: time,
+    );
+    CommentaryNote? opened;
+    StudyNote? edited;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 380,
+            height: 760,
+            child: StudyWorkspacePanel(
+              workspaces: const [workspace],
+              activeWorkspace: workspace,
+              currentPassage: const StudyPassage(
+                bookIndex: 0,
+                chapter: 1,
+                verse: 1,
+              ),
+              useEnglishBookNames: true,
+              onCreate: () {},
+              onSelect: (_) {},
+              onRename: () {},
+              onDelete: () {},
+              onToggleHighlights: (_) {},
+              onCreateGroup: (_) {},
+              onEditGroup: (_) {},
+              onDeleteGroup: (_) {},
+              onBookmarkCurrent: (_) {},
+              onOpenPassage: (_) {},
+              onEditPassage: (_) {},
+              onUpdatePassage: (_) {},
+              onRemovePassage: (_) {},
+              onEditWord: (_) {},
+              onUpdateWord: (_) {},
+              onSwitchWordKind: (_) {},
+              onRemoveWord: (_) {},
+              onOpenWord: (_) {},
+              onCreateNote: (_) {},
+              onEditNote: (note) => edited = note,
+              onUpdateNote: (_) {},
+              onRemoveNote: (_) {},
+              onMoveItem: (_, _, _) {},
+              commentaryById: (id) => id == 'c1' ? live : null,
+              onOpenCommentary: (note) => opened = note,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('current text'), findsOneWidget);
+    expect(find.text('old copy'), findsNothing);
+    expect(find.text('Commentary deleted'), findsOneWidget);
+    expect(find.text('kept copy'), findsOneWidget);
+    await tester.tap(find.text('Genesis 1:3'));
+    expect(opened, same(live));
+
+    await tester.tap(find.byTooltip('Note options').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Remove from study'), findsOneWidget);
+    await tester.tap(find.text('Edit commentary'));
+    await tester.pumpAndSettle();
+    expect(edited?.id, 'live');
+  });
 
   testWidgets('word menu switches type and explains unavailable conversions', (
     tester,

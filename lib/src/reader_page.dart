@@ -12,6 +12,7 @@ import 'about_page.dart';
 import 'app_settings.dart';
 import 'bible_data.dart';
 import 'christadelphian_readings.dart';
+import 'commentary.dart';
 import 'bindings/bindings.dart' hide StudyItem;
 import 'issue_reporting.dart';
 import 'prefs_read.dart';
@@ -24,6 +25,7 @@ import 'tutor/onboarding.dart';
 import 'widgets/book_selector.dart';
 import 'widgets/chapter_selector.dart';
 import 'widgets/chapter_context_sheet.dart';
+import 'widgets/commentary_view.dart';
 import 'widgets/cross_references_sheet.dart';
 import 'widgets/greek_word_sheet.dart';
 import 'widgets/markdown_note.dart';
@@ -226,6 +228,7 @@ enum _ReaderBarAction {
   text,
   ntText,
   interlinear,
+  commentary,
   rapidReading,
   back,
   forward,
@@ -233,6 +236,7 @@ enum _ReaderBarAction {
 
 enum _ReaderMenuAction {
   studyWorkspace,
+  commentary,
   crossReferences,
   readingPlan,
   places,
@@ -254,6 +258,7 @@ enum _VerseMenuAction {
   chapterCrossReferences,
   syntax,
   memoriseChapter,
+  addCommentary,
   addTimelineEvent,
   addTimelineSpan,
 }
@@ -264,6 +269,7 @@ enum _WordMenuAction {
   searchNear,
   bookmarkRoot,
   bookmarkForm,
+  addCommentary,
   addHeading,
   addTimelineEntry,
 }
@@ -271,7 +277,7 @@ enum _WordMenuAction {
 enum _StudyHeadingAction { edit, addSubheading, delete }
 
 /// What a docked side panel shows, switched between when more than one is open.
-enum _SidePanelView { study, word, crossReferences, chapterContext }
+enum _SidePanelView { study, word, crossReferences, chapterContext, commentary }
 
 /// One open word inspector, with its own lexical-navigation history.
 class _WordPane {
@@ -295,6 +301,9 @@ class BibleReaderPage extends StatefulWidget {
     this.sendChapterRequest,
     this.sendStudyStateRequest,
     this.saveStudyState,
+    this.sendCommentaryRequest,
+    this.saveCommentaryNote,
+    this.deleteCommentaryNote,
     this.sendWordInfoRequest,
     this.sendGreekWordRequest,
     this.sendWordOccurrencesRequest,
@@ -312,6 +321,9 @@ class BibleReaderPage extends StatefulWidget {
   final void Function(GetChapter request)? sendChapterRequest;
   final void Function(GetStudyState request)? sendStudyStateRequest;
   final void Function(SaveStudyState request)? saveStudyState;
+  final void Function(GetCommentaryNotes request)? sendCommentaryRequest;
+  final void Function(SaveCommentaryNote request)? saveCommentaryNote;
+  final void Function(DeleteCommentaryNote request)? deleteCommentaryNote;
   final void Function(GetWordInfo request)? sendWordInfoRequest;
 
   /// Test seam: how the Greek word pane asks for its word.
@@ -376,6 +388,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   final WordProximity _proximity = WordProximity();
   // The study workspaces every reader tab shares.
   late final StudyWorkspaceStore _studyStore;
+  // The commentary notes every reader tab shares; where there is room they
+  // dock beside the reader, and they can be marked in the text.
+  late final CommentaryStore _commentaryStore;
+  bool _commentaryVisible = false;
+  bool _commentaryInText = true;
+  final GlobalKey _commentaryKey = GlobalKey();
   _WordPane? get _activeWordPane {
     for (final pane in _wordPanes) {
       if (pane.id == _activeWordPaneId) return pane;
@@ -413,6 +431,15 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       save: widget.saveStudyState,
     )..addListener(_onStudyStoreChanged);
     _studyStore.start();
+    _commentaryStore = CommentaryStore(
+      sendRequest: widget.sendCommentaryRequest,
+      save: widget.saveCommentaryNote,
+      delete: widget.deleteCommentaryNote,
+    )..addListener(_onStudyStoreChanged);
+    _commentaryStore.start();
+    commentaryInText().then((shown) {
+      if (mounted) setState(() => _commentaryInText = shown);
+    });
     _loadWorkspace();
   }
 
@@ -615,6 +642,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   @override
   void dispose() {
     _studyStore.dispose();
+    _commentaryStore.dispose();
     _mobileBarTransitionTimer?.cancel();
     _pageController.dispose();
     _proximity.dispose();
@@ -652,6 +680,15 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     onChapterContextToggled: () {
       setState(() => _activeTabId = tab.id);
       _toggleChapterContext();
+    },
+    commentaryStore: _commentaryStore,
+    commentaryInText: _commentaryInText,
+    onCommentaryInTextChanged: _setCommentaryInText,
+    commentaryDocked:
+        _commentaryVisible && _mobileLayout != true && tab.id == _activeTabId,
+    onCommentaryToggled: () {
+      setState(() => _activeTabId = tab.id);
+      _toggleCommentary();
     },
     proximity: _proximity,
     onWordInfoRequested: (selected, {newPane = false}) {
@@ -700,6 +737,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     if (_selectedWord != null) _SidePanelView.word,
     if (_crossReferencesVisible) _SidePanelView.crossReferences,
     if (_chapterContextVisible) _SidePanelView.chapterContext,
+    if (_commentaryVisible) _SidePanelView.commentary,
   ]);
 
   /// A side panel showing one of [views], with a switcher when there are
@@ -713,6 +751,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _SidePanelView.word => _wordInspector(showNavigation: single),
       _SidePanelView.crossReferences => _crossReferencesPanel(),
       _SidePanelView.chapterContext => _chapterContextPanel(),
+      _SidePanelView.commentary => _commentaryPanel(),
     };
     if (single) return body;
     return Column(
@@ -766,6 +805,36 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       }
     });
   }
+
+  /// Docks the commentary beside the reader, or brings it forward when
+  /// another view of the side panel is showing; showing, it hides it.
+  void _toggleCommentary() {
+    setState(() {
+      if (_commentaryVisible && _sidePanelView == _SidePanelView.commentary) {
+        _commentaryVisible = false;
+      } else {
+        _commentaryVisible = true;
+        _sidePanelView = _SidePanelView.commentary;
+      }
+    });
+  }
+
+  void _setCommentaryInText(bool shown) {
+    setState(() => _commentaryInText = shown);
+    setCommentaryInText(shown).catchError((Object _) {});
+  }
+
+  Widget _commentaryPanel() => _movablePanel(
+    _commentaryKey,
+    Material(
+      color: Theme.of(context).colorScheme.surface,
+      child:
+          _activeReader?._commentaryPanel(
+            onClose: () => setState(() => _commentaryVisible = false),
+          ) ??
+          const SizedBox.shrink(),
+    ),
+  );
 
   Widget _chapterContextPanel() {
     final reader = _activeReader;
@@ -952,6 +1021,12 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                         icon: const Icon(Icons.explore_outlined),
                         label: views.length > 3 ? null : const Text('Context'),
                         tooltip: 'Chapter context',
+                      ),
+                      _SidePanelView.commentary => ButtonSegment(
+                        value: _SidePanelView.commentary,
+                        icon: const Icon(Icons.comment_outlined),
+                        label: views.length > 3 ? null : const Text('Notes'),
+                        tooltip: 'Commentary',
                       ),
                     },
                 ],
@@ -1238,7 +1313,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         if (!_studyWorkspaceVisible &&
             _selectedWord == null &&
             !_crossReferencesVisible &&
-            !_chapterContextVisible) {
+            !_chapterContextVisible &&
+            !_commentaryVisible) {
           return reader;
         }
         return LayoutBuilder(
@@ -1274,10 +1350,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                 // context when they are open.
                 child: _sidePanel([
                   if (_selectedWord != null ||
-                      (!_crossReferencesVisible && !_chapterContextVisible))
+                      (!_crossReferencesVisible &&
+                          !_chapterContextVisible &&
+                          !_commentaryVisible))
                     _SidePanelView.word,
                   if (_crossReferencesVisible) _SidePanelView.crossReferences,
                   if (_chapterContextVisible) _SidePanelView.chapterContext,
+                  if (_commentaryVisible) _SidePanelView.commentary,
                 ]),
               ),
             ],
@@ -1291,6 +1370,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   List<_ReaderMenuAction> get _workspaceActions => [
     _ReaderMenuAction.studyWorkspace,
+    _ReaderMenuAction.commentary,
     _ReaderMenuAction.readingPlan,
     _ReaderMenuAction.places,
     _ReaderMenuAction.timeline,
@@ -1310,6 +1390,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           'Study workspace',
         ),
         _ReaderMenuAction.crossReferences => (Icons.link, 'Cross references'),
+        _ReaderMenuAction.commentary => (Icons.comment_outlined, 'Commentary'),
         _ReaderMenuAction.readingPlan => (
           Icons.auto_stories_outlined,
           'Reading plan',
@@ -1355,8 +1436,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         action == _ReaderMenuAction.crossReferences &&
         _mobileLayout != true &&
         _crossReferencesVisible;
+    final commentarySelected =
+        action == _ReaderMenuAction.commentary &&
+        _mobileLayout != true &&
+        _commentaryVisible;
     return IconButton(
-      isSelected: studySelected || crossReferencesSelected,
+      isSelected:
+          studySelected || crossReferencesSelected || commentarySelected,
       selectedIcon: action == _ReaderMenuAction.studyWorkspace
           ? const Icon(Icons.account_tree)
           : null,
@@ -1762,6 +1848,11 @@ class _ReaderSession extends StatefulWidget {
     this.chapterContextDocked = false,
     this.onChapterContextToggled,
     required this.studyStore,
+    required this.commentaryStore,
+    this.commentaryInText = true,
+    this.commentaryDocked = false,
+    this.onCommentaryToggled,
+    this.onCommentaryInTextChanged,
     required this.proximity,
     this.sendChapterRequest,
     this.sendSyntaxTreesRequest,
@@ -1798,6 +1889,16 @@ class _ReaderSession extends StatefulWidget {
   /// it, and how the reader's button shows or hides it there.
   final bool chapterContextDocked;
   final VoidCallback? onChapterContextToggled;
+
+  /// The commentary notes, shared with the other readers; whether they are
+  /// marked in the text (and on a wide reader shown in its margin); and
+  /// whether the workspace shows them docked beside this reader, and how
+  /// the reader shows or hides them there.
+  final CommentaryStore commentaryStore;
+  final bool commentaryInText;
+  final bool commentaryDocked;
+  final VoidCallback? onCommentaryToggled;
+  final ValueChanged<bool>? onCommentaryInTextChanged;
 
   /// Test seam: how a [GetChapter] request reaches the Rust side. Defaults to
   /// the real rinf signal; widget tests substitute a stub that answers via
@@ -2047,8 +2148,13 @@ class _ReaderSessionState extends State<_ReaderSession>
       if (mounted && pack.message.success) _refreshLoadedOtChapters();
     });
     widget.studyStore.addListener(_onStudyStoreChanged);
+    widget.commentaryStore.addListener(_onCommentaryChanged);
     _loadPrefs();
     _loadAdminMode();
+  }
+
+  void _onCommentaryChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onStudyStoreChanged() {
@@ -2184,6 +2290,8 @@ class _ReaderSessionState extends State<_ReaderSession>
       for (final action in _ReaderBarAction.values)
         if (!switch (action) {
           _ReaderBarAction.ntText => _isOldTestament,
+          // Marking commentary means nothing until there is some.
+          _ReaderBarAction.commentary => widget.commentaryStore.notes.isEmpty,
           _ReaderBarAction.interlinear ||
           _ReaderBarAction.rapidReading => englishOnly,
           _ => false,
@@ -2244,6 +2352,9 @@ class _ReaderSessionState extends State<_ReaderSession>
     _ReaderBarAction.text => _cycleReaderText(),
     _ReaderBarAction.ntText => _toggleNtGreek(),
     _ReaderBarAction.interlinear => _toggleInterlinear(),
+    _ReaderBarAction.commentary => widget.onCommentaryInTextChanged?.call(
+      !widget.commentaryInText,
+    ),
     _ReaderBarAction.rapidReading => _toggleRapidReading(),
     _ReaderBarAction.back => _canGoBack ? _goBack() : null,
     _ReaderBarAction.forward => _canGoForward ? _goForward() : null,
@@ -2308,6 +2419,17 @@ class _ReaderSessionState extends State<_ReaderSession>
       onPressed: _toggleInterlinear,
       tooltip: _interlinearShown ? 'Hide interlinear' : 'Show interlinear',
     ),
+    _ReaderBarAction.commentary => IconButton(
+      key: const ValueKey('reader-commentary-toggle'),
+      isSelected: widget.commentaryInText,
+      icon: const Icon(Icons.comments_disabled_outlined),
+      selectedIcon: const Icon(Icons.comment),
+      onPressed: () =>
+          widget.onCommentaryInTextChanged?.call(!widget.commentaryInText),
+      tooltip: widget.commentaryInText
+          ? 'Hide commentary in the text'
+          : 'Show commentary in the text',
+    ),
     _ReaderBarAction.rapidReading => IconButton(
       key: const ValueKey('reader-rapid-toggle'),
       isSelected: _rapidReading,
@@ -2361,6 +2483,13 @@ class _ReaderSessionState extends State<_ReaderSession>
           value: action,
           checked: _interlinearShown,
           child: const Text('Interlinear'),
+        ),
+      ],
+      _ReaderBarAction.commentary => [
+        CheckedPopupMenuItem(
+          value: action,
+          checked: widget.commentaryInText,
+          child: const Text('Commentary in the text'),
         ),
       ],
       _ReaderBarAction.rapidReading => const [],
@@ -3315,6 +3444,9 @@ class _ReaderSessionState extends State<_ReaderSession>
   }
 
   Future<void> _editStudyNote(StudyNote note) async {
+    // A link edits the commentary note itself, which updates every copy.
+    final commentary = widget.commentaryStore.byId(note.commentaryId);
+    if (commentary != null) return _editCommentary(commentary);
     final workspace = _activeStudyWorkspace;
     if (workspace == null) return;
     final text = await showMarkdownNoteDialog(
@@ -4180,6 +4312,239 @@ class _ReaderSessionState extends State<_ReaderSession>
     );
   }
 
+  // --- commentary -----------------------------------------------------------
+
+  /// The commentary on the chapter at the top of the reader: docked beside
+  /// it where there is room, else in a sheet.
+  Future<void> _showCommentary() async {
+    final dock = widget.onCommentaryToggled;
+    if (dock != null && MediaQuery.sizeOf(context).width >= 900) {
+      dock();
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.sizeOf(sheetContext).height * 0.7,
+        child: _commentaryPanel(),
+      ),
+    );
+  }
+
+  /// The commentary panel of the chapter at the top of the reader. With
+  /// [onClose] it is docked: closing hides it, and a note's passage opens in
+  /// the reader beside it rather than in place of a sheet.
+  Widget _commentaryPanel({VoidCallback? onClose}) => CommentaryPanel(
+    store: widget.commentaryStore,
+    bookIndex: _bookIndex,
+    chapter: _chapter,
+    useEnglishBookNames: _englishBookNames,
+    onClose: onClose,
+    onAdd: () => _addCommentary(_currentStudyPassage),
+    onAction: _onCommentaryAction,
+    onOpen: (note) {
+      if (onClose == null) Navigator.of(context).maybePop();
+      _openCommentary(note);
+    },
+    onBrowse: () {
+      if (onClose == null) Navigator.of(context).maybePop();
+      _browseCommentary();
+    },
+  );
+
+  /// Every commentary note, on a page of its own.
+  void _browseCommentary() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => CommentaryPage(
+        store: widget.commentaryStore,
+        useEnglishBookNames: _englishBookNames,
+        onAction: _onCommentaryAction,
+        onOpen: _openCommentary,
+      ),
+    ),
+  );
+
+  void _openCommentary(CommentaryNote note) => _navigateTo(
+    note.anchor.bookIndex,
+    note.anchor.chapter,
+    verse: note.anchor.wholeChapter ? null : note.anchor.verse,
+  );
+
+  void _onCommentaryAction(CommentaryNote note, CommentaryAction action) {
+    switch (action) {
+      case CommentaryAction.edit:
+        _editCommentary(note);
+      case CommentaryAction.addToStudy:
+        _addCommentaryToStudy(note);
+      case CommentaryAction.delete:
+        _deleteCommentary(note);
+    }
+  }
+
+  /// The passage editor, asking for a commentary note's passage and text.
+  Future<StudyPassage?> _askForCommentary(
+    StudyPassage anchor, {
+    required bool creating,
+    String text = '',
+  }) => showDialog<StudyPassage>(
+    context: context,
+    builder: (_) => StudyPassageEditor(
+      initial: StudyPassage(
+        bookIndex: anchor.bookIndex,
+        chapter: anchor.chapter,
+        verse: anchor.verse,
+        wholeChapter: anchor.wholeChapter,
+        endChapter: anchor.endChapter,
+        endVerse: anchor.endVerse,
+        startWord: anchor.startWord,
+        endWord: anchor.endWord,
+        note: text,
+      ),
+      creating: creating,
+      useEnglishBookNames: _englishBookNames,
+      loadChapter: _loadStudyChapter,
+      isDuplicate: (_) => false,
+      title: creating ? 'Add commentary' : 'Edit commentary',
+      confirmLabel: creating ? 'Add' : 'Save',
+      noteLabel: 'Commentary',
+      noteRequired: true,
+    ),
+  );
+
+  /// Write a commentary note on [anchor], which the editor can change.
+  Future<void> _addCommentary(StudyPassage anchor) async {
+    final edited = await _askForCommentary(anchor, creating: true);
+    if (edited == null || !mounted) return;
+    final now = DateTime.now();
+    widget.commentaryStore.put(
+      CommentaryNote(
+        id: newCommentaryId(),
+        anchor: edited.copyWith(note: ''),
+        text: edited.note,
+        created: now,
+        updated: now,
+      ),
+    );
+  }
+
+  Future<void> _editCommentary(CommentaryNote note) async {
+    final edited = await _askForCommentary(
+      note.anchor,
+      creating: false,
+      text: note.text,
+    );
+    if (edited == null || !mounted) return;
+    final current = widget.commentaryStore.byId(note.id) ?? note;
+    final updated = current.copyWith(
+      anchor: edited.copyWith(note: ''),
+      text: edited.note,
+    );
+    widget.commentaryStore.put(updated);
+    // The studies linking to it keep a copy of its text.
+    for (final workspace in widget.studyStore.workspaces) {
+      final synced = workspace.withCommentaryText(updated.id, updated.text);
+      if (!identical(synced, workspace)) _replaceStudyWorkspace(synced);
+    }
+  }
+
+  Future<void> _deleteCommentary(CommentaryNote note) async {
+    final linked = widget.studyStore.workspaces
+        .where((w) => w.linksCommentary(note.id))
+        .length;
+    final reference = commentaryReference(
+      note.anchor,
+      useEnglishBookNames: _englishBookNames,
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete commentary?'),
+        content: Text(
+          'This deletes your note on $reference.'
+          '${linked == 0
+              ? ''
+              : linked == 1
+              ? ' The study linking to it keeps a copy of its text.'
+              : ' The $linked studies linking to it keep a copy of its text.'}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) widget.commentaryStore.remove(note.id);
+  }
+
+  /// Link [note] into a study: the active one, or with several, the one
+  /// chosen.
+  Future<void> _addCommentaryToStudy(CommentaryNote note) async {
+    final workspaces = widget.studyStore.workspaces;
+    StudyWorkspace? workspace;
+    if (workspaces.length > 1) {
+      final active = _activeStudyWorkspace;
+      final id = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => SimpleDialog(
+          title: const Text('Add to study'),
+          children: [
+            for (final w in [
+              ?active,
+              ...workspaces.where((w) => w.id != active?.id),
+            ])
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialogContext, w.id),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(w.name)),
+                    if (w.linksCommentary(note.id))
+                      const Icon(Icons.check, size: 18),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+      if (id == null || !mounted) return;
+      workspace = workspaces.where((w) => w.id == id).firstOrNull;
+    } else {
+      workspace = await _ensureStudyWorkspace();
+    }
+    if (workspace == null || !mounted) return;
+    final current =
+        widget.studyStore.workspaces
+            .where((w) => w.id == workspace!.id)
+            .firstOrNull ??
+        workspace;
+    final already = current.linksCommentary(note.id);
+    if (!already) {
+      _replaceStudyWorkspace(
+        current.putNote(
+          StudyNote(
+            id: DateTime.now().microsecondsSinceEpoch.toString(),
+            text: note.text,
+            commentaryId: note.id,
+          ),
+        ),
+      );
+    }
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(
+          already ? 'Already in ${current.name}' : 'Added to ${current.name}',
+        ),
+      ),
+    );
+  }
+
   /// The chapter context of the chapter at the top of the reader. With
   /// [onClose] it is docked: closing hides it, and a linked verse opens in
   /// the reader beside it rather than in place of a sheet.
@@ -4327,6 +4692,11 @@ class _ReaderSessionState extends State<_ReaderSession>
             onRemoveNote: (note) {
               _removeStudyNote(note);
               setSheetState(() {});
+            },
+            commentaryById: widget.commentaryStore.byId,
+            onOpenCommentary: (note) {
+              Navigator.of(sheetContext).pop();
+              _openCommentary(note);
             },
             onMoveItem: (item, groupId, index) {
               _moveStudyItem(item, groupId, index);
@@ -5067,6 +5437,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     _syntaxSub?.cancel();
     _translationSub?.cancel();
     widget.studyStore.removeListener(_onStudyStoreChanged);
+    widget.commentaryStore.removeListener(_onCommentaryChanged);
     for (final timeout in _fetchTimeouts.values) {
       timeout.cancel();
     }
@@ -5232,6 +5603,13 @@ class _ReaderSessionState extends State<_ReaderSession>
         ),
         const PopupMenuDivider(),
         const PopupMenuItem(
+          value: _VerseMenuAction.addCommentary,
+          child: ListTile(
+            leading: Icon(Icons.add_comment_outlined),
+            title: Text('Add commentary'),
+          ),
+        ),
+        const PopupMenuItem(
           value: _VerseMenuAction.addTimelineEvent,
           child: ListTile(
             leading: Icon(Icons.radio_button_checked),
@@ -5261,6 +5639,10 @@ class _ReaderSessionState extends State<_ReaderSession>
           bookIndex,
           chapter,
           greek: _isGreek(bookIndex),
+        );
+      case _VerseMenuAction.addCommentary:
+        await _addCommentary(
+          StudyPassage(bookIndex: bookIndex, chapter: chapter, verse: verse),
         );
       case _VerseMenuAction.addTimelineEvent:
       case _VerseMenuAction.addTimelineSpan:
@@ -5382,6 +5764,13 @@ class _ReaderSessionState extends State<_ReaderSession>
           ),
         ),
         const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: _WordMenuAction.addCommentary,
+          child: ListTile(
+            leading: Icon(Icons.add_comment_outlined),
+            title: Text('Add commentary on this word'),
+          ),
+        ),
         PopupMenuItem(
           value: _WordMenuAction.addHeading,
           child: ListTile(
@@ -5407,6 +5796,17 @@ class _ReaderSessionState extends State<_ReaderSession>
     );
     if (!mounted || action == null) return;
     switch (action) {
+      case _WordMenuAction.addCommentary:
+        // The word as a phrase, which the editor can widen.
+        await _addCommentary(
+          StudyPassage(
+            bookIndex: bookIndex,
+            chapter: chapter,
+            verse: verse,
+            startWord: position,
+            endWord: position,
+          ),
+        );
       case _WordMenuAction.addHeading:
         await _addStudyHeadingAt(bookIndex, chapter, verse);
       case _WordMenuAction.addTimelineEntry:
@@ -5509,6 +5909,8 @@ class _ReaderSessionState extends State<_ReaderSession>
         onUpdateNote: _updateStudyNote,
         onRemoveNote: _removeStudyNote,
         onMoveItem: _moveStudyItem,
+        commentaryById: widget.commentaryStore.byId,
+        onOpenCommentary: _openCommentary,
         onOpenLinkVerse: (link, verse) {
           _navigateTo(verse.bookIndex, verse.chapter, verse: verse.verse);
           onOpenReader?.call();
@@ -5594,6 +5996,8 @@ class _ReaderSessionState extends State<_ReaderSession>
         } else {
           _toggleStudyWorkspacePanel();
         }
+      case _ReaderMenuAction.commentary:
+        _showCommentary();
       case _ReaderMenuAction.crossReferences:
         _openCrossReferences();
       case _ReaderMenuAction.readingPlan:
@@ -5769,6 +6173,44 @@ class _ReaderSessionState extends State<_ReaderSession>
     );
   }
 
+  /// How wide the reader must be to show commentary in its margin, and
+  /// how wide that margin is.
+  static const _commentaryMarginMinWidth = 860.0;
+  static const _commentaryMarginWidth = 280.0;
+
+  /// [row] with the commentary notes starting at its verse beside it, in a
+  /// margin every verse of the chapter keeps so the text runs straight;
+  /// [row] alone where the reader is too narrow.
+  Widget _withCommentaryMargin(Widget row, List<CommentaryNote> notes) =>
+      LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < _commentaryMarginMinWidth) return row;
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: row),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: _commentaryMarginWidth,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final note in notes)
+                      CommentaryNoteCard(
+                        note: note,
+                        useEnglishBookNames: _englishBookNames,
+                        showBook: false,
+                        compact: true,
+                        onAction: _onCommentaryAction,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      );
+
   List<Widget> _sectionSlivers(
     _Section section, {
     required bool reverseVerseOrder,
@@ -5784,6 +6226,11 @@ class _ReaderSessionState extends State<_ReaderSession>
     final chapterHighlight = (workspace?.highlightsEnabled ?? false)
         ? chapterBookmarks.where((p) => p.highlightEnabled).lastOrNull
         : null;
+    // Commentary marked in the text: at the verse each note starts at here,
+    // and in the margin where the reader is wide enough.
+    final chapterCommentary = widget.commentaryInText
+        ? widget.commentaryStore.notesInChapter(b, c)
+        : const <CommentaryNote>[];
     // Each study heading stands before the first verse it covers here.
     final headingsBefore = <int, List<StudyReaderHeading>>{};
     for (final heading in workspace?.readerHeadings(b, c) ?? const []) {
@@ -5847,8 +6294,12 @@ class _ReaderSessionState extends State<_ReaderSession>
             final timelineEntries = workspace?.timelineMarkersEnabled ?? false
                 ? workspace!.timelineEntriesAt(b, c, entry.verse)
                 : const <StudyTimelineEntry>[];
+            final verseCommentary = [
+              for (final note in chapterCommentary)
+                if (note.marginVerse(c) == entry.verse) note,
+            ];
             final translation = _translationFor(b, c, entry.verse);
-            final row = VerseRow(
+            final verseRow = VerseRow(
               key: section.verseKeys[entry.verse],
               entry: entry,
               isSelected: isSelected,
@@ -5916,6 +6367,15 @@ class _ReaderSessionState extends State<_ReaderSession>
                   : timelineEntries.map((e) => e.title).join('\n'),
               onStudyTimeline: () =>
                   _showStudyTimelineEntriesAt(b, c, entry.verse),
+              commentaryCount: verseCommentary.length,
+              onCommentary: _showCommentary,
+              commentaryPositions: {
+                for (final note in chapterCommentary)
+                  if (note.anchor.isPhrase)
+                    for (final position in lexicalPositions.whereType<int>())
+                      if (note.anchor.containsWord(b, c, entry.verse, position))
+                        position,
+              },
               studyPhraseHighlightColors: {
                 if (workspace?.highlightsEnabled ?? false)
                   for (final p in studyPassages)
@@ -5970,6 +6430,9 @@ class _ReaderSessionState extends State<_ReaderSession>
                 );
               },
             );
+            final row = chapterCommentary.isEmpty
+                ? verseRow
+                : _withCommentaryMargin(verseRow, verseCommentary);
             final headings = headingsBefore[verseIndex];
             if (headings == null) return row;
             return Column(

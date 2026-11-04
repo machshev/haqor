@@ -174,6 +174,9 @@ class VerseRow extends StatefulWidget {
     this.studyWordHighlightColors = const {},
     this.studyFormHighlightColors = const {},
     this.studyPhraseHighlightColors = const {},
+    this.commentaryCount = 0,
+    this.onCommentary,
+    this.commentaryPositions = const {},
     this.studyPassageHighlightColor,
     this.ketivDisplay = KetivDisplay.superscript,
     this.syntaxMarks,
@@ -240,6 +243,13 @@ class VerseRow extends StatefulWidget {
 
   /// Occurrence-specific phrase colors, keyed by zero-based lexical position.
   final Map<int, Color> studyPhraseHighlightColors;
+
+  /// How many commentary notes are on the verse, shown as a marker that
+  /// [onCommentary] opens; and the lexical positions of the phrases they are
+  /// on, underlined with dots.
+  final int commentaryCount;
+  final VoidCallback? onCommentary;
+  final Set<int> commentaryPositions;
   final Color? studyPassageHighlightColor;
   final KetivDisplay ketivDisplay;
 
@@ -621,7 +631,17 @@ class _VerseRowState extends State<VerseRow> {
     TextStyle styleForWord(String word, int lexicalPosition) {
       final style = lexicalStyleForWord(word, lexicalPosition);
       final role = syntaxMarks?.roles[lexicalPosition];
-      if (role == null) return style;
+      if (role == null) {
+        if (!widget.commentaryPositions.contains(lexicalPosition)) {
+          return style;
+        }
+        return style.copyWith(
+          decoration: TextDecoration.underline,
+          decorationStyle: TextDecorationStyle.dotted,
+          decorationColor: theme.colorScheme.secondary,
+          decorationThickness: 2,
+        );
+      }
       return style.copyWith(
         decoration: TextDecoration.underline,
         decorationColor: syntaxRoleColor(role, theme.brightness),
@@ -679,6 +699,27 @@ class _VerseRowState extends State<VerseRow> {
                   Icons.sticky_note_2_outlined,
                   size: 12,
                   color: theme.colorScheme.secondary,
+                ),
+              ),
+            if (widget.commentaryCount > 0)
+              Padding(
+                padding: stacked
+                    ? const EdgeInsets.only(bottom: 4)
+                    : const EdgeInsets.only(right: 2),
+                child: Tooltip(
+                  message: widget.commentaryCount == 1
+                      ? '1 commentary note'
+                      : '${widget.commentaryCount} commentary notes',
+                  child: InkWell(
+                    key: ValueKey('verse-commentary-${widget.entry.verse}'),
+                    onTap: widget.onCommentary,
+                    customBorder: const CircleBorder(),
+                    child: Icon(
+                      Icons.comment_outlined,
+                      size: 13,
+                      color: theme.colorScheme.secondary,
+                    ),
+                  ),
                 ),
               ),
             if (widget.studyTimeline != null)

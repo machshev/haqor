@@ -72,6 +72,9 @@ Future<void> _openPlanSheet(
       home: BibleReaderPage(
         sendChapterRequest: rust.onRequest,
         sendStudyStateRequest: rust.onStudyRequest,
+        sendCommentaryRequest: (_) {},
+        saveCommentaryNote: (_) {},
+        deleteCommentaryNote: (_) {},
         saveStudyState: rust.onStudySave,
       ),
     ),
@@ -114,6 +117,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
         ),
       ),

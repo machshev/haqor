@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../app_settings.dart' show setStudyNotesFolded, studyNotesFolded;
 import '../bible_data.dart';
+import '../commentary.dart';
 import '../study_workspace.dart';
 import '../surface.dart';
+import 'commentary_view.dart' show commentaryReference;
 import 'cross_references_sheet.dart' show crossReferenceStrength;
 import 'markdown_note.dart';
 import 'name_details.dart' show nameKindIcon;
@@ -65,6 +67,8 @@ class StudyWorkspacePanel extends StatelessWidget {
     this.onCreateTimelineEntry,
     this.onEditTimelineEntry,
     this.onRemoveTimelineEntry,
+    this.commentaryById,
+    this.onOpenCommentary,
   });
 
   final List<StudyWorkspace> workspaces;
@@ -139,6 +143,11 @@ class StudyWorkspacePanel extends StatelessWidget {
   final void Function(String timelineId, bool span)? onCreateTimelineEntry;
   final ValueChanged<StudyTimelineEntry>? onEditTimelineEntry;
   final ValueChanged<StudyTimelineEntry>? onRemoveTimelineEntry;
+
+  /// The commentary note a linked study note shows, and opening its passage
+  /// in the reader.
+  final CommentaryNote? Function(String id)? commentaryById;
+  final ValueChanged<CommentaryNote>? onOpenCommentary;
 
   String _reference(StudyPassage passage) =>
       '${bookDisplayName(passage.bookIndex, useEnglish: useEnglishBookNames)} '
@@ -1585,66 +1594,112 @@ class StudyWorkspacePanel extends StatelessWidget {
     );
   }
 
+  /// A study note, or a link to a commentary note showing that note as it
+  /// now is (or, deleted, the copy the study kept).
   Widget _noteTile(
     BuildContext context,
     StudyWorkspace workspace,
     StudyNote note, {
     required int depth,
-  }) => ListTile(
-    key: ValueKey('note-${note.id}'),
-    dense: true,
-    titleAlignment: ListTileTitleAlignment.top,
-    minTileHeight: 32,
-    minVerticalPadding: 0,
-    contentPadding: EdgeInsetsDirectional.only(
-      start: 16 + depth * 12.0,
-      end: 0,
-    ),
-    leading: const Icon(Icons.notes_outlined, size: 18),
-    title: _OutlineNote(note.text),
-    trailing: PopupMenuButton<_NoteAction>(
-      tooltip: 'Note options',
-      iconSize: 18,
-      padding: const EdgeInsets.all(6),
-      style: const ButtonStyle(
-        minimumSize: WidgetStatePropertyAll(Size(32, 32)),
-        maximumSize: WidgetStatePropertyAll(Size(32, 32)),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  }) {
+    final commentaryId = note.commentaryId;
+    final linked = commentaryId != null;
+    final commentary = linked ? commentaryById?.call(commentaryId) : null;
+    final open = onOpenCommentary;
+    final theme = Theme.of(context);
+    return ListTile(
+      key: ValueKey('note-${note.id}'),
+      dense: true,
+      titleAlignment: ListTileTitleAlignment.top,
+      minTileHeight: 32,
+      minVerticalPadding: 0,
+      contentPadding: EdgeInsetsDirectional.only(
+        start: 16 + depth * 12.0,
+        end: 0,
       ),
-      onSelected: (action) async {
-        switch (action) {
-          case _NoteAction.edit:
-            onEditNote(note);
-          case _NoteAction.move:
-            await _moveTo(context, workspace, note);
-          case _NoteAction.remove:
-            onRemoveNote(note);
-        }
-      },
-      itemBuilder: (_) => const [
-        PopupMenuItem(
-          value: _NoteAction.edit,
-          child: ListTile(
-            leading: Icon(Icons.edit_note),
-            title: Text('Edit note'),
-          ),
-        ),
-        PopupMenuItem(
-          value: _NoteAction.move,
-          child: ListTile(
-            leading: Icon(Icons.drive_file_move_outline),
-            title: Text('Move to group'),
-          ),
-        ),
-        PopupMenuItem(
-          value: _NoteAction.remove,
-          child: ListTile(
-            leading: Icon(Icons.delete_outline),
-            title: Text('Remove'),
-          ),
-        ),
-      ],
+      leading: Icon(
+        linked ? Icons.comment_outlined : Icons.notes_outlined,
+        size: 18,
+      ),
+      title: !linked
+          ? _OutlineNote(note.text)
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (commentary == null)
+                  Text(
+                    'Commentary deleted',
+                    style: TextStyle(
+                      fontStyle: FontStyle.italic,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  )
+                else
+                  InkWell(
+                    onTap: open == null ? null : () => open(commentary),
+                    child: Text(
+                      commentaryReference(
+                        commentary.anchor,
+                        useEnglishBookNames: useEnglishBookNames,
+                      ),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                _OutlineNote(commentary?.text ?? note.text),
+              ],
+            ),
+      trailing: _noteMenu(context, workspace, note, linked: linked),
+    );
+  }
+
+  Widget _noteMenu(
+    BuildContext context,
+    StudyWorkspace workspace,
+    StudyNote note, {
+    required bool linked,
+  }) => PopupMenuButton<_NoteAction>(
+    tooltip: 'Note options',
+    iconSize: 18,
+    padding: const EdgeInsets.all(6),
+    style: const ButtonStyle(
+      minimumSize: WidgetStatePropertyAll(Size(32, 32)),
+      maximumSize: WidgetStatePropertyAll(Size(32, 32)),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     ),
+    onSelected: (action) async {
+      switch (action) {
+        case _NoteAction.edit:
+          onEditNote(note);
+        case _NoteAction.move:
+          await _moveTo(context, workspace, note);
+        case _NoteAction.remove:
+          onRemoveNote(note);
+      }
+    },
+    itemBuilder: (_) => [
+      PopupMenuItem(
+        value: _NoteAction.edit,
+        child: ListTile(
+          leading: const Icon(Icons.edit_note),
+          title: Text(linked ? 'Edit commentary' : 'Edit note'),
+        ),
+      ),
+      const PopupMenuItem(
+        value: _NoteAction.move,
+        child: ListTile(
+          leading: Icon(Icons.drive_file_move_outline),
+          title: Text('Move to group'),
+        ),
+      ),
+      PopupMenuItem(
+        value: _NoteAction.remove,
+        child: ListTile(
+          leading: const Icon(Icons.delete_outline),
+          // The commentary note itself stays.
+          title: Text(linked ? 'Remove from study' : 'Remove'),
+        ),
+      ),
+    ],
   );
 
   @override

@@ -1117,3 +1117,17 @@ Future<void> setStudyNotesFolded(bool folded) async =>
       _studyNotesFoldedKey,
       folded,
     );
+
+const _commentaryInTextKey = 'reader_commentary_in_text';
+
+/// Whether the reader marks commentary in the text, and on a wide reader
+/// shows it in the margin.
+Future<bool> commentaryInText() async =>
+    (await SharedPreferences.getInstance()).readBool(_commentaryInTextKey) ??
+    true;
+
+Future<void> setCommentaryInText(bool shown) async =>
+    (await SharedPreferences.getInstance()).setBool(
+      _commentaryInTextKey,
+      shown,
+    );

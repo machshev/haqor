@@ -107,8 +107,11 @@ Map<String, Object?> commentaryAnchorJson(StudyPassage anchor) => {
   'chapter': anchor.chapter,
   'verse': anchor.verse,
   if (anchor.wholeChapter) 'wholeChapter': true,
-  if (anchor.endChapter != null) 'endChapter': anchor.endChapter,
-  if (anchor.endVerse != null) 'endVerse': anchor.endVerse,
+  // A range ending where it starts is the one verse, however the editor
+  // put it.
+  if (anchor.lastChapter != anchor.chapter) 'endChapter': anchor.lastChapter,
+  if (anchor.lastChapter != anchor.chapter || anchor.lastVerse != anchor.verse)
+    'endVerse': anchor.lastVerse,
   if (anchor.startWord != null) 'startWord': anchor.startWord,
   if (anchor.endWord != null) 'endWord': anchor.endWord,
 };

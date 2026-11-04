@@ -18,6 +18,10 @@ class StudyPassageEditor extends StatefulWidget {
     required this.useEnglishBookNames,
     required this.loadChapter,
     required this.isDuplicate,
+    this.title,
+    this.confirmLabel,
+    this.noteLabel = 'Passage note',
+    this.noteRequired = false,
   });
 
   final StudyPassage initial;
@@ -25,6 +29,13 @@ class StudyPassageEditor extends StatefulWidget {
   final bool useEnglishBookNames;
   final Future<List<VerseEntry>> Function(int book, int chapter) loadChapter;
   final bool Function(StudyPassage passage) isDuplicate;
+
+  /// In place of the bookmark wording, for editing another kind of note on
+  /// a passage (such as commentary); [noteRequired] refuses an empty note.
+  final String? title;
+  final String? confirmLabel;
+  final String noteLabel;
+  final bool noteRequired;
 
   @override
   State<StudyPassageEditor> createState() => _StudyPassageEditorState();
@@ -139,6 +150,8 @@ class _StudyPassageEditorState extends State<StudyPassageEditor> {
       error = 'Choose the first and last words of the phrase.';
     } else if (widget.isDuplicate(ref)) {
       error = 'This reference is already bookmarked in this study.';
+    } else if (widget.noteRequired && _note.text.trim().isEmpty) {
+      error = 'Write the note.';
     }
     if (error != null) {
       setState(() => _error = error);
@@ -256,7 +269,9 @@ class _StudyPassageEditorState extends State<StudyPassageEditor> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.creating ? 'Bookmark passage' : 'Edit passage'),
+    title: Text(
+      widget.title ?? (widget.creating ? 'Bookmark passage' : 'Edit passage'),
+    ),
     content: SizedBox(
       width: 540,
       child: SingleChildScrollView(
@@ -333,7 +348,7 @@ class _StudyPassageEditorState extends State<StudyPassageEditor> {
             const SizedBox(height: 12),
             MarkdownNoteField(
               controller: _note,
-              label: 'Passage note',
+              label: widget.noteLabel,
               minLines: 2,
             ),
             if (_error != null)
@@ -355,7 +370,9 @@ class _StudyPassageEditorState extends State<StudyPassageEditor> {
       ),
       FilledButton(
         onPressed: _loading || _loadError != null ? null : _save,
-        child: Text(widget.creating ? 'Bookmark' : 'Save'),
+        child: Text(
+          widget.confirmLabel ?? (widget.creating ? 'Bookmark' : 'Save'),
+        ),
       ),
     ],
   );

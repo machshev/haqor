@@ -9,9 +9,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:haqor/src/app_settings.dart' show ReaderText;
 import 'package:haqor/src/bindings/bindings.dart';
+import 'package:haqor/src/commentary.dart';
 import 'package:haqor/src/reader_page.dart';
 import 'package:haqor/src/study_workspace.dart' as study;
 import 'package:haqor/src/widgets/chapter_context_sheet.dart';
+import 'package:haqor/src/widgets/commentary_view.dart';
 import 'package:haqor/src/widgets/cross_references_sheet.dart';
 import 'package:haqor/src/widgets/greek_word_sheet.dart';
 import 'package:haqor/src/widgets/lexicon_source.dart';
@@ -124,6 +126,9 @@ Future<_FakeRust> _pumpReader(
       home: BibleReaderPage(
         sendChapterRequest: rust.onRequest,
         sendStudyStateRequest: rust.onStudyRequest,
+        sendCommentaryRequest: (_) {},
+        saveCommentaryNote: (_) {},
+        deleteCommentaryNote: (_) {},
         saveStudyState: rust.onStudySave,
         sendWordInfoRequest: rust.onWordInfo,
         sendWordOccurrencesRequest: rust.onOccurrences,
@@ -211,6 +216,9 @@ void main() {
             home: BibleReaderPage(
               sendChapterRequest: rust.onRequest,
               sendStudyStateRequest: rust.onStudyRequest,
+              sendCommentaryRequest: (_) {},
+              saveCommentaryNote: (_) {},
+              deleteCommentaryNote: (_) {},
               saveStudyState: rust.onStudySave,
               sendWordInfoRequest: rust.onWordInfo,
               sendWordOccurrencesRequest: rust.onOccurrences,
@@ -295,6 +303,9 @@ void main() {
           home: BibleReaderPage(
             sendChapterRequest: rust.onRequest,
             sendStudyStateRequest: rust.onStudyRequest,
+            sendCommentaryRequest: (_) {},
+            saveCommentaryNote: (_) {},
+            deleteCommentaryNote: (_) {},
             saveStudyState: rust.onStudySave,
             sendWordInfoRequest: rust.onWordInfo,
             sendWordOccurrencesRequest: rust.onOccurrences,
@@ -358,6 +369,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
           sendWordInfoRequest: rust.onWordInfo,
           sendWordOccurrencesRequest: rust.onOccurrences,
@@ -441,6 +455,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
           sendWordInfoRequest: rust.onWordInfo,
           sendWordOccurrencesRequest: rust.onOccurrences,
@@ -795,6 +812,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
         ),
       ),
@@ -1067,6 +1087,9 @@ void main() {
             home: BibleReaderPage(
               sendChapterRequest: rust.onRequest,
               sendStudyStateRequest: rust.onStudyRequest,
+              sendCommentaryRequest: (_) {},
+              saveCommentaryNote: (_) {},
+              deleteCommentaryNote: (_) {},
               saveStudyState: rust.onStudySave,
               sendWordInfoRequest: rust.onWordInfo,
               sendWordOccurrencesRequest: rust.onOccurrences,
@@ -1191,6 +1214,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
           sendWordInfoRequest: rust.onWordInfo,
           sendWordOccurrencesRequest: rust.onOccurrences,
@@ -1240,6 +1266,9 @@ void main() {
           home: BibleReaderPage(
             sendChapterRequest: rust.onRequest,
             sendStudyStateRequest: rust.onStudyRequest,
+            sendCommentaryRequest: (_) {},
+            saveCommentaryNote: (_) {},
+            deleteCommentaryNote: (_) {},
             saveStudyState: rust.onStudySave,
             sendWordInfoRequest: rust.onWordInfo,
             sendWordOccurrencesRequest: rust.onOccurrences,
@@ -1293,6 +1322,9 @@ void main() {
           home: BibleReaderPage(
             sendChapterRequest: rust.onRequest,
             sendStudyStateRequest: rust.onStudyRequest,
+            sendCommentaryRequest: (_) {},
+            saveCommentaryNote: (_) {},
+            deleteCommentaryNote: (_) {},
             saveStudyState: rust.onStudySave,
             sendWordInfoRequest: rust.onWordInfo,
             sendWordOccurrencesRequest: rust.onOccurrences,
@@ -1421,6 +1453,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
           sendWordInfoRequest: rust.onWordInfo,
           sendWordOccurrencesRequest: rust.onOccurrences,
@@ -1486,6 +1521,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
         ),
       ),
@@ -1546,6 +1584,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
         ),
       ),
@@ -1620,6 +1661,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
         ),
       ),
@@ -1665,6 +1709,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
         ),
       ),
@@ -1719,6 +1766,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
           sendWordInfoRequest: rust.onWordInfo,
           sendWordOccurrencesRequest: rust.onOccurrences,
@@ -1807,6 +1857,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
           sendWordInfoRequest: rust.onWordInfo,
           sendWordOccurrencesRequest: rust.onOccurrences,
@@ -1980,6 +2033,9 @@ void main() {
           home: BibleReaderPage(
             sendChapterRequest: rust.onRequest,
             sendStudyStateRequest: rust.onStudyRequest,
+            sendCommentaryRequest: (_) {},
+            saveCommentaryNote: (_) {},
+            deleteCommentaryNote: (_) {},
             saveStudyState: rust.onStudySave,
           ),
         ),
@@ -2011,6 +2067,9 @@ void main() {
           home: BibleReaderPage(
             sendChapterRequest: rust.onRequest,
             sendStudyStateRequest: rust.onStudyRequest,
+            sendCommentaryRequest: (_) {},
+            saveCommentaryNote: (_) {},
+            deleteCommentaryNote: (_) {},
             saveStudyState: rust.onStudySave,
           ),
         ),
@@ -2074,6 +2133,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
           sendWordInfoRequest: rust.onWordInfo,
           sendWordOccurrencesRequest: rust.onOccurrences,
@@ -2323,6 +2385,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
           sendWordInfoRequest: rust.onWordInfo,
           sendWordOccurrencesRequest: rust.onOccurrences,
@@ -2431,6 +2496,9 @@ void main() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
           sendWordInfoRequest: rust.onWordInfo,
           sendWordOccurrencesRequest: rust.onOccurrences,
@@ -2498,6 +2566,9 @@ Future<_FakeRust> _pumpWorkspace(
       home: BibleReaderPage(
         sendChapterRequest: rust.onRequest,
         sendStudyStateRequest: rust.onStudyRequest,
+        sendCommentaryRequest: (_) {},
+        saveCommentaryNote: (_) {},
+        deleteCommentaryNote: (_) {},
         saveStudyState: rust.onStudySave,
         sendWordInfoRequest: rust.onWordInfo,
         sendWordOccurrencesRequest: rust.onOccurrences,
@@ -2837,6 +2908,9 @@ void readerViewTests() {
         home: BibleReaderPage(
           sendChapterRequest: rust.onRequest,
           sendStudyStateRequest: rust.onStudyRequest,
+          sendCommentaryRequest: (_) {},
+          saveCommentaryNote: (_) {},
+          deleteCommentaryNote: (_) {},
           saveStudyState: rust.onStudySave,
           sendWordInfoRequest: rust.onWordInfo,
           sendWordOccurrencesRequest: rust.onOccurrences,
@@ -3471,5 +3545,217 @@ void greekToggleTests() {
       findsNothing,
     );
     expect(find.byKey(const ValueKey('reader-rapid-toggle')), findsNothing);
+  });
+
+  commentaryTests();
+}
+
+Future<_FakeRust> _pumpCommentaryReader(
+  WidgetTester tester, {
+  List<SaveCommentaryNote>? saved,
+  List<DeleteCommentaryNote>? deleted,
+}) async {
+  SharedPreferences.setMockInitialValues({
+    'book': 0,
+    'chapter': 1,
+    study.studyWorkspacesKey: study.encodeStudyWorkspaces([
+      const study.StudyWorkspace(id: 'study', name: 'Study'),
+    ]),
+    study.activeStudyWorkspaceKey: 'study',
+  });
+  final rust = _FakeRust();
+  await tester.pumpWidget(
+    MaterialApp(
+      home: BibleReaderPage(
+        sendChapterRequest: rust.onRequest,
+        sendStudyStateRequest: rust.onStudyRequest,
+        sendCommentaryRequest: (_) {},
+        saveCommentaryNote: saved?.add ?? (_) {},
+        deleteCommentaryNote: deleted?.add ?? (_) {},
+        saveStudyState: rust.onStudySave,
+        sendWordInfoRequest: rust.onWordInfo,
+        sendWordOccurrencesRequest: rust.onOccurrences,
+        sendVerseTextsRequest: rust.onVerseTexts,
+      ),
+    ),
+  );
+  await tester.pump();
+  rust.deliverAll();
+  await tester.pumpAndSettle();
+  return rust;
+}
+
+/// Rust's answer with [notes], through the entry point real signals use.
+void _deliverCommentary(List<CommentaryNote> notes) {
+  assignRustSignal['CommentaryNotes']!(
+    CommentaryNotes(
+      notes: [
+        for (final note in notes)
+          CommentaryNoteEntry(id: note.id, noteJson: jsonEncode(note.toJson())),
+      ],
+    ).bincodeSerialize(),
+    Uint8List(0),
+  );
+}
+
+void commentaryTests() {
+  testWidgets('commentary is written from a verse menu, marked, linked into a '
+      'study and hidden from the text', (tester) async {
+    final saved = <SaveCommentaryNote>[];
+    final deleted = <DeleteCommentaryNote>[];
+    await _pumpCommentaryReader(tester, saved: saved, deleted: deleted);
+    expect(find.byKey(const ValueKey('verse-commentary-3')), findsNothing);
+    // With no commentary there is nothing to show or hide.
+    expect(
+      find.byKey(const ValueKey('reader-commentary-toggle')),
+      findsNothing,
+    );
+
+    await tester.longPress(find.byKey(const ValueKey('verse-number-3')).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add commentary'));
+    await tester.pumpAndSettle();
+    expect(find.text('Add commentary'), findsOneWidget);
+    // An empty note is refused.
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await tester.pumpAndSettle();
+    expect(find.text('Write the note.'), findsOneWidget);
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      ),
+      'Light *before* the sun',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await tester.pumpAndSettle();
+
+    final json = jsonDecode(saved.single.noteJson) as Map<String, dynamic>;
+    expect(json['text'], 'Light *before* the sun');
+    expect(json['anchor'], {'book': 0, 'chapter': 1, 'verse': 3});
+    final marker = find.byKey(const ValueKey('verse-commentary-3'));
+    expect(marker, findsOneWidget);
+
+    // On a narrow screen the marker opens the chapter's commentary in a
+    // sheet, from which the note links into the study.
+    await tester.tap(marker);
+    await tester.pumpAndSettle();
+    expect(find.byType(CommentaryPanel), findsOneWidget);
+    expect(find.text('Light before the sun'), findsOneWidget);
+    await tester.tap(find.byTooltip('Commentary options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add to study'));
+    await tester.pumpAndSettle();
+    final workspace = study
+        .decodeStudyWorkspaces(
+          (await SharedPreferences.getInstance()).getString(
+            study.studyWorkspacesKey,
+          ),
+        )
+        .single;
+    expect(workspace.notes.single.commentaryId, saved.single.id);
+    expect(workspace.notes.single.text, 'Light *before* the sun');
+
+    // Deleting it leaves the study its copy.
+    await tester.tap(find.byTooltip('Commentary options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('The study linking to it keeps a copy'),
+      findsOneWidget,
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(deleted.single.id, saved.single.id);
+    expect(find.byKey(const ValueKey('verse-commentary-3')), findsNothing);
+  });
+
+  testWidgets('a word menu writes commentary on that word as a phrase', (
+    tester,
+  ) async {
+    final saved = <SaveCommentaryNote>[];
+    await _pumpCommentaryReader(tester, saved: saved);
+    final verse = _verse(1, 1, 2);
+    tester.widget<VerseRow>(verse).onWordMenu!(
+      'מלה',
+      null,
+      3,
+      'מלל',
+      const Offset(300, 200),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add commentary on this word'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      ),
+      'On this word',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await tester.pumpAndSettle();
+    final anchor =
+        (jsonDecode(saved.single.noteJson) as Map<String, dynamic>)['anchor']
+            as Map<String, dynamic>;
+    expect(anchor, {
+      'book': 0,
+      'chapter': 1,
+      'verse': 2,
+      'startWord': 3,
+      'endWord': 3,
+    });
+    // Its word is underlined in the text.
+    expect(tester.widget<VerseRow>(verse).commentaryPositions, {
+      anchor['startWord'],
+    });
+  });
+
+  testWidgets('a wide reader shows commentary in its margin, which the bar '
+      'toggles off', (tester) async {
+    tester.view.physicalSize = const Size(1800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pumpCommentaryReader(tester);
+    final time = DateTime.fromMillisecondsSinceEpoch(1);
+    _deliverCommentary([
+      CommentaryNote(
+        id: 'range',
+        anchor: const study.StudyPassage(
+          bookIndex: 0,
+          chapter: 1,
+          verse: 2,
+          endVerse: 4,
+        ),
+        text: 'Margin note',
+        created: time,
+        updated: time,
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    final card = find.byKey(const ValueKey('commentary-range'));
+    expect(card, findsOneWidget);
+    // Level with the verse it starts at, beside the text.
+    final verse = tester.getRect(_verse(1, 1, 2));
+    final note = tester.getRect(card);
+    expect(note.left, greaterThan(verse.right));
+    expect((note.top - verse.top).abs(), lessThan(8));
+    expect(find.byKey(const ValueKey('verse-commentary-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('verse-commentary-3')), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('reader-commentary-toggle')).first,
+    );
+    await tester.pumpAndSettle();
+    expect(card, findsNothing);
+    expect(find.byKey(const ValueKey('verse-commentary-2')), findsNothing);
+    expect(
+      (await SharedPreferences.getInstance()).getBool(
+        'reader_commentary_in_text',
+      ),
+      isFalse,
+    );
   });
 }
