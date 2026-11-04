@@ -401,6 +401,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   // The commentary notes every reader tab shares; where there is room they
   // dock beside the reader, and they can be marked in the text.
   late final CommentaryStore _commentaryStore;
+  // The passage being chosen, in whichever reader tab.
+  final PassageChoice _passageChoice = PassageChoice();
   bool _commentaryVisible = false;
   bool _commentaryInText = true;
   final GlobalKey _commentaryKey = GlobalKey();
@@ -654,6 +656,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   void dispose() {
     _studyStore.dispose();
     _commentaryStore.dispose();
+    _passageChoice.dispose();
     _mobileBarTransitionTimer?.cancel();
     _pageController.dispose();
     _proximity.dispose();
@@ -693,6 +696,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       _toggleChapterContext();
     },
     commentaryStore: _commentaryStore,
+    passageChoice: _passageChoice,
     commentaryInText: _commentaryInText,
     onCommentaryInTextChanged: _setCommentaryInText,
     onRevealReader: () {
@@ -1866,6 +1870,7 @@ class _ReaderSession extends StatefulWidget {
     this.onChapterContextToggled,
     required this.studyStore,
     required this.commentaryStore,
+    required this.passageChoice,
     this.commentaryInText = true,
     this.commentaryDocked = false,
     this.onCommentaryToggled,
@@ -1913,6 +1918,9 @@ class _ReaderSession extends StatefulWidget {
   /// whether the workspace shows them docked beside this reader, and how
   /// the reader shows or hides them there.
   final CommentaryStore commentaryStore;
+
+  /// The passage being chosen, shared with the other readers.
+  final PassageChoice passageChoice;
   final bool commentaryInText;
   final bool commentaryDocked;
   final VoidCallback? onCommentaryToggled;
@@ -2172,6 +2180,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     });
     widget.studyStore.addListener(_onStudyStoreChanged);
     widget.commentaryStore.addListener(_onCommentaryChanged);
+    widget.passageChoice.addListener(_onCommentaryChanged);
     _loadPrefs();
     _loadAdminMode();
   }
@@ -4347,15 +4356,16 @@ class _ReaderSessionState extends State<_ReaderSession>
   // A passage being chosen in the reader: words tapped or highlighted in the
   // original or the English (which chooses the original words it renders),
   // or verses tapped, widened to verses or the chapter as asked. Chosen for
-  // a new note, or, while [_pick] waits, for a dialog left to choose it.
-  PassageSelection? _selection;
-  Completer<StudyPassage?>? _pick;
-  String? _pickTitle;
+  // a new note, or for a dialog left to choose it; shared by every reader
+  // tab, so it can be made in any.
+  PassageChoice get _choice => widget.passageChoice;
+  PassageSelection? get _selection => _choice.selection;
+  bool get _picking => _choice.picking;
 
   StudyPassage? get _wordSelection => _selection?.passage;
 
   void _select(PassageSelection? selection) =>
-      setState(() => _selection = selection);
+      _choice.select(selection, owner: widget.sessionId);
 
   /// A word tapped while a passage is being chosen.
   void _tapSelectionWord(int book, int chapter, int verse, int position) {
@@ -4370,15 +4380,7 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   /// Ends the choice: [passage] to the dialog waiting for it, if any, and
   /// the selection gone either way.
-  void _finishSelection([StudyPassage? passage]) {
-    final pick = _pick;
-    setState(() {
-      _selection = null;
-      _pick = null;
-      _pickTitle = null;
-    });
-    if (pick != null && !pick.isCompleted) pick.complete(passage);
-  }
+  void _finishSelection([StudyPassage? passage]) => _choice.finish(passage);
 
   /// Choose a passage in the reader, starting from [initial] (opened there)
   /// or the reader's own place: what is open over the reader closes, the
@@ -4388,15 +4390,14 @@ class _ReaderSessionState extends State<_ReaderSession>
     required String title,
     StudyPassage? initial,
   }) {
-    _pick?.complete(null);
-    final pick = _pick = Completer<StudyPassage?>();
     final route = ModalRoute.of(context);
     if (route != null) Navigator.of(context).popUntil((r) => r == route);
     widget.onRevealReader?.call();
-    setState(() {
-      _pickTitle = title;
-      _selection = initial == null ? null : PassageSelection.of(initial);
-    });
+    final pick = _choice.pick(
+      title: title,
+      owner: widget.sessionId,
+      initial: initial == null ? null : PassageSelection.of(initial),
+    );
     if (initial != null) {
       _navigateTo(
         initial.bookIndex,
@@ -4404,7 +4405,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         verse: initial.wholeChapter ? null : initial.verse,
       );
     }
-    return pick.future;
+    return pick;
   }
 
   /// A dialog for a note on passages, which leaves to choose each passage in
@@ -4476,7 +4477,7 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   Widget _selectionBar(PassageSelection selection) => PassageSelectionBar(
     selection: selection,
-    title: _pickTitle,
+    title: _choice.title,
     useEnglishBookNames: _englishBookNames,
     onScopeChanged: (scope) => _select(selection.withScope(scope)),
     actions: [
@@ -4484,7 +4485,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         onPressed: () => _finishSelection(),
         child: const Text('Cancel'),
       ),
-      if (_pick != null)
+      if (_picking)
         FilledButton(
           key: const ValueKey('passage-pick-done'),
           onPressed: () => _finishSelection(selection.passage),
@@ -4523,7 +4524,7 @@ class _ReaderSessionState extends State<_ReaderSession>
             children: [
               Flexible(
                 child: Text(
-                  '${_pickTitle ?? 'Choose a passage'}: tap a word or a verse',
+                  '${_choice.title ?? 'Choose a passage'}: tap a word or a verse',
                 ),
               ),
               TextButton(
@@ -5526,8 +5527,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
 
     final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.escape &&
-        (_selection != null || _pick != null)) {
+    if (key == LogicalKeyboardKey.escape && _choice.active) {
       _finishSelection();
       return KeyEventResult.handled;
     }
@@ -5682,6 +5682,7 @@ class _ReaderSessionState extends State<_ReaderSession>
     _translationSub?.cancel();
     widget.studyStore.removeListener(_onStudyStoreChanged);
     widget.commentaryStore.removeListener(_onCommentaryChanged);
+    widget.passageChoice.removeListener(_onCommentaryChanged);
     for (final timeout in _fetchTimeouts.values) {
       timeout.cancel();
     }
@@ -6222,16 +6223,18 @@ class _ReaderSessionState extends State<_ReaderSession>
       child: Stack(
         children: [
           _buildScrollView(),
-          // At the top, clear of notices at the foot of the screen.
-          if (_selection case final selection?)
-            Positioned(
-              left: 12,
-              right: 12,
-              top: 8,
-              child: _selectionBar(selection),
-            )
-          else if (_pick != null)
-            Positioned(left: 12, right: 12, top: 8, child: _pickPrompt()),
+          // At the top, clear of notices at the foot of the screen, in the
+          // tab last chosen in.
+          if (_choice.owner == widget.sessionId)
+            if (_selection case final selection?)
+              Positioned(
+                left: 12,
+                right: 12,
+                top: 8,
+                child: _selectionBar(selection),
+              )
+            else if (_picking)
+              Positioned(left: 12, right: 12, top: 8, child: _pickPrompt()),
           if (_loadingPrev)
             const Positioned(
               top: 0,
@@ -6593,7 +6596,7 @@ class _ReaderSessionState extends State<_ReaderSession>
               entry: entry,
               isSelected: isSelected,
               hebrewNumerals: _hebrewNumerals,
-              onTap: () => _pick != null
+              onTap: () => _picking
                   // Choosing a passage for a dialog, a verse tapped is chosen.
                   ? _select(
                       _selection?.tapVerse(b, c, entry.verse) ??
@@ -6611,7 +6614,7 @@ class _ReaderSessionState extends State<_ReaderSession>
                       }
                     }),
               onWordTap: (word, readerGloss, position, root) {
-                if ((_selection != null || _pick != null) && position != null) {
+                if (_choice.active && position != null) {
                   _tapSelectionWord(b, c, entry.verse, position);
                   return;
                 }
@@ -6771,7 +6774,7 @@ class _ReaderSessionState extends State<_ReaderSession>
               translation: translation.spans,
               translationPending: translation.pending,
               onTranslationWordTap: (target) {
-                if (_selection != null || _pick != null) {
+                if (_choice.active) {
                   _tapSelectionWord(
                     b,
                     target.chapter,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'study_workspace.dart';
@@ -134,4 +136,66 @@ class PassageSelection {
 
   @override
   int get hashCode => Object.hash(anchor, focus, scope);
+}
+
+/// The passage being chosen, shared by every reader tab, so a choice begun
+/// in one can be made in another: chosen for a new note, or, while
+/// [picking], for a dialog left to choose it. Its bar shows in the [owner]
+/// tab, the one last chosen in.
+class PassageChoice extends ChangeNotifier {
+  PassageSelection? _selection;
+  Completer<StudyPassage?>? _pick;
+  String? _title;
+  String? _owner;
+
+  PassageSelection? get selection => _selection;
+
+  /// Whether a dialog waits for the passage.
+  bool get picking => _pick != null;
+
+  /// What the dialog waiting for it is for.
+  String? get title => _title;
+  String? get owner => _owner;
+  bool get active => _selection != null || _pick != null;
+
+  /// Choose [selection] in the reader tab [owner].
+  void select(PassageSelection? selection, {required String owner}) {
+    _selection = selection;
+    _owner = owner;
+    notifyListeners();
+  }
+
+  /// Wait for a passage, starting from [initial], chosen for [title]; what
+  /// was waiting before gets none.
+  Future<StudyPassage?> pick({
+    required String title,
+    required String owner,
+    PassageSelection? initial,
+  }) {
+    _pick?.complete(null);
+    final pick = _pick = Completer<StudyPassage?>();
+    _title = title;
+    _owner = owner;
+    _selection = initial;
+    notifyListeners();
+    return pick.future;
+  }
+
+  /// End the choice: [passage] to the dialog waiting for it, if any.
+  void finish([StudyPassage? passage]) {
+    final pick = _pick;
+    _selection = null;
+    _pick = null;
+    _title = null;
+    _owner = null;
+    notifyListeners();
+    if (pick != null && !pick.isCompleted) pick.complete(passage);
+  }
+
+  @override
+  void dispose() {
+    final pick = _pick;
+    if (pick != null && !pick.isCompleted) pick.complete(null);
+    super.dispose();
+  }
 }

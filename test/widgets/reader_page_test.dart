@@ -4035,6 +4035,83 @@ void commentaryTests() {
     expect(row(4).translationVerseSelected, isTrue);
   });
 
+  testWidgets('a passage begun in one reader tab is chosen in another', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1800, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final saved = <SaveCommentaryNote>[];
+    final rust = await _pumpCommentaryReader(
+      tester,
+      saved: saved,
+      prefs: {
+        'reader_tabs': ['primary', 'two'],
+        'reader_active_tab': 'primary',
+        'reader_tabs_tiled': true,
+        'reader_session_two_book': 39,
+        'reader_session_two_chapter': 1,
+      },
+    );
+    for (var i = 0; i < 3; i++) {
+      rust.deliverAll();
+      await tester.pumpAndSettle();
+    }
+    final bar = find.byKey(const ValueKey('word-selection-bar'));
+
+    // Begun on Genesis 1:3 in the first tab's menu...
+    await tester.longPress(
+      find.descendant(
+        of: _verse(1, 1, 3),
+        matching: find.byKey(const ValueKey('verse-number-3')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add commentary'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      ),
+      'Fulfilled',
+    );
+    await tester.tap(find.byKey(const ValueKey('passage-add')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('passage-pick-prompt')), findsOneWidget);
+
+    // ...the passage is chosen in the second, which then shows the bar.
+    VerseRow nt(int verse) => tester.widget<VerseRow>(_verse(40, 1, verse));
+    nt(5).onWordTap('מלה', null, 1, 'מלל');
+    await tester.pumpAndSettle();
+    nt(5).onWordTap('מלה', null, 2, 'מלל');
+    await tester.pumpAndSettle();
+    expect(nt(5).selectedPositions, {1, 2});
+    expect(bar, findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('reader:two')),
+        matching: bar,
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('passage-pick-prompt')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('passage-pick-done')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await tester.pumpAndSettle();
+    expect(
+      (jsonDecode(saved.single.noteJson) as Map<String, dynamic>)['anchors'],
+      [
+        {'book': 0, 'chapter': 1, 'verse': 3},
+        {'book': 39, 'chapter': 1, 'verse': 5, 'startWord': 1, 'endWord': 2},
+      ],
+    );
+    expect(bar, findsNothing);
+  });
+
   testWidgets('escape or cancel drops a word selection', (tester) async {
     await _pumpCommentaryReader(tester);
     VerseRow row() => tester.widget<VerseRow>(_verse(1, 1, 2));
