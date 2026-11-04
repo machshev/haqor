@@ -6714,6 +6714,12 @@ class _ReaderSessionState extends State<_ReaderSession>
                   PassageSelection(anchor: points.first, focus: points.last),
                 );
               },
+              onTranslationVerseSelected: () =>
+                  _select(PassageSelection.verse(b, c, entry.verse)),
+              translationVerseSelected:
+                  selection != null &&
+                  _selection?.scope != PassageScope.words &&
+                  selection.containsVerse(b, c, entry.verse),
               translationWordSelected: selection == null
                   ? null
                   : (word) => selection.containsWord(

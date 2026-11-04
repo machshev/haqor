@@ -125,4 +125,51 @@ void main() {
       [at(0), at(2)],
     ]);
   });
+
+  testWidgets('a highlight in English naming no words chooses its verse', (
+    tester,
+  ) async {
+    var verseChosen = 0;
+    Widget row({required bool selected}) => MaterialApp(
+      home: Scaffold(
+        body: VerseRow(
+          entry: entry,
+          isSelected: false,
+          hebrewNumerals: false,
+          onTap: () {},
+          onWordTap: (_, _, _, _) {},
+          readerText: ReaderText.english,
+          // The Peshitta's English, a verse at a time.
+          translation: const [
+            TranslationSpanEntry(
+              text: 'In the beginning, was the Word.',
+              supplied: false,
+              words: [],
+            ),
+          ],
+          onTranslationVerseSelected: () => verseChosen++,
+          translationVerseSelected: selected,
+        ),
+      ),
+    );
+    await tester.pumpWidget(row(selected: false));
+    await drag(
+      tester,
+      TextDirection.ltr,
+      (text) => text.indexOf('beginning') + 2,
+      (text) => text.indexOf('Word') + 2,
+    );
+    expect(verseChosen, 1);
+
+    TextStyle? style() => tester
+        .widget<SelectableText>(find.byType(SelectableText))
+        .textSpan!
+        .children!
+        .whereType<TextSpan>()
+        .single
+        .style;
+    expect(style()?.backgroundColor, isNull);
+    await tester.pumpWidget(row(selected: true));
+    expect(style()?.backgroundColor, isNotNull);
+  });
 }

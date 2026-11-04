@@ -187,6 +187,8 @@ class VerseRow extends StatefulWidget {
     this.translationWordSelected,
     this.onSourceWordsSelected,
     this.onTranslationWordsSelected,
+    this.onTranslationVerseSelected,
+    this.translationVerseSelected = false,
     this.studyPassageHighlightColor,
     this.ketivDisplay = KetivDisplay.superscript,
     this.syntaxMarks,
@@ -281,6 +283,12 @@ class VerseRow extends StatefulWidget {
   final void Function(int first, int last)? onSourceWordsSelected;
   final void Function(List<TranslationWordEntry> words)?
   onTranslationWordsSelected;
+
+  /// English that names no original words (the Peshitta's, rendered verse by
+  /// verse) chooses its whole verse when highlighted, and shows as chosen
+  /// while [translationVerseSelected].
+  final VoidCallback? onTranslationVerseSelected;
+  final bool translationVerseSelected;
   final Color? studyPassageHighlightColor;
   final KetivDisplay ketivDisplay;
 
@@ -531,7 +539,13 @@ class _VerseRowState extends State<VerseRow> {
           for (final (start, end, span) in _translationOffsets)
             if (touches((start, end))) ...span.words,
         ];
-        if (words.isNotEmpty) widget.onTranslationWordsSelected?.call(words);
+        if (words.isNotEmpty) {
+          widget.onTranslationWordsSelected?.call(words);
+        } else if (_translationOffsets.any(
+          (o) => touches((o.$1, o.$2)) && o.$3.text.trim().isNotEmpty,
+        )) {
+          widget.onTranslationVerseSelected?.call();
+        }
       }
     });
   }
@@ -1071,7 +1085,9 @@ class _VerseRowState extends State<VerseRow> {
     TextStyle? translationSpanStyle(TranslationSpanEntry span) {
       final selected = widget.translationWordSelected;
       final commentary = widget.translationCommentary;
-      final isSelected = selected != null && span.words.any(selected);
+      final isSelected = span.words.isEmpty
+          ? widget.translationVerseSelected && span.text.trim().isNotEmpty
+          : selected != null && span.words.any(selected);
       final hasCommentary = commentary != null && span.words.any(commentary);
       if (!span.supplied && !isSelected && !hasCommentary) return null;
       return TextStyle(

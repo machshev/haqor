@@ -3580,9 +3580,12 @@ Future<_FakeRust> _pumpCommentaryReader(
   WidgetTester tester, {
   List<SaveCommentaryNote>? saved,
   List<DeleteCommentaryNote>? deleted,
+  int book = 0,
+  Map<String, Object> prefs = const {},
 }) async {
   SharedPreferences.setMockInitialValues({
-    'book': 0,
+    ...prefs,
+    'book': book,
     'chapter': 1,
     study.studyWorkspacesKey: study.encodeStudyWorkspaces([
       const study.StudyWorkspace(id: 'study', name: 'Study'),
@@ -4008,6 +4011,28 @@ void commentaryTests() {
     // The dialog is back, its passage unchanged.
     expect(find.text('Bereshit 1:3 · words 3–5'), findsOneWidget);
     expect(find.byKey(const ValueKey('word-selection-bar')), findsNothing);
+  });
+
+  testWidgets('Peshitta English, naming no words, chooses whole verses', (
+    tester,
+  ) async {
+    await _pumpCommentaryReader(tester, book: 39);
+    VerseRow row(int verse) => tester.widget<VerseRow>(_verse(40, 1, verse));
+    row(3).onTranslationVerseSelected!();
+    await tester.pumpAndSettle();
+    final bar = find.byKey(const ValueKey('word-selection-bar'));
+    expect(bar, findsOneWidget);
+    expect(row(3).selectedPositions, hasLength(11));
+    expect(row(3).translationVerseSelected, isTrue);
+    expect(row(4).translationVerseSelected, isFalse);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('passage-scope')),
+        matching: find.text('Chapter'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(row(4).translationVerseSelected, isTrue);
   });
 
   testWidgets('escape or cancel drops a word selection', (tester) async {
