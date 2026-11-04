@@ -13,7 +13,7 @@ CommentaryNote _note(
   int created = 1,
 }) => CommentaryNote(
   id: id,
-  anchor: anchor,
+  anchors: [anchor],
   text: text,
   created: DateTime.fromMillisecondsSinceEpoch(created),
   updated: DateTime.fromMillisecondsSinceEpoch(created),
@@ -41,15 +41,48 @@ void main() {
     expect(note.updated.millisecondsSinceEpoch, 20);
     final json = note.toJson();
     expect(json['future'], [1, 2]);
-    expect(json['anchor'], {
-      'book': 0,
-      'chapter': 1,
-      'verse': 3,
-      'startWord': 1,
-      'endWord': 2,
-    });
+    // Read from the single anchor of earlier drafts, saved as a list.
+    expect(json.containsKey('anchor'), isFalse);
+    expect(json['anchors'], [
+      {'book': 0, 'chapter': 1, 'verse': 3, 'startWord': 1, 'endWord': 2},
+    ]);
     final again = CommentaryNote.fromJson('c1', jsonDecode(jsonEncode(json)))!;
     expect(again.toJson(), json);
+  });
+
+  test('a note links to more passages, each marked where it is', () {
+    final time = DateTime.fromMillisecondsSinceEpoch(1);
+    final note = CommentaryNote(
+      id: 'n',
+      anchors: const [StudyPassage(bookIndex: 0, chapter: 2, verse: 5)],
+      text: 'Rest',
+      created: time,
+      updated: time,
+    );
+    const phrase = StudyPassage(
+      bookIndex: 1,
+      chapter: 20,
+      verse: 8,
+      startWord: 1,
+      endWord: 3,
+    );
+    final linked = note.linkedTo(phrase);
+    expect(linked.anchors, [note.anchor, phrase]);
+    // The same passage again changes nothing.
+    expect(identical(linked.linkedTo(phrase), linked), isTrue);
+    expect(linked.inChapter(1, 20), isTrue);
+    expect(linked.marginVerse(1, 20), 8);
+    expect(linked.marginVerse(0, 2), 5);
+    expect(linked.onVerse(1, 20, 8), isTrue);
+    expect(linked.onWord(1, 20, 8, 2), isTrue);
+    expect(linked.onWord(1, 20, 8, 4), isFalse);
+    // A whole verse marks no words.
+    expect(linked.onWord(0, 2, 5, 0), isFalse);
+    final read = CommentaryNote.fromJson(
+      'n',
+      jsonDecode(jsonEncode(linked.toJson())),
+    )!;
+    expect(read.anchors.map((a) => a.locationKey), ['0:2:5', '1:20:8@1-3']);
   });
 
   test('a note without text or a valid anchor is not read', () {
@@ -112,9 +145,9 @@ void main() {
     ]);
     expect(store.notesOn(0, 2, 4).map((n) => n.id), ['chapter']);
     expect(store.notesInChapter(0, 1).map((n) => n.id), ['range']);
-    expect(range.marginVerse(1), 30);
-    expect(range.marginVerse(2), 1);
-    expect(verse.marginVerse(2), 2);
+    expect(range.marginVerse(0, 1), 30);
+    expect(range.marginVerse(0, 2), 1);
+    expect(verse.marginVerse(0, 2), 2);
     store.dispose();
   });
 

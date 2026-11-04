@@ -3632,7 +3632,9 @@ void commentaryTests() {
 
     final json = jsonDecode(saved.single.noteJson) as Map<String, dynamic>;
     expect(json['text'], 'Light *before* the sun');
-    expect(json['anchor'], {'book': 0, 'chapter': 1, 'verse': 3});
+    expect(json['anchors'], [
+      {'book': 0, 'chapter': 1, 'verse': 3},
+    ]);
     final marker = find.byKey(const ValueKey('verse-commentary-3'));
     expect(marker, findsOneWidget);
 
@@ -3723,7 +3725,9 @@ void commentaryTests() {
     await tester.tap(find.widgetWithText(FilledButton, 'Add'));
     await tester.pumpAndSettle();
     final anchor =
-        (jsonDecode(saved.single.noteJson) as Map<String, dynamic>)['anchor']
+        ((jsonDecode(saved.single.noteJson) as Map<String, dynamic>)['anchors']
+                    as List)
+                .single
             as Map<String, dynamic>;
     expect(anchor, {
       'book': 0,
@@ -3773,6 +3777,142 @@ void commentaryTests() {
     expect(row(4).selectedPositions, {0, 1, 2});
   });
 
+  testWidgets('a verse links to a note already written, and unlinks from it', (
+    tester,
+  ) async {
+    final saved = <SaveCommentaryNote>[];
+    await _pumpCommentaryReader(tester, saved: saved);
+    final time = DateTime.fromMillisecondsSinceEpoch(1);
+    _deliverCommentary([
+      CommentaryNote(
+        id: 'light',
+        anchors: const [study.StudyPassage(bookIndex: 0, chapter: 1, verse: 3)],
+        text: 'Light',
+        created: time,
+        updated: time,
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('verse-commentary-5')), findsNothing);
+
+    await tester.longPress(find.byKey(const ValueKey('verse-number-5')).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Link to a note'));
+    await tester.pumpAndSettle();
+    expect(find.text('Link Bereshit 1:5 to a note'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pick-commentary-light')));
+    await tester.pumpAndSettle();
+    List<Object?> anchors() =>
+        (jsonDecode(saved.last.noteJson) as Map<String, dynamic>)['anchors']
+            as List;
+    expect(anchors(), [
+      {'book': 0, 'chapter': 1, 'verse': 3},
+      {'book': 0, 'chapter': 1, 'verse': 5},
+    ]);
+    expect(find.byKey(const ValueKey('verse-commentary-3')), findsOneWidget);
+    expect(find.byKey(const ValueKey('verse-commentary-5')), findsOneWidget);
+
+    // Editing shows the passages as chips over the note, which has the focus.
+    await tester.tap(find.byKey(const ValueKey('verse-commentary-5')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Commentary options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit commentary'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DropdownButtonFormField<int>), findsNothing);
+    expect(
+      tester
+          .widget<TextField>(
+            find.descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(TextField),
+            ),
+          )
+          .focusNode
+          ?.hasFocus,
+      isTrue,
+    );
+    await tester.tap(find.byTooltip('Unlink this passage').first);
+    await tester.pumpAndSettle();
+    // The last passage stays.
+    expect(find.byTooltip('Unlink this passage'), findsNothing);
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    expect(anchors(), [
+      {'book': 0, 'chapter': 1, 'verse': 5},
+    ]);
+    expect(find.byKey(const ValueKey('verse-commentary-3')), findsNothing);
+  });
+
+  testWidgets('a passage is added to a note with the passage selector', (
+    tester,
+  ) async {
+    final saved = <SaveCommentaryNote>[];
+    final rust = await _pumpCommentaryReader(tester, saved: saved);
+    final time = DateTime.fromMillisecondsSinceEpoch(1);
+    _deliverCommentary([
+      CommentaryNote(
+        id: 'light',
+        anchors: const [study.StudyPassage(bookIndex: 0, chapter: 1, verse: 3)],
+        text: 'Light',
+        created: time,
+        updated: time,
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    Future<void> settle() async {
+      for (var i = 0; i < 5; i++) {
+        rust.deliverAll();
+        await tester.pumpAndSettle();
+      }
+    }
+
+    await tester.tap(find.byKey(const ValueKey('verse-commentary-3')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Commentary options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit commentary'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add passage'));
+    await settle();
+    expect(find.text('Link another passage'), findsOneWidget);
+    // The selector, without its own note, choosing words of 1:4.
+    expect(find.text('Passage note'), findsNothing);
+    await tester.tap(find.text('Verse or verse range'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Phrase').last);
+    await settle();
+    await tester.tap(find.byKey(const ValueKey('Start verse-3-20')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('4').last);
+    await settle();
+    await tester.tap(find.byKey(const ValueKey('End verse-3-20')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('4').last);
+    await settle();
+    for (final word in [
+      find.byTooltip('Word 2').first,
+      find.byTooltip('Word 4').last,
+    ]) {
+      await tester.ensureVisible(word);
+      await tester.pumpAndSettle();
+      await tester.tap(word);
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Link'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bereshit 1:4 · words 2–4'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    expect(
+      (jsonDecode(saved.last.noteJson) as Map<String, dynamic>)['anchors'],
+      [
+        {'book': 0, 'chapter': 1, 'verse': 3},
+        {'book': 0, 'chapter': 1, 'verse': 4, 'startWord': 1, 'endWord': 3},
+      ],
+    );
+  });
+
   testWidgets('escape or cancel drops a word selection', (tester) async {
     await _pumpCommentaryReader(tester);
     VerseRow row() => tester.widget<VerseRow>(_verse(1, 1, 2));
@@ -3804,12 +3944,14 @@ void commentaryTests() {
     _deliverCommentary([
       CommentaryNote(
         id: 'range',
-        anchor: const study.StudyPassage(
-          bookIndex: 0,
-          chapter: 1,
-          verse: 2,
-          endVerse: 4,
-        ),
+        anchors: [
+          const study.StudyPassage(
+            bookIndex: 0,
+            chapter: 1,
+            verse: 2,
+            endVerse: 4,
+          ),
+        ],
         text: 'Margin note',
         created: time,
         updated: time,

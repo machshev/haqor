@@ -5,7 +5,7 @@ import '../bible_data.dart';
 import '../commentary.dart';
 import '../study_workspace.dart';
 import '../surface.dart';
-import 'commentary_view.dart' show commentaryReference;
+import 'commentary_view.dart' show CommentaryReferences;
 import 'cross_references_sheet.dart' show crossReferenceStrength;
 import 'markdown_note.dart';
 import 'name_details.dart' show nameKindIcon;
@@ -68,7 +68,6 @@ class StudyWorkspacePanel extends StatelessWidget {
     this.onEditTimelineEntry,
     this.onRemoveTimelineEntry,
     this.commentaryById,
-    this.onOpenCommentary,
   });
 
   final List<StudyWorkspace> workspaces;
@@ -144,10 +143,9 @@ class StudyWorkspacePanel extends StatelessWidget {
   final ValueChanged<StudyTimelineEntry>? onEditTimelineEntry;
   final ValueChanged<StudyTimelineEntry>? onRemoveTimelineEntry;
 
-  /// The commentary note a linked study note shows, and opening its passage
-  /// in the reader.
+  /// The commentary note a linked study note shows; its passages open
+  /// through [onOpenPassage].
   final CommentaryNote? Function(String id)? commentaryById;
-  final ValueChanged<CommentaryNote>? onOpenCommentary;
 
   String _reference(StudyPassage passage) =>
       '${bookDisplayName(passage.bookIndex, useEnglish: useEnglishBookNames)} '
@@ -1605,7 +1603,6 @@ class StudyWorkspacePanel extends StatelessWidget {
     final commentaryId = note.commentaryId;
     final linked = commentaryId != null;
     final commentary = linked ? commentaryById?.call(commentaryId) : null;
-    final open = onOpenCommentary;
     final theme = Theme.of(context);
     return ListTile(
       key: ValueKey('note-${note.id}'),
@@ -1635,15 +1632,10 @@ class StudyWorkspacePanel extends StatelessWidget {
                     ),
                   )
                 else
-                  InkWell(
-                    onTap: open == null ? null : () => open(commentary),
-                    child: Text(
-                      commentaryReference(
-                        commentary.anchor,
-                        useEnglishBookNames: useEnglishBookNames,
-                      ),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                  CommentaryReferences(
+                    anchors: commentary.anchors,
+                    useEnglishBookNames: useEnglishBookNames,
+                    onOpen: onOpenPassage,
                   ),
                 _OutlineNote(commentary?.text ?? note.text),
               ],

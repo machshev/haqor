@@ -20,8 +20,7 @@ class StudyPassageEditor extends StatefulWidget {
     required this.isDuplicate,
     this.title,
     this.confirmLabel,
-    this.noteLabel = 'Passage note',
-    this.noteRequired = false,
+    this.showNote = true,
   });
 
   final StudyPassage initial;
@@ -30,12 +29,11 @@ class StudyPassageEditor extends StatefulWidget {
   final Future<List<VerseEntry>> Function(int book, int chapter) loadChapter;
   final bool Function(StudyPassage passage) isDuplicate;
 
-  /// In place of the bookmark wording, for editing another kind of note on
-  /// a passage (such as commentary); [noteRequired] refuses an empty note.
+  /// In place of the bookmark wording, for choosing a passage for something
+  /// else (such as commentary), which without [showNote] has no note.
   final String? title;
   final String? confirmLabel;
-  final String noteLabel;
-  final bool noteRequired;
+  final bool showNote;
 
   @override
   State<StudyPassageEditor> createState() => _StudyPassageEditorState();
@@ -150,8 +148,6 @@ class _StudyPassageEditorState extends State<StudyPassageEditor> {
       error = 'Choose the first and last words of the phrase.';
     } else if (widget.isDuplicate(ref)) {
       error = 'This reference is already bookmarked in this study.';
-    } else if (widget.noteRequired && _note.text.trim().isEmpty) {
-      error = 'Write the note.';
     }
     if (error != null) {
       setState(() => _error = error);
@@ -309,7 +305,9 @@ class _StudyPassageEditorState extends State<StudyPassageEditor> {
             DropdownButtonFormField<_PassageScope>(
               initialValue: _scope,
               isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Bookmark'),
+              decoration: InputDecoration(
+                labelText: widget.showNote ? 'Bookmark' : 'Passage',
+              ),
               items: const [
                 DropdownMenuItem(
                   value: _PassageScope.chapter,
@@ -345,12 +343,14 @@ class _StudyPassageEditorState extends State<StudyPassageEditor> {
               const SizedBox(height: 16),
               Text(_reference.reference),
             ],
-            const SizedBox(height: 12),
-            MarkdownNoteField(
-              controller: _note,
-              label: widget.noteLabel,
-              minLines: 2,
-            ),
+            if (widget.showNote) ...[
+              const SizedBox(height: 12),
+              MarkdownNoteField(
+                controller: _note,
+                label: 'Passage note',
+                minLines: 2,
+              ),
+            ],
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),

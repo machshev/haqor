@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:rinf/rinf.dart';
@@ -9,14 +10,15 @@ import 'request_failure.dart';
 import 'study_workspace.dart';
 import 'tutor/progress_sync.dart';
 
-/// A note of the reader's own on a verse, a range of verses, a chapter or a
-/// phrase, kept apart from any study. A study can hold a live link to one
+/// A note of the reader's own on one or more passages (verses, a range of
+/// them, a chapter or a phrase), kept apart from any study: written on one,
+/// and perhaps linked to others it bears on. A study can hold a live link to one
 /// (a [StudyNote] with its [StudyNote.commentaryId]).
 @immutable
 class CommentaryNote {
   const CommentaryNote({
     required this.id,
-    required this.anchor,
+    required this.anchors,
     required this.text,
     required this.created,
     required this.updated,
@@ -25,9 +27,12 @@ class CommentaryNote {
 
   final String id;
 
-  /// What the note is on: only its reference counts, not its note, colour,
-  /// group or order.
-  final StudyPassage anchor;
+  /// The passages the note is on, the one it was written on first; only
+  /// their references count, not their note, colour, group or order. Never
+  /// empty.
+  final List<StudyPassage> anchors;
+
+  StudyPassage get anchor => anchors.first;
 
   /// Markdown.
   final String text;
@@ -41,23 +46,44 @@ class CommentaryNote {
   int get bookIndex => anchor.bookIndex;
 
   bool onVerse(int book, int chapter, int verse) =>
-      anchor.containsVerse(book, chapter, verse);
+      anchors.any((a) => a.containsVerse(book, chapter, verse));
 
-  /// Whether the note's passage overlaps the chapter at all.
-  bool inChapter(int book, int chapter) =>
-      anchor.bookIndex == book &&
-      anchor.chapter <= chapter &&
-      anchor.lastChapter >= chapter;
+  /// The note's passages that overlap the chapter.
+  Iterable<StudyPassage> anchorsIn(int book, int chapter) => anchors.where(
+    (a) =>
+        a.bookIndex == book && a.chapter <= chapter && a.lastChapter >= chapter,
+  );
+
+  /// Whether one of the note's passages overlaps the chapter at all.
+  bool inChapter(int book, int chapter) => anchorsIn(book, chapter).isNotEmpty;
+
+  /// The verses of [chapter] where the note's passages start (verse 1 for
+  /// one begun in an earlier chapter, or on the whole chapter).
+  Iterable<int> startVerses(int book, int chapter) => anchorsIn(
+    book,
+    chapter,
+  ).map((a) => a.wholeChapter || a.chapter < chapter ? 1 : a.verse);
 
   /// The verse of [chapter] where the note shows in the margin: the first
-  /// of its own there.
-  int marginVerse(int chapter) =>
-      anchor.wholeChapter || anchor.chapter < chapter ? 1 : anchor.verse;
+  /// where one of its passages starts.
+  int marginVerse(int book, int chapter) =>
+      startVerses(book, chapter).fold(1 << 30, math.min);
 
-  CommentaryNote copyWith({StudyPassage? anchor, String? text}) =>
+  /// Whether a word is in one of the note's phrases.
+  bool onWord(int book, int chapter, int verse, int position) => anchors.any(
+    (a) => a.isPhrase && a.containsWord(book, chapter, verse, position),
+  );
+
+  /// The note with [anchor] added, unless it already has that passage.
+  CommentaryNote linkedTo(StudyPassage anchor) =>
+      anchors.any((a) => a.locationKey == anchor.locationKey)
+      ? this
+      : copyWith(anchors: [...anchors, anchor]);
+
+  CommentaryNote copyWith({List<StudyPassage>? anchors, String? text}) =>
       CommentaryNote(
         id: id,
-        anchor: anchor ?? this.anchor,
+        anchors: anchors ?? this.anchors,
         text: text ?? this.text,
         created: created,
         updated: DateTime.now(),
@@ -66,7 +92,7 @@ class CommentaryNote {
 
   Map<String, Object?> toJson() => {
     ...extra,
-    'anchor': commentaryAnchorJson(anchor),
+    'anchors': [for (final a in anchors) commentaryAnchorJson(a)],
     'text': text,
     'created': created.millisecondsSinceEpoch,
     'updated': updated.millisecondsSinceEpoch,
@@ -74,15 +100,19 @@ class CommentaryNote {
 
   static CommentaryNote? fromJson(String id, Object? value) {
     if (id.isEmpty || value is! Map) return null;
-    final anchor = StudyPassage.fromJson(value['anchor']);
+    final stored = value['anchors'];
+    final anchors = [
+      for (final a in stored is List ? stored : [value['anchor']])
+        ?StudyPassage.fromJson(a),
+    ];
     final text = value['text'];
-    if (anchor == null || text is! String || text.trim().isEmpty) return null;
+    if (anchors.isEmpty || text is! String || text.trim().isEmpty) return null;
     DateTime time(Object? ms) => ms is int
         ? DateTime.fromMillisecondsSinceEpoch(ms)
         : DateTime.fromMillisecondsSinceEpoch(0);
     return CommentaryNote(
       id: id,
-      anchor: anchor,
+      anchors: anchors,
       text: text,
       created: time(value['created']),
       updated: time(value['updated'] ?? value['created']),
@@ -91,6 +121,7 @@ class CommentaryNote {
           if (entry.key is String &&
               !const {
                 'anchor',
+                'anchors',
                 'text',
                 'created',
                 'updated',

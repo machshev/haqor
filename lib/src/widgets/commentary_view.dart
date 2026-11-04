@@ -16,8 +16,62 @@ String commentaryReference(
     '${bookDisplayName(anchor.bookIndex, useEnglish: useEnglishBookNames)} '
     '${anchor.reference}';
 
-/// One commentary note: its reference (opening the passage), its text and
-/// its menu.
+/// The passages a note is on, each opening its passage: "Genesis 1:3 ·
+/// 2:4", the book named where it changes, and not at all while it is
+/// [contextBook].
+class CommentaryReferences extends StatelessWidget {
+  const CommentaryReferences({
+    super.key,
+    required this.anchors,
+    required this.useEnglishBookNames,
+    this.contextBook,
+    this.onOpen,
+    this.style,
+  });
+
+  final List<StudyPassage> anchors;
+  final bool useEnglishBookNames;
+  final int? contextBook;
+  final ValueChanged<StudyPassage>? onOpen;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final open = onOpen;
+    final linkStyle = (style ?? const TextStyle()).copyWith(
+      fontWeight: FontWeight.bold,
+      color: open == null ? null : theme.colorScheme.primary,
+    );
+    final labels = <String>[];
+    var book = contextBook;
+    for (final anchor in anchors) {
+      labels.add(
+        anchor.bookIndex == book
+            ? anchor.reference
+            : commentaryReference(
+                anchor,
+                useEnglishBookNames: useEnglishBookNames,
+              ),
+      );
+      book = anchor.bookIndex;
+    }
+    return Wrap(
+      children: [
+        for (final (i, anchor) in anchors.indexed) ...[
+          if (i > 0) Text(' · ', style: style),
+          InkWell(
+            onTap: open == null ? null : () => open(anchor),
+            child: Text(labels[i], style: linkStyle),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// One commentary note: its passages (each opening its passage), its text
+/// and its menu.
 class CommentaryNoteCard extends StatelessWidget {
   const CommentaryNoteCard({
     super.key,
@@ -25,17 +79,17 @@ class CommentaryNoteCard extends StatelessWidget {
     required this.useEnglishBookNames,
     required this.onAction,
     this.onOpen,
-    this.showBook = true,
+    this.contextBook,
     this.compact = false,
   });
 
   final CommentaryNote note;
   final bool useEnglishBookNames;
   final void Function(CommentaryNote note, CommentaryAction action) onAction;
-  final ValueChanged<CommentaryNote>? onOpen;
+  final ValueChanged<StudyPassage>? onOpen;
 
-  /// Without the book's name, where the list already says it.
-  final bool showBook;
+  /// The book the list is already in, whose name its passages leave out.
+  final int? contextBook;
 
   /// Smaller, for the reader's margin.
   final bool compact;
@@ -43,14 +97,7 @@ class CommentaryNoteCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final reference = showBook
-        ? commentaryReference(
-            note.anchor,
-            useEnglishBookNames: useEnglishBookNames,
-          )
-        : note.anchor.reference;
     final textStyle = compact ? theme.textTheme.bodySmall : null;
-    final open = onOpen;
     return Card(
       key: ValueKey('commentary-${note.id}'),
       margin: EdgeInsets.symmetric(vertical: compact ? 2 : 4),
@@ -79,21 +126,14 @@ class CommentaryNoteCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: InkWell(
-                    onTap: open == null ? null : () => open(note),
-                    child: Text(
-                      reference,
-                      style:
-                          (compact
-                                  ? theme.textTheme.labelSmall
-                                  : theme.textTheme.labelLarge)
-                              ?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: open == null
-                                    ? null
-                                    : theme.colorScheme.primary,
-                              ),
-                    ),
+                  child: CommentaryReferences(
+                    anchors: note.anchors,
+                    useEnglishBookNames: useEnglishBookNames,
+                    contextBook: contextBook,
+                    onOpen: onOpen,
+                    style: compact
+                        ? theme.textTheme.labelSmall
+                        : theme.textTheme.labelLarge,
                   ),
                 ),
                 CommentaryMenuButton(
@@ -190,7 +230,7 @@ class CommentaryPanel extends StatelessWidget {
   final bool useEnglishBookNames;
   final VoidCallback onAdd;
   final void Function(CommentaryNote note, CommentaryAction action) onAction;
-  final ValueChanged<CommentaryNote> onOpen;
+  final ValueChanged<StudyPassage> onOpen;
   final VoidCallback onBrowse;
 
   /// Docked, hides the panel.
@@ -260,7 +300,7 @@ class CommentaryPanel extends StatelessWidget {
                         CommentaryNoteCard(
                           note: note,
                           useEnglishBookNames: useEnglishBookNames,
-                          showBook: note.bookIndex != bookIndex,
+                          contextBook: bookIndex,
                           onAction: onAction,
                           onOpen: onOpen,
                         ),
@@ -287,8 +327,8 @@ class CommentaryPage extends StatefulWidget {
   final bool useEnglishBookNames;
   final void Function(CommentaryNote note, CommentaryAction action) onAction;
 
-  /// Open the note's passage in the reader; the page closes first.
-  final ValueChanged<CommentaryNote> onOpen;
+  /// Open one of a note's passages in the reader; the page closes first.
+  final ValueChanged<StudyPassage> onOpen;
 
   @override
   State<CommentaryPage> createState() => _CommentaryPageState();
@@ -306,11 +346,12 @@ class _CommentaryPageState extends State<CommentaryPage> {
 
   bool _matches(CommentaryNote note) {
     if (_query.isEmpty) return true;
-    final reference = commentaryReference(
-      note.anchor,
-      useEnglishBookNames: widget.useEnglishBookNames,
-    ).toLowerCase();
-    return reference.contains(_query) ||
+    return note.anchors.any(
+          (anchor) => commentaryReference(
+            anchor,
+            useEnglishBookNames: widget.useEnglishBookNames,
+          ).toLowerCase().contains(_query),
+        ) ||
         markdownPlainText(note.text).toLowerCase().contains(_query);
   }
 
@@ -344,11 +385,11 @@ class _CommentaryPageState extends State<CommentaryPage> {
             CommentaryNoteCard(
               note: note,
               useEnglishBookNames: widget.useEnglishBookNames,
-              showBook: false,
+              contextBook: note.bookIndex,
               onAction: widget.onAction,
-              onOpen: (note) {
+              onOpen: (anchor) {
                 Navigator.of(context).pop();
-                widget.onOpen(note);
+                widget.onOpen(anchor);
               },
             ),
           );
@@ -398,4 +439,261 @@ class _CommentaryPageState extends State<CommentaryPage> {
       },
     ),
   );
+}
+
+/// A commentary note as the dialog leaves it.
+typedef CommentaryDraft = ({List<StudyPassage> anchors, String text});
+
+/// The passage editor without a note, to change one of a note's passages or
+/// add another; null when cancelled.
+typedef CommentaryPassageEditor =
+    Future<StudyPassage?> Function(
+      StudyPassage initial, {
+      required bool adding,
+    });
+
+/// Write or edit a commentary note. Its passages are already chosen, so they
+/// show as chips above the note (each changing its passage, or unlinking it
+/// while others remain), and the note has the focus.
+Future<CommentaryDraft?> showCommentaryDialog(
+  BuildContext context, {
+  required List<StudyPassage> anchors,
+  required bool creating,
+  required bool useEnglishBookNames,
+  required CommentaryPassageEditor editPassage,
+  String text = '',
+}) => showDialog<CommentaryDraft>(
+  context: context,
+  builder: (_) => _CommentaryDialog(
+    anchors: anchors,
+    text: text,
+    creating: creating,
+    useEnglishBookNames: useEnglishBookNames,
+    editPassage: editPassage,
+  ),
+);
+
+class _CommentaryDialog extends StatefulWidget {
+  const _CommentaryDialog({
+    required this.anchors,
+    required this.text,
+    required this.creating,
+    required this.useEnglishBookNames,
+    required this.editPassage,
+  });
+
+  final List<StudyPassage> anchors;
+  final String text;
+  final bool creating;
+  final bool useEnglishBookNames;
+  final CommentaryPassageEditor editPassage;
+
+  @override
+  State<_CommentaryDialog> createState() => _CommentaryDialogState();
+}
+
+class _CommentaryDialogState extends State<_CommentaryDialog> {
+  late final List<StudyPassage> _anchors = List.of(widget.anchors);
+  late final _text = TextEditingController(text: widget.text);
+  String? _error;
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  Future<void> _change(int index) async {
+    final changed = await widget.editPassage(_anchors[index], adding: false);
+    if (changed == null || !mounted) return;
+    setState(() => _anchors[index] = changed);
+  }
+
+  Future<void> _add() async {
+    final added = await widget.editPassage(_anchors.last, adding: true);
+    if (added == null || !mounted) return;
+    if (_anchors.any((a) => a.locationKey == added.locationKey)) return;
+    setState(() => _anchors.add(added));
+  }
+
+  void _save() {
+    final text = _text.text.trim();
+    if (text.isEmpty) {
+      setState(() => _error = 'Write the note.');
+      return;
+    }
+    Navigator.pop<CommentaryDraft>(context, (anchors: _anchors, text: text));
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.creating ? 'Add commentary' : 'Edit commentary'),
+    content: SizedBox(
+      width: 540,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final (i, anchor) in _anchors.indexed)
+                  InputChip(
+                    key: ValueKey('commentary-anchor-$i'),
+                    avatar: const Icon(Icons.menu_book_outlined, size: 16),
+                    label: Text(
+                      commentaryReference(
+                        anchor,
+                        useEnglishBookNames: widget.useEnglishBookNames,
+                      ),
+                    ),
+                    tooltip: 'Change this passage',
+                    onPressed: () => _change(i),
+                    onDeleted: _anchors.length > 1
+                        ? () => setState(() => _anchors.removeAt(i))
+                        : null,
+                    deleteButtonTooltipMessage: 'Unlink this passage',
+                  ),
+                ActionChip(
+                  avatar: const Icon(Icons.add_link, size: 16),
+                  label: const Text('Add passage'),
+                  onPressed: _add,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            MarkdownNoteField(
+              controller: _text,
+              label: 'Commentary',
+              minLines: 4,
+              maxLines: 12,
+              autofocus: true,
+            ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: _save,
+        child: Text(widget.creating ? 'Add' : 'Save'),
+      ),
+    ],
+  );
+}
+
+/// Choose a note to link a passage to, the most recently written first,
+/// with a search.
+Future<CommentaryNote?> pickCommentaryNote(
+  BuildContext context, {
+  required CommentaryStore store,
+  required bool useEnglishBookNames,
+  required String title,
+}) => showDialog<CommentaryNote>(
+  context: context,
+  builder: (_) => _CommentaryPicker(
+    store: store,
+    useEnglishBookNames: useEnglishBookNames,
+    title: title,
+  ),
+);
+
+class _CommentaryPicker extends StatefulWidget {
+  const _CommentaryPicker({
+    required this.store,
+    required this.useEnglishBookNames,
+    required this.title,
+  });
+
+  final CommentaryStore store;
+  final bool useEnglishBookNames;
+  final String title;
+
+  @override
+  State<_CommentaryPicker> createState() => _CommentaryPickerState();
+}
+
+class _CommentaryPickerState extends State<_CommentaryPicker> {
+  String _query = '';
+
+  bool _matches(CommentaryNote note) =>
+      _query.isEmpty ||
+      markdownPlainText(note.text).toLowerCase().contains(_query) ||
+      note.anchors.any(
+        (anchor) => commentaryReference(
+          anchor,
+          useEnglishBookNames: widget.useEnglishBookNames,
+        ).toLowerCase().contains(_query),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final notes = widget.store.notes.where(_matches).toList()
+      ..sort((a, b) => b.updated.compareTo(a.updated));
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 540,
+        height: 420,
+        child: Column(
+          children: [
+            TextField(
+              autofocus: true,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Search commentary',
+              ),
+              onChanged: (value) =>
+                  setState(() => _query = value.trim().toLowerCase()),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: notes.isEmpty
+                  ? const Center(child: Text('No commentary matches.'))
+                  : ListView(
+                      children: [
+                        for (final note in notes)
+                          ListTile(
+                            key: ValueKey('pick-commentary-${note.id}'),
+                            title: CommentaryReferences(
+                              anchors: note.anchors,
+                              useEnglishBookNames: widget.useEnglishBookNames,
+                              style: theme.textTheme.labelLarge,
+                            ),
+                            subtitle: Text(
+                              markdownPlainText(note.text),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onTap: () => Navigator.pop(context, note),
+                          ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
 }

@@ -25,12 +25,12 @@ void main() {
     final time = DateTime.fromMillisecondsSinceEpoch(1);
     final live = CommentaryNote(
       id: 'c1',
-      anchor: const StudyPassage(bookIndex: 0, chapter: 1, verse: 3),
+      anchors: const [StudyPassage(bookIndex: 0, chapter: 1, verse: 3)],
       text: 'current text',
       created: time,
       updated: time,
     );
-    CommentaryNote? opened;
+    StudyPassage? opened;
     StudyNote? edited;
     await tester.pumpWidget(
       MaterialApp(
@@ -56,7 +56,7 @@ void main() {
               onEditGroup: (_) {},
               onDeleteGroup: (_) {},
               onBookmarkCurrent: (_) {},
-              onOpenPassage: (_) {},
+              onOpenPassage: (passage) => opened = passage,
               onEditPassage: (_) {},
               onUpdatePassage: (_) {},
               onRemovePassage: (_) {},
@@ -71,7 +71,6 @@ void main() {
               onRemoveNote: (_) {},
               onMoveItem: (_, _, _) {},
               commentaryById: (id) => id == 'c1' ? live : null,
-              onOpenCommentary: (note) => opened = note,
             ),
           ),
         ),
@@ -82,7 +81,7 @@ void main() {
     expect(find.text('Commentary deleted'), findsOneWidget);
     expect(find.text('kept copy'), findsOneWidget);
     await tester.tap(find.text('Genesis 1:3'));
-    expect(opened, same(live));
+    expect(opened, same(live.anchor));
 
     await tester.tap(find.byTooltip('Note options').first);
     await tester.pumpAndSettle();

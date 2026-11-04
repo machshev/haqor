@@ -268,6 +268,7 @@ enum _VerseMenuAction {
   syntax,
   memoriseChapter,
   addCommentary,
+  linkCommentary,
   addTimelineEvent,
   addTimelineSpan,
 }
@@ -4389,6 +4390,12 @@ class _ReaderSessionState extends State<_ReaderSession>
     if (await _addCommentary(selection) && mounted) _clearWordSelection();
   }
 
+  Future<void> _linkWordSelection() async {
+    final selection = _wordSelection;
+    if (selection == null) return;
+    if (await _linkToCommentary(selection) && mounted) _clearWordSelection();
+  }
+
   Widget _wordSelectionBar(StudyPassage selection) {
     final theme = Theme.of(context);
     return Center(
@@ -4423,6 +4430,12 @@ class _ReaderSessionState extends State<_ReaderSession>
                       onPressed: _clearWordSelection,
                       child: const Text('Cancel'),
                     ),
+                    if (widget.commentaryStore.notes.isNotEmpty)
+                      TextButton(
+                        key: const ValueKey('word-selection-link'),
+                        onPressed: _linkWordSelection,
+                        child: const Text('Link to a note'),
+                      ),
                     const SizedBox(width: 4),
                     FilledButton.icon(
                       key: const ValueKey('word-selection-comment'),
@@ -4470,9 +4483,9 @@ class _ReaderSessionState extends State<_ReaderSession>
     onClose: onClose,
     onAdd: () => _addCommentary(_currentStudyPassage),
     onAction: _onCommentaryAction,
-    onOpen: (note) {
+    onOpen: (anchor) {
       if (onClose == null) Navigator.of(context).maybePop();
-      _openCommentary(note);
+      _openPassageOf(anchor);
     },
     onBrowse: () {
       if (onClose == null) Navigator.of(context).maybePop();
@@ -4487,15 +4500,15 @@ class _ReaderSessionState extends State<_ReaderSession>
         store: widget.commentaryStore,
         useEnglishBookNames: _englishBookNames,
         onAction: _onCommentaryAction,
-        onOpen: _openCommentary,
+        onOpen: _openPassageOf,
       ),
     ),
   );
 
-  void _openCommentary(CommentaryNote note) => _navigateTo(
-    note.anchor.bookIndex,
-    note.anchor.chapter,
-    verse: note.anchor.wholeChapter ? null : note.anchor.verse,
+  void _openPassageOf(StudyPassage anchor) => _navigateTo(
+    anchor.bookIndex,
+    anchor.chapter,
+    verse: anchor.wholeChapter ? null : anchor.verse,
   );
 
   void _onCommentaryAction(CommentaryNote note, CommentaryAction action) {
@@ -4509,47 +4522,52 @@ class _ReaderSessionState extends State<_ReaderSession>
     }
   }
 
-  /// The passage editor, asking for a commentary note's passage and text.
-  Future<StudyPassage?> _askForCommentary(
-    StudyPassage anchor, {
-    required bool creating,
-    String text = '',
-  }) => showDialog<StudyPassage>(
-    context: context,
-    builder: (_) => StudyPassageEditor(
-      initial: StudyPassage(
-        bookIndex: anchor.bookIndex,
-        chapter: anchor.chapter,
-        verse: anchor.verse,
-        wholeChapter: anchor.wholeChapter,
-        endChapter: anchor.endChapter,
-        endVerse: anchor.endVerse,
-        startWord: anchor.startWord,
-        endWord: anchor.endWord,
-        note: text,
+  /// The passage editor without a note, choosing one of a note's passages.
+  Future<StudyPassage?> _askForCommentaryPassage(
+    StudyPassage initial, {
+    required bool adding,
+  }) async {
+    final chosen = await showDialog<StudyPassage>(
+      context: context,
+      builder: (_) => StudyPassageEditor(
+        initial: StudyPassage(
+          bookIndex: initial.bookIndex,
+          chapter: initial.chapter,
+          verse: initial.verse,
+          wholeChapter: initial.wholeChapter,
+          endChapter: initial.endChapter,
+          endVerse: initial.endVerse,
+          startWord: initial.startWord,
+          endWord: initial.endWord,
+        ),
+        creating: adding,
+        useEnglishBookNames: _englishBookNames,
+        loadChapter: _loadStudyChapter,
+        isDuplicate: (_) => false,
+        title: adding ? 'Link another passage' : 'Change passage',
+        confirmLabel: adding ? 'Link' : 'Done',
+        showNote: false,
       ),
-      creating: creating,
-      useEnglishBookNames: _englishBookNames,
-      loadChapter: _loadStudyChapter,
-      isDuplicate: (_) => false,
-      title: creating ? 'Add commentary' : 'Edit commentary',
-      confirmLabel: creating ? 'Add' : 'Save',
-      noteLabel: 'Commentary',
-      noteRequired: true,
-    ),
-  );
+    );
+    return chosen?.copyWith(note: '');
+  }
 
-  /// Write a commentary note on [anchor], which the editor can change.
-  /// Whether a note was written.
+  /// Write a commentary note on [anchor]. Whether a note was written.
   Future<bool> _addCommentary(StudyPassage anchor) async {
-    final edited = await _askForCommentary(anchor, creating: true);
-    if (edited == null || !mounted) return false;
+    final draft = await showCommentaryDialog(
+      context,
+      anchors: [anchor],
+      creating: true,
+      useEnglishBookNames: _englishBookNames,
+      editPassage: _askForCommentaryPassage,
+    );
+    if (draft == null || !mounted) return false;
     final now = DateTime.now();
     widget.commentaryStore.put(
       CommentaryNote(
         id: newCommentaryId(),
-        anchor: edited.copyWith(note: ''),
-        text: edited.note,
+        anchors: draft.anchors,
+        text: draft.text,
         created: now,
         updated: now,
       ),
@@ -4558,23 +4576,55 @@ class _ReaderSessionState extends State<_ReaderSession>
   }
 
   Future<void> _editCommentary(CommentaryNote note) async {
-    final edited = await _askForCommentary(
-      note.anchor,
-      creating: false,
+    final draft = await showCommentaryDialog(
+      context,
+      anchors: note.anchors,
       text: note.text,
+      creating: false,
+      useEnglishBookNames: _englishBookNames,
+      editPassage: _askForCommentaryPassage,
     );
-    if (edited == null || !mounted) return;
+    if (draft == null || !mounted) return;
     final current = widget.commentaryStore.byId(note.id) ?? note;
-    final updated = current.copyWith(
-      anchor: edited.copyWith(note: ''),
-      text: edited.note,
-    );
-    widget.commentaryStore.put(updated);
+    _saveCommentary(current.copyWith(anchors: draft.anchors, text: draft.text));
+  }
+
+  void _saveCommentary(CommentaryNote note) {
+    widget.commentaryStore.put(note);
     // The studies linking to it keep a copy of its text.
     for (final workspace in widget.studyStore.workspaces) {
-      final synced = workspace.withCommentaryText(updated.id, updated.text);
+      final synced = workspace.withCommentaryText(note.id, note.text);
       if (!identical(synced, workspace)) _replaceStudyWorkspace(synced);
     }
+  }
+
+  /// Link [anchor] to a note already written, chosen from a list. Whether it
+  /// was linked.
+  Future<bool> _linkToCommentary(StudyPassage anchor) async {
+    final reference = commentaryReference(
+      anchor,
+      useEnglishBookNames: _englishBookNames,
+    );
+    final note = await pickCommentaryNote(
+      context,
+      store: widget.commentaryStore,
+      useEnglishBookNames: _englishBookNames,
+      title: 'Link $reference to a note',
+    );
+    if (note == null || !mounted) return false;
+    final linked = note.linkedTo(anchor);
+    if (!identical(linked, note)) widget.commentaryStore.put(linked);
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(
+          identical(linked, note)
+              ? 'That note is already on $reference'
+              : 'Linked $reference to the note on '
+                    '${commentaryReference(note.anchor, useEnglishBookNames: _englishBookNames)}',
+        ),
+      ),
+    );
+    return true;
   }
 
   Future<void> _deleteCommentary(CommentaryNote note) async {
@@ -4822,10 +4872,6 @@ class _ReaderSessionState extends State<_ReaderSession>
               setSheetState(() {});
             },
             commentaryById: widget.commentaryStore.byId,
-            onOpenCommentary: (note) {
-              Navigator.of(sheetContext).pop();
-              _openCommentary(note);
-            },
             onMoveItem: (item, groupId, index) {
               _moveStudyItem(item, groupId, index);
               setSheetState(() {});
@@ -5741,6 +5787,14 @@ class _ReaderSessionState extends State<_ReaderSession>
             title: Text('Add commentary'),
           ),
         ),
+        if (widget.commentaryStore.notes.isNotEmpty)
+          const PopupMenuItem(
+            value: _VerseMenuAction.linkCommentary,
+            child: ListTile(
+              leading: Icon(Icons.add_link),
+              title: Text('Link to a note'),
+            ),
+          ),
         const PopupMenuItem(
           value: _VerseMenuAction.addTimelineEvent,
           child: ListTile(
@@ -5774,6 +5828,10 @@ class _ReaderSessionState extends State<_ReaderSession>
         );
       case _VerseMenuAction.addCommentary:
         await _addCommentary(
+          StudyPassage(bookIndex: bookIndex, chapter: chapter, verse: verse),
+        );
+      case _VerseMenuAction.linkCommentary:
+        await _linkToCommentary(
           StudyPassage(bookIndex: bookIndex, chapter: chapter, verse: verse),
         );
       case _VerseMenuAction.addTimelineEvent:
@@ -6036,7 +6094,6 @@ class _ReaderSessionState extends State<_ReaderSession>
         onRemoveNote: _removeStudyNote,
         onMoveItem: _moveStudyItem,
         commentaryById: widget.commentaryStore.byId,
-        onOpenCommentary: _openCommentary,
         onOpenLinkVerse: (link, verse) {
           _navigateTo(verse.bookIndex, verse.chapter, verse: verse.verse);
           onOpenReader?.call();
@@ -6333,8 +6390,9 @@ class _ReaderSessionState extends State<_ReaderSession>
                       CommentaryNoteCard(
                         note: note,
                         useEnglishBookNames: _englishBookNames,
-                        showBook: false,
+                        contextBook: _bookIndex,
                         compact: true,
+                        onOpen: _openPassageOf,
                         onAction: _onCommentaryAction,
                       ),
                   ],
@@ -6367,7 +6425,7 @@ class _ReaderSessionState extends State<_ReaderSession>
         : const <CommentaryNote>[];
     final phraseCommentary = [
       for (final note in chapterCommentary)
-        if (note.anchor.isPhrase) note,
+        if (note.anchors.any((a) => a.isPhrase)) note,
     ];
     final selection = _wordSelection;
     // Each study heading stands before the first verse it covers here.
@@ -6433,9 +6491,14 @@ class _ReaderSessionState extends State<_ReaderSession>
             final timelineEntries = workspace?.timelineMarkersEnabled ?? false
                 ? workspace!.timelineEntriesAt(b, c, entry.verse)
                 : const <StudyTimelineEntry>[];
+            // A note is marked where each of its passages here starts, and
+            // shown in the margin beside the first.
+            final markedCommentary = chapterCommentary
+                .where((note) => note.startVerses(b, c).contains(entry.verse))
+                .length;
             final verseCommentary = [
               for (final note in chapterCommentary)
-                if (note.marginVerse(c) == entry.verse) note,
+                if (note.marginVerse(b, c) == entry.verse) note,
             ];
             final translation = _translationFor(b, c, entry.verse);
             final verseRow = VerseRow(
@@ -6510,7 +6573,7 @@ class _ReaderSessionState extends State<_ReaderSession>
                   : timelineEntries.map((e) => e.title).join('\n'),
               onStudyTimeline: () =>
                   _showStudyTimelineEntriesAt(b, c, entry.verse),
-              commentaryCount: verseCommentary.length,
+              commentaryCount: markedCommentary,
               selectedPositions: selection == null
                   ? const {}
                   : {
@@ -6545,7 +6608,7 @@ class _ReaderSessionState extends State<_ReaderSession>
               translationCommentary: phraseCommentary.isEmpty
                   ? null
                   : (word) => phraseCommentary.any(
-                      (note) => note.anchor.containsWord(
+                      (note) => note.onWord(
                         b,
                         word.chapter,
                         word.verse,
@@ -6554,11 +6617,9 @@ class _ReaderSessionState extends State<_ReaderSession>
                     ),
               onCommentary: _showCommentary,
               commentaryPositions: {
-                for (final note in chapterCommentary)
-                  if (note.anchor.isPhrase)
-                    for (final position in lexicalPositions.whereType<int>())
-                      if (note.anchor.containsWord(b, c, entry.verse, position))
-                        position,
+                for (final note in phraseCommentary)
+                  for (final position in lexicalPositions.whereType<int>())
+                    if (note.onWord(b, c, entry.verse, position)) position,
               },
               studyPhraseHighlightColors: {
                 if (workspace?.highlightsEnabled ?? false)
