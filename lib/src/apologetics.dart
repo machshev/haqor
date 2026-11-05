@@ -17,6 +17,8 @@ class ApologeticsStore extends ChangeNotifier {
   StreamSubscription<dynamic>? _sub;
   int _requestId = 0;
   List<ApologeticSubjectEntry>? _subjects;
+  List<ApologeticTopicEntry> _topics = const [];
+  List<ApologeticAudienceEntry> _audiences = const [];
   List<ApologeticEntry> _entries = const [];
 
   /// The entries each verse marks, keyed by [_verseKey].
@@ -27,13 +29,24 @@ class ApologeticsStore extends ChangeNotifier {
   List<ApologeticSubjectEntry> get subjects => _subjects ?? const [];
   List<ApologeticEntry> get entries => _entries;
 
+  /// The topics cutting across subjects, in order.
+  List<ApologeticTopicEntry> get topics => _topics;
+
+  /// Whom a conversation may be with, in order.
+  List<ApologeticAudienceEntry> get audiences => _audiences;
+
   /// Asks Rust for them, once; [send] stands in for the signal, for tests.
   void load({void Function(GetApologetics)? send}) {
     if (_sub != null || loaded) return;
     _sub = Apologetics.rustSignalStream.listen((pack) {
       final reply = pack.message;
       if (reply.requestId != _requestId) return;
-      set(reply.subjects, reply.entries);
+      set(
+        reply.subjects,
+        reply.entries,
+        topics: reply.topics,
+        audiences: reply.audiences,
+      );
     });
     final request = GetApologetics(requestId: _requestId = _nextRequestId++);
     if (send != null) {
@@ -43,12 +56,17 @@ class ApologeticsStore extends ChangeNotifier {
     }
   }
 
-  /// Holds [subjects] and [entries], as a reply from Rust does.
+  /// Holds [subjects], [entries], [topics] and [audiences], as a reply from
+  /// Rust does.
   void set(
     List<ApologeticSubjectEntry> subjects,
-    List<ApologeticEntry> entries,
-  ) {
+    List<ApologeticEntry> entries, {
+    List<ApologeticTopicEntry> topics = const [],
+    List<ApologeticAudienceEntry> audiences = const [],
+  }) {
     _subjects = subjects;
+    _topics = topics;
+    _audiences = audiences;
     _entries = entries;
     final marks = <int, List<ApologeticEntry>>{};
     for (final e in entries) {
@@ -68,6 +86,17 @@ class ApologeticsStore extends ChangeNotifier {
 
   ApologeticSubjectEntry? subject(String key) =>
       subjects.where((s) => s.key == key).firstOrNull;
+
+  ApologeticTopicEntry? topic(String key) =>
+      _topics.where((t) => t.key == key).firstOrNull;
+
+  ApologeticAudienceEntry? audience(String key) =>
+      _audiences.where((a) => a.key == key).firstOrNull;
+
+  /// The entries named by [keys], in their order, skipping any unknown.
+  List<ApologeticEntry> byKeys(List<String> keys) => [
+    for (final key in keys) ?byKey(key),
+  ];
 
   /// The entries marking chapters [first] to [last] of [book] (counted from
   /// one, as Rust counts books): those with a passage there.

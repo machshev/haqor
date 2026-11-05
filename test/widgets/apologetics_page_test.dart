@@ -26,6 +26,7 @@ ApologeticEntry _entry({
   required String title,
   required List<PassageSpan> passages,
   List<String> related = const [],
+  List<String> topics = const [],
 }) => ApologeticEntry(
   id: key.hashCode,
   key: key,
@@ -56,6 +57,7 @@ ApologeticEntry _entry({
     ),
   ],
   related: related,
+  topics: topics,
 );
 
 /// The empty tomb (Matthew 28:1-15), and Luke 23:42-43; Luke 16:19-31 runs
@@ -82,6 +84,7 @@ ApologeticsStore _store() => ApologeticsStore()
         title: 'The tomb was empty',
         passages: [_span(40, 28, 1, 15)],
         related: ['luke-23-43'],
+        topics: ['resurrection-evidence'],
       ),
       _entry(
         key: 'luke-23-43',
@@ -89,6 +92,7 @@ ApologeticsStore _store() => ApologeticsStore()
         kind: 'passage',
         title: 'Luke 23:43, today in paradise',
         passages: [_span(42, 23, 42, 43)],
+        topics: ['heaven-at-death'],
       ),
       _entry(
         key: 'luke-16-19',
@@ -96,6 +100,21 @@ ApologeticsStore _store() => ApologeticsStore()
         kind: 'passage',
         title: 'The rich man and Lazarus',
         passages: [_span(42, 16, 19, 2, 17)],
+        topics: ['heaven-at-death', 'hell'],
+      ),
+    ],
+    topics: [
+      ApologeticTopicEntry(key: 'resurrection-evidence', title: 'Evidence'),
+      ApologeticTopicEntry(key: 'heaven-at-death', title: 'Heaven at death'),
+      ApologeticTopicEntry(key: 'hell', title: 'Hell'),
+    ],
+    audiences: [
+      ApologeticAudienceEntry(
+        key: 'catholic',
+        title: 'Catholics',
+        note: 'Begin from the resurrection of the body.',
+        agree: ['empty-tomb'],
+        differ: ['luke-16-19', 'luke-23-43'],
       ),
     ],
   );
@@ -136,6 +155,78 @@ void main() {
     );
     await tester.pump();
     expect(find.text('1 entry'), findsOneWidget);
+  });
+
+  testWidgets('topics index across subjects, an entry under each of its own', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(500, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_host(ApologeticsPage(store: _store())));
+    await tester.tap(find.text('Topics'));
+    await tester.pump();
+    // The rich man is under two topics: listed twice, counted once.
+    expect(find.text('The rich man and Lazarus'), findsNWidgets(2));
+    expect(find.text('3 entries'), findsOneWidget);
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('apologetics-topics-hell')),
+    );
+    await tester.tap(find.byKey(const ValueKey('apologetics-topics-hell')));
+    await tester.pump();
+    expect(find.text('1 entry'), findsOneWidget);
+    expect(find.text('The rich man and Lazarus'), findsOneWidget);
+    expect(find.text('Luke 23:43, today in paradise'), findsNothing);
+  });
+
+  testWidgets(
+    'talking with an audience lists common ground, then differences',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(500, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(_host(ApologeticsPage(store: _store())));
+      await tester.tap(find.text('Talking with'));
+      await tester.pump();
+      expect(find.text('Choose whom you are talking with'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('apologetics-audience-row-catholic')),
+      );
+      await tester.pump();
+      expect(
+        find.text('Begin from the resurrection of the body.'),
+        findsOneWidget,
+      );
+      double y(String text) => tester.getTopLeft(find.text(text)).dy;
+      expect(y('Common ground'), lessThan(y('The tomb was empty')));
+      expect(y('The tomb was empty'), lessThan(y('Where you differ')));
+      // In the audience's own order, not the file's.
+      expect(
+        y('The rich man and Lazarus'),
+        lessThan(y('Luke 23:43, today in paradise')),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('apologetics-kind-passage')));
+      await tester.pump();
+      expect(find.text('Common ground'), findsNothing);
+      expect(find.text('2 entries'), findsOneWidget);
+    },
+  );
+
+  testWidgets('an entry\'s topic opens that topic\'s list', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(500, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_host(ApologeticsPage(store: _store())));
+    await tester.tap(find.byKey(const ValueKey('apologetic-row-luke-16-19')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('apologetic-topic-hell')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('apologetic-page-luke-16-19')),
+      findsNothing,
+    );
+    expect(find.text('1 entry'), findsOneWidget);
+    expect(find.text('Hell'), findsWidgets);
   });
 
   testWidgets('an entry opens with its argument, and passages navigate', (

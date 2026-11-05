@@ -5,8 +5,9 @@ use rinf::{DartSignal, RustSignal, debug_print};
 
 use crate::functions::{SharedBible, lock};
 use crate::signals::{
-    ApologeticEntry, ApologeticObjectionEntry, ApologeticPointEntry, ApologeticSourceEntry,
-    ApologeticSubjectEntry, Apologetics, GetApologetics, PassageSpan,
+    ApologeticAudienceEntry, ApologeticEntry, ApologeticObjectionEntry, ApologeticPointEntry,
+    ApologeticSourceEntry, ApologeticSubjectEntry, ApologeticTopicEntry, Apologetics,
+    GetApologetics, PassageSpan,
 };
 
 fn passage(span: VerseSpan) -> PassageSpan {
@@ -60,6 +61,7 @@ fn entry(a: Apologetic) -> ApologeticEntry {
             })
             .collect(),
         related: a.related,
+        topics: a.topics,
     }
 }
 
@@ -69,17 +71,18 @@ pub async fn get_apologetics(bible: SharedBible) {
         let req = signal_pack.message;
         debug_print!("{:?}", req);
         let bible = lock(&bible);
-        let (subjects, entries) = match (bible.apologetic_subjects(), bible.apologetics()) {
-            (Ok(subjects), Ok(entries)) => (subjects, entries),
-            (subjects, entries) => {
-                debug_print!(
-                    "get_apologetics error: {:?} {:?}",
-                    subjects.err(),
-                    entries.err()
-                );
-                (Vec::new(), Vec::new())
-            }
+        let read = || -> Result<_, Box<dyn std::error::Error>> {
+            Ok((
+                bible.apologetic_subjects()?,
+                bible.apologetic_topics()?,
+                bible.apologetic_audiences()?,
+                bible.apologetics()?,
+            ))
         };
+        let (subjects, topics, audiences, entries) = read().unwrap_or_else(|e| {
+            debug_print!("get_apologetics error: {e:?}");
+            Default::default()
+        });
         Apologetics {
             request_id: req.request_id,
             subjects: subjects
@@ -88,6 +91,23 @@ pub async fn get_apologetics(bible: SharedBible) {
                     key: s.key,
                     title: s.title,
                     note: s.note,
+                })
+                .collect(),
+            topics: topics
+                .into_iter()
+                .map(|t| ApologeticTopicEntry {
+                    key: t.key,
+                    title: t.title,
+                })
+                .collect(),
+            audiences: audiences
+                .into_iter()
+                .map(|a| ApologeticAudienceEntry {
+                    key: a.key,
+                    title: a.title,
+                    note: a.note,
+                    agree: a.agree,
+                    differ: a.differ,
                 })
                 .collect(),
             entries: entries.into_iter().map(entry).collect(),

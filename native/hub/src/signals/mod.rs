@@ -2417,6 +2417,28 @@ pub struct ApologeticEntry {
     pub objections: Vec<ApologeticObjectionEntry>,
     /// Other entries' keys.
     pub related: Vec<String>,
+    /// [`ApologeticTopicEntry`]s' keys.
+    pub topics: Vec<String>,
+}
+
+/// A topic of Haqor's apologetics (see `haqor_core::bible::ApologeticTopic`).
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ApologeticTopicEntry {
+    pub key: String,
+    pub title: String,
+}
+
+/// Whom a conversation is with (see `haqor_core::bible::ApologeticAudience`).
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ApologeticAudienceEntry {
+    pub key: String,
+    pub title: String,
+    /// What they hold, and where to begin.
+    pub note: String,
+    /// Entries' keys: common ground.
+    pub agree: Vec<String>,
+    /// Entries' keys: where they differ.
+    pub differ: Vec<String>,
 }
 
 /// Ask for all of Haqor's apologetics: there are few enough to send whole,
@@ -2426,10 +2448,13 @@ pub struct GetApologetics {
     pub request_id: u32,
 }
 
-/// Reply to [`GetApologetics`]: the subjects in order, and every entry.
+/// Reply to [`GetApologetics`]: the subjects in order, the topics and audiences
+/// in order, and every entry.
 #[derive(Debug, Serialize, RustSignal)]
 pub struct Apologetics {
     pub request_id: u32,
     pub subjects: Vec<ApologeticSubjectEntry>,
+    pub topics: Vec<ApologeticTopicEntry>,
+    pub audiences: Vec<ApologeticAudienceEntry>,
     pub entries: Vec<ApologeticEntry>,
 }
