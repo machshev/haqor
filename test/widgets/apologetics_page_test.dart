@@ -113,11 +113,13 @@ ApologeticsStore _store() => ApologeticsStore()
         key: 'christianity',
         title: 'Christianity',
         note: 'Those who confess Jesus as Lord.',
+        beliefs: ['Jesus is the Christ, who rose.'],
       ),
       ApologeticReligionEntry(
         key: 'none',
         title: 'No religion',
         note: 'Begin from history.',
+        beliefs: [],
       ),
     ],
     audiences: [
@@ -126,6 +128,7 @@ ApologeticsStore _store() => ApologeticsStore()
         religion: 'christianity',
         title: 'Catholics',
         note: 'Begin from the resurrection of the body.',
+        beliefs: ['The pope teaches without error.', 'Purgatory cleanses.'],
         agree: ['empty-tomb'],
         differ: ['luke-16-19', 'luke-23-43'],
       ),
@@ -134,6 +137,7 @@ ApologeticsStore _store() => ApologeticsStore()
         religion: 'christianity',
         title: 'Eastern Orthodox',
         note: 'Begin from the resurrection.',
+        beliefs: [],
         agree: [],
         differ: ['luke-23-43'],
       ),
@@ -142,6 +146,7 @@ ApologeticsStore _store() => ApologeticsStore()
         religion: 'none',
         title: 'Sceptics',
         note: 'Begin from the tomb.',
+        beliefs: [],
         agree: [],
         differ: ['empty-tomb'],
       ),
@@ -257,6 +262,7 @@ void main() {
       );
       await tester.pump();
       expect(find.text('Those who confess Jesus as Lord.'), findsOneWidget);
+      expect(find.text('Jesus is the Christ, who rose.'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('apologetics-audience-row-orthodox')),
         findsOneWidget,
@@ -270,6 +276,20 @@ void main() {
         findsOneWidget,
       );
       double y(String text) => tester.getTopLeft(find.text(text)).dy;
+      // Its key beliefs, in order, under its note and above the entries.
+      expect(
+        find.byKey(const ValueKey('apologetics-audience-beliefs')),
+        findsOneWidget,
+      );
+      expect(
+        y('Begin from the resurrection of the body.'),
+        lessThan(y('The pope teaches without error.')),
+      );
+      expect(
+        y('The pope teaches without error.'),
+        lessThan(y('Purgatory cleanses.')),
+      );
+      expect(y('Purgatory cleanses.'), lessThan(y('Common ground')));
       expect(y('Common ground'), lessThan(y('The tomb was empty')));
       expect(y('The tomb was empty'), lessThan(y('Where you differ')));
       // In the audience's own order, not the file's.
@@ -304,6 +324,8 @@ void main() {
       );
       await tester.pump();
       expect(find.text('Begin from the tomb.'), findsOneWidget);
+      // An audience without beliefs shows no heading for them.
+      expect(find.text('Key beliefs'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('apologetics-audience-back')));
       await tester.pump();
       expect(

@@ -107,6 +107,7 @@ pub async fn get_apologetics(bible: SharedBible) {
                     key: r.key,
                     title: r.title,
                     note: r.note,
+                    beliefs: r.beliefs,
                 })
                 .collect(),
             audiences: audiences
@@ -116,6 +117,7 @@ pub async fn get_apologetics(bible: SharedBible) {
                     religion: a.religion,
                     title: a.title,
                     note: a.note,
+                    beliefs: a.beliefs,
                     agree: a.agree,
                     differ: a.differ,
                 })

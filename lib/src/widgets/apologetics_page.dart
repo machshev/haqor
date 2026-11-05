@@ -735,6 +735,11 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
           child: Text(religion.note, style: theme.textTheme.bodyMedium),
         ),
+        if (religion.beliefs.isNotEmpty)
+          _Beliefs(
+            key: const ValueKey('apologetics-religion-beliefs'),
+            beliefs: religion.beliefs,
+          ),
         for (final a in _store.audiencesOf(religion.key)) audienceRow(a),
       ];
     } else if (_store.religions.isEmpty) {
@@ -795,6 +800,11 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
           child: Text(audience.note, style: theme.textTheme.bodyMedium),
         ),
+        if (audience.beliefs.isNotEmpty)
+          _Beliefs(
+            key: const ValueKey('apologetics-audience-beliefs'),
+            beliefs: audience.beliefs,
+          ),
       ],
     ];
     final listed = <String>{};
@@ -889,6 +899,46 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
       key: const ValueKey('apologetics-list'),
       padding: const EdgeInsets.only(bottom: 24),
       children: rows,
+    );
+  }
+}
+
+/// What a religion or audience holds, under a heading, one belief to a
+/// bullet: those that set them apart first.
+class _Beliefs extends StatelessWidget {
+  const _Beliefs({super.key, required this.beliefs});
+
+  final List<String> beliefs;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodyMedium;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Key beliefs',
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          for (final belief in beliefs)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('•  ', style: style),
+                  Expanded(child: Text(belief, style: style)),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

@@ -2436,6 +2436,8 @@ pub struct ApologeticReligionEntry {
     pub title: String,
     /// Who they are, and where to begin.
     pub note: String,
+    /// What it holds; empty for a database built without them.
+    pub beliefs: Vec<String>,
 }
 
 /// Whom a conversation is with (see `haqor_core::bible::ApologeticAudience`).
@@ -2448,6 +2450,9 @@ pub struct ApologeticAudienceEntry {
     pub title: String,
     /// What they hold, and where to begin.
     pub note: String,
+    /// What they hold, those that set them apart first; empty for a
+    /// database built without them.
+    pub beliefs: Vec<String>,
     /// Entries' keys: common ground.
     pub agree: Vec<String>,
     /// Entries' keys: where they differ.
