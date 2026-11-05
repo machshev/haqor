@@ -633,6 +633,7 @@ void main() {
           people: const [],
           places: const [],
           note: '',
+          estimated: false,
         );
     _deliverEntity(
       requests.single,

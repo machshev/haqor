@@ -46,6 +46,7 @@ BibleEventEntry _event(
   people: people,
   places: const [],
   note: '',
+  estimated: false,
 );
 
 final _events = {

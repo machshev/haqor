@@ -40,6 +40,7 @@ BibleEventEntry _event(
   people: people,
   places: places,
   note: '',
+  estimated: false,
 );
 
 final _events = [

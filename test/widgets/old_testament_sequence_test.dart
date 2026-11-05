@@ -16,6 +16,7 @@ BibleEventEntry event(int id, String title, int year, {int duration = 0}) =>
       duration: duration,
       unit: duration == 0 ? '' : 'years',
       note: '',
+      estimated: false,
       people: const [],
       places: const [],
       passages: [

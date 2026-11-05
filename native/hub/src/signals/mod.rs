@@ -1261,6 +1261,8 @@ pub struct BibleEventEntry {
     pub places: Vec<NameSummaryEntry>,
     /// A line about its date; may be empty.
     pub note: String,
+    /// Whether its dates are reckoned rather than read.
+    pub estimated: bool,
 }
 
 /// A run of the events ordered by what the text says came before what, not

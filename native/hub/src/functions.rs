@@ -969,6 +969,7 @@ fn bible_event_entry(e: haqor_core::names::BibleEvent) -> BibleEventEntry {
         people: e.people.into_iter().map(name_summary_entry).collect(),
         places: e.places.into_iter().map(name_summary_entry).collect(),
         note: e.note,
+        estimated: e.estimated,
     }
 }
 

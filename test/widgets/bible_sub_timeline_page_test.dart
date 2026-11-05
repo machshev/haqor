@@ -25,6 +25,7 @@ BibleEventEntry event(
   int year, {
   int duration = 0,
   List<NameSummaryEntry> people = const [],
+  bool estimated = false,
 }) => BibleEventEntry(
   id: id,
   title: title,
@@ -34,6 +35,7 @@ BibleEventEntry event(
   note: '',
   people: people,
   places: const [],
+  estimated: estimated,
   passages: [
     ThematicTarget(
       book: 2,
@@ -137,6 +139,15 @@ void main() {
       ),
     ]);
     expect(selected.map((e) => e.id), [10, 11, 12]);
+  });
+
+  test('estimated lifetimes are drawn as uncertain', () {
+    final entries = bibleTimelineEntries([
+      event(1, 'Lifetime of Ezra', -502, duration: 70, estimated: true),
+      event(2, 'Lifetime of Moses', -1571, duration: 120),
+    ]);
+    expect(entries[0].style, TimelineSpanStyle.dotted);
+    expect(entries[1].style, TimelineSpanStyle.bar);
   });
 
   testWidgets(

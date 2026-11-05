@@ -391,6 +391,10 @@ StudyTimelineEntry _entry(BibleEventEntry event, int order) {
     note: [lasted, event.note].where((s) => s.isNotEmpty).join(' '),
     category: bibleEventCategory(event.title, span: end != null),
     order: order,
+    // A span reckoned rather than read is drawn as uncertain.
+    style: event.estimated && end != null
+        ? TimelineSpanStyle.dotted
+        : TimelineSpanStyle.bar,
   );
 }
 
