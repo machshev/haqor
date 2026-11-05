@@ -11,26 +11,39 @@ import 'package:haqor/src/widgets/event_sequence_page.dart';
 import 'package:haqor/src/widgets/timeline_chart.dart';
 import 'package:haqor/src/widgets/timeline_wheel.dart';
 
-BibleEventEntry event(int id, String title, int year, {int duration = 0}) =>
-    BibleEventEntry(
-      id: id,
-      title: title,
-      year: year,
-      duration: duration,
-      unit: duration == 0 ? '' : 'years',
-      note: '',
-      people: const [],
-      places: const [],
-      passages: [
-        ThematicTarget(
-          book: 2,
-          chapter: 20,
-          verse: 1,
-          lastChapter: 20,
-          lastVerse: 1,
-        ),
-      ],
-    );
+NameSummaryEntry person(int id, String name) => NameSummaryEntry(
+  id: id,
+  name: name,
+  kind: 'person',
+  description: '',
+  origin: '',
+  occurrences: 1,
+);
+BibleEventEntry event(
+  int id,
+  String title,
+  int year, {
+  int duration = 0,
+  List<NameSummaryEntry> people = const [],
+}) => BibleEventEntry(
+  id: id,
+  title: title,
+  year: year,
+  duration: duration,
+  unit: duration == 0 ? '' : 'years',
+  note: '',
+  people: people,
+  places: const [],
+  passages: [
+    ThematicTarget(
+      book: 2,
+      chapter: 20,
+      verse: 1,
+      lastChapter: 20,
+      lastVerse: 1,
+    ),
+  ],
+);
 EventSequenceEntry section(String key, List<int> events, {int? expands}) =>
     EventSequenceEntry(
       setAside: const [],
@@ -107,6 +120,24 @@ void main() {
       expect(overview.first.category, 'Sub-timelines');
     },
   );
+
+  test('lifetimes join a section whose events are about the person', () {
+    final ezra = person(1, 'Ezra');
+    final s = section('restoration', [10, 11]);
+    final selected = bibleSubTimelineEvents(s, [
+      event(10, 'Ezra goes up from Babylon', -457, people: [ezra]),
+      event(11, 'The wall dedicated', -444),
+      event(12, 'Lifetime of Ezra', -502, duration: 58, people: [ezra]),
+      event(
+        13,
+        'Lifetime of Nehemiah',
+        -480,
+        duration: 48,
+        people: [person(2, 'Nehemiah')],
+      ),
+    ]);
+    expect(selected.map((e) => e.id), [10, 11, 12]);
+  });
 
   testWidgets(
     'kings open as dated bars and offer event order with back navigation',

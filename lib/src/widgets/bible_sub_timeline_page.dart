@@ -47,24 +47,29 @@ const bibleHistoryVariants = {
 /// kings of Babylon, Media and Persia.
 const bibleExileHistories = {'empires', 'exile', 'daniel', 'restoration'};
 
-/// A section's dated members and the lifetimes that give its births and
-/// deaths context. Nested sections stay behind their summary event. The
-/// enclosing lifetime is omitted so it cannot open itself recursively.
+/// A section's dated members and the lifetimes that give them context: of
+/// those its births, deaths and reigns name, or the people its events are
+/// about. Nested sections stay behind their summary event. The enclosing
+/// lifetime is omitted so it cannot open itself recursively.
 List<BibleEventEntry> bibleSubTimelineEvents(
   EventSequenceEntry section,
   Iterable<BibleEventEntry> events,
 ) {
   final members = section.events.toSet();
-  final subjects = {
-    for (final e in events)
-      if (members.contains(e.id)) ...bibleEventSubjects(e.title),
-  };
+  final subjects = <String>{};
+  final people = <int>{};
+  for (final e in events) {
+    if (!members.contains(e.id)) continue;
+    subjects.addAll(bibleEventSubjects(e.title));
+    people.addAll(e.people.map((p) => p.id));
+  }
   return [
     for (final e in events)
       if (e.id != section.expands &&
           (members.contains(e.id) ||
               (e.title.startsWith('Lifetime of ') &&
-                  bibleEventSubjects(e.title).any(subjects.contains))))
+                  (bibleEventSubjects(e.title).any(subjects.contains) ||
+                      e.people.any((p) => people.contains(p.id))))))
         e,
   ];
 }
