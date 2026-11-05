@@ -271,7 +271,9 @@ dependencies = [
 
 [[package]]
 name = "haqor-core"
-version = "0.9.14"
+version = "0.9.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8c4d442acf80572db662c6b9703d891385aff1416ddcc8b78d59d75e7dc5a54"
 dependencies = [
  "anyhow",
  "haqor-morphology",
@@ -283,7 +285,9 @@ dependencies = [
 
 [[package]]
 name = "haqor-morphology"
-version = "0.9.14"
+version = "0.9.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f928d9be1fbb9fcbb773c8583a10233125e7efe64aa65ac269f38d3b562a220"
 dependencies = [
  "rayon",
 ]
