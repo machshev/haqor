@@ -460,42 +460,62 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
     );
   }
 
-  /// The tabs, their icons sharing the width. Never scrollable, nor switched
-  /// to it by width: that would move the tabs to a new parent, and their
-  /// tooltips' overlays with them, while a panel is laid out, which Flutter
-  /// does not allow. The icons fit side by side in any panel.
-  Widget _tabBar() => TabBar(
-    controller: _tabs,
-    tabs: [
-      // Icons only, named by their tooltips: there are too many tabs for
-      // their labels to fit a side panel.
-      for (final tab in _shown)
-        if (_empty(tab))
-          // Greyed out, but still there: the tabs keep their places as the
-          // reader moves from chapter to chapter.
-          Tooltip(
-            message: '${tab.label}: none here',
-            child: Tab(
-              key: ValueKey('chapter-context-${tab.name}'),
-              icon: Icon(
-                tab.icon,
-                semanticLabel: '${tab.label}: none here',
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.3),
-              ),
-            ),
-          )
-        else
-          Tooltip(
-            message: tab.label,
-            child: Tab(
-              key: ValueKey('chapter-context-${tab.name}'),
-              icon: Icon(tab.icon, semanticLabel: tab.label),
-            ),
+  /// The tabs as icons sharing the width, named by their tooltips: there are
+  /// too many for their labels to fit a side panel.
+  ///
+  /// Not a [TabBar]: it moves its tabs to new parents as the selection
+  /// changes, and a tooltip's overlay cannot be moved while the reader lays
+  /// out its panels, so a [TabBar] of tooltips crashes there. Plain buttons
+  /// on the same controller are never moved.
+  Widget _tabBar() {
+    final scheme = Theme.of(context).colorScheme;
+    return ListenableBuilder(
+      listenable: _tabs,
+      builder: (context, _) => DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+        ),
+        child: Row(
+          children: [
+            for (final (i, tab) in _shown.indexed)
+              Expanded(child: _tabButton(tab, selected: i == _tabs.index)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tabButton(ChapterContextTab tab, {required bool selected}) {
+    final scheme = Theme.of(context).colorScheme;
+    // Greyed out, but still there to open: the tabs keep their places as
+    // the reader moves from chapter to chapter.
+    final empty = _empty(tab);
+    final name = empty ? '${tab.label}: none here' : tab.label;
+    final color = empty
+        ? scheme.onSurface.withValues(alpha: 0.3)
+        : selected
+        ? scheme.primary
+        : scheme.onSurfaceVariant;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: selected ? scheme.primary : Colors.transparent,
+            width: 3,
           ),
-    ],
-  );
+        ),
+      ),
+      child: Semantics(
+        selected: selected,
+        child: IconButton(
+          key: ValueKey('chapter-context-${tab.name}'),
+          tooltip: name,
+          icon: Icon(tab.icon, color: color),
+          onPressed: () => _tabs.animateTo(_shown.indexOf(tab)),
+        ),
+      ),
+    );
+  }
 }
 
 /// Keeps a tab's reply from Rust while another tab is shown, so switching
