@@ -23,6 +23,10 @@ const bibleDatedSections = {
   'israel-kings',
   'judah-kings',
   'prophets',
+  'empires',
+  'exile',
+  'daniel',
+  'restoration',
 };
 
 /// Related histories that share a date scale and separate bands.
@@ -32,7 +36,16 @@ const bibleHistoryVariants = {
   'israel-kings': 'Israel',
   'judah-kings': 'Judah',
   'prophets': 'Prophets',
+  'empires': 'Empires',
+  'exile': 'Exile',
+  'daniel': 'Daniel',
+  'restoration': 'Return',
 };
+
+/// The histories of the exile and the return, opened side by side so that
+/// Judah's captivity, Daniel's life, Ezra and Nehemiah are read against the
+/// kings of Babylon, Media and Persia.
+const bibleExileHistories = {'empires', 'exile', 'daniel', 'restoration'};
 
 /// A section's dated members and the lifetimes that give its births and
 /// deaths context. Nested sections stay behind their summary event. The
@@ -125,7 +138,9 @@ class BibleSubTimelinePage extends StatelessWidget {
     final timeline = StudyTimeline(
       id: related ? 'bible-history' : 'bible-section:${section.key}',
       parentId: bibleTimeline.id,
-      title: related ? 'Judges, kingdoms and prophets' : section.title,
+      title: related
+          ? 'Judges, kingdoms, prophets and the exile'
+          : section.title,
       scale: TimelineScale.calendar,
       categoryColors: bibleTimeline.categoryColors,
       note:
@@ -191,6 +206,9 @@ class BibleSubTimelinePage extends StatelessWidget {
                 ),
             ]
           : const [],
+      initialVariants: bibleExileHistories.contains(section.key)
+          ? bibleExileHistories
+          : const {},
       wheelCycle: timelineChronologyCycle(timeline, entries),
       entries: entries,
       useEnglishBookNames: useEnglishBookNames,

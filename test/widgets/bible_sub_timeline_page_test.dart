@@ -183,8 +183,11 @@ void main() {
     await tester.pumpAndSettle();
     final page = tester.widget<TimelinePage>(find.byType(TimelinePage));
     expect(page.timeline.id, 'bible-history');
-    expect(page.variants, hasLength(5));
-    expect(page.entries.map((e) => e.id).toSet(), hasLength(10));
+    expect(page.variants, hasLength(bibleHistoryVariants.length));
+    expect(
+      page.entries.map((e) => e.id).toSet(),
+      hasLength(2 * bibleHistoryVariants.length),
+    );
     for (final entry in page.entries.where((e) => e.pin != null)) {
       final anchor = page.entries.singleWhere(
         (e) => e.id == entry.pin!.anchorId,
@@ -211,6 +214,38 @@ void main() {
     await tester.pumpAndSettle();
     for (final key in bibleHistoryVariants.keys) {
       expect(chip(key).selected, isTrue);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the exile histories open side by side', (tester) async {
+    final histories = [
+      for (final key in bibleHistoryVariants.keys) section(key, [1, 2]),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BibleSubTimelinePage(
+          section: histories.singleWhere((s) => s.key == 'daniel'),
+          sequences: BibleSequences(histories),
+          events: {
+            1: event(1, 'Reign of Nebuchadnezzar', -605, duration: 43),
+            2: event(2, 'Babylon taken by the Medes and Persians', -539),
+          },
+          useEnglishBookNames: true,
+          onOpenPassage: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    FilterChip chip(String key) => tester.widget<FilterChip>(
+      find.byKey(ValueKey('timeline-variant-$key')),
+    );
+    for (final key in bibleHistoryVariants.keys) {
+      expect(
+        chip(key).selected,
+        bibleExileHistories.contains(key),
+        reason: key,
+      );
     }
     expect(tester.takeException(), isNull);
   });

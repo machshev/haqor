@@ -2304,6 +2304,7 @@ class TimelinePage extends StatefulWidget {
     this.onOpenEntry,
     this.actions = const [],
     this.variants = const [],
+    this.initialVariants = const {},
     this.overviewCategory,
   });
 
@@ -2378,6 +2379,10 @@ class TimelinePage extends StatefulWidget {
   /// shown one at a time, the first first, or all side by side.
   final List<TimelineVariant> variants;
 
+  /// The readings, by id, first shown side by side with the first (or the
+  /// one the selected entry is in); none shows that one alone.
+  final Set<String> initialVariants;
+
   /// The category of the spans giving the timeline's overall eras, shown
   /// in lanes of their own at the top; zoomed out, until zoomed in
   /// [overviewZoom] times on the whole fitted, the rest are drawn thin
@@ -2431,6 +2436,8 @@ class _TimelinePageState extends State<TimelinePage> {
       final variant? when variant.isNotEmpty => variant,
       _ => widget.variants.firstOrNull?.id,
     },
+    for (final v in widget.variants)
+      if (widget.initialVariants.contains(v.id)) v.id,
   };
 
   /// The one reading shown alone, if one is.

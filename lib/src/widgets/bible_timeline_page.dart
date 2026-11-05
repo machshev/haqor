@@ -106,7 +106,7 @@ const _eras = [
   ('The divided kingdom', 'Divided', -975),
   ('The exile in Babylon', 'Exile', -586),
   ('The return from exile', 'Return', -536),
-  ('Between the Testaments', 'Between', -441),
+  ('Between the Testaments', 'Between', -432),
   ('The life of Jesus', 'Jesus', -6),
   ('The Acts of the Apostles', 'Acts', 30),
   ('The Jewish war and the fall of Jerusalem', 'AD 70', 66),
