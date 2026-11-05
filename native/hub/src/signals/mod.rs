@@ -2477,3 +2477,68 @@ pub struct Apologetics {
     pub audiences: Vec<ApologeticAudienceEntry>,
     pub entries: Vec<ApologeticEntry>,
 }
+
+/// A fact an [`OutlineEntry`]'s sections are indexed by (see
+/// `haqor_core::bible::OutlineFacet`).
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct OutlineFacetEntry {
+    pub key: String,
+    pub title: String,
+}
+
+/// A section's values of one [`OutlineFacetEntry`].
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct OutlineFactEntry {
+    /// The facet's key.
+    pub facet: String,
+    pub values: Vec<String>,
+}
+
+/// A section of an [`OutlineEntry`] (see `haqor_core::bible::OutlineSection`):
+/// a book of the Psalms, a collection, a psalm.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct OutlineSectionEntry {
+    /// The index in [`OutlineEntry::sections`] of the section holding it;
+    /// `None` at the top.
+    pub parent: Option<u32>,
+    /// Its first verse: book (counted from one), chapter and verse.
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    /// Its last verse, which may be in a later book.
+    pub last_book: u8,
+    pub last_chapter: u8,
+    pub last_verse: u8,
+    pub title: String,
+    /// A line under the title, or empty.
+    pub subtitle: String,
+    /// The heading the text itself gives it, like a psalm's title, or empty.
+    pub superscription: String,
+    pub note: String,
+    /// Its values of the outline's facets, in the facets' order.
+    pub facts: Vec<OutlineFactEntry>,
+}
+
+/// A book outline of Haqor's (see `haqor_core::bible::Outline`).
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct OutlineEntry {
+    pub key: String,
+    pub title: String,
+    pub note: String,
+    pub facets: Vec<OutlineFacetEntry>,
+    /// Every section, in order, each parent before its children.
+    pub sections: Vec<OutlineSectionEntry>,
+}
+
+/// Ask for all of Haqor's book outlines: there are few enough to send whole.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetOutlines {
+    pub request_id: u32,
+}
+
+/// Reply to [`GetOutlines`]: every outline, in order.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct Outlines {
+    pub request_id: u32,
+    pub outlines: Vec<OutlineEntry>,
+}

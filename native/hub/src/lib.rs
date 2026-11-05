@@ -6,6 +6,7 @@ mod archaeology;
 mod commentary;
 mod functions;
 mod memorise;
+mod outlines;
 mod prophecy;
 mod signals;
 mod sync_client;
@@ -236,6 +237,7 @@ async fn main() {
         prophecy::get_verse_prophecies,
         prophecy::get_prophecies,
         apologetics::get_apologetics,
+        outlines::get_outlines,
         archaeology::get_artifacts,
         archaeology::get_chapter_artifacts,
         get_syntax_trees,

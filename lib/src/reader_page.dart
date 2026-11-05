@@ -37,6 +37,7 @@ import 'widgets/bible_timeline_page.dart';
 import 'widgets/places_page.dart';
 import 'widgets/apologetics_page.dart';
 import 'widgets/archaeology_page.dart';
+import 'widgets/outlines_page.dart';
 import 'widgets/prophecy_page.dart';
 import 'widgets/side_scroll.dart';
 import 'widgets/study_workspace_panel.dart';
@@ -242,6 +243,7 @@ enum _ReaderMenuAction {
   commentary,
   crossReferences,
   readingPlan,
+  outlines,
   places,
   timeline,
   prophecy,
@@ -1391,6 +1393,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _ReaderMenuAction.studyWorkspace,
     _ReaderMenuAction.commentary,
     _ReaderMenuAction.readingPlan,
+    _ReaderMenuAction.outlines,
     _ReaderMenuAction.places,
     _ReaderMenuAction.timeline,
     _ReaderMenuAction.prophecy,
@@ -1425,6 +1428,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
           Icons.account_balance_outlined,
           'Bible archaeology',
         ),
+        _ReaderMenuAction.outlines => (Icons.toc, 'Book outlines'),
         _ReaderMenuAction.apologetics => (Icons.shield_outlined, 'Apologetics'),
         _ReaderMenuAction.tutor => (Icons.school_outlined, 'Tutor'),
         _ReaderMenuAction.memorise => (Icons.psychology_outlined, 'Memorise'),
@@ -6301,6 +6305,13 @@ class _ReaderSessionState extends State<_ReaderSession>
           ntGreek: _ntGreek,
           onNtGreekChanged: _setNtGreek,
           bookmarks: _nameBookmarks,
+          onNavigateToPassage: (book, chapter, verse) =>
+              _navigateTo(book, chapter, verse: verse),
+        );
+      case _ReaderMenuAction.outlines:
+        OutlinesPage.open(
+          context,
+          useEnglishBookNames: _englishBookNames,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
         );

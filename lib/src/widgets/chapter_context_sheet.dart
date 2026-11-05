@@ -8,10 +8,12 @@ import 'apologetics_page.dart';
 import 'archaeology_page.dart';
 import 'chapter_span.dart';
 import 'name_details.dart';
+import 'outlines_page.dart';
 
 /// The tabs of [ChapterContextSheet], in the order it shows them.
 enum ChapterContextTab {
   crossReferences('Cross refs', Icons.link),
+  structure('Structure', Icons.toc),
   places('Places', Icons.map_outlined),
   people('People', Icons.people_outline),
   archaeology('Archaeology', Icons.account_balance_outlined),
@@ -48,8 +50,8 @@ enum ChapterContextScope {
   };
 }
 
-/// What surrounds a chapter, one tab each: its cross references, the places
-/// it names on a map, the people it names and how they are related, the
+/// What surrounds a chapter, one tab each: its cross references, where it
+/// stands in the book outlines, the places it names on a map, the people it names and how they are related, the
 /// finds bearing on it, and the apologetics on its passages. It can widen to the chapters nearby or the book.
 class ChapterContextSheet extends StatefulWidget {
   const ChapterContextSheet({
@@ -174,6 +176,14 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
       ChapterContextTab.crossReferences => KeyedSubtree(
         key: key,
         child: widget.crossReferencesBuilder!(context, first, last),
+      ),
+      ChapterContextTab.structure => ChapterOutlinesSheet(
+        key: key,
+        bookIndex: widget.bookIndex,
+        chapter: first,
+        lastChapter: last,
+        useEnglishBookNames: widget.useEnglishBookNames,
+        onNavigateToPassage: widget.onNavigateToPassage,
       ),
       ChapterContextTab.places => ChapterPlacesSheet(
         bookIndex: widget.bookIndex,

@@ -1205,7 +1205,8 @@ void main() {
   testWidgets('shows only the reader tiles that fit their minimum width', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(1340, 800);
+    // Wide enough for four tiles and every workspace action beside the tabs.
+    tester.view.physicalSize = const Size(1400, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
