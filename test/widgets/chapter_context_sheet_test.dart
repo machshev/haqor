@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:haqor/src/bible_data.dart';
+import 'package:haqor/src/apologetics.dart';
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/outlines.dart';
 import 'package:haqor/src/widgets/archaeology_page.dart';
@@ -229,5 +230,64 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.byType(ChapterPlacesSheet), findsOneWidget);
+  });
+
+  testWidgets('the sheet moves between side panel layouts', (tester) async {
+    // Every tab is built at no width, so the stores must already be held.
+    OutlinesStore.instance.set(const []);
+    ApologeticsStore.instance.set(const [], const []);
+    // As the reader docks it: under a global key, with an overlay of its own
+    // for its tooltips, moved whole as other panels open beside it.
+    final key = GlobalKey();
+    final panel = KeyedSubtree(
+      key: key,
+      child: Overlay.wrap(
+        child: Material(
+          child: ChapterContextSheet(
+            bookIndex: 30,
+            chapter: 4,
+            initialTab: ChapterContextTab.people,
+            sendPlacesRequest: (_) {},
+            sendPeopleRequest: (_) {},
+            sendArtifactsRequest: (_) {},
+          ),
+        ),
+      ),
+    );
+    Widget host({required bool switcher, double width = 360}) => MaterialApp(
+      home: Scaffold(
+        body: LayoutBuilder(
+          builder: (context, constraints) => Row(
+            children: [
+              const Expanded(child: SizedBox()),
+              SizedBox(
+                width: width,
+                child: switcher
+                    ? Column(
+                        children: [
+                          const SizedBox(height: 48),
+                          Expanded(child: panel),
+                        ],
+                      )
+                    : panel,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    for (final (switcher, width) in [
+      (false, 0.0),
+      (false, 360.0),
+      (true, 1.0),
+      (true, 360.0),
+      (true, 200.0),
+      (false, 400.0),
+      (true, 150.0),
+    ]) {
+      await tester.pumpWidget(host(switcher: switcher, width: width));
+      expect(tester.takeException(), isNull, reason: "$switcher at $width");
+    }
+    expect(find.byTooltip('People'), findsOneWidget);
   });
 }

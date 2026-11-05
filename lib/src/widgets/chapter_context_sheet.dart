@@ -444,12 +444,7 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
               );
             },
           ),
-          LayoutBuilder(
-            builder: (context, constraints) => _tabBar(
-              // Only a panel narrower than the icons side by side scrolls.
-              scrollable: constraints.maxWidth < _shown.length * 48,
-            ),
-          ),
+          _tabBar(),
           Expanded(
             child: TabBarView(
               controller: _tabs,
@@ -465,10 +460,12 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
     );
   }
 
-  Widget _tabBar({required bool scrollable}) => TabBar(
+  /// The tabs, their icons sharing the width. Never scrollable, nor switched
+  /// to it by width: that would move the tabs to a new parent, and their
+  /// tooltips' overlays with them, while a panel is laid out, which Flutter
+  /// does not allow. The icons fit side by side in any panel.
+  Widget _tabBar() => TabBar(
     controller: _tabs,
-    isScrollable: scrollable,
-    tabAlignment: scrollable ? TabAlignment.start : null,
     tabs: [
       // Icons only, named by their tooltips: there are too many tabs for
       // their labels to fit a side panel.
