@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'about_page.dart';
 import 'apologetics.dart';
+import 'outlines.dart';
 import 'app_settings.dart';
 import 'bible_data.dart';
 import 'christadelphian_readings.dart';
@@ -311,6 +312,7 @@ class BibleReaderPage extends StatefulWidget {
     this.sendCommentaryRequest,
     this.saveCommentaryNote,
     this.sendApologeticsRequest,
+    this.sendOutlinesRequest,
     this.deleteCommentaryNote,
     this.sendWordInfoRequest,
     this.sendGreekWordRequest,
@@ -334,6 +336,10 @@ class BibleReaderPage extends StatefulWidget {
   /// Stands in for the request for the apologetics, which the reader marks
   /// verses with, for tests.
   final void Function(GetApologetics request)? sendApologeticsRequest;
+
+  /// Stands in for the request for the book outlines, which the chapter
+  /// context tells empty tabs from, for tests.
+  final void Function(GetOutlines request)? sendOutlinesRequest;
   final void Function(SaveCommentaryNote request)? saveCommentaryNote;
   final void Function(DeleteCommentaryNote request)? deleteCommentaryNote;
   final void Function(GetWordInfo request)? sendWordInfoRequest;
@@ -452,6 +458,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     )..addListener(_onStudyStoreChanged);
     _commentaryStore.start();
     ApologeticsStore.instance.load(send: widget.sendApologeticsRequest);
+    OutlinesStore.instance.load(send: widget.sendOutlinesRequest);
     commentaryInText().then((shown) {
       if (mounted) setState(() => _commentaryInText = shown);
     });

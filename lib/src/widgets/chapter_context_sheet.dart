@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../apologetics.dart';
 import '../bible_data.dart';
 import '../bindings/bindings.dart';
+import '../outlines.dart';
 import 'apologetics_page.dart';
 import 'archaeology_page.dart';
 import 'chapter_span.dart';
@@ -154,6 +157,7 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
   void _setScope(ChapterContextScope scope) {
     setState(() => _scope = scope);
     widget.onScopeChanged?.call(scope);
+    _probe();
   }
 
   void _tabChanged() {
@@ -161,8 +165,130 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
     widget.onTabChanged?.call(_shown[_tabs.index]);
   }
 
+  /// The probes' request ids, apart from those the tabs number from one, so
+  /// that neither takes the other's reply for its own.
+  static int _nextProbeId = 1 << 30;
+
+  /// Whether the places, people and archaeology tabs have anything over the
+  /// span, as their probes have answered; absent until then.
+  final Map<ChapterContextTab, bool> _found = {};
+  int? _placesProbe;
+  int? _peopleProbe;
+  int? _findsProbe;
+  late final List<StreamSubscription<dynamic>> _probeReplies = [
+    ChapterPlaces.rustSignalStream.listen((pack) {
+      if (pack.message.requestId == _placesProbe) {
+        _answer(ChapterContextTab.places, pack.message.places.isNotEmpty);
+      }
+    }),
+    ChapterPeople.rustSignalStream.listen((pack) {
+      if (pack.message.requestId == _peopleProbe) {
+        _answer(ChapterContextTab.people, pack.message.people.isNotEmpty);
+      }
+    }),
+    ChapterArtifacts.rustSignalStream.listen((pack) {
+      if (pack.message.requestId == _findsProbe) {
+        _answer(ChapterContextTab.archaeology, pack.message.entries.isNotEmpty);
+      }
+    }),
+  ];
+
+  void _answer(ChapterContextTab tab, bool found) {
+    if (mounted) setState(() => _found[tab] = found);
+  }
+
+  /// Asks whether the places, people and archaeology tabs have anything over
+  /// the span, so that the empty ones can be greyed out without opening
+  /// them.
+  void _probe() {
+    _probeReplies; // Listening before the replies can come.
+    final (first, last) = _span(_scope);
+    final book = widget.bookIndex + 1;
+    _found.clear();
+    final places = GetChapterPlaces(
+      requestId: _placesProbe = _nextProbeId++,
+      book: book,
+      chapter: first,
+      lastChapter: last,
+    );
+    final people = GetChapterPeople(
+      requestId: _peopleProbe = _nextProbeId++,
+      book: book,
+      chapter: first,
+      lastChapter: last,
+    );
+    final finds = GetChapterArtifacts(
+      requestId: _findsProbe = _nextProbeId++,
+      book: book,
+      chapter: first,
+      lastChapter: last,
+    );
+    _send(places, widget.sendPlacesRequest, places.sendSignalToRust);
+    _send(people, widget.sendPeopleRequest, people.sendSignalToRust);
+    _send(finds, widget.sendArtifactsRequest, finds.sendSignalToRust);
+  }
+
+  /// Sends a probe by [send], or else to Rust. A probe is only a hint: one
+  /// that cannot be sent, where there is no Rust to send it to, leaves its
+  /// tab as it is rather than failing the sheet.
+  static void _send<T>(
+    T request,
+    void Function(T)? send,
+    void Function() toRust,
+  ) {
+    if (send != null) return send(request);
+    try {
+      toRust();
+    } on ArgumentError {
+      // No Rust library loaded: the tab is not judged.
+    }
+  }
+
+  /// Whether [tab] has nothing over the span: false while it is not known.
+  /// The apologetics and outlines are held whole, so are known once loaded;
+  /// cross references are never judged.
+  bool _empty(ChapterContextTab tab) {
+    final (first, last) = _span(_scope);
+    final book = widget.bookIndex + 1;
+    return switch (tab) {
+      ChapterContextTab.crossReferences => false,
+      ChapterContextTab.structure =>
+        OutlinesStore.instance.loaded &&
+            OutlinesStore.instance.touching(book, first, last).isEmpty,
+      ChapterContextTab.apologetics =>
+        ApologeticsStore.instance.loaded &&
+            ApologeticsStore.instance.touching(book, first, last).isEmpty,
+      _ => _found[tab] == false,
+    };
+  }
+
+  void _storeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    OutlinesStore.instance.addListener(_storeChanged);
+    ApologeticsStore.instance.addListener(_storeChanged);
+    _probe();
+  }
+
+  @override
+  void didUpdateWidget(ChapterContextSheet old) {
+    super.didUpdateWidget(old);
+    if (old.bookIndex != widget.bookIndex || old.chapter != widget.chapter) {
+      _probe();
+    }
+  }
+
   @override
   void dispose() {
+    for (final s in _probeReplies) {
+      s.cancel();
+    }
+    OutlinesStore.instance.removeListener(_storeChanged);
+    ApologeticsStore.instance.removeListener(_storeChanged);
     _tabs.dispose();
     super.dispose();
   }
@@ -320,8 +446,8 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
           ),
           LayoutBuilder(
             builder: (context, constraints) => _tabBar(
-              // Docked in a narrow side panel the labels would be squeezed.
-              scrollable: constraints.maxWidth < 440,
+              // Only a panel narrower than the icons side by side scrolls.
+              scrollable: constraints.maxWidth < _shown.length * 48,
             ),
           ),
           Expanded(
@@ -344,12 +470,33 @@ class _ChapterContextSheetState extends State<ChapterContextSheet>
     isScrollable: scrollable,
     tabAlignment: scrollable ? TabAlignment.start : null,
     tabs: [
+      // Icons only, named by their tooltips: there are too many tabs for
+      // their labels to fit a side panel.
       for (final tab in _shown)
-        Tab(
-          key: ValueKey('chapter-context-${tab.name}'),
-          icon: Icon(tab.icon),
-          text: tab.label,
-        ),
+        if (_empty(tab))
+          // Greyed out, but still there: the tabs keep their places as the
+          // reader moves from chapter to chapter.
+          Tooltip(
+            message: '${tab.label}: none here',
+            child: Tab(
+              key: ValueKey('chapter-context-${tab.name}'),
+              icon: Icon(
+                tab.icon,
+                semanticLabel: '${tab.label}: none here',
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.3),
+              ),
+            ),
+          )
+        else
+          Tooltip(
+            message: tab.label,
+            child: Tab(
+              key: ValueKey('chapter-context-${tab.name}'),
+              icon: Icon(tab.icon, semanticLabel: tab.label),
+            ),
+          ),
     ],
   );
 }
