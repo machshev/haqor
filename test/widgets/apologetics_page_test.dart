@@ -131,22 +131,41 @@ void main() {
     expect(store.touching(40, 1, 27), isEmpty);
   });
 
-  testWidgets('the page lists by subject and narrows by kind and search', (
+  testWidgets('subjects expand to their entries; a kind or search opens all', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(500, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(_host(ApologeticsPage(store: _store())));
-    expect(find.text('The resurrection of Jesus'), findsWidgets);
+    expect(find.text('The resurrection of Jesus'), findsOneWidget);
     expect(find.text('3 entries'), findsOneWidget);
+    // Collapsed until tapped.
+    final tomb = find.byKey(const ValueKey('apologetic-row-empty-tomb'));
+    expect(tomb, findsNothing);
+    final resurrection = find.byKey(
+      const ValueKey('apologetics-group-subjects-resurrection'),
+    );
+    await tester.tap(resurrection);
+    await tester.pump();
+    expect(tomb, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('apologetic-row-luke-23-43')),
+      findsNothing,
+    );
+    await tester.tap(resurrection);
+    await tester.pump();
+    expect(tomb, findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('apologetics-kind-passage')));
     await tester.pump();
     expect(find.text('2 entries'), findsOneWidget);
+    expect(tomb, findsNothing);
     expect(
-      find.byKey(const ValueKey('apologetic-row-empty-tomb')),
-      findsNothing,
+      find.byKey(const ValueKey('apologetic-row-luke-23-43')),
+      findsOneWidget,
     );
+    // A subject with no match is not listed.
+    expect(resurrection, findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('apologetics-kind-all')));
     await tester.enterText(
@@ -155,9 +174,13 @@ void main() {
     );
     await tester.pump();
     expect(find.text('1 entry'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('apologetic-row-luke-23-43')),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('topics index across subjects, an entry under each of its own', (
+  testWidgets('topics list across subjects, an entry under each of its own', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(500, 900));
@@ -165,18 +188,24 @@ void main() {
     await tester.pumpWidget(_host(ApologeticsPage(store: _store())));
     await tester.tap(find.text('Topics'));
     await tester.pump();
-    // The rich man is under two topics: listed twice, counted once.
-    expect(find.text('The rich man and Lazarus'), findsNWidgets(2));
-    expect(find.text('3 entries'), findsOneWidget);
+    expect(find.text('Heaven at death'), findsOneWidget);
+    expect(find.text('Hell'), findsOneWidget);
+    expect(find.text('The rich man and Lazarus'), findsNothing);
 
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('apologetics-topics-hell')),
+    await tester.tap(
+      find.byKey(const ValueKey('apologetics-group-topics-hell')),
     );
-    await tester.tap(find.byKey(const ValueKey('apologetics-topics-hell')));
     await tester.pump();
-    expect(find.text('1 entry'), findsOneWidget);
     expect(find.text('The rich man and Lazarus'), findsOneWidget);
     expect(find.text('Luke 23:43, today in paradise'), findsNothing);
+
+    // Under two topics: listed under both, counted once.
+    await tester.tap(
+      find.byKey(const ValueKey('apologetics-group-topics-heaven-at-death')),
+    );
+    await tester.pump();
+    expect(find.text('The rich man and Lazarus'), findsNWidgets(2));
+    expect(find.text('3 entries'), findsOneWidget);
   });
 
   testWidgets(
@@ -210,13 +239,26 @@ void main() {
       await tester.pump();
       expect(find.text('Common ground'), findsNothing);
       expect(find.text('2 entries'), findsOneWidget);
+
+      // Back to choosing whom.
+      await tester.tap(find.byKey(const ValueKey('apologetics-audience-back')));
+      await tester.pump();
+      expect(find.text('Choose whom you are talking with'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('apologetics-audience-row-catholic')),
+        findsOneWidget,
+      );
     },
   );
 
-  testWidgets('an entry\'s topic opens that topic\'s list', (tester) async {
+  testWidgets('an entry\'s topic opens that topic in the list', (tester) async {
     await tester.binding.setSurfaceSize(const Size(500, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(_host(ApologeticsPage(store: _store())));
+    await tester.tap(
+      find.byKey(const ValueKey('apologetics-group-subjects-death')),
+    );
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('apologetic-row-luke-16-19')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('apologetic-topic-hell')));
@@ -225,8 +267,13 @@ void main() {
       find.byKey(const ValueKey('apologetic-page-luke-16-19')),
       findsNothing,
     );
-    expect(find.text('1 entry'), findsOneWidget);
-    expect(find.text('Hell'), findsWidgets);
+    // Topics, with Hell open and Heaven at death not.
+    expect(
+      find.byKey(const ValueKey('apologetics-group-topics-hell')),
+      findsOneWidget,
+    );
+    expect(find.text('The rich man and Lazarus'), findsOneWidget);
+    expect(find.text('Luke 23:43, today in paradise'), findsNothing);
   });
 
   testWidgets('an entry opens with its argument, and passages navigate', (
@@ -257,6 +304,10 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('apologetics-group-subjects-resurrection')),
+    );
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('apologetic-row-empty-tomb')));
     await tester.pumpAndSettle();
     expect(find.text('The argument'), findsOneWidget);

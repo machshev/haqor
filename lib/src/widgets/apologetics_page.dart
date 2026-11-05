@@ -386,9 +386,10 @@ enum ApologeticsIndex {
 }
 
 /// Every entry of Haqor's apologetics, for a quick answer in a conversation:
-/// indexed by subject, by topic or by whom the conversation is with, searched
-/// by words or a passage, and narrowed to one subject, topic or audience and
-/// a kind. An entry shows beside the list on a wide screen and on its own
+/// listed by subject or by topic, each expanding to its entries, or by whom
+/// the conversation is with, chosen from a list and left by a back row; and
+/// searched by words or a passage, or narrowed to a kind, which opens every
+/// group with a match. An entry shows beside the list on a wide screen and on its own
 /// page on a narrow one; a passage opens in the reader, closing the page.
 class ApologeticsPage extends StatefulWidget {
   const ApologeticsPage({
@@ -428,11 +429,8 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
 
   ApologeticsIndex _index = ApologeticsIndex.subjects;
 
-  /// The subject shown, or null for all.
-  String? _subject;
-
-  /// The topic shown, or null for all.
-  String? _topic;
+  /// The subjects and topics expanded, as `index:key`.
+  final Set<String> _open = {};
 
   /// Whom the conversation is with, or null to choose.
   String? _audience;
@@ -490,13 +488,14 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
     onOpenTopic: _showTopic,
   );
 
-  /// Lists [key]'s entries, closing any entry page above this one.
+  /// Lists the topics with [key]'s open, closing any entry page above this
+  /// one.
   void _showTopic(String key) {
     final own = ModalRoute.of(context);
     Navigator.of(context).popUntil((route) => route == own);
     setState(() {
       _index = ApologeticsIndex.topics;
-      _topic = key;
+      _open.add('${ApologeticsIndex.topics.name}:$key');
     });
   }
 
@@ -616,25 +615,6 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
                 setState(() => _index = chosen.single),
           ),
         ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-          child: Row(
-            children: [
-              for (final (key, label, tooltip) in _choices())
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: ChoiceChip(
-                    key: ValueKey('apologetics-${_index.name}-${key ?? 'all'}'),
-                    label: Text(label),
-                    tooltip: tooltip,
-                    selected: _chosen == key,
-                    onSelected: (_) => setState(() => _chosen = key),
-                  ),
-                ),
-            ],
-          ),
-        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
           child: Wrap(
@@ -668,43 +648,15 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
     );
   }
 
-  /// The current index's choice: a subject, topic or audience key, or null.
-  String? get _chosen => switch (_index) {
-    ApologeticsIndex.subjects => _subject,
-    ApologeticsIndex.topics => _topic,
-    ApologeticsIndex.audiences => _audience,
-  };
-
-  set _chosen(String? key) => switch (_index) {
-    ApologeticsIndex.subjects => _subject = key,
-    ApologeticsIndex.topics => _topic = key,
-    ApologeticsIndex.audiences => _audience = key,
-  };
-
   bool get _choosingAudience =>
       _index == ApologeticsIndex.audiences && _audience == null;
 
-  /// The chips of the current index: key, label and tooltip, all first.
-  List<(String?, String, String?)> _choices() => switch (_index) {
-    ApologeticsIndex.subjects => [
-      (null, 'All subjects', null),
-      for (final s in _store.subjects) (s.key, s.title, s.note),
-    ],
-    ApologeticsIndex.topics => [
-      (null, 'All topics', null),
-      for (final t in _store.topics) (t.key, t.title, null),
-    ],
-    ApologeticsIndex.audiences => [
-      (null, 'Everyone', null),
-      for (final a in _store.audiences) (a.key, a.title, null),
-    ],
-  };
+  bool get _searching => _query.trim().isNotEmpty || _kind != null;
 
-  /// The headed groups the list shows, of the [shown] entries, by the
-  /// current index and its choice.
-  List<({String title, List<ApologeticEntry> entries})> _groups(
-    List<ApologeticEntry> shown,
-  ) {
+  /// The groups the list shows, of the [shown] entries, by the current
+  /// index: each subject or topic, which expands, or for the audience
+  /// chosen its common ground and where they differ, always open.
+  List<_Group> _groups(List<ApologeticEntry> shown) {
     final keys = {for (final e in shown) e.key};
     List<ApologeticEntry> only(Iterable<ApologeticEntry> entries) => [
       for (final e in entries)
@@ -713,24 +665,35 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
     final groups = switch (_index) {
       ApologeticsIndex.subjects => [
         for (final s in _store.subjects)
-          if (_subject == null || s.key == _subject)
-            (
-              title: s.title,
-              entries: only(shown.where((e) => e.subject == s.key)),
-            ),
+          _Group(
+            key: s.key,
+            title: s.title,
+            note: s.note,
+            entries: only(shown.where((e) => e.subject == s.key)),
+          ),
       ],
       ApologeticsIndex.topics => [
         for (final t in _store.topics)
-          if (_topic == null || t.key == _topic)
-            (
-              title: t.title,
-              entries: only(shown.where((e) => e.topics.contains(t.key))),
-            ),
+          _Group(
+            key: t.key,
+            title: t.title,
+            entries: only(shown.where((e) => e.topics.contains(t.key))),
+          ),
       ],
       ApologeticsIndex.audiences => [
         if (_store.audience(_audience ?? '') case final a?) ...[
-          (title: 'Common ground', entries: only(_store.byKeys(a.agree))),
-          (title: 'Where you differ', entries: only(_store.byKeys(a.differ))),
+          _Group(
+            key: 'agree',
+            title: 'Common ground',
+            entries: only(_store.byKeys(a.agree)),
+            fixed: true,
+          ),
+          _Group(
+            key: 'differ',
+            title: 'Where you differ',
+            entries: only(_store.byKeys(a.differ)),
+            fixed: true,
+          ),
         ],
       ],
     };
@@ -742,7 +705,7 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
 
   Widget _list(
     BuildContext context,
-    List<({String title, List<ApologeticEntry> entries})> groups, {
+    List<_Group> groups, {
     required bool wide,
   }) {
     final theme = Theme.of(context);
@@ -770,12 +733,20 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
         ? _store.audience(_audience ?? '')
         : null;
     final rows = <Widget>[
-      if (audience != null)
+      if (audience != null) ...[
+        ListTile(
+          key: const ValueKey('apologetics-audience-back'),
+          leading: const Icon(Icons.arrow_back),
+          title: Text(audience.title, style: theme.textTheme.titleMedium),
+          subtitle: const Text('Talking with'),
+          onTap: () => setState(() => _audience = null),
+        ),
         Padding(
           key: const ValueKey('apologetics-audience-note'),
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
           child: Text(audience.note, style: theme.textTheme.bodyMedium),
         ),
+      ],
     ];
     final listed = <String>{};
     if (groups.isEmpty) {
@@ -788,17 +759,55 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
     }
     for (final group in groups) {
       final entries = group.entries;
-      rows.add(
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: Text(
-            group.title,
-            style: theme.textTheme.titleSmall?.copyWith(
-              color: theme.colorScheme.primary,
+      final openKey = '${_index.name}:${group.key}';
+      final open = group.fixed || _searching || _open.contains(openKey);
+      if (group.fixed) {
+        rows.add(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Text(
+              group.title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
             ),
           ),
-        ),
-      );
+        );
+      } else {
+        rows.add(
+          ListTile(
+            key: ValueKey('apologetics-group-${_index.name}-${group.key}'),
+            title: Text(
+              group.title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+            subtitle: group.note == null ? null : Text(group.note!),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${entries.length}',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(open ? Icons.expand_less : Icons.expand_more),
+              ],
+            ),
+            onTap: _searching
+                ? null
+                : () => setState(
+                    () => _open.contains(openKey)
+                        ? _open.remove(openKey)
+                        : _open.add(openKey),
+                  ),
+          ),
+        );
+      }
+      if (!open) continue;
       for (final e in entries) {
         // An entry under several topics is keyed by its first.
         final first = listed.add(e.key);
@@ -807,7 +816,11 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
             key: ValueKey(
               first
                   ? 'apologetic-row-${e.key}'
-                  : 'apologetic-row-${e.key}@${group.title}',
+                  : 'apologetic-row-${e.key}@${group.key}',
+            ),
+            contentPadding: EdgeInsets.only(
+              left: group.fixed ? 16 : 32,
+              right: 16,
             ),
             selected: wide && e.key == _selectedKey,
             title: Text(e.title),
@@ -829,6 +842,24 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
       children: rows,
     );
   }
+}
+
+/// A group of the apologetics page's list: a subject or topic, which
+/// expands, or a [fixed] section of an audience's.
+class _Group {
+  const _Group({
+    required this.key,
+    required this.title,
+    required this.entries,
+    this.note,
+    this.fixed = false,
+  });
+
+  final String key;
+  final String title;
+  final String? note;
+  final List<ApologeticEntry> entries;
+  final bool fixed;
 }
 
 /// The entries marking one chapter, or a run of them, with the passages
