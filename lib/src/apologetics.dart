@@ -18,6 +18,7 @@ class ApologeticsStore extends ChangeNotifier {
   int _requestId = 0;
   List<ApologeticSubjectEntry>? _subjects;
   List<ApologeticTopicEntry> _topics = const [];
+  List<ApologeticReligionEntry> _religions = const [];
   List<ApologeticAudienceEntry> _audiences = const [];
   List<ApologeticEntry> _entries = const [];
 
@@ -32,6 +33,10 @@ class ApologeticsStore extends ChangeNotifier {
   /// The topics cutting across subjects, in order.
   List<ApologeticTopicEntry> get topics => _topics;
 
+  /// The religions audiences belong to, in order; empty for a database
+  /// built without them.
+  List<ApologeticReligionEntry> get religions => _religions;
+
   /// Whom a conversation may be with, in order.
   List<ApologeticAudienceEntry> get audiences => _audiences;
 
@@ -45,6 +50,7 @@ class ApologeticsStore extends ChangeNotifier {
         reply.subjects,
         reply.entries,
         topics: reply.topics,
+        religions: reply.religions,
         audiences: reply.audiences,
       );
     });
@@ -56,16 +62,18 @@ class ApologeticsStore extends ChangeNotifier {
     }
   }
 
-  /// Holds [subjects], [entries], [topics] and [audiences], as a reply from
-  /// Rust does.
+  /// Holds [subjects], [entries], [topics], [religions] and [audiences], as a
+  /// reply from Rust does.
   void set(
     List<ApologeticSubjectEntry> subjects,
     List<ApologeticEntry> entries, {
     List<ApologeticTopicEntry> topics = const [],
+    List<ApologeticReligionEntry> religions = const [],
     List<ApologeticAudienceEntry> audiences = const [],
   }) {
     _subjects = subjects;
     _topics = topics;
+    _religions = religions;
     _audiences = audiences;
     _entries = entries;
     final marks = <int, List<ApologeticEntry>>{};
@@ -90,8 +98,17 @@ class ApologeticsStore extends ChangeNotifier {
   ApologeticTopicEntry? topic(String key) =>
       _topics.where((t) => t.key == key).firstOrNull;
 
+  ApologeticReligionEntry? religion(String key) =>
+      _religions.where((r) => r.key == key).firstOrNull;
+
   ApologeticAudienceEntry? audience(String key) =>
       _audiences.where((a) => a.key == key).firstOrNull;
+
+  /// The audiences of the religion [key], in order.
+  List<ApologeticAudienceEntry> audiencesOf(String key) => [
+    for (final a in _audiences)
+      if (a.religion == key) a,
+  ];
 
   /// The entries named by [keys], in their order, skipping any unknown.
   List<ApologeticEntry> byKeys(List<String> keys) => [

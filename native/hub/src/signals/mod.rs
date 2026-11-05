@@ -2428,10 +2428,23 @@ pub struct ApologeticTopicEntry {
     pub title: String,
 }
 
+/// A religion audiences belong to (see
+/// `haqor_core::bible::ApologeticReligion`).
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct ApologeticReligionEntry {
+    pub key: String,
+    pub title: String,
+    /// Who they are, and where to begin.
+    pub note: String,
+}
+
 /// Whom a conversation is with (see `haqor_core::bible::ApologeticAudience`).
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct ApologeticAudienceEntry {
     pub key: String,
+    /// An [`ApologeticReligionEntry`]'s key; empty for a database built
+    /// without them.
+    pub religion: String,
     pub title: String,
     /// What they hold, and where to begin.
     pub note: String,
@@ -2448,13 +2461,14 @@ pub struct GetApologetics {
     pub request_id: u32,
 }
 
-/// Reply to [`GetApologetics`]: the subjects in order, the topics and audiences
-/// in order, and every entry.
+/// Reply to [`GetApologetics`]: the subjects in order, the topics, religions
+/// and audiences in order, and every entry.
 #[derive(Debug, Serialize, RustSignal)]
 pub struct Apologetics {
     pub request_id: u32,
     pub subjects: Vec<ApologeticSubjectEntry>,
     pub topics: Vec<ApologeticTopicEntry>,
+    pub religions: Vec<ApologeticReligionEntry>,
     pub audiences: Vec<ApologeticAudienceEntry>,
     pub entries: Vec<ApologeticEntry>,
 }

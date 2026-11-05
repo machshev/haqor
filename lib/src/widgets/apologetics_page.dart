@@ -387,7 +387,8 @@ enum ApologeticsIndex {
 
 /// Every entry of Haqor's apologetics, for a quick answer in a conversation:
 /// listed by subject or by topic, each expanding to its entries, or by whom
-/// the conversation is with, chosen from a list and left by a back row; and
+/// the conversation is with, chosen by religion and then by denomination,
+/// each left by a back row; and
 /// searched by words or a passage, or narrowed to a kind, which opens every
 /// group with a match. An entry shows beside the list on a wide screen and on its own
 /// page on a narrow one; a passage opens in the reader, closing the page.
@@ -431,6 +432,9 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
 
   /// The subjects and topics expanded, as `index:key`.
   final Set<String> _open = {};
+
+  /// The religion whose denominations are listed, or null for the religions.
+  String? _religion;
 
   /// Whom the conversation is with, or null to choose.
   String? _audience;
@@ -703,43 +707,88 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
     ];
   }
 
+  /// Choosing whom the conversation is with: the religions, each leading to
+  /// its denominations, or straight to its one; or, chosen, a religion's
+  /// denominations under a back row. A database without religions lists
+  /// every audience.
+  Widget _choose(BuildContext context) {
+    final theme = Theme.of(context);
+    Widget audienceRow(ApologeticAudienceEntry a) => _ChoiceTile(
+      key: ValueKey('apologetics-audience-row-${a.key}'),
+      title: a.title,
+      note: a.note,
+      onTap: () => setState(() => _audience = a.key),
+    );
+    final religion = _store.religion(_religion ?? '');
+    final List<Widget> rows;
+    if (religion != null) {
+      rows = [
+        ListTile(
+          key: const ValueKey('apologetics-religion-back'),
+          leading: const Icon(Icons.arrow_back),
+          title: Text(religion.title, style: theme.textTheme.titleMedium),
+          subtitle: const Text('Talking with'),
+          onTap: () => setState(() => _religion = null),
+        ),
+        Padding(
+          key: const ValueKey('apologetics-religion-note'),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: Text(religion.note, style: theme.textTheme.bodyMedium),
+        ),
+        for (final a in _store.audiencesOf(religion.key)) audienceRow(a),
+      ];
+    } else if (_store.religions.isEmpty) {
+      rows = [for (final a in _store.audiences) audienceRow(a)];
+    } else {
+      rows = [
+        for (final r in _store.religions)
+          if (_store.audiencesOf(r.key) case final audiences
+              when audiences.isNotEmpty)
+            _ChoiceTile(
+              key: ValueKey('apologetics-religion-row-${r.key}'),
+              title: r.title,
+              note: r.note,
+              count: audiences.length > 1 ? audiences.length : null,
+              onTap: () => setState(() {
+                _religion = r.key;
+                if (audiences.length == 1) _audience = audiences.single.key;
+              }),
+            ),
+      ];
+    }
+    return ListView(
+      key: const ValueKey('apologetics-audiences'),
+      padding: const EdgeInsets.only(bottom: 24),
+      children: rows,
+    );
+  }
+
   Widget _list(
     BuildContext context,
     List<_Group> groups, {
     required bool wide,
   }) {
     final theme = Theme.of(context);
-    if (_choosingAudience) {
-      return ListView(
-        key: const ValueKey('apologetics-audiences'),
-        padding: const EdgeInsets.only(bottom: 24),
-        children: [
-          for (final a in _store.audiences)
-            ListTile(
-              key: ValueKey('apologetics-audience-row-${a.key}'),
-              title: Text(a.title),
-              subtitle: Text(
-                a.note,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => setState(() => _audience = a.key),
-            ),
-        ],
-      );
-    }
+    if (_choosingAudience) return _choose(context);
     final audience = _index == ApologeticsIndex.audiences
         ? _store.audience(_audience ?? '')
         : null;
+    final religion = _store.religion(audience?.religion ?? '');
     final rows = <Widget>[
       if (audience != null) ...[
         ListTile(
           key: const ValueKey('apologetics-audience-back'),
           leading: const Icon(Icons.arrow_back),
           title: Text(audience.title, style: theme.textTheme.titleMedium),
-          subtitle: const Text('Talking with'),
-          onTap: () => setState(() => _audience = null),
+          subtitle: Text(religion?.title ?? 'Talking with'),
+          // Back to the religion's denominations, or to the religions when
+          // it has only the one.
+          onTap: () => setState(() {
+            _audience = null;
+            if (_store.audiencesOf(audience.religion).length < 2) {
+              _religion = null;
+            }
+          }),
         ),
         Padding(
           key: const ValueKey('apologetics-audience-note'),
@@ -840,6 +889,50 @@ class _ApologeticsPageState extends State<ApologeticsPage> {
       key: const ValueKey('apologetics-list'),
       padding: const EdgeInsets.only(bottom: 24),
       children: rows,
+    );
+  }
+}
+
+/// A row choosing whom a conversation is with: a religion, or one of its
+/// audiences.
+class _ChoiceTile extends StatelessWidget {
+  const _ChoiceTile({
+    super.key,
+    required this.title,
+    required this.note,
+    required this.onTap,
+    this.count,
+  });
+
+  final String title;
+  final String note;
+  final VoidCallback onTap;
+
+  /// How many to choose from beneath it, if it leads to a further choice.
+  final int? count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListTile(
+      title: Text(title),
+      subtitle: Text(note, maxLines: 3, overflow: TextOverflow.ellipsis),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (count case final count?) ...[
+            Text(
+              '$count',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
+          const Icon(Icons.chevron_right),
+        ],
+      ),
+      onTap: onTap,
     );
   }
 }

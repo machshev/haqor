@@ -6,8 +6,8 @@ use rinf::{DartSignal, RustSignal, debug_print};
 use crate::functions::{SharedBible, lock};
 use crate::signals::{
     ApologeticAudienceEntry, ApologeticEntry, ApologeticObjectionEntry, ApologeticPointEntry,
-    ApologeticSourceEntry, ApologeticSubjectEntry, ApologeticTopicEntry, Apologetics,
-    GetApologetics, PassageSpan,
+    ApologeticReligionEntry, ApologeticSourceEntry, ApologeticSubjectEntry, ApologeticTopicEntry,
+    Apologetics, GetApologetics, PassageSpan,
 };
 
 fn passage(span: VerseSpan) -> PassageSpan {
@@ -75,11 +75,12 @@ pub async fn get_apologetics(bible: SharedBible) {
             Ok((
                 bible.apologetic_subjects()?,
                 bible.apologetic_topics()?,
+                bible.apologetic_religions()?,
                 bible.apologetic_audiences()?,
                 bible.apologetics()?,
             ))
         };
-        let (subjects, topics, audiences, entries) = read().unwrap_or_else(|e| {
+        let (subjects, topics, religions, audiences, entries) = read().unwrap_or_else(|e| {
             debug_print!("get_apologetics error: {e:?}");
             Default::default()
         });
@@ -100,10 +101,19 @@ pub async fn get_apologetics(bible: SharedBible) {
                     title: t.title,
                 })
                 .collect(),
+            religions: religions
+                .into_iter()
+                .map(|r| ApologeticReligionEntry {
+                    key: r.key,
+                    title: r.title,
+                    note: r.note,
+                })
+                .collect(),
             audiences: audiences
                 .into_iter()
                 .map(|a| ApologeticAudienceEntry {
                     key: a.key,
+                    religion: a.religion,
                     title: a.title,
                     note: a.note,
                     agree: a.agree,

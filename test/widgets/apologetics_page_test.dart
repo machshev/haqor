@@ -108,13 +108,42 @@ ApologeticsStore _store() => ApologeticsStore()
       ApologeticTopicEntry(key: 'heaven-at-death', title: 'Heaven at death'),
       ApologeticTopicEntry(key: 'hell', title: 'Hell'),
     ],
+    religions: [
+      ApologeticReligionEntry(
+        key: 'christianity',
+        title: 'Christianity',
+        note: 'Those who confess Jesus as Lord.',
+      ),
+      ApologeticReligionEntry(
+        key: 'none',
+        title: 'No religion',
+        note: 'Begin from history.',
+      ),
+    ],
     audiences: [
       ApologeticAudienceEntry(
         key: 'catholic',
+        religion: 'christianity',
         title: 'Catholics',
         note: 'Begin from the resurrection of the body.',
         agree: ['empty-tomb'],
         differ: ['luke-16-19', 'luke-23-43'],
+      ),
+      ApologeticAudienceEntry(
+        key: 'orthodox',
+        religion: 'christianity',
+        title: 'Eastern Orthodox',
+        note: 'Begin from the resurrection.',
+        agree: [],
+        differ: ['luke-23-43'],
+      ),
+      ApologeticAudienceEntry(
+        key: 'sceptic',
+        religion: 'none',
+        title: 'Sceptics',
+        note: 'Begin from the tomb.',
+        agree: [],
+        differ: ['empty-tomb'],
       ),
     ],
   );
@@ -209,7 +238,7 @@ void main() {
   });
 
   testWidgets(
-    'talking with an audience lists common ground, then differences',
+    'talking with a religion\'s audience lists common ground, then differences',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(500, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -217,7 +246,21 @@ void main() {
       await tester.tap(find.text('Talking with'));
       await tester.pump();
       expect(find.text('Choose whom you are talking with'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('apologetics-audience-row-catholic')),
+        findsNothing,
+      );
 
+      // A religion lists its denominations under its note.
+      await tester.tap(
+        find.byKey(const ValueKey('apologetics-religion-row-christianity')),
+      );
+      await tester.pump();
+      expect(find.text('Those who confess Jesus as Lord.'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('apologetics-audience-row-orthodox')),
+        findsOneWidget,
+      );
       await tester.tap(
         find.byKey(const ValueKey('apologetics-audience-row-catholic')),
       );
@@ -240,12 +283,31 @@ void main() {
       expect(find.text('Common ground'), findsNothing);
       expect(find.text('2 entries'), findsOneWidget);
 
-      // Back to choosing whom.
+      // Back to the religion's denominations, then to the religions.
       await tester.tap(find.byKey(const ValueKey('apologetics-audience-back')));
       await tester.pump();
       expect(find.text('Choose whom you are talking with'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('apologetics-audience-row-catholic')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('apologetics-religion-back')));
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('apologetics-religion-row-none')),
+        findsOneWidget,
+      );
+
+      // A religion of one goes straight to it, and back to the religions.
+      await tester.tap(
+        find.byKey(const ValueKey('apologetics-religion-row-none')),
+      );
+      await tester.pump();
+      expect(find.text('Begin from the tomb.'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('apologetics-audience-back')));
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('apologetics-religion-row-christianity')),
         findsOneWidget,
       );
     },
