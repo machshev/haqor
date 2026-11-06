@@ -5,6 +5,7 @@ mod apologetics;
 mod archaeology;
 mod commentary;
 mod functions;
+mod haqor_lexicon;
 mod memorise;
 mod outlines;
 mod prophecy;
@@ -237,6 +238,8 @@ async fn main() {
         prophecy::get_verse_prophecies,
         prophecy::get_prophecies,
         apologetics::get_apologetics,
+        haqor_lexicon::get_haqor_lexicon,
+        haqor_lexicon::save_haqor_lexicon_entry,
         outlines::get_outlines,
         archaeology::get_artifacts,
         archaeology::get_chapter_artifacts,

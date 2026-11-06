@@ -2544,3 +2544,60 @@ pub struct Outlines {
     pub request_id: u32,
     pub outlines: Vec<OutlineEntry>,
 }
+
+/// Ask for the Haqor lexicon's entries for the review page. On desktop, when
+/// `HAQOR_LEXICON_DIR` names haqor-core's `data/lexicon`, they are read from
+/// there, so an edit shows at once and can be saved back.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct GetHaqorLexicon {
+    pub request_id: u32,
+}
+
+/// The Haqor lexicon's entries. `editable` when they were read from a
+/// directory a save can write to (`dir`); `error` names what went wrong, if
+/// anything did.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct HaqorLexicon {
+    pub request_id: u32,
+    pub editable: bool,
+    pub dir: String,
+    pub error: String,
+    pub entries: Vec<HaqorLexiconEntryText>,
+}
+
+/// One entry: its JSON as written (the schema is haqor-core's
+/// `haqor_lexicon`), with the text of every verse it cites.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct HaqorLexiconEntryText {
+    pub id: String,
+    pub json: String,
+    pub verses: Vec<HaqorLexiconVerse>,
+}
+
+/// A verse an entry cites, by the reference it writes (`Gen.2.7`): the
+/// Hebrew (or, in the New Testament, the Greek) and the English.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct HaqorLexiconVerse {
+    pub reference: String,
+    pub book: u8,
+    pub chapter: u8,
+    pub verse: u8,
+    pub original: String,
+    pub english: String,
+}
+
+/// Save one edited entry's JSON back to the review directory. Core checks the
+/// whole lexicon with it in place first and writes nothing if that fails.
+#[derive(Debug, Deserialize, DartSignal)]
+pub struct SaveHaqorLexiconEntry {
+    pub id: String,
+    pub json: String,
+}
+
+/// Whether a lexicon entry was saved, and if not, every fault the checks found.
+#[derive(Debug, Serialize, RustSignal)]
+pub struct HaqorLexiconSaveStatus {
+    pub id: String,
+    pub success: bool,
+    pub message: String,
+}
