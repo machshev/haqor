@@ -273,7 +273,7 @@ void main() {
           },
           'kin': [
             {
-              'sense': 'אָשַׁר piel: call happy',
+              'sense': 'אָשַׁר piel: call on the right path',
               'uses': 15,
               'cited': 7,
               'defining': 2,
@@ -303,7 +303,7 @@ void main() {
     );
     expect(
       find.textContaining(
-        'אָשַׁר piel: call happy — 15 uses, 7 verses (2 defining), 0 cognates',
+        'אָשַׁר piel: call on the right path — 15 uses, 7 verses (2 defining), 0 cognates',
         findRichText: true,
       ),
       findsOneWidget,
