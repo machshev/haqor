@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'haqor_lexicon_store.dart';
 import 'haqor_lexicon_view.dart';
+import 'semitic_sounds_page.dart';
 
 /// Review and edit the Haqor lexicon's entries in the form the reader will
 /// see them. On desktop, with `HAQOR_LEXICON_DIR` set to haqor-core's
@@ -261,6 +262,14 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
                 onPressed: (entry?.dirty ?? false) && !_saving ? _save : null,
               ),
             ],
+            IconButton(
+              tooltip: 'Semitic sounds',
+              icon: const Icon(Icons.record_voice_over_outlined),
+              onPressed: () => SemiticSoundsPage.open(
+                context,
+                onNavigateToPassage: widget.onNavigateToPassage,
+              ),
+            ),
             IconButton(
               tooltip: 'Reload from disk',
               icon: const Icon(Icons.refresh),

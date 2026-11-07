@@ -38,6 +38,7 @@ import 'widgets/bible_timeline_page.dart';
 import 'widgets/places_page.dart';
 import 'widgets/apologetics_page.dart';
 import 'lexicon/haqor_lexicon_review_page.dart';
+import 'lexicon/semitic_sounds_page.dart';
 import 'widgets/archaeology_page.dart';
 import 'widgets/outlines_page.dart';
 import 'widgets/prophecy_page.dart';
@@ -252,6 +253,7 @@ enum _ReaderMenuAction {
   archaeology,
   apologetics,
   lexiconReview,
+  semiticSounds,
   tutor,
   memorise,
   reportIssue,
@@ -1411,6 +1413,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _ReaderMenuAction.tutor,
     _ReaderMenuAction.memorise,
     if (_activeReader?._adminMode ?? false) _ReaderMenuAction.lexiconReview,
+    if (_activeReader?._adminMode ?? false) _ReaderMenuAction.semiticSounds,
     if (_activeReader?._adminMode ?? false) _ReaderMenuAction.reportIssue,
     _ReaderMenuAction.settings,
     _ReaderMenuAction.about,
@@ -1441,6 +1444,10 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         _ReaderMenuAction.outlines => (Icons.toc, 'Book outlines'),
         _ReaderMenuAction.apologetics => (Icons.shield_outlined, 'Apologetics'),
         _ReaderMenuAction.lexiconReview => (Icons.translate, 'Lexicon review'),
+        _ReaderMenuAction.semiticSounds => (
+          Icons.record_voice_over_outlined,
+          'Semitic sounds',
+        ),
         _ReaderMenuAction.tutor => (Icons.school_outlined, 'Tutor'),
         _ReaderMenuAction.memorise => (Icons.psychology_outlined, 'Memorise'),
         _ReaderMenuAction.reportIssue => (
@@ -6335,6 +6342,12 @@ class _ReaderSessionState extends State<_ReaderSession>
         );
       case _ReaderMenuAction.lexiconReview:
         HaqorLexiconReviewPage.open(
+          context,
+          onNavigateToPassage: (book, chapter, verse) =>
+              _navigateTo(book, chapter, verse: verse),
+        );
+      case _ReaderMenuAction.semiticSounds:
+        SemiticSoundsPage.open(
           context,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
