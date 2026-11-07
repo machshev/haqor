@@ -947,6 +947,7 @@ void main() {
     expect(current().word, 'יָעַד');
 
     final info = WordInfo(
+      haqorLexiconCoversWord: false,
       requestId: rust.wordRequests.last.requestId,
       found: true,
       word: current().word,

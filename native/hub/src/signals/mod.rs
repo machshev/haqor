@@ -942,6 +942,11 @@ pub struct WordInfo {
     /// Haqor's own lexicon entry for the word (haqor-core ADR 7), where it has
     /// one: the Lexicon tab then shows it alone, in place of [`Self::lexemes`].
     pub haqor_lexicon: Option<HaqorLexiconEntryText>,
+    /// Whether the looked-up word is one of that entry's words. Where it is
+    /// not (a name, or a word BDB files under the root that the entry leaves
+    /// out), the tab opens on [`Self::lexemes`], which then lists only the
+    /// root's words the entry does not hold.
+    pub haqor_lexicon_covers_word: bool,
 }
 
 /// A Greek word a Peshitta lexeme renders, found by aligning the two texts:

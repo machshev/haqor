@@ -83,12 +83,30 @@ const _haqorEntry = '''
 }
 ''';
 
+const _haqorText = HaqorLexiconEntryText(
+  id: 'shalam',
+  json: _haqorEntry,
+  verses: [
+    HaqorLexiconVerse(
+      reference: 'Gen.43.27',
+      book: 1,
+      chapter: 43,
+      verse: 27,
+      original: 'וַיִּשְׁאַל לָהֶם לְשָׁלוֹם',
+      english: 'And he asked them of their welfare',
+      peshitta: '',
+    ),
+  ],
+  support: '',
+);
+
 Future<void> _pumpSheet(
   WidgetTester tester, {
   required bool syriac,
   List<LexemeSummary>? lexemes,
   List<GreekEquivalentEntry> greekEquivalents = const [],
   HaqorLexiconEntryText? haqorLexicon,
+  bool haqorLexiconCoversWord = true,
   void Function(GetDictionaryEntry)? onDictionaryRequest,
 }) async {
   SharedPreferences.setMockInitialValues({
@@ -150,6 +168,7 @@ Future<void> _pumpSheet(
       roots: const [],
       greekEquivalents: greekEquivalents,
       haqorLexicon: haqorLexicon,
+      haqorLexiconCoversWord: haqorLexiconCoversWord,
     ).bincodeSerialize(),
     Uint8List(0),
   );
@@ -213,22 +232,8 @@ void main() {
     await _pumpSheet(
       tester,
       syriac: false,
-      haqorLexicon: const HaqorLexiconEntryText(
-        id: 'shalam',
-        json: _haqorEntry,
-        verses: [
-          HaqorLexiconVerse(
-            reference: 'Gen.43.27',
-            book: 1,
-            chapter: 43,
-            verse: 27,
-            original: 'וַיִּשְׁאַל לָהֶם לְשָׁלוֹם',
-            english: 'And he asked them of their welfare',
-            peshitta: '',
-          ),
-        ],
-        support: '',
-      ),
+      lexemes: const [],
+      haqorLexicon: _haqorText,
     );
     // The entry's root, gloss and tabs, as the review page shows them.
     expect(find.text('completeness, peace'), findsWidgets);
@@ -238,6 +243,31 @@ void main() {
     expect(find.text(_bdb.gloss), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    "the root's words Haqor's entry does not hold keep the other lexicons",
+    (tester) async {
+      tester.view.physicalSize = const Size(900, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      // The looked-up word is not one of the entry's (a name, say), so the
+      // sheet opens on the words the entry does not hold, as before.
+      await _pumpSheet(
+        tester,
+        syriac: false,
+        haqorLexicon: _haqorText,
+        haqorLexiconCoversWord: false,
+      );
+      expect(find.text('Other words (2)'), findsOneWidget);
+      expect(find.byType(LexiconSourceBadge), findsWidgets);
+      // The entry is a tab away.
+      await tester.tap(find.text('Overview'));
+      await tester.pumpAndSettle();
+      expect(find.text('Whole, sound, at peace.'), findsOneWidget);
+      expect(find.byType(LexiconSourceBadge), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('each entry is badged with the lexicon it comes from', (
     tester,

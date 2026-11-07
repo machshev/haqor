@@ -29,6 +29,7 @@ class _FakeRust {
   void deliverEliezer({required String selected, String word = 'אֱלִיעֶזֶר'}) {
     assignRustSignal['WordInfo']!(
       WordInfo(
+        haqorLexiconCoversWord: false,
         requestId: infoRequests.last.requestId,
         found: true,
         word: word,

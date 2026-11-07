@@ -41,6 +41,7 @@ class _FakeRust {
   void deliverWordInfo({required String word, required String root}) {
     assignRustSignal['WordInfo']!(
       WordInfo(
+        haqorLexiconCoversWord: false,
         requestId: infoRequests.last.requestId,
         found: true,
         word: word,

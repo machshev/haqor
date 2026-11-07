@@ -173,6 +173,8 @@ class HaqorLexiconEntryView extends StatefulWidget {
     this.onNavigateToPassage,
     this.leading,
     this.bottomInset = 0,
+    this.extraTab,
+    this.openOnExtraTab = false,
   });
 
   final LexiconEntryDraft entry;
@@ -187,29 +189,40 @@ class HaqorLexiconEntryView extends StatefulWidget {
   /// Room left below each tab's list, for a sheet's bottom inset.
   final double bottomInset;
 
+  /// A last tab after the entry's own: in the word sheet, the other
+  /// lexicons' entries for the root's words this entry does not hold yet.
+  final ({String label, WidgetBuilder build})? extraTab;
+
+  /// Open on [extraTab] rather than the overview.
+  final bool openOnExtraTab;
+
   @override
   State<HaqorLexiconEntryView> createState() => _HaqorLexiconEntryViewState();
 }
 
-enum _Tab { overview, words, cognates, doctrine }
+enum _Tab { overview, words, cognates, doctrine, extra }
 
 class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
     with TickerProviderStateMixin {
-  late List<_Tab> _tabs = _tabsFor(widget.entry);
+  late List<_Tab> _tabs = _tabsFor(widget);
   late TabController _controller = TabController(
     length: _tabs.length,
     vsync: this,
+    initialIndex: widget.openOnExtraTab && _tabs.contains(_Tab.extra)
+        ? _tabs.indexOf(_Tab.extra)
+        : 0,
   );
 
   /// The words opened to their detail, by index.
   final Set<int> _expanded = {};
   final Map<int, GlobalKey> _wordKeys = {};
 
-  static List<_Tab> _tabsFor(LexiconEntryDraft entry) => [
+  static List<_Tab> _tabsFor(HaqorLexiconEntryView view) => [
     _Tab.overview,
     _Tab.words,
-    if (_list(entry.data, 'cognates').isNotEmpty) _Tab.cognates,
-    if (_list(entry.data, 'doctrine').isNotEmpty) _Tab.doctrine,
+    if (_list(view.entry.data, 'cognates').isNotEmpty) _Tab.cognates,
+    if (_list(view.entry.data, 'doctrine').isNotEmpty) _Tab.doctrine,
+    if (view.extraTab != null) _Tab.extra,
   ];
 
   @override
@@ -222,7 +235,7 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
   @override
   void didUpdateWidget(HaqorLexiconEntryView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final tabs = _tabsFor(widget.entry);
+    final tabs = _tabsFor(widget);
     if (tabs.length == _tabs.length) return;
     final current = _tabs[_controller.index];
     _controller.dispose();
@@ -323,6 +336,7 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
                         _Tab.words => counted('Words', 'words'),
                         _Tab.cognates => counted('Cognates', 'cognates'),
                         _Tab.doctrine => counted('Doctrine', 'doctrine'),
+                        _Tab.extra => widget.extraTab!.label,
                       },
                     ),
                 ],
@@ -352,6 +366,7 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
                               _DoctrineItem(item: d),
                           ],
                         ),
+                        _Tab.extra => widget.extraTab!.build(context),
                       },
                   ],
                 ),

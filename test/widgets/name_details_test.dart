@@ -876,6 +876,7 @@ void main() {
       );
       assignRustSignal['WordInfo']!(
         WordInfo(
+          haqorLexiconCoversWord: false,
           requestId: infoRequests.single.requestId,
           found: true,
           word: 'שָׁכַב',

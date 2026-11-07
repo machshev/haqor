@@ -1190,24 +1190,6 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   ) {
     final theme = Theme.of(context);
 
-    // Haqor's own entry, where it has one, is the lexicon: the others are
-    // not shown beside it.
-    if (info.haqorLexicon case final entry?) {
-      final name = info.name;
-      return HaqorLexiconEntryView(
-        key: ValueKey('haqor-lexicon-${entry.id}'),
-        entry: _haqorEntry(entry),
-        onNavigateToPassage: widget.onNavigateToPassage,
-        bottomInset: bottomPad,
-        leading: name == null
-            ? null
-            : Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: NameCard(name: name, onOpen: () => _openName(name)),
-              ),
-      );
-    }
-
     // The lexeme's headword, which opens that word's own sheet.
     Widget headwordButton(String headword) => TextButton(
       onPressed: headword.isEmpty ? null : () => _openWordInfo(headword),
@@ -1439,6 +1421,47 @@ class _WordInfoSheetState extends State<WordInfoSheet>
       rows.add(sectionHeading(label));
       rows.add(const SizedBox(height: 4));
       rows.addAll(lexemes.map((p) => buildLexeme(p.$1, p.$2)));
+    }
+
+    // Haqor's own entry, where it has one, is the lexicon for the words it
+    // holds: the other lexicons are shown only for the root's words it does
+    // not hold yet, in a tab of their own, which the sheet opens on when the
+    // looked-up word is one of them.
+    if (info.haqorLexicon case final entry?) {
+      final name = info.name;
+      return HaqorLexiconEntryView(
+        key: ValueKey('haqor-lexicon-${entry.id}-${info.word}'),
+        entry: _haqorEntry(entry),
+        onNavigateToPassage: widget.onNavigateToPassage,
+        bottomInset: bottomPad,
+        leading: name == null
+            ? null
+            : Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: NameCard(name: name, onOpen: () => _openName(name)),
+              ),
+        openOnExtraTab: !info.haqorLexiconCoversWord && rows.isNotEmpty,
+        extraTab: rows.isEmpty
+            ? null
+            : (
+                label: 'Other words (${info.lexemes.length})',
+                build: (context) => ListView(
+                  key: const PageStorageKey('haqor-lexicon-other-words'),
+                  padding: EdgeInsets.fromLTRB(20, 12, 20, 8 + bottomPad),
+                  children: [
+                    Text(
+                      'Words filed under this root that Haqor\'s entry does '
+                      'not hold yet, as the other lexicons give them.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...rows,
+                  ],
+                ),
+              ),
+      );
     }
 
     // A resolved word with no dictionary entry (curated function words such
