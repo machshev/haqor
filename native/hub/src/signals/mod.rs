@@ -939,6 +939,9 @@ pub struct WordInfo {
     /// The Greek words a Peshitta word's lexeme renders, the most linked
     /// first; empty for the Hebrew.
     pub greek_equivalents: Vec<GreekEquivalentEntry>,
+    /// Haqor's own lexicon entry for the word (haqor-core ADR 7), where it has
+    /// one: the Lexicon tab then shows it alone, in place of [`Self::lexemes`].
+    pub haqor_lexicon: Option<HaqorLexiconEntryText>,
 }
 
 /// A Greek word a Peshitta lexeme renders, found by aligning the two texts:

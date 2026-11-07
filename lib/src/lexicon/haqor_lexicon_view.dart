@@ -171,6 +171,8 @@ class HaqorLexiconEntryView extends StatefulWidget {
     this.onEdit,
     this.onToggleStatus,
     this.onNavigateToPassage,
+    this.leading,
+    this.bottomInset = 0,
   });
 
   final LexiconEntryDraft entry;
@@ -178,6 +180,12 @@ class HaqorLexiconEntryView extends StatefulWidget {
   final LexiconEdit? onEdit;
   final VoidCallback? onToggleStatus;
   final LexiconNavigate? onNavigateToPassage;
+
+  /// Shown above the entry: in the word sheet, who or what the word names.
+  final Widget? leading;
+
+  /// Room left below each tab's list, for a sheet's bottom inset.
+  final double bottomInset;
 
   @override
   State<HaqorLexiconEntryView> createState() => _HaqorLexiconEntryViewState();
@@ -301,6 +309,7 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
           builder: (context) => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              ?widget.leading,
               _Header(data: data, onToggleStatus: widget.onToggleStatus),
               TabBar(
                 controller: _controller,
@@ -362,7 +371,7 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
     final theme = Theme.of(context);
     return ListView(
       key: PageStorageKey('${widget.entry.id}/${tab.name}'),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 32 + widget.bottomInset),
       children: [
         if (subtitle != null)
           Padding(

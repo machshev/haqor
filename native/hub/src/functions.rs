@@ -1112,6 +1112,8 @@ pub async fn get_word_info(bible: SharedBible) {
                         });
                     }
                     let lexicon = lexicon_rows(&bible, &entry.root, tree, Vec::new());
+                    let haqor_lexicon =
+                        crate::haqor_lexicon::word_entry(&bible, &entry.root, &entry.headword, "");
                     WordInfo {
                         request_id: req.request_id,
                         found: true,
@@ -1132,6 +1134,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         roots: Vec::new(),
                         sense: None,
                         name: None,
+                        haqor_lexicon,
                         greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
@@ -1158,6 +1161,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         roots: Vec::new(),
                         sense: None,
                         name: None,
+                        haqor_lexicon: None,
                         greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
@@ -1194,6 +1198,8 @@ pub async fn get_word_info(bible: SharedBible) {
                         sedra,
                     );
                     let gloss = first.meanings.first().cloned().unwrap_or_default();
+                    let haqor_lexicon =
+                        crate::haqor_lexicon::word_entry(&bible, &first.root, "", "");
                     WordInfo {
                         request_id: req.request_id,
                         found: true,
@@ -1216,6 +1222,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         roots: Vec::new(),
                         sense: None,
                         name: None,
+                        haqor_lexicon,
                         greek_equivalents: bible
                             .greek_equivalents(first.key_lexeme)
                             .unwrap_or_default()
@@ -1251,6 +1258,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         roots: Vec::new(),
                         sense: None,
                         name: None,
+                        haqor_lexicon: None,
                         greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
@@ -1304,6 +1312,13 @@ pub async fn get_word_info(bible: SharedBible) {
                     // definitions, while rendering proclitics and noun/verb
                     // morphology here (לָמַיִם → "to the water").
                     let gloss = inflected_gloss(&info);
+                    // Haqor's own entry, where it has one, stands in for the rest.
+                    let haqor_lexicon = crate::haqor_lexicon::word_entry(
+                        &bible,
+                        &selected,
+                        &info.word,
+                        info.prefix.as_deref().unwrap_or(""),
+                    );
                     // Where the word stands, its sense and the person or place it
                     // names.
                     let (sense, name) = match (req.book, req.chapter, req.verse, req.position) {
@@ -1341,6 +1356,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         roots,
                         sense,
                         name,
+                        haqor_lexicon,
                         greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
@@ -1367,6 +1383,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         roots: Vec::new(),
                         sense: None,
                         name: None,
+                        haqor_lexicon: None,
                         greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();

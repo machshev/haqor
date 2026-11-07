@@ -16,6 +16,8 @@ import '../study_workspace.dart';
 import '../tutor/progress_sync.dart';
 import '../word_proximity.dart';
 import 'equivalents.dart';
+import '../lexicon/haqor_lexicon_store.dart';
+import '../lexicon/haqor_lexicon_view.dart';
 import 'lexicon_source.dart';
 import 'name_details.dart';
 import 'verse_row.dart' show verseGlossPositions;
@@ -1188,6 +1190,24 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   ) {
     final theme = Theme.of(context);
 
+    // Haqor's own entry, where it has one, is the lexicon: the others are
+    // not shown beside it.
+    if (info.haqorLexicon case final entry?) {
+      final name = info.name;
+      return HaqorLexiconEntryView(
+        key: ValueKey('haqor-lexicon-${entry.id}'),
+        entry: _haqorEntry(entry),
+        onNavigateToPassage: widget.onNavigateToPassage,
+        bottomInset: bottomPad,
+        leading: name == null
+            ? null
+            : Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: NameCard(name: name, onOpen: () => _openName(name)),
+              ),
+      );
+    }
+
     // The lexeme's headword, which opens that word's own sheet.
     Widget headwordButton(String headword) => TextButton(
       onPressed: headword.isEmpty ? null : () => _openWordInfo(headword),
@@ -1471,6 +1491,16 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         ...rows,
       ],
     );
+  }
+
+  LexiconEntryDraft? _haqorDraft;
+
+  /// The Haqor entry [entry] as the view takes it, read once per entry so the
+  /// view keeps its state across rebuilds.
+  LexiconEntryDraft _haqorEntry(HaqorLexiconEntryText entry) {
+    final draft = _haqorDraft;
+    if (draft != null && draft.id == entry.id) return draft;
+    return _haqorDraft = LexiconEntryDraft.fromSignal(entry);
   }
 
   void _openName(NameSummaryEntry name) => NameDetailsPage.open(

@@ -48,7 +48,11 @@ fn verse(bible: &Bible, book: u8, chapter: u8, verse: u8) -> (String, String, St
             .find(|v| v.verse == verse)
             .map(|v| v.text())
             .unwrap_or_default();
-        let english = english(bible.greek_chapter_translation(book, chapter).unwrap_or_default());
+        let english = english(
+            bible
+                .greek_chapter_translation(book, chapter)
+                .unwrap_or_default(),
+        );
         let peshitta = bible.get(book, chapter, verse).unwrap_or_default();
         (greek, english, peshitta)
     } else {
@@ -58,35 +62,57 @@ fn verse(bible: &Bible, book: u8, chapter: u8, verse: u8) -> (String, String, St
     }
 }
 
+/// An entry as the app shows it: its JSON, the text of the verses it cites
+/// and its words' evidence counted.
+pub(crate) fn entry_text(bible: &Bible, id: String, json: String) -> HaqorLexiconEntryText {
+    let verses = haqor_lexicon::references_in(&json)
+        .into_iter()
+        .map(|(reference, (book, chapter, v))| {
+            let (original, english, peshitta) = verse(bible, book, chapter, v);
+            HaqorLexiconVerse {
+                reference,
+                book,
+                chapter,
+                verse: v,
+                original,
+                english,
+                peshitta,
+            }
+        })
+        .collect();
+    // The counted evidence for each word, as JSON (haqor-core's
+    // `WordSupport`); empty when the entry does not parse.
+    let support = haqor_lexicon::entry_support_json(bible, &json).unwrap_or_default();
+    HaqorLexiconEntryText {
+        id,
+        json,
+        verses,
+        support,
+    }
+}
+
+/// The Haqor lexicon entry for a word of the text, where there is one (see
+/// [`Bible::haqor_lexicon_entry`]): the word sheet shows it in place of the
+/// other lexicons.
+pub(crate) fn word_entry(
+    bible: &Bible,
+    root: &str,
+    word: &str,
+    prefix: &str,
+) -> Option<HaqorLexiconEntryText> {
+    match bible.haqor_lexicon_entry(root, word, prefix) {
+        Ok(found) => found.map(|(id, json)| entry_text(bible, id, json)),
+        Err(error) => {
+            debug_print!("haqor_lexicon_entry({root:?}, {word:?}) error: {error:?}");
+            None
+        }
+    }
+}
+
 fn entries(bible: &Bible, dir: &std::path::Path) -> anyhow::Result<Vec<HaqorLexiconEntryText>> {
     Ok(haqor_lexicon::read_entry_texts(dir)?
         .into_iter()
-        .map(|(id, json)| {
-            let verses = haqor_lexicon::references_in(&json)
-                .into_iter()
-                .map(|(reference, (book, chapter, v))| {
-                    let (original, english, peshitta) = verse(bible, book, chapter, v);
-                    HaqorLexiconVerse {
-                        reference,
-                        book,
-                        chapter,
-                        verse: v,
-                        original,
-                        english,
-                        peshitta,
-                    }
-                })
-                .collect();
-            // The counted evidence for each word, as JSON (haqor-core's
-            // `WordSupport`); empty when the entry does not parse.
-            let support = haqor_lexicon::entry_support_json(bible, &json).unwrap_or_default();
-            HaqorLexiconEntryText {
-                id,
-                json,
-                verses,
-                support,
-            }
-        })
+        .map(|(id, json)| entry_text(bible, id, json))
         .collect())
 }
 

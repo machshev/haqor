@@ -57,11 +57,38 @@ const _bdb = BdbSummary(
   homograph: '',
 );
 
+/// A small Haqor lexicon entry, in the schema's shape.
+const _haqorEntry = '''
+{
+  "id": "shalam",
+  "root": "שלם",
+  "status": "draft",
+  "updated": "2026-11-07",
+  "gloss": "completeness, peace",
+  "summary": "Whole, sound, at peace.",
+  "words": [
+    {
+      "lemma": "שָׁלוֹם",
+      "pos": "noun",
+      "gloss": "peace, welfare",
+      "senses": [
+        {
+          "gloss": "welfare",
+          "definition": "How someone fares.",
+          "evidence": [{ "ref": "Gen.43.27", "role": "defining" }]
+        }
+      ]
+    }
+  ]
+}
+''';
+
 Future<void> _pumpSheet(
   WidgetTester tester, {
   required bool syriac,
   List<LexemeSummary>? lexemes,
   List<GreekEquivalentEntry> greekEquivalents = const [],
+  HaqorLexiconEntryText? haqorLexicon,
   void Function(GetDictionaryEntry)? onDictionaryRequest,
 }) async {
   SharedPreferences.setMockInitialValues({
@@ -122,6 +149,7 @@ Future<void> _pumpSheet(
       form: null,
       roots: const [],
       greekEquivalents: greekEquivalents,
+      haqorLexicon: haqorLexicon,
     ).bincodeSerialize(),
     Uint8List(0),
   );
@@ -175,6 +203,41 @@ void main() {
   });
 
   _groupedLexemeTests();
+
+  testWidgets("Haqor's own entry, where there is one, is shown alone", (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await _pumpSheet(
+      tester,
+      syriac: false,
+      haqorLexicon: const HaqorLexiconEntryText(
+        id: 'shalam',
+        json: _haqorEntry,
+        verses: [
+          HaqorLexiconVerse(
+            reference: 'Gen.43.27',
+            book: 1,
+            chapter: 43,
+            verse: 27,
+            original: 'וַיִּשְׁאַל לָהֶם לְשָׁלוֹם',
+            english: 'And he asked them of their welfare',
+            peshitta: '',
+          ),
+        ],
+        support: '',
+      ),
+    );
+    // The entry's root, gloss and tabs, as the review page shows them.
+    expect(find.text('completeness, peace'), findsWidgets);
+    expect(find.text('Overview'), findsOneWidget);
+    // No other lexicon beside it.
+    expect(find.byType(LexiconSourceBadge), findsNothing);
+    expect(find.text(_bdb.gloss), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('each entry is badged with the lexicon it comes from', (
     tester,
