@@ -252,8 +252,7 @@ void main() {
     expect(find.text('ἀρραβών'), findsOneWidget);
     expect(find.text('loan'), findsOneWidget);
   });
-  testWidgets('shows a word'
-      's evidence counted', (tester) async {
+  testWidgets('shows the evidence for a word, counted', (tester) async {
     final entry = LexiconEntryDraft(
       id: 'amar',
       data: jsonDecode(_entry) as Map<String, dynamic>,
