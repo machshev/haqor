@@ -43,6 +43,7 @@ class LexiconEntryDraft {
     required this.id,
     required this.data,
     required this.verses,
+    this.support = const [],
   });
 
   factory LexiconEntryDraft.fromSignal(HaqorLexiconEntryText entry) {
@@ -62,6 +63,7 @@ class LexiconEntryDraft {
             peshitta: v.peshitta,
           ),
       },
+      support: _support(entry.support),
     );
   }
 
@@ -72,6 +74,11 @@ class LexiconEntryDraft {
 
   /// The verses the entry cites, by reference.
   final Map<String, LexiconVerse> verses;
+
+  /// Each word's evidence counted, in the order of its words (haqor-core's
+  /// `WordSupport`): uses, verses, cognates for and against, kin. As the
+  /// entry was when read; edits do not recount it.
+  final List<Map<String, dynamic>> support;
 
   /// Whether it has unsaved changes.
   bool dirty = false;
@@ -136,4 +143,14 @@ class HaqorLexiconStore {
     _save(SaveHaqorLexiconEntry(id: entry.id, json: entry.encode()));
     return reply;
   }
+}
+
+List<Map<String, dynamic>> _support(String json) {
+  if (json.isEmpty) return const [];
+  final decoded = jsonDecode(json);
+  if (decoded is! List) return const [];
+  return [
+    for (final word in decoded)
+      if (word is Map<String, dynamic>) word,
+  ];
 }

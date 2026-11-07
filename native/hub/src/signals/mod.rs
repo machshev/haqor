@@ -2572,6 +2572,10 @@ pub struct HaqorLexiconEntryText {
     pub id: String,
     pub json: String,
     pub verses: Vec<HaqorLexiconVerse>,
+    /// Each word's evidence counted (haqor-core's `WordSupport`, as JSON):
+    /// uses, verses cited, cognates sharing its meaning and of another
+    /// meaning, and kin senses.
+    pub support: String,
 }
 
 /// A verse an entry cites, by the reference it writes (`Gen.2.7`): the

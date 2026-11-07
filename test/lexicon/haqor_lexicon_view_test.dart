@@ -252,6 +252,64 @@ void main() {
     expect(find.text('ἀρραβών'), findsOneWidget);
     expect(find.text('loan'), findsOneWidget);
   });
+  testWidgets('shows a word'
+      's evidence counted', (tester) async {
+    final entry = LexiconEntryDraft(
+      id: 'amar',
+      data: jsonDecode(_entry) as Map<String, dynamic>,
+      verses: const {},
+      support: const [
+        {
+          'lemma': 'אָמַר',
+          'uses': 45,
+          'cited': 20,
+          'defining': 8,
+          'cognates': {
+            'sharing': <String>[],
+            'sharing_languages': 0,
+            'differing': ['Arabic أَثَرٌ (footstep)'],
+            'differing_languages': 1,
+            'possible': <String>[],
+            'balance': -2,
+          },
+          'kin': [
+            {
+              'sense': 'אָשַׁר piel: call happy',
+              'uses': 15,
+              'cited': 7,
+              'defining': 2,
+              'cognates': 0,
+            },
+          ],
+          'senses': <Object>[],
+        },
+      ],
+    );
+    await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: entry)));
+    await _openTab(tester, 'Words');
+    expect(
+      find.textContaining(
+        '45 uses · 20 verses (8 defining) · cognates: 0 for, 1 against',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('balance -2 · 1 kin sense', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Arabic أَثَرٌ (footstep)', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'אָשַׁר piel: call happy — 15 uses, 7 verses (2 defining), 0 cognates',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+  });
   testWidgets('words open on a click, or from the overview', (tester) async {
     final data = jsonDecode(_entry) as Map<String, dynamic>;
     (data['words'] as List).add({

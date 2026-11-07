@@ -545,6 +545,9 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
           _WordCard(
             key: _wordKeys.putIfAbsent(i, GlobalKey.new),
             word: word,
+            support: i < widget.entry.support.length
+                ? widget.entry.support[i]
+                : null,
             expanded: _expanded.contains(i),
             onToggle: () => setState(() {
               if (!_expanded.remove(i)) _expanded.add(i);
@@ -819,6 +822,7 @@ class _WordCard extends StatelessWidget {
   const _WordCard({
     super.key,
     required this.word,
+    this.support,
     required this.expanded,
     required this.onToggle,
   });
@@ -826,6 +830,9 @@ class _WordCard extends StatelessWidget {
   final Map<String, dynamic> word;
   final bool expanded;
   final VoidCallback onToggle;
+
+  /// Its evidence counted (haqor-core's `WordSupport`), when the hub sent it.
+  final Map<String, dynamic>? support;
 
   @override
   Widget build(BuildContext context) {
@@ -908,6 +915,7 @@ class _WordCard extends StatelessWidget {
                               ),
                             ),
                           ),
+                        if (support != null) _SupportLine(support: support!),
                       ],
                     ),
                   ),
@@ -937,6 +945,7 @@ class _WordCard extends StatelessWidget {
                         const Divider(height: 1),
                         const SizedBox(height: 8),
                         _SoundTags(ids: _strings(word, 'cognate_ids')),
+                        if (support != null) _SupportDetail(support: support!),
                         _EditableText(
                           node: word,
                           field: 'summary',
@@ -1629,6 +1638,141 @@ class _SoundTags extends StatelessWidget {
                 visualDensity: VisualDensity.compact,
                 labelStyle: foreignStyle(label(id), size: 13),
               ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+int _int(Map<String, dynamic> m, String key) => (m[key] as num?)?.toInt() ?? 0;
+
+Map<String, dynamic> _map(Map<String, dynamic> m, String key) =>
+    m[key] is Map<String, dynamic>
+    ? m[key] as Map<String, dynamic>
+    : const <String, dynamic>{};
+
+String _plural(int n, String one, [String? many]) =>
+    '$n ${n == 1 ? one : (many ?? '${one}s')}';
+
+/// A word's evidence counted, in a line: its uses in scripture, the verses
+/// cited for it, and the balance of cognates sharing its meaning against
+/// those of another meaning (which count double).
+class _SupportLine extends StatelessWidget {
+  const _SupportLine({required this.support});
+
+  final Map<String, dynamic> support;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final uses = support['uses'];
+    final cognates = _map(support, 'cognates');
+    final sharing = _int(cognates, 'sharing_languages');
+    final differing = _int(cognates, 'differing_languages');
+    final balance = _int(cognates, 'balance');
+    final kin = (support['kin'] as List?)?.length ?? 0;
+    final style = theme.textTheme.labelMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final balanceColor = balance < 0
+        ? theme.colorScheme.error
+        : balance > 0
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Tooltip(
+        message:
+            'Uses in the Old Testament; verses cited (fixing the meaning); '
+            'cognate languages sharing its meaning and of another meaning; '
+            'balance: sharing less twice another.',
+        child: Text.rich(
+          TextSpan(
+            style: style,
+            children: [
+              TextSpan(
+                text: [
+                  if (uses is num) _plural(uses.toInt(), 'use'),
+                  '${_plural(_int(support, 'cited'), 'verse')} '
+                      '(${_int(support, 'defining')} defining)',
+                  'cognates: $sharing for, $differing against',
+                ].join(' · '),
+              ),
+              const TextSpan(text: ' · balance '),
+              TextSpan(
+                text: balance > 0 ? '+$balance' : '$balance',
+                style: style?.copyWith(
+                  color: balanceColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (kin > 0) TextSpan(text: ' · ${_plural(kin, 'kin sense')}'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A word's evidence in full: the cognates for and against its meaning, and
+/// its kin in sibling words with their own counts.
+class _SupportDetail extends StatelessWidget {
+  const _SupportDetail({required this.support});
+
+  final Map<String, dynamic> support;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cognates = _map(support, 'cognates');
+    List<String> names(String key) => [
+      for (final n in (cognates[key] as List?) ?? const []) '$n',
+    ];
+    final sharing = names('sharing');
+    final differing = names('differing');
+    final possible = names('possible');
+    final kin = [
+      for (final k in (support['kin'] as List?) ?? const [])
+        if (k is Map<String, dynamic>) k,
+    ];
+    final style = theme.textTheme.bodySmall;
+    Widget line(String label, String text, {Color? color}) => Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: style?.copyWith(fontWeight: FontWeight.w600, color: color),
+            ),
+            TextSpan(text: text),
+          ],
+        ),
+        style: foreignStyle(text, size: 13),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          line(
+            'Cognates sharing its meaning',
+            sharing.isEmpty ? 'none' : sharing.join(', '),
+            color: theme.colorScheme.primary,
+          ),
+          line(
+            'Cognates of another meaning (count double)',
+            differing.isEmpty ? 'none' : differing.join(', '),
+            color: differing.isEmpty ? null : theme.colorScheme.error,
+          ),
+          if (possible.isNotEmpty) line('Possible', possible.join(', ')),
+          for (final k in kin)
+            line(
+              'Kin',
+              '${k['sense']} — ${[if (k['uses'] is num) _plural((k['uses'] as num).toInt(), 'use'), '${_plural(_int(k, 'cited'), 'verse')} (${_int(k, 'defining')} defining)', _plural(_int(k, 'cognates'), 'cognate')].join(', ')}',
             ),
         ],
       ),

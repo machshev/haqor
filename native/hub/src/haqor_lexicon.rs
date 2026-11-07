@@ -77,7 +77,15 @@ fn entries(bible: &Bible, dir: &std::path::Path) -> anyhow::Result<Vec<HaqorLexi
                     }
                 })
                 .collect();
-            HaqorLexiconEntryText { id, json, verses }
+            // The counted evidence for each word, as JSON (haqor-core's
+            // `WordSupport`); empty when the entry does not parse.
+            let support = haqor_lexicon::entry_support_json(bible, &json).unwrap_or_default();
+            HaqorLexiconEntryText {
+                id,
+                json,
+                verses,
+                support,
+            }
         })
         .collect())
 }
