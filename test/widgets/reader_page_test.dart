@@ -641,6 +641,8 @@ void main() {
     expect(find.byTooltip('Close reader tab'), findsNothing);
     expect(find.byTooltip('Reader options'), findsOneWidget);
     expect(find.byIcon(Icons.view_column_outlined), findsNothing);
+    // The reference shelf stays on the bar even on a phone.
+    expect(find.byTooltip('Reference'), findsOneWidget);
 
     final readerPosition = tester
         .widget<CustomScrollView>(find.byType(CustomScrollView))
@@ -1140,6 +1142,9 @@ void main() {
         final originalState = tester.state(find.byType(WordInfoSheet));
 
         // A different passage/tab must neither replace nor refetch the lookup.
+        // On a phone the tab strip is narrow; drag the tab into view.
+        await tester.drag(find.byType(InputChip).first, const Offset(-300, 0));
+        await tester.pump();
         await tester.tap(find.byType(InputChip).last);
         await finishNavigation();
         await showWordPage();
@@ -1213,7 +1218,7 @@ void main() {
     tester,
   ) async {
     // Wide enough for four tiles and every workspace action beside the tabs.
-    tester.view.physicalSize = const Size(1400, 800);
+    tester.view.physicalSize = const Size(1450, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);

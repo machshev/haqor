@@ -108,3 +108,10 @@ flutter:
     - family: Frank Ruhl Libre
       fonts:
         - asset: fonts/FrankRuhlLibre.ttf
+    # Only the Egyptian signs the early-alphabet page shows (pyftsubset).
+    - family: Noto Sans Egyptian Hieroglyphs
+      fonts:
+        - asset: fonts/NotoSansEgyptianHieroglyphs-Subset.ttf
+    - family: Noto Sans Phoenician
+      fonts:
+        - asset: fonts/NotoSansPhoenician-Regular.ttf

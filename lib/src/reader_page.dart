@@ -38,7 +38,7 @@ import 'widgets/bible_timeline_page.dart';
 import 'widgets/places_page.dart';
 import 'widgets/apologetics_page.dart';
 import 'lexicon/haqor_lexicon_review_page.dart';
-import 'lexicon/semitic_sounds_page.dart';
+import 'reference_page.dart';
 import 'widgets/archaeology_page.dart';
 import 'widgets/outlines_page.dart';
 import 'widgets/prophecy_page.dart';
@@ -253,7 +253,7 @@ enum _ReaderMenuAction {
   archaeology,
   apologetics,
   lexiconReview,
-  semiticSounds,
+  reference,
   tutor,
   memorise,
   reportIssue,
@@ -1413,50 +1413,44 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _ReaderMenuAction.tutor,
     _ReaderMenuAction.memorise,
     if (_activeReader?._adminMode ?? false) _ReaderMenuAction.lexiconReview,
-    if (_activeReader?._adminMode ?? false) _ReaderMenuAction.semiticSounds,
     if (_activeReader?._adminMode ?? false) _ReaderMenuAction.reportIssue,
     _ReaderMenuAction.settings,
     _ReaderMenuAction.about,
   ];
 
-  (IconData, String) _workspaceActionPresentation(_ReaderMenuAction action) =>
-      switch (action) {
-        _ReaderMenuAction.studyWorkspace => (
-          Icons.account_tree_outlined,
-          'Study workspace',
-        ),
-        _ReaderMenuAction.crossReferences => (Icons.link, 'Cross references'),
-        _ReaderMenuAction.commentary => (Icons.comment_outlined, 'Commentary'),
-        _ReaderMenuAction.readingPlan => (
-          Icons.auto_stories_outlined,
-          'Reading plan',
-        ),
-        _ReaderMenuAction.places => (Icons.travel_explore, 'Bible places'),
-        _ReaderMenuAction.timeline => (Icons.timeline, 'Bible timeline'),
-        _ReaderMenuAction.prophecy => (
-          Icons.history_edu_outlined,
-          'Bible prophecy',
-        ),
-        _ReaderMenuAction.archaeology => (
-          Icons.account_balance_outlined,
-          'Bible archaeology',
-        ),
-        _ReaderMenuAction.outlines => (Icons.toc, 'Book outlines'),
-        _ReaderMenuAction.apologetics => (Icons.shield_outlined, 'Apologetics'),
-        _ReaderMenuAction.lexiconReview => (Icons.translate, 'Lexicon review'),
-        _ReaderMenuAction.semiticSounds => (
-          Icons.record_voice_over_outlined,
-          'Semitic sounds',
-        ),
-        _ReaderMenuAction.tutor => (Icons.school_outlined, 'Tutor'),
-        _ReaderMenuAction.memorise => (Icons.psychology_outlined, 'Memorise'),
-        _ReaderMenuAction.reportIssue => (
-          Icons.flag_outlined,
-          'Report an issue',
-        ),
-        _ReaderMenuAction.settings => (Icons.settings_outlined, 'Settings'),
-        _ReaderMenuAction.about => (Icons.info_outline, 'About'),
-      };
+  (IconData, String) _workspaceActionPresentation(
+    _ReaderMenuAction action,
+  ) => switch (action) {
+    _ReaderMenuAction.studyWorkspace => (
+      Icons.account_tree_outlined,
+      'Study workspace',
+    ),
+    _ReaderMenuAction.crossReferences => (Icons.link, 'Cross references'),
+    _ReaderMenuAction.commentary => (Icons.comment_outlined, 'Commentary'),
+    _ReaderMenuAction.readingPlan => (
+      Icons.auto_stories_outlined,
+      'Reading plan',
+    ),
+    _ReaderMenuAction.places => (Icons.travel_explore, 'Bible places'),
+    _ReaderMenuAction.timeline => (Icons.timeline, 'Bible timeline'),
+    _ReaderMenuAction.prophecy => (
+      Icons.history_edu_outlined,
+      'Bible prophecy',
+    ),
+    _ReaderMenuAction.archaeology => (
+      Icons.account_balance_outlined,
+      'Bible archaeology',
+    ),
+    _ReaderMenuAction.outlines => (Icons.toc, 'Book outlines'),
+    _ReaderMenuAction.apologetics => (Icons.shield_outlined, 'Apologetics'),
+    _ReaderMenuAction.lexiconReview => (Icons.translate, 'Lexicon review'),
+    _ReaderMenuAction.reference => (Icons.local_library_outlined, 'Reference'),
+    _ReaderMenuAction.tutor => (Icons.school_outlined, 'Tutor'),
+    _ReaderMenuAction.memorise => (Icons.psychology_outlined, 'Memorise'),
+    _ReaderMenuAction.reportIssue => (Icons.flag_outlined, 'Report an issue'),
+    _ReaderMenuAction.settings => (Icons.settings_outlined, 'Settings'),
+    _ReaderMenuAction.about => (Icons.info_outline, 'About'),
+  };
 
   PopupMenuEntry<_ReaderMenuAction> _workspaceMenuItem(
     _ReaderMenuAction action,
@@ -1569,7 +1563,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                         constraints.maxWidth * 0.7,
                         _tabs.length * 150.0,
                       );
-                      final fixedWidth = 48.0 + (canTile ? 48 : 0) + 48;
+                      final fixedWidth = 48.0 + 48 + (canTile ? 48 : 0) + 48;
                       final directActionCount = mobile
                           ? 1
                           : ((constraints.maxWidth - tabWidth - fixedWidth) ~/
@@ -1617,6 +1611,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                           ),
                           for (final action in directActions)
                             _workspaceActionButton(action),
+                          // Always on the bar, however narrow.
+                          _workspaceActionButton(_ReaderMenuAction.reference),
                           if (_hasWordPage)
                             IconButton(
                               isSelected: _wordPageSelected,
@@ -6346,8 +6342,8 @@ class _ReaderSessionState extends State<_ReaderSession>
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
         );
-      case _ReaderMenuAction.semiticSounds:
-        SemiticSoundsPage.open(
+      case _ReaderMenuAction.reference:
+        ReferencePage.open(
           context,
           onNavigateToPassage: (book, chapter, verse) =>
               _navigateTo(book, chapter, verse: verse),
