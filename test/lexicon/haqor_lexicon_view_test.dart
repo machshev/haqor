@@ -95,25 +95,43 @@ LexiconEntryDraft _draft() => LexiconEntryDraft(
 
 Widget _host(Widget child) => MaterialApp(home: Scaffold(body: child));
 
+Future<void> _openTab(WidgetTester tester, String name) async {
+  await tester.tap(
+    find.descendant(
+      of: find.byType(Tab),
+      matching: find.textContaining(RegExp('^$name')),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('shows the distilled entry first, then its evidence', (
     tester,
   ) async {
     await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: _draft())));
-    expect(find.text('say, speak'), findsWidgets);
+    // The overview: gloss, summary, and an outline of what the entry holds.
+    expect(find.text('say, speak'), findsOneWidget);
     expect(find.text('The ordinary verb of saying.'), findsOneWidget);
+    expect(find.text('Creation by word'), findsOneWidget);
+    expect(find.text('Word of God'), findsOneWidget);
+    expect(find.text('Words (1)'), findsOneWidget);
+    expect(find.text('Cognates (1)'), findsOneWidget);
+    expect(find.text('Doctrine (2)'), findsOneWidget);
+    // A lone word opens without a click.
+    await _openTab(tester, 'Words');
     expect(find.text('Qal'), findsOneWidget);
     expect(find.text('Genesis 1:3'), findsWidgets);
     expect(find.text('Esther 1:10–11'), findsOneWidget);
+    await _openTab(tester, 'Cognates');
     expect(find.text('Arabic'), findsOneWidget);
-    expect(find.text('Creation by word'), findsOneWidget);
-    expect(find.text('Word of God'), findsOneWidget);
     // Readers never see the editor's note or the edit controls.
     expect(find.byIcon(Icons.edit_outlined), findsNothing);
   });
 
   testWidgets('a verse chip opens the verse', (tester) async {
     await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: _draft())));
+    await _openTab(tester, 'Words');
     await tester.tap(find.text('Genesis 1:3').first);
     await tester.pumpAndSettle();
     expect(find.text('Then God said, “Let there be light.”'), findsOneWidget);
@@ -201,13 +219,19 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: entry)));
+    await _openTab(tester, 'Words');
     expect(find.text('Peshitta Syriac · root אמר'), findsOneWidget);
+    await tester.tap(find.text('אֶמַר'));
+    await tester.pumpAndSettle();
     expect(find.text('Peal'), findsOneWidget);
     expect(find.text('ע ġ · Arabic أَمَرَ'), findsOneWidget);
-    expect(find.text('ע = ġ'), findsOneWidget);
     await tester.tap(find.text('Romans 10:6'));
     await tester.pumpAndSettle();
     expect(find.text('דלא תאמר בלבך'), findsOneWidget);
+    await tester.tapAt(const Offset(400, 20));
+    await tester.pumpAndSettle();
+    await _openTab(tester, 'Cognates');
+    expect(find.text('ע = ġ'), findsOneWidget);
   });
 
   testWidgets('marks a Greek loan', (tester) async {
@@ -224,7 +248,37 @@ void main() {
     ];
     final entry = LexiconEntryDraft(id: 'amar', data: data, verses: const {});
     await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: entry)));
+    await _openTab(tester, 'Words');
     expect(find.text('ἀρραβών'), findsOneWidget);
     expect(find.text('loan'), findsOneWidget);
+  });
+  testWidgets('words open on a click, or from the overview', (tester) async {
+    final data = jsonDecode(_entry) as Map<String, dynamic>;
+    (data['words'] as List).add({
+      'lemma': 'אֵמֶר',
+      'pos': 'noun',
+      'gender': 'm',
+      'gloss': 'utterance',
+      'senses': [
+        {'gloss': 'speech', 'definition': 'What is said.'},
+      ],
+    });
+    final entry = LexiconEntryDraft(id: 'amar', data: data, verses: const {});
+    await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: entry)));
+    // The overview lists both words; a tap opens that one in Words.
+    expect(find.text('utterance'), findsOneWidget);
+    await tester.tap(find.text('utterance'));
+    await tester.pumpAndSettle();
+    expect(find.text('What is said.'), findsOneWidget);
+    // The other word stays closed, its outline showing what it holds.
+    expect(find.text('Qal · 1 sense'), findsOneWidget);
+    expect(find.text('Utter words to someone.'), findsNothing);
+    await tester.tap(find.text('Qal · 1 sense'));
+    await tester.pumpAndSettle();
+    expect(find.text('Utter words to someone.'), findsOneWidget);
+    await tester.tap(find.text('Collapse all'));
+    await tester.pumpAndSettle();
+    expect(find.text('Utter words to someone.'), findsNothing);
+    expect(find.text('What is said.'), findsNothing);
   });
 }

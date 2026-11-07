@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../bible_data.dart';
@@ -155,11 +157,13 @@ String _topicTitle(String topic) {
   ].join(' ');
 }
 
-/// A Haqor lexicon entry as the reader sees it: the gloss and summary first,
-/// then each word the root forms with its senses and their verses, then the
-/// cognates and what the word's use teaches. In [editing] mode every text can
-/// be tapped to change it.
-class HaqorLexiconEntryView extends StatelessWidget {
+/// A Haqor lexicon entry as the reader sees it, from the outline down to the
+/// evidence: the root and its gloss stay on top; below them an Overview tab
+/// gives the summary and lists what the entry holds, and the Words, Cognates
+/// and Doctrine tabs hold the detail. Each word opens on a click to its
+/// stems, senses and verses. In [editing] mode every text can be tapped to
+/// change it.
+class HaqorLexiconEntryView extends StatefulWidget {
   const HaqorLexiconEntryView({
     super.key,
     required this.entry,
@@ -176,17 +180,102 @@ class HaqorLexiconEntryView extends StatelessWidget {
   final LexiconNavigate? onNavigateToPassage;
 
   @override
+  State<HaqorLexiconEntryView> createState() => _HaqorLexiconEntryViewState();
+}
+
+enum _Tab { overview, words, cognates, doctrine }
+
+class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
+    with TickerProviderStateMixin {
+  late List<_Tab> _tabs = _tabsFor(widget.entry);
+  late TabController _controller = TabController(
+    length: _tabs.length,
+    vsync: this,
+  );
+
+  /// The words opened to their detail, by index.
+  final Set<int> _expanded = {};
+  final Map<int, GlobalKey> _wordKeys = {};
+
+  static List<_Tab> _tabsFor(LexiconEntryDraft entry) => [
+    _Tab.overview,
+    _Tab.words,
+    if (_list(entry.data, 'cognates').isNotEmpty) _Tab.cognates,
+    if (_list(entry.data, 'doctrine').isNotEmpty) _Tab.doctrine,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    // A lone word needs no click to open.
+    if (_list(widget.entry.data, 'words').length == 1) _expanded.add(0);
+  }
+
+  @override
+  void didUpdateWidget(HaqorLexiconEntryView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final tabs = _tabsFor(widget.entry);
+    if (tabs.length == _tabs.length) return;
+    final current = _tabs[_controller.index];
+    _controller.dispose();
+    _tabs = tabs;
+    _controller = TabController(
+      length: tabs.length,
+      vsync: this,
+      initialIndex: tabs.contains(current) ? tabs.indexOf(current) : 0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _open(_Tab tab) {
+    final index = _tabs.indexOf(tab);
+    if (index >= 0) _controller.animateTo(index);
+  }
+
+  /// Open word [index] in the Words tab and scroll it into view.
+  void _openWord(int index) {
+    setState(() => _expanded.add(index));
+    _open(_Tab.words);
+    _reveal(index, 30);
+  }
+
+  void _reveal(int index, int tries) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final context = _wordKeys[index]?.currentContext;
+      final box = context?.findRenderObject();
+      final scrollable = context == null ? null : Scrollable.maybeOf(context);
+      if (box == null || scrollable == null || _controller.indexIsChanging) {
+        if (tries > 0) {
+          _reveal(index, tries - 1);
+          WidgetsBinding.instance.scheduleFrame();
+        }
+        return;
+      }
+      unawaited(
+        scrollable.position.ensureVisible(
+          box,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        ),
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final data = entry.data;
-    final words = _list(data, 'words');
-    final cognates = _list(data, 'cognates');
-    final doctrine = _list(data, 'doctrine');
+    final data = widget.entry.data;
     final scope = _EntryScope(
-      entry: entry,
-      editing: editing,
-      onEdit: onEdit,
-      onNavigateToPassage: onNavigateToPassage,
+      entry: widget.entry,
+      editing: widget.editing,
+      onEdit: widget.onEdit,
+      onNavigateToPassage: widget.onNavigateToPassage,
     );
     // English text quotes Hebrew and the cognates' scripts inline, which the
     // app's body font lacks.
@@ -199,55 +288,194 @@ class HaqorLexiconEntryView extends StatelessWidget {
         ],
       ),
     );
+    String counted(String name, String key) {
+      final n = _list(data, key).length;
+      return n == 0 ? name : '$name ($n)';
+    }
+
     return _EntryScopeProvider(
       scope: scope,
       child: Theme(
         data: withScripts,
         child: Builder(
-          builder: (context) => ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          builder: (context) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Header(data: data, onToggleStatus: onToggleStatus),
-              const SizedBox(height: 8),
-              for (final word in words) _WordCard(word: word),
-              if (cognates.isNotEmpty)
-                _Section(
-                  title: 'Cognates',
-                  subtitle: 'The same root in the other Semitic languages',
-                  children: [for (final c in cognates) _CognateRow(cognate: c)],
-                ),
-              if (doctrine.isNotEmpty)
-                _Section(
-                  title: 'Doctrine',
-                  subtitle: "What scripture's use of the word teaches",
-                  children: [for (final d in doctrine) _DoctrineItem(item: d)],
-                ),
-              if (editing)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.tertiaryContainer,
-                      borderRadius: BorderRadius.circular(8),
+              _Header(data: data, onToggleStatus: widget.onToggleStatus),
+              TabBar(
+                controller: _controller,
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                tabs: [
+                  for (final tab in _tabs)
+                    Tab(
+                      text: switch (tab) {
+                        _Tab.overview => 'Overview',
+                        _Tab.words => counted('Words', 'words'),
+                        _Tab.cognates => counted('Cognates', 'cognates'),
+                        _Tab.doctrine => counted('Doctrine', 'doctrine'),
+                      },
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Editor's note (not shown to readers)",
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: theme.colorScheme.onTertiaryContainer,
-                          ),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _controller,
+                  children: [
+                    for (final tab in _tabs)
+                      switch (tab) {
+                        _Tab.overview => _overview(context),
+                        _Tab.words => _words(context),
+                        _Tab.cognates => _tabList(
+                          tab,
+                          subtitle:
+                              'The same root in the other Semitic languages',
+                          children: [
+                            for (final c in _list(data, 'cognates'))
+                              _CognateRow(cognate: c),
+                          ],
                         ),
-                        const SizedBox(height: 4),
-                        _EditableText(
-                          node: data,
-                          field: 'note',
-                          label: "Editor's note",
-                          multiline: true,
-                          style: withScripts.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onTertiaryContainer,
+                        _Tab.doctrine => _tabList(
+                          tab,
+                          subtitle: "What scripture's use of the word teaches",
+                          children: [
+                            for (final d in _list(data, 'doctrine'))
+                              _DoctrineItem(item: d),
+                          ],
+                        ),
+                      },
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tabList(
+    _Tab tab, {
+    String? subtitle,
+    required List<Widget> children,
+  }) {
+    final theme = Theme.of(context);
+    return ListView(
+      key: PageStorageKey('${widget.entry.id}/${tab.name}'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      children: [
+        if (subtitle != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              subtitle,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _overview(BuildContext context) {
+    final theme = Theme.of(context);
+    final data = widget.entry.data;
+    final words = _list(data, 'words');
+    final cognates = _list(data, 'cognates');
+    final doctrine = _list(data, 'doctrine');
+    final tags = _strings(data, 'tags');
+    return _tabList(
+      _Tab.overview,
+      children: [
+        _EditableText(
+          node: data,
+          field: 'summary',
+          label: 'summary',
+          multiline: true,
+          style: theme.textTheme.bodyLarge?.copyWith(height: 1.45),
+        ),
+        if (tags.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final tag in tags)
+                Chip(
+                  label: Text(tag),
+                  visualDensity: VisualDensity.compact,
+                  labelStyle: theme.textTheme.labelSmall,
+                ),
+            ],
+          ),
+        ],
+        if (words.isNotEmpty)
+          _OverviewSection(
+            title: 'Words',
+            onOpen: () => _open(_Tab.words),
+            children: [
+              for (final (i, word) in words.indexed)
+                _WordSummaryRow(word: word, onTap: () => _openWord(i)),
+            ],
+          ),
+        if (cognates.isNotEmpty)
+          _OverviewSection(
+            title: 'Cognates',
+            onOpen: () => _open(_Tab.cognates),
+            children: [
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final c in cognates)
+                    ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      label: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text:
+                                  '${cognateLanguages[_str(c, 'lang')] ?? _str(c, 'lang')} ',
+                              style: theme.textTheme.labelMedium,
+                            ),
+                            TextSpan(
+                              text: _str(c, 'form'),
+                              style: foreignStyle(_str(c, 'form'), size: 16),
+                            ),
+                          ],
+                        ),
+                      ),
+                      onPressed: () => _open(_Tab.cognates),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        if (doctrine.isNotEmpty)
+          _OverviewSection(
+            title: 'Doctrine',
+            onOpen: () => _open(_Tab.doctrine),
+            children: [
+              for (final d in doctrine)
+                InkWell(
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: () => _open(_Tab.doctrine),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.chevron_right,
+                          size: 18,
+                          color: theme.colorScheme.outline,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            _topicTitle(_str(d, 'topic')),
+                            style: theme.textTheme.bodyLarge,
                           ),
                         ),
                       ],
@@ -256,8 +484,73 @@ class HaqorLexiconEntryView extends StatelessWidget {
                 ),
             ],
           ),
-        ),
-      ),
+        if (widget.editing)
+          Padding(
+            padding: const EdgeInsets.only(top: 20),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.tertiaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Editor's note (not shown to readers)",
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  _EditableText(
+                    node: data,
+                    field: 'note',
+                    label: "Editor's note",
+                    multiline: true,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _words(BuildContext context) {
+    final words = _list(widget.entry.data, 'words');
+    final allOpen = _expanded.length >= words.length;
+    return _tabList(
+      _Tab.words,
+      children: [
+        if (words.length > 1)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              icon: Icon(allOpen ? Icons.unfold_less : Icons.unfold_more),
+              label: Text(allOpen ? 'Collapse all' : 'Expand all'),
+              onPressed: () => setState(() {
+                if (allOpen) {
+                  _expanded.clear();
+                } else {
+                  _expanded.addAll([for (var i = 0; i < words.length; i++) i]);
+                }
+              }),
+            ),
+          ),
+        for (final (i, word) in words.indexed)
+          _WordCard(
+            key: _wordKeys.putIfAbsent(i, GlobalKey.new),
+            word: word,
+            expanded: _expanded.contains(i),
+            onToggle: () => setState(() {
+              if (!_expanded.remove(i)) _expanded.add(i);
+            }),
+          ),
+      ],
     );
   }
 }
@@ -347,6 +640,7 @@ class _EditableText extends StatelessWidget {
   }
 }
 
+/// The root, its gloss and its review status: what stays above the tabs.
 class _Header extends StatelessWidget {
   const _Header({required this.data, this.onToggleStatus});
 
@@ -360,83 +654,65 @@ class _Header extends StatelessWidget {
     final root = _str(data, 'root');
     final homograph = data['homograph'];
     final reviewed = _str(data, 'status') == 'reviewed';
-    final tags = _strings(data, 'tags');
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Tooltip(
+            message: 'Root',
+            child: Text(
               root.split('').join(' '),
               textDirection: TextDirection.rtl,
               style: foreignStyle(root, size: 30),
             ),
-            if (homograph is int)
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Text('$homograph', style: theme.textTheme.labelSmall),
-              ),
-            const SizedBox(width: 12),
-            Text('root', style: theme.textTheme.labelMedium),
-            const Spacer(),
-            if (scope.editing)
-              FilterChip(
-                label: Text(reviewed ? 'Reviewed' : 'Draft'),
-                selected: reviewed,
-                onSelected: onToggleStatus == null
-                    ? null
-                    : (_) => onToggleStatus!(),
-              )
-            else if (!reviewed)
-              Chip(
-                label: const Text('Draft'),
-                visualDensity: VisualDensity.compact,
-              ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        _EditableText(
-          node: data,
-          field: 'gloss',
-          label: 'gloss',
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w600,
           ),
-        ),
-        const SizedBox(height: 8),
-        _EditableText(
-          node: data,
-          field: 'summary',
-          label: 'summary',
-          multiline: true,
-          style: theme.textTheme.bodyLarge?.copyWith(height: 1.45),
-        ),
-        if (tags.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              for (final tag in tags)
-                Chip(
-                  label: Text(tag),
-                  visualDensity: VisualDensity.compact,
-                  labelStyle: theme.textTheme.labelSmall,
-                ),
-            ],
+          if (homograph is int)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Text('$homograph', style: theme.textTheme.labelSmall),
+            ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: _EditableText(
+              node: data,
+              field: 'gloss',
+              label: 'gloss',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
+          const SizedBox(width: 8),
+          if (scope.editing)
+            FilterChip(
+              label: Text(reviewed ? 'Reviewed' : 'Draft'),
+              selected: reviewed,
+              onSelected: onToggleStatus == null
+                  ? null
+                  : (_) => onToggleStatus!(),
+            )
+          else if (!reviewed)
+            const Chip(
+              label: Text('Draft'),
+              visualDensity: VisualDensity.compact,
+            ),
         ],
-      ],
+      ),
     );
   }
 }
 
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.children, this.subtitle});
+/// A part of the Overview: a heading that opens its tab, and its outline.
+class _OverviewSection extends StatelessWidget {
+  const _OverviewSection({
+    required this.title,
+    required this.onOpen,
+    required this.children,
+  });
 
   final String title;
-  final String? subtitle;
+  final VoidCallback onOpen;
   final List<Widget> children;
 
   @override
@@ -447,15 +723,13 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: theme.textTheme.titleMedium),
-          if (subtitle != null)
-            Text(
-              subtitle!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          const Divider(),
+          Row(
+            children: [
+              Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
+              TextButton(onPressed: onOpen, child: const Text('Details')),
+            ],
+          ),
+          const Divider(height: 8),
           ...children,
         ],
       ),
@@ -463,94 +737,225 @@ class _Section extends StatelessWidget {
   }
 }
 
-class _WordCard extends StatelessWidget {
-  const _WordCard({required this.word});
+/// The grammar a word's header shows: `noun m`, `verb`.
+String _grammar(Map<String, dynamic> word) {
+  final gender = _str(word, 'gender');
+  return [
+    _str(word, 'pos'),
+    if (gender.isNotEmpty) gender == 'mf' ? 'm/f' : gender,
+  ].where((s) => s.isNotEmpty).join(' ');
+}
+
+/// What a closed word holds: its stems and how many senses.
+String _wordOutline(Map<String, dynamic> word) {
+  final stems = _list(word, 'stems');
+  final senses =
+      _list(word, 'senses').length +
+      stems.fold(0, (n, s) => n + _list(s, 'senses').length);
+  final stemNames = [
+    for (final s in stems) _stemNames[_str(s, 'stem')] ?? _str(s, 'stem'),
+  ];
+  return [
+    if (stemNames.isNotEmpty) stemNames.join(', '),
+    if (senses > 0) senses == 1 ? '1 sense' : '$senses senses',
+    if (_list(word, 'greek').isNotEmpty) 'NT Greek',
+  ].join(' · ');
+}
+
+/// A word in the Overview: lemma, grammar and gloss; a tap opens it.
+class _WordSummaryRow extends StatelessWidget {
+  const _WordSummaryRow({required this.word, required this.onTap});
 
   final Map<String, dynamic> word;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final lemma = _str(word, 'lemma');
-    final pos = _str(word, 'pos');
-    final gender = _str(word, 'gender');
+    final lang = _str(word, 'lang');
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              lemma,
+              textDirection: TextDirection.rtl,
+              style: foreignStyle(lemma, size: 22),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              _grammar(word),
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontStyle: FontStyle.italic,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                [
+                  _str(word, 'gloss'),
+                  if (lang.isNotEmpty) '(${wordLanguages[lang] ?? lang})',
+                ].join(' '),
+                style: theme.textTheme.bodyLarge,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A word the root forms: closed, its lemma, grammar, gloss and outline;
+/// open, its summary, stems, senses with their verses, usage and Greek.
+class _WordCard extends StatelessWidget {
+  const _WordCard({
+    super.key,
+    required this.word,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  final Map<String, dynamic> word;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final lemma = _str(word, 'lemma');
     final stems = _list(word, 'stems');
     final senses = _list(word, 'senses');
     final greek = _list(word, 'greek');
     final usage = word['usage'] is Map<String, dynamic>
         ? word['usage'] as Map<String, dynamic>
         : const <String, dynamic>{};
-    final grammar = [
-      pos,
-      if (gender.isNotEmpty) gender == 'mf' ? 'm/f' : gender,
-    ].where((s) => s.isNotEmpty).join(' ');
     final lang = _str(word, 'lang');
     final ownRoot = _str(word, 'root');
+    final outline = _wordOutline(word);
     return Card(
-      margin: const EdgeInsets.only(top: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Text(
-                  lemma,
-                  textDirection: TextDirection.rtl,
-                  style: foreignStyle(lemma, size: 28),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  grammar,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontStyle: FontStyle.italic,
-                    color: theme.colorScheme.onSurfaceVariant,
+      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text(
+                              lemma,
+                              textDirection: TextDirection.rtl,
+                              style: foreignStyle(lemma, size: 28),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              _grammar(word),
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                fontStyle: FontStyle.italic,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _EditableText(
+                                node: word,
+                                field: 'gloss',
+                                label: 'gloss',
+                                style: theme.textTheme.titleMedium,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (lang.isNotEmpty || ownRoot.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              [
+                                if (lang.isNotEmpty)
+                                  wordLanguages[lang] ?? lang,
+                                if (ownRoot.isNotEmpty) 'root $ownRoot',
+                              ].join(' · '),
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.tertiary,
+                              ),
+                            ),
+                          ),
+                        if (outline.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              outline,
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _EditableText(
-                    node: word,
-                    field: 'gloss',
-                    label: 'gloss',
-                    style: theme.textTheme.titleMedium,
+                  AnimatedRotation(
+                    turns: expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      Icons.expand_more,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            if (lang.isNotEmpty || ownRoot.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  [
-                    if (lang.isNotEmpty) wordLanguages[lang] ?? lang,
-                    if (ownRoot.isNotEmpty) 'root $ownRoot',
-                  ].join(' · '),
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.tertiary,
-                  ),
-                ),
+                ],
               ),
-            _SoundTags(ids: _strings(word, 'cognate_ids')),
-            _EditableText(
-              node: word,
-              field: 'summary',
-              label: 'summary',
-              multiline: true,
-              style: theme.textTheme.bodyMedium,
             ),
-            for (final stem in stems) _StemBlock(stem: stem),
-            if (senses.isNotEmpty) _SenseList(senses: senses),
-            if (_list(usage, 'parallels').isNotEmpty ||
-                _list(usage, 'opposites').isNotEmpty ||
-                _list(usage, 'phrases').isNotEmpty)
-              _Usage(usage: usage),
-            if (greek.isNotEmpty) _GreekBridge(greek: greek),
-          ],
-        ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: !expanded
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Divider(height: 1),
+                        const SizedBox(height: 8),
+                        _SoundTags(ids: _strings(word, 'cognate_ids')),
+                        _EditableText(
+                          node: word,
+                          field: 'summary',
+                          label: 'summary',
+                          multiline: true,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        for (final stem in stems) _StemBlock(stem: stem),
+                        if (senses.isNotEmpty) _SenseList(senses: senses),
+                        if (_list(usage, 'parallels').isNotEmpty ||
+                            _list(usage, 'opposites').isNotEmpty ||
+                            _list(usage, 'phrases').isNotEmpty)
+                          _Usage(usage: usage),
+                        if (greek.isNotEmpty) _GreekBridge(greek: greek),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
       ),
     );
   }
