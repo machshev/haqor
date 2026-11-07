@@ -29,8 +29,8 @@ fn review_dir() -> Option<PathBuf> {
 }
 
 /// A verse's text and English: the Greek in the New Testament, the Hebrew in
-/// the Old.
-fn verse(bible: &Bible, book: u8, chapter: u8, verse: u8) -> (String, String) {
+/// the Old; and in the New Testament the Peshitta, in Hebrew letters.
+fn verse(bible: &Bible, book: u8, chapter: u8, verse: u8) -> (String, String, String) {
     let english = |spans: Vec<(u8, Vec<haqor_core::translation::TranslationSpan>)>| {
         spans
             .into_iter()
@@ -49,11 +49,12 @@ fn verse(bible: &Bible, book: u8, chapter: u8, verse: u8) -> (String, String) {
             .map(|v| v.text())
             .unwrap_or_default();
         let english = english(bible.greek_chapter_translation(book, chapter).unwrap_or_default());
-        (greek, english)
+        let peshitta = bible.get(book, chapter, verse).unwrap_or_default();
+        (greek, english, peshitta)
     } else {
         let hebrew = bible.get(book, chapter, verse).unwrap_or_default();
         let english = english(bible.chapter_translation(book, chapter).unwrap_or_default());
-        (hebrew, english)
+        (hebrew, english, String::new())
     }
 }
 
@@ -64,7 +65,7 @@ fn entries(bible: &Bible, dir: &std::path::Path) -> anyhow::Result<Vec<HaqorLexi
             let verses = haqor_lexicon::references_in(&json)
                 .into_iter()
                 .map(|(reference, (book, chapter, v))| {
-                    let (original, english) = verse(bible, book, chapter, v);
+                    let (original, english, peshitta) = verse(bible, book, chapter, v);
                     HaqorLexiconVerse {
                         reference,
                         book,
@@ -72,6 +73,7 @@ fn entries(bible: &Bible, dir: &std::path::Path) -> anyhow::Result<Vec<HaqorLexi
                         verse: v,
                         original,
                         english,
+                        peshitta,
                     }
                 })
                 .collect();

@@ -151,4 +151,62 @@ void main() {
     expect(directionOf('𐎀𐎎𐎗'), TextDirection.ltr);
     expect(directionOf('amāru'), TextDirection.ltr);
   });
+
+  testWidgets('shows Aramaic words and the sound a sense goes with', (
+    tester,
+  ) async {
+    final data = jsonDecode(_entry) as Map<String, dynamic>;
+    final cognate = (data['cognates'] as List).first as Map<String, dynamic>;
+    cognate['id'] = 'ar-amara';
+    cognate['sounds'] = {'ע': 'ġ'};
+    (data['words'] as List).add({
+      'lemma': 'אֶמַר',
+      'lang': 'syc',
+      'root': 'אמר',
+      'pos': 'verb',
+      'gloss': 'say',
+      'cognate_ids': ['ar-amara'],
+      'stems': [
+        {
+          'stem': 'peal',
+          'gloss': 'say',
+          'senses': [
+            {
+              'gloss': 'say',
+              'definition': 'Speak.',
+              'evidence': [
+                {'ref': 'Rom.10.6'},
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    final entry = LexiconEntryDraft(
+      id: 'amar',
+      data: data,
+      verses: const {
+        'Rom.10.6': LexiconVerse(
+          reference: 'Rom.10.6',
+          book: 45,
+          chapter: 10,
+          verse: 6,
+          original: 'μὴ εἴπῃς ἐν τῇ καρδίᾳ σου',
+          english: 'Do not say in your heart',
+          peshitta: 'דלא תאמר בלבך',
+        ),
+      },
+    );
+    tester.view.physicalSize = const Size(800, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: entry)));
+    expect(find.text('Peshitta Syriac · root אמר'), findsOneWidget);
+    expect(find.text('Peal'), findsOneWidget);
+    expect(find.text('ע ġ · Arabic أَمَرَ'), findsOneWidget);
+    expect(find.text('ע = ġ'), findsOneWidget);
+    await tester.tap(find.text('Romans 10:6'));
+    await tester.pumpAndSettle();
+    expect(find.text('דלא תאמר בלבך'), findsOneWidget);
+  });
 }

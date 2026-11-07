@@ -16,6 +16,7 @@ class LexiconVerse {
     required this.verse,
     required this.original,
     required this.english,
+    this.peshitta = '',
   });
 
   /// As the entry writes it: `Gen.2.7`.
@@ -29,6 +30,9 @@ class LexiconVerse {
   /// The Hebrew, or in the New Testament the Greek.
   final String original;
   final String english;
+
+  /// In the New Testament, the Peshitta in Hebrew letters; empty in the Old.
+  final String peshitta;
 }
 
 /// One Haqor lexicon entry under review: its JSON as an ordered map, which
@@ -55,6 +59,7 @@ class LexiconEntryDraft {
             verse: v.verse,
             original: v.original,
             english: v.english,
+            peshitta: v.peshitta,
           ),
       },
     );

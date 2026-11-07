@@ -116,6 +116,29 @@ const Map<String, String> _stemNames = {
   'hishtaphel': 'Hishtaphel',
   'tiphil': 'Tiphil',
   'nithpael': 'Nithpael',
+  // Aramaic: Biblical Aramaic's and the Peshitta's.
+  'peal': 'Peal',
+  'peil': 'Peil',
+  'pael': 'Pael',
+  'aphel': 'Aphel',
+  'haphel': 'Haphel',
+  'shaphel': 'Shaphel',
+  'hithpeel': 'Hithpeel',
+  'hithpaal': 'Hithpaal',
+  'ithpeel': 'Ithpeel',
+  'ithpaal': 'Ithpaal',
+  'ethpeel': 'Ethpeel',
+  'ethpaal': 'Ethpaal',
+  'ettaphal': 'Ettaphal',
+  'eshtaphal': 'Eshtaphal',
+  'palpel': 'Palpel',
+  'ethpalpal': 'Ethpalpal',
+};
+
+/// The languages of scripture's words besides Hebrew, by the schema's codes.
+const Map<String, String> wordLanguages = {
+  'arc': 'Biblical Aramaic',
+  'syc': 'Peshitta Syriac',
 };
 
 /// `kingdom-of-god` as a heading: "Kingdom of god".
@@ -459,6 +482,8 @@ class _WordCard extends StatelessWidget {
       pos,
       if (gender.isNotEmpty) gender == 'mf' ? 'm/f' : gender,
     ].where((s) => s.isNotEmpty).join(' ');
+    final lang = _str(word, 'lang');
+    final ownRoot = _str(word, 'root');
     return Card(
       margin: const EdgeInsets.only(top: 12),
       child: Padding(
@@ -494,6 +519,20 @@ class _WordCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (lang.isNotEmpty || ownRoot.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  [
+                    if (lang.isNotEmpty) wordLanguages[lang] ?? lang,
+                    if (ownRoot.isNotEmpty) 'root $ownRoot',
+                  ].join(' · '),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.tertiary,
+                  ),
+                ),
+              ),
+            _SoundTags(ids: _strings(word, 'cognate_ids')),
             _EditableText(
               node: word,
               field: 'summary',
@@ -555,6 +594,7 @@ class _StemBlock extends StatelessWidget {
               ),
             ],
           ),
+          _SoundTags(ids: _strings(stem, 'cognate_ids')),
           _SenseList(senses: _list(stem, 'senses')),
         ],
       ),
@@ -616,6 +656,7 @@ class _SenseList extends StatelessWidget {
                             fontStyle: FontStyle.italic,
                           ),
                         ),
+                      _SoundTags(ids: _strings(sense, 'cognate_ids')),
                       _Citations(evidence: _list(sense, 'evidence')),
                       if (_list(sense, 'senses').isNotEmpty)
                         _SenseList(
@@ -756,6 +797,11 @@ class _CognateRow extends StatelessWidget {
     final form = _str(cognate, 'form');
     final translit = _str(cognate, 'translit');
     final relation = _str(cognate, 'relation');
+    final sounds = cognate['sounds'] is Map
+        ? (cognate['sounds'] as Map).entries
+              .map((e) => '${e.key} = ${e.value}')
+              .join(', ')
+        : '';
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
@@ -793,6 +839,16 @@ class _CognateRow extends StatelessWidget {
                         label: Text(relation),
                         visualDensity: VisualDensity.compact,
                         labelStyle: theme.textTheme.labelSmall,
+                      ),
+                    if (sounds.isNotEmpty)
+                      Tooltip(
+                        message:
+                            'The older sound this cognate shows behind the letter',
+                        child: Chip(
+                          label: Text(sounds),
+                          visualDensity: VisualDensity.compact,
+                          labelStyle: foreignStyle(sounds, size: 13),
+                        ),
                       ),
                   ],
                 ),
@@ -977,6 +1033,21 @@ void _showVerse(
                                 size: 22,
                               ).copyWith(height: 1.6),
                             ),
+                            if (verse.peshitta.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                'Peshitta',
+                                style: theme.textTheme.labelSmall,
+                              ),
+                              Text(
+                                verse.peshitta,
+                                textDirection: TextDirection.rtl,
+                                style: foreignStyle(
+                                  verse.peshitta,
+                                  size: 20,
+                                ).copyWith(height: 1.6),
+                              ),
+                            ],
                             const SizedBox(height: 8),
                             Text(
                               verse.english,
@@ -1087,4 +1158,62 @@ void _showSource(
       ),
     ),
   );
+}
+
+/// The cognates a word, stem or sense names in `cognate_ids`, each with the
+/// older sound it shows behind a merged letter of the root (`ע ġ`): what
+/// tells one older root from another in a single spelling.
+class _SoundTags extends StatelessWidget {
+  const _SoundTags({required this.ids});
+
+  final List<String> ids;
+
+  @override
+  Widget build(BuildContext context) {
+    if (ids.isEmpty) return const SizedBox.shrink();
+    final scope = _EntryScopeProvider.of(context);
+    final theme = Theme.of(context);
+    final cognates = {
+      for (final c in _list(scope.entry.data, 'cognates'))
+        if (_str(c, 'id').isNotEmpty) _str(c, 'id'): c,
+    };
+    String label(String id) {
+      final c = cognates[id];
+      if (c == null) return id;
+      final sounds = c['sounds'] is Map
+          ? (c['sounds'] as Map).entries
+                .map((e) => '${e.key} ${e.value}')
+                .join(', ')
+          : '';
+      final lang = cognateLanguages[_str(c, 'lang')] ?? _str(c, 'lang');
+      return [
+        if (sounds.isNotEmpty) sounds,
+        '$lang ${_str(c, 'form')}',
+      ].join(' · ');
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: [
+          for (final id in ids)
+            Tooltip(
+              message: 'Cognate evidence for this sense',
+              child: Chip(
+                avatar: Icon(
+                  Icons.call_split,
+                  size: 14,
+                  color: theme.colorScheme.tertiary,
+                ),
+                label: Text(label(id)),
+                visualDensity: VisualDensity.compact,
+                labelStyle: foreignStyle(label(id), size: 13),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

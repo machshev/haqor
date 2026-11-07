@@ -2575,7 +2575,8 @@ pub struct HaqorLexiconEntryText {
 }
 
 /// A verse an entry cites, by the reference it writes (`Gen.2.7`): the
-/// Hebrew (or, in the New Testament, the Greek) and the English.
+/// Hebrew (or, in the New Testament, the Greek), the English, and in the New
+/// Testament the Peshitta in Hebrew letters, for the entry's Syriac words.
 #[derive(Debug, Serialize, SignalPiece)]
 pub struct HaqorLexiconVerse {
     pub reference: String,
@@ -2584,6 +2585,7 @@ pub struct HaqorLexiconVerse {
     pub verse: u8,
     pub original: String,
     pub english: String,
+    pub peshitta: String,
 }
 
 /// Save one edited entry's JSON back to the review directory. Core checks the
