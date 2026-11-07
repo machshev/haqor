@@ -94,6 +94,7 @@ const Map<String, String> cognateLanguages = {
   'gez': "Ge'ez",
   'sem': 'Semitic',
   'grc': 'Greek',
+  'egy': 'Egyptian',
 };
 
 const Map<String, String> _stemNames = {
