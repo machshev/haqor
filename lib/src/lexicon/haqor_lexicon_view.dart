@@ -93,6 +93,7 @@ const Map<String, String> cognateLanguages = {
   'ar': 'Arabic',
   'gez': "Ge'ez",
   'sem': 'Semitic',
+  'grc': 'Greek',
 };
 
 const Map<String, String> _stemNames = {
@@ -738,7 +739,7 @@ class _Usage extends StatelessWidget {
 
 /// The Greek words connecting the New Testament to the Hebrew word. Shown
 /// last and labelled: the Septuagint is a translation, no evidence of the
-/// Hebrew's meaning.
+/// Hebrew's meaning; a loan (the Hebrew word borrowed into Greek) is marked.
 class _GreekBridge extends StatelessWidget {
   const _GreekBridge({required this.greek});
 
@@ -773,6 +774,17 @@ class _GreekBridge extends StatelessWidget {
                         label: 'Greek gloss',
                         style: theme.textTheme.bodyMedium,
                       ),
+                      if (_str(g, 'relation') == 'loan')
+                        Tooltip(
+                          message:
+                              'The Hebrew word itself, borrowed into Greek: the '
+                              "New Testament's use of it is evidence of its sense",
+                          child: Chip(
+                            label: const Text('loan'),
+                            visualDensity: VisualDensity.compact,
+                            labelStyle: theme.textTheme.labelSmall,
+                          ),
+                        ),
                     ],
                   ),
                   _Citations(evidence: _list(g, 'evidence')),

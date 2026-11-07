@@ -209,4 +209,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('דלא תאמר בלבך'), findsOneWidget);
   });
+
+  testWidgets('marks a Greek loan', (tester) async {
+    final data = jsonDecode(_entry) as Map<String, dynamic>;
+    ((data['words'] as List).first as Map<String, dynamic>)['greek'] = [
+      {
+        'lemma': 'ἀρραβών',
+        'gloss': 'pledge',
+        'relation': 'loan',
+        'evidence': [
+          {'ref': 'Gen.1.3'},
+        ],
+      },
+    ];
+    final entry = LexiconEntryDraft(id: 'amar', data: data, verses: const {});
+    await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: entry)));
+    expect(find.text('ἀρραβών'), findsOneWidget);
+    expect(find.text('loan'), findsOneWidget);
+  });
 }
