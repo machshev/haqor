@@ -7,18 +7,22 @@ import 'haqor_lexicon_view.dart';
 import 'semitic_sounds_page.dart';
 
 /// Review and edit the Haqor lexicon's entries in the form the reader will
-/// see them. On desktop, with `HAQOR_LEXICON_DIR` set to haqor-core's
-/// `data/lexicon`, entries are read from there and saved back, each save
-/// checked against the schema and the text first.
+/// see them, and sign them off. On desktop, with `HAQOR_LEXICON_DIR` set to
+/// haqor-core's `data/lexicon`, entries are read from there and saved back,
+/// each save checked against the schema and the text first.
 class HaqorLexiconReviewPage extends StatefulWidget {
   const HaqorLexiconReviewPage({
     super.key,
     this.store,
     this.onNavigateToPassage,
+    this.today,
   });
 
   final HaqorLexiconStore? store;
   final LexiconNavigate? onNavigateToPassage;
+
+  /// The day a save or sign-off is dated, `YYYY-MM-DD`; today if null.
+  final String Function()? today;
 
   static Future<void> open(
     BuildContext context, {
@@ -34,6 +38,22 @@ class HaqorLexiconReviewPage extends StatefulWidget {
   State<HaqorLexiconReviewPage> createState() => _HaqorLexiconReviewPageState();
 }
 
+/// Which entries the review list shows.
+enum _ListFilter {
+  toReview('To review'),
+  signedOff('Signed off'),
+  all('All');
+
+  const _ListFilter(this.label);
+  final String label;
+
+  bool shows(LexiconEntryDraft entry) => switch (this) {
+    toReview => entry.signOff.toReview,
+    signedOff => !entry.signOff.toReview,
+    all => true,
+  };
+}
+
 class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
   late final HaqorLexiconStore _store = widget.store ?? HaqorLexiconStore();
   LexiconReview? _review;
@@ -42,11 +62,19 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
   bool _editing = false;
   bool _saving = false;
 
+  /// Which entries the list shows: on the first load, those still to review
+  /// if there are any.
+  _ListFilter? _filter;
+  String _query = '';
+
   @override
   void initState() {
     super.initState();
     unawaited(_load());
   }
+
+  String _today() =>
+      widget.today?.call() ?? DateTime.now().toIso8601String().substring(0, 10);
 
   Future<void> _load() async {
     setState(() {
@@ -58,10 +86,15 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
       if (!mounted) return;
       setState(() {
         _review = review;
-        _selected = _selected.clamp(
-          0,
-          review.entries.isEmpty ? 0 : review.entries.length - 1,
-        );
+        if (review.entries.isEmpty) return;
+        _filter ??= review.entries.any((e) => e.signOff.toReview)
+            ? _ListFilter.toReview
+            : _ListFilter.all;
+        _selected = _selected.clamp(0, review.entries.length - 1);
+        if (!_filter!.shows(review.entries[_selected])) {
+          final first = _visible(review).firstOrNull;
+          if (first != null) _selected = first.$1;
+        }
       });
     } catch (error) {
       if (mounted) setState(() => _loadError = error);
@@ -71,6 +104,24 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
   LexiconEntryDraft? get _entry {
     final entries = _review?.entries ?? const [];
     return entries.isEmpty ? null : entries[_selected];
+  }
+
+  /// The entries the list shows, with their index among all of them.
+  List<(int, LexiconEntryDraft)> _visible(LexiconReview review) {
+    final filter = _filter ?? _ListFilter.all;
+    final query = _query.trim().toLowerCase();
+    return [
+      for (final (i, e) in review.entries.indexed)
+        if (filter.shows(e) && (query.isEmpty || _matches(e, query))) (i, e),
+    ];
+  }
+
+  static bool _matches(LexiconEntryDraft entry, String query) {
+    final root = (entry.data['root'] as String?) ?? '';
+    final gloss = ((entry.data['gloss'] as String?) ?? '').toLowerCase();
+    return entry.id.contains(query) ||
+        root.contains(query) ||
+        gloss.contains(query);
   }
 
   Future<void> _edit(
@@ -128,51 +179,90 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
     });
   }
 
-  void _toggleStatus() {
-    final entry = _entry;
-    if (entry == null) return;
-    setState(() {
-      entry.data['status'] = entry.data['status'] == 'reviewed'
-          ? 'draft'
-          : 'reviewed';
-      entry.dirty = true;
-    });
-  }
-
   Future<void> _save() async {
     final entry = _entry;
     if (entry == null) return;
-    final today = DateTime.now().toIso8601String().substring(0, 10);
-    entry.data['updated'] = today;
+    entry.data['updated'] = _today();
+    final message = await _persist(entry);
+    if (message != null && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  /// Sign the entry off today and save it, with any unsaved edits (which
+  /// date it `updated` today too); with [withdraw], put it back to draft.
+  /// Nothing changes if the save is refused.
+  Future<void> _signOff({bool withdraw = false}) async {
+    final entry = _entry;
+    if (entry == null) return;
+    final before = Map<String, dynamic>.of(entry.data);
+    final wasDirty = entry.dirty;
+    final today = _today();
+    setState(() {
+      if (entry.dirty) entry.data['updated'] = today;
+      entry.setSignOff(withdraw ? null : today);
+    });
+    final saved = await _persist(entry) != null;
+    if (!mounted) return;
+    if (!saved) {
+      setState(() {
+        entry.data
+          ..clear()
+          ..addAll(before);
+        entry.dirty = wasDirty;
+      });
+      return;
+    }
+    final next = _review!.entries.indexed
+        .where((e) => e.$1 != _selected && e.$2.signOff.toReview)
+        .firstOrNull;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          withdraw
+              ? '${entry.id}: sign-off withdrawn'
+              : '${entry.id}: signed off',
+        ),
+        action: withdraw || next == null
+            ? null
+            : SnackBarAction(
+                label: 'Next: ${next.$2.id}',
+                onPressed: () => unawaited(_select(next.$1)),
+              ),
+      ),
+    );
+  }
+
+  /// Save [entry]: the core's message if it was saved, or null if not (the
+  /// refusal is shown in full).
+  Future<String?> _persist(LexiconEntryDraft entry) async {
     setState(() => _saving = true);
     try {
       final status = await _store.save(entry);
-      if (!mounted) return;
+      if (!mounted) return status.success ? status.message : null;
       if (status.success) {
         setState(() => entry.dirty = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(status.message)));
-      } else {
-        await showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Not saved'),
-            content: SizedBox(
-              width: 640,
-              child: SingleChildScrollView(
-                child: SelectableText(status.message),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
-              ),
-            ],
-          ),
-        );
+        return status.message;
       }
+      setState(() => _saving = false);
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Not saved'),
+          content: SizedBox(
+            width: 640,
+            child: SingleChildScrollView(child: SelectableText(status.message)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
     } on TimeoutException {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -182,6 +272,7 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+    return null;
   }
 
   Future<bool> _confirmDiscard() async {
@@ -240,7 +331,9 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
                 : 'Lexicon: ${entry.id}${entry.dirty ? ' •' : ''}',
           ),
           actions: [
-            if (review?.editable ?? false) ...[
+            if ((review?.editable ?? false) && entry != null) ...[
+              _signOffButton(entry),
+              const SizedBox(width: 8),
               Row(
                 children: [
                   const Text('Edit'),
@@ -259,7 +352,7 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.save_outlined),
-                onPressed: (entry?.dirty ?? false) && !_saving ? _save : null,
+                onPressed: entry.dirty && !_saving ? _save : null,
               ),
             ],
             IconButton(
@@ -287,6 +380,23 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
     );
   }
 
+  Widget _signOffButton(LexiconEntryDraft entry) {
+    if (entry.signOff == LexiconSignOff.signedOff && !entry.dirty) {
+      return OutlinedButton.icon(
+        key: const ValueKey('lexicon-withdraw-sign-off'),
+        icon: const Icon(Icons.undo, size: 18),
+        label: const Text('Withdraw sign-off'),
+        onPressed: _saving ? null : () => _signOff(withdraw: true),
+      );
+    }
+    return FilledButton.icon(
+      key: const ValueKey('lexicon-sign-off'),
+      icon: const Icon(Icons.verified_outlined, size: 18),
+      label: Text(entry.dirty ? 'Save & sign off' : 'Sign off'),
+      onPressed: _saving ? null : _signOff,
+    );
+  }
+
   Widget _body(LexiconReview? review, LexiconEntryDraft? entry, bool wide) {
     if (_loadError != null) {
       return _message('Could not load the lexicon: $_loadError', retry: true);
@@ -305,7 +415,7 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
       entry: entry,
       editing: _editing && review.editable,
       onEdit: _edit,
-      onToggleStatus: _toggleStatus,
+      showSignOff: true,
       onNavigateToPassage: widget.onNavigateToPassage == null
           ? null
           : (book, chapter, verse) {
@@ -323,7 +433,7 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
     }
     return Row(
       children: [
-        SizedBox(width: 240, child: _entryList(review)),
+        SizedBox(width: 280, child: _entryList(review)),
         const VerticalDivider(width: 1),
         Expanded(
           child: Align(
@@ -338,35 +448,87 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
     );
   }
 
-  Widget _entryList(LexiconReview review, {bool closeDrawer = false}) =>
-      ListView(
-        children: [
-          for (final (i, e) in review.entries.indexed)
-            ListTile(
-              selected: i == _selected,
-              title: Text(
-                (e.data['root'] as String?) ?? e.id,
-                textDirection: TextDirection.rtl,
-                style: foreignStyle(
-                  (e.data['root'] as String?) ?? '',
-                  size: 20,
-                ),
-              ),
-              subtitle: Text(
-                '${e.id} · ${(e.data['gloss'] as String?) ?? ''}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: e.data['status'] == 'reviewed'
-                  ? const Icon(Icons.check_circle_outline, size: 18)
-                  : null,
-              onTap: () async {
-                if (closeDrawer) Navigator.of(context).pop();
-                await _select(i);
-              },
+  Widget _entryList(LexiconReview review, {bool closeDrawer = false}) {
+    final visible = _visible(review);
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+          child: TextField(
+            key: const ValueKey('lexicon-review-search'),
+            decoration: const InputDecoration(
+              isDense: true,
+              prefixIcon: Icon(Icons.search, size: 20),
+              hintText: 'id, root or gloss',
+              border: OutlineInputBorder(),
             ),
-        ],
-      );
+            onChanged: (v) => setState(() => _query = v),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 6,
+            children: [
+              for (final f in _ListFilter.values)
+                ChoiceChip(
+                  key: ValueKey('lexicon-filter-${f.name}'),
+                  visualDensity: VisualDensity.compact,
+                  label: Text(
+                    '${f.label} ${review.entries.where(f.shows).length}',
+                  ),
+                  selected: _filter == f,
+                  onSelected: (_) => setState(() => _filter = f),
+                ),
+            ],
+          ),
+        ),
+        const Divider(height: 12),
+        Expanded(
+          child: visible.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      _filter == _ListFilter.toReview && _query.isEmpty
+                          ? 'Every entry is signed off.'
+                          : 'No entries match.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : ListView(
+                  children: [
+                    for (final (i, e) in visible)
+                      ListTile(
+                        key: ValueKey('lexicon-entry-${e.id}'),
+                        selected: i == _selected,
+                        title: Text(
+                          (e.data['root'] as String?) ?? e.id,
+                          textDirection: TextDirection.rtl,
+                          style: foreignStyle(
+                            (e.data['root'] as String?) ?? '',
+                            size: 20,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${e.id}${e.dirty ? ' •' : ''} · '
+                          '${(e.data['gloss'] as String?) ?? ''}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: LexiconSignOffIcon(entry: e),
+                        onTap: () async {
+                          if (closeDrawer) Navigator.of(context).pop();
+                          await _select(i);
+                        },
+                      ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
 
   Widget _message(String text, {bool retry = false}) => Center(
     child: Padding(

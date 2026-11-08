@@ -83,6 +83,43 @@ class LexiconEntryDraft {
   /// Whether it has unsaved changes.
   bool dirty = false;
 
+  /// Where the entry stands in review: a draft, signed off, or signed off
+  /// and changed since (`updated` later than the `reviewed` date).
+  LexiconSignOff get signOff {
+    if (data['status'] != 'reviewed') return LexiconSignOff.draft;
+    final reviewed = data['reviewed'];
+    final updated = data['updated'];
+    if (reviewed is String &&
+        updated is String &&
+        updated.compareTo(reviewed) > 0) {
+      return LexiconSignOff.changed;
+    }
+    return LexiconSignOff.signedOff;
+  }
+
+  /// The day it was signed off, `YYYY-MM-DD`, if it has been.
+  String? get signedOffOn =>
+      data['status'] == 'reviewed' && data['reviewed'] is String
+      ? data['reviewed'] as String
+      : null;
+
+  /// Sign the entry off on [day] (`YYYY-MM-DD`), or with [day] null put it
+  /// back to draft. `reviewed` is kept straight after `status`, where the
+  /// files have it.
+  void setSignOff(String? day) {
+    final entries = data.entries.toList();
+    data.clear();
+    for (final e in entries) {
+      if (e.key == 'reviewed') continue;
+      if (e.key == 'status') {
+        data['status'] = day == null ? 'draft' : 'reviewed';
+        if (day != null) data['reviewed'] = day;
+      } else {
+        data[e.key] = e.value;
+      }
+    }
+  }
+
   /// The JSON the editor saves: two-space indentation, keys in the order the
   /// file has them, as `jq .` writes it.
   String encode() => const JsonEncoder.withIndent('  ').convert(data);
@@ -153,4 +190,19 @@ List<Map<String, dynamic>> _support(String json) {
     for (final word in decoded)
       if (word is Map<String, dynamic>) word,
   ];
+}
+
+/// Where a lexicon entry stands in review.
+enum LexiconSignOff {
+  /// Not signed off.
+  draft,
+
+  /// Signed off, and unchanged since.
+  signedOff,
+
+  /// Signed off, then changed: to be looked at again.
+  changed;
+
+  /// Whether the entry still wants a reviewer's sign-off.
+  bool get toReview => this != signedOff;
 }

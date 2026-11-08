@@ -169,7 +169,7 @@ class HaqorLexiconEntryView extends StatefulWidget {
     required this.entry,
     this.editing = false,
     this.onEdit,
-    this.onToggleStatus,
+    this.showSignOff = false,
     this.onNavigateToPassage,
     this.leading,
     this.bottomInset = 0,
@@ -180,7 +180,10 @@ class HaqorLexiconEntryView extends StatefulWidget {
   final LexiconEntryDraft entry;
   final bool editing;
   final LexiconEdit? onEdit;
-  final VoidCallback? onToggleStatus;
+
+  /// Show where the entry stands in review (signed off, changed since, or
+  /// draft), as the review page does; otherwise only a draft is marked.
+  final bool showSignOff;
   final LexiconNavigate? onNavigateToPassage;
 
   /// Shown above the entry: in the word sheet, who or what the word names.
@@ -329,7 +332,10 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     ?widget.leading,
-                    _Header(data: data, onToggleStatus: widget.onToggleStatus),
+                    _Header(
+                      entry: widget.entry,
+                      showSignOff: widget.showSignOff,
+                    ),
                   ],
                 ),
               ),
@@ -685,18 +691,18 @@ class _EditableText extends StatelessWidget {
 
 /// The root, its gloss and its review status: what stays above the tabs.
 class _Header extends StatelessWidget {
-  const _Header({required this.data, this.onToggleStatus});
+  const _Header({required this.entry, this.showSignOff = false});
 
-  final Map<String, dynamic> data;
-  final VoidCallback? onToggleStatus;
+  final LexiconEntryDraft entry;
+  final bool showSignOff;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scope = _EntryScopeProvider.of(context);
+    final data = entry.data;
     final root = _str(data, 'root');
     final homograph = data['homograph'];
-    final reviewed = _str(data, 'status') == 'reviewed';
+    final signOff = entry.signOff;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
       child: Row(
@@ -727,15 +733,9 @@ class _Header extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          if (scope.editing)
-            FilterChip(
-              label: Text(reviewed ? 'Reviewed' : 'Draft'),
-              selected: reviewed,
-              onSelected: onToggleStatus == null
-                  ? null
-                  : (_) => onToggleStatus!(),
-            )
-          else if (!reviewed)
+          if (showSignOff)
+            _SignOffChip(entry: entry)
+          else if (signOff == LexiconSignOff.draft)
             const Chip(
               label: Text('Draft'),
               visualDensity: VisualDensity.compact,
@@ -1846,4 +1846,67 @@ class _PinnedTabBar extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(_PinnedTabBar old) =>
       old.tabBar != tabBar || old.color != color;
+}
+
+/// Where an entry stands in review, as a chip: signed off (with the day),
+/// changed since sign-off, or draft.
+class _SignOffChip extends StatelessWidget {
+  const _SignOffChip({required this.entry});
+
+  final LexiconEntryDraft entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final on = entry.signedOffOn;
+    final label = switch (entry.signOff) {
+      LexiconSignOff.signedOff => on == null ? 'Signed off' : 'Signed off $on',
+      LexiconSignOff.changed => 'Changed since sign-off',
+      LexiconSignOff.draft => 'Draft',
+    };
+    return Chip(
+      key: const ValueKey('lexicon-sign-off-chip'),
+      avatar: LexiconSignOffIcon(entry: entry, tooltip: false),
+      label: Text(label),
+      visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+/// An icon for where an entry stands in review, as the review list marks
+/// each entry.
+class LexiconSignOffIcon extends StatelessWidget {
+  const LexiconSignOffIcon({
+    super.key,
+    required this.entry,
+    this.tooltip = true,
+  });
+
+  final LexiconEntryDraft entry;
+  final bool tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final on = entry.signedOffOn;
+    final (icon, color, message) = switch (entry.signOff) {
+      LexiconSignOff.signedOff => (
+        Icons.verified,
+        scheme.primary,
+        on == null ? 'Signed off' : 'Signed off $on',
+      ),
+      LexiconSignOff.changed => (
+        Icons.history,
+        scheme.tertiary,
+        'Changed ${entry.data['updated']}, since sign-off'
+            '${on == null ? '' : ' on $on'}',
+      ),
+      LexiconSignOff.draft => (
+        Icons.radio_button_unchecked,
+        scheme.outline,
+        'Draft: not signed off',
+      ),
+    };
+    final glyph = Icon(icon, size: 18, color: color);
+    return tooltip ? Tooltip(message: message, child: glyph) : glyph;
+  }
 }
