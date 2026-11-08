@@ -1697,7 +1697,9 @@ String _plural(int n, String one, [String? many]) =>
 
 /// A word's evidence counted, in a line: its uses in scripture, the verses
 /// cited for it, and the balance of cognates sharing its meaning against
-/// those of another meaning (which count double).
+/// those against it (which count double): every cognate of the root where
+/// it has none of its own, else those of another older root behind a merged
+/// letter.
 class _SupportLine extends StatelessWidget {
   const _SupportLine({required this.support});
 
@@ -1725,8 +1727,9 @@ class _SupportLine extends StatelessWidget {
       child: Tooltip(
         message:
             'Uses in the Old Testament; verses cited (fixing the meaning); '
-            'cognate languages sharing its meaning and of another meaning; '
-            'balance: sharing less twice another.',
+            'cognate languages sharing its meaning and against it (all the '
+            'root\'s, where it has none of its own; else another older root '
+            'behind a merged letter); balance: sharing less twice against.',
         child: Text.rich(
           TextSpan(
             style: style,
@@ -1804,7 +1807,7 @@ class _SupportDetail extends StatelessWidget {
             color: theme.colorScheme.primary,
           ),
           line(
-            'Cognates of another meaning (count double)',
+            'Cognates against it (count double)',
             differing.isEmpty ? 'none' : differing.join(', '),
             color: differing.isEmpty ? null : theme.colorScheme.error,
           ),
