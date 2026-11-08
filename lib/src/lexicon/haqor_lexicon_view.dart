@@ -319,59 +319,75 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
       child: Theme(
         data: withScripts,
         child: Builder(
-          builder: (context) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ?widget.leading,
-              _Header(data: data, onToggleStatus: widget.onToggleStatus),
-              TabBar(
-                controller: _controller,
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                tabs: [
-                  for (final tab in _tabs)
-                    Tab(
-                      text: switch (tab) {
-                        _Tab.overview => 'Overview',
-                        _Tab.words => counted('Words', 'words'),
-                        _Tab.cognates => counted('Cognates', 'cognates'),
-                        _Tab.doctrine => counted('Doctrine', 'doctrine'),
-                        _Tab.extra => widget.extraTab!.label,
-                      },
-                    ),
-                ],
-              ),
-              Expanded(
-                child: TabBarView(
-                  controller: _controller,
+          // The whole entry scrolls: the header scrolls away with the tab's
+          // content, so on a phone the content has the height, and the tab
+          // bar stays pinned at the top.
+          builder: (context) => NestedScrollView(
+            headerSliverBuilder: (context, _) => [
+              SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (final tab in _tabs)
-                      switch (tab) {
-                        _Tab.overview => _overview(context),
-                        _Tab.words => _words(context),
-                        _Tab.cognates => _tabList(
-                          tab,
-                          subtitle:
-                              'The same root in the other Semitic languages',
-                          children: [
-                            for (final c in _list(data, 'cognates'))
-                              _CognateRow(cognate: c),
-                          ],
-                        ),
-                        _Tab.doctrine => _tabList(
-                          tab,
-                          subtitle: "What scripture's use of the word teaches",
-                          children: [
-                            for (final d in _list(data, 'doctrine'))
-                              _DoctrineItem(item: d),
-                          ],
-                        ),
-                        _Tab.extra => widget.extraTab!.build(context),
-                      },
+                    ?widget.leading,
+                    _Header(data: data, onToggleStatus: widget.onToggleStatus),
                   ],
                 ),
               ),
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _PinnedTabBar(
+                  color: theme.colorScheme.surface,
+                  tabBar: TabBar(
+                    controller: _controller,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    tabs: [
+                      for (final tab in _tabs)
+                        Tab(
+                          height: 36,
+                          text: switch (tab) {
+                            _Tab.overview => 'Overview',
+                            _Tab.words => counted('Words', 'words'),
+                            _Tab.cognates => counted('Cognates', 'cognates'),
+                            _Tab.doctrine => counted('Doctrine', 'doctrine'),
+                            _Tab.extra => widget.extraTab!.label,
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             ],
+            body: Builder(
+              builder: (context) => TabBarView(
+                controller: _controller,
+                children: [
+                  for (final tab in _tabs)
+                    switch (tab) {
+                      _Tab.overview => _overview(context),
+                      _Tab.words => _words(context),
+                      _Tab.cognates => _tabList(
+                        tab,
+                        subtitle:
+                            'The same root in the other Semitic languages',
+                        children: [
+                          for (final c in _list(data, 'cognates'))
+                            _CognateRow(cognate: c),
+                        ],
+                      ),
+                      _Tab.doctrine => _tabList(
+                        tab,
+                        subtitle: "What scripture's use of the word teaches",
+                        children: [
+                          for (final d in _list(data, 'doctrine'))
+                            _DoctrineItem(item: d),
+                        ],
+                      ),
+                      _Tab.extra => widget.extraTab!.build(context),
+                    },
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -682,7 +698,7 @@ class _Header extends StatelessWidget {
     final homograph = data['homograph'];
     final reviewed = _str(data, 'status') == 'reviewed';
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -691,7 +707,7 @@ class _Header extends StatelessWidget {
             child: Text(
               root.split('').join(' '),
               textDirection: TextDirection.rtl,
-              style: foreignStyle(root, size: 30),
+              style: foreignStyle(root, size: 24),
             ),
           ),
           if (homograph is int)
@@ -705,7 +721,7 @@ class _Header extends StatelessWidget {
               node: data,
               field: 'gloss',
               label: 'gloss',
-              style: theme.textTheme.titleLarge?.copyWith(
+              style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -752,7 +768,7 @@ class _OverviewSection extends StatelessWidget {
         children: [
           Row(
             children: [
-              Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
+              Expanded(child: Text(title, style: theme.textTheme.titleSmall)),
               TextButton(onPressed: onOpen, child: const Text('Details')),
             ],
           ),
@@ -813,7 +829,7 @@ class _WordSummaryRow extends StatelessWidget {
             Text(
               lemma,
               textDirection: TextDirection.rtl,
-              style: foreignStyle(lemma, size: 22),
+              style: foreignStyle(lemma, size: 20),
             ),
             const SizedBox(width: 10),
             Text(
@@ -894,7 +910,7 @@ class _WordCard extends StatelessWidget {
                             Text(
                               lemma,
                               textDirection: TextDirection.rtl,
-                              style: foreignStyle(lemma, size: 28),
+                              style: foreignStyle(lemma, size: 24),
                             ),
                             const SizedBox(width: 12),
                             Text(
@@ -1802,4 +1818,32 @@ class _SupportDetail extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The entry's tab bar, kept at the top as the entry scrolls.
+class _PinnedTabBar extends SliverPersistentHeaderDelegate {
+  const _PinnedTabBar({required this.tabBar, required this.color});
+
+  final TabBar tabBar;
+  final Color color;
+
+  @override
+  double get minExtent => tabBar.preferredSize.height;
+
+  @override
+  double get maxExtent => tabBar.preferredSize.height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlaps) =>
+      Material(
+        color: color,
+        child: SizedBox(
+          height: maxExtent,
+          child: Align(alignment: Alignment.bottomLeft, child: tabBar),
+        ),
+      );
+
+  @override
+  bool shouldRebuild(_PinnedTabBar old) =>
+      old.tabBar != tabBar || old.color != color;
 }

@@ -129,6 +129,28 @@ void main() {
     expect(find.byIcon(Icons.edit_outlined), findsNothing);
   });
 
+  testWidgets('on a phone the header scrolls away and the tabs stay', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 420);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: _draft())));
+    await tester.pumpAndSettle();
+    final root = find.byTooltip('Root');
+    expect(root.hitTestable(), findsOneWidget);
+    await tester.drag(find.byType(TabBarView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+    // The root has scrolled up out of view; the tab bar is pinned in it.
+    expect(root.hitTestable(), findsNothing);
+    expect(
+      tester.getTopLeft(find.text('Overview')).dy,
+      greaterThanOrEqualTo(0),
+    );
+    expect(find.text('Overview').hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a verse chip opens the verse', (tester) async {
     await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: _draft())));
     await _openTab(tester, 'Words');
