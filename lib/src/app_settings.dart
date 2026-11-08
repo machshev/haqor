@@ -13,11 +13,21 @@ import 'tutor/progress_sync.dart';
 const _adminModeKey = 'tutor_admin_mode';
 const _occurrenceVerseEnglishOnlyKey = 'occurrence_verse_english_only';
 
-Future<bool> adminModeEnabled() async =>
-    (await SharedPreferences.getInstance()).readBool(_adminModeKey) ?? false;
+/// Whether admin mode is on, as last read or set: pages that show admin tools
+/// listen to it, so turning the mode off in the settings hides them at once.
+final adminModeChanges = ValueNotifier<bool>(false);
 
-Future<void> setAdminModeEnabled(bool enabled) async =>
-    (await SharedPreferences.getInstance()).setBool(_adminModeKey, enabled);
+Future<bool> adminModeEnabled() async {
+  final enabled =
+      (await SharedPreferences.getInstance()).readBool(_adminModeKey) ?? false;
+  adminModeChanges.value = enabled;
+  return enabled;
+}
+
+Future<void> setAdminModeEnabled(bool enabled) async {
+  adminModeChanges.value = enabled;
+  await (await SharedPreferences.getInstance()).setBool(_adminModeKey, enabled);
+}
 
 Future<bool> occurrenceVerseEnglishOnlyEnabled() async =>
     (await SharedPreferences.getInstance()).readBool(

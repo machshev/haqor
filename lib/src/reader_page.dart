@@ -450,6 +450,9 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   @override
   void initState() {
     super.initState();
+    // The menu's admin tools follow the setting as it changes.
+    adminModeChanges.addListener(_onAdminModeChanged);
+    unawaited(adminModeEnabled());
     _studyStore = StudyWorkspaceStore(
       sendRequest: widget.sendStudyStateRequest,
       save: widget.saveStudyState,
@@ -665,8 +668,13 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _saveWorkspace();
   }
 
+  void _onAdminModeChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    adminModeChanges.removeListener(_onAdminModeChanged);
     _studyStore.dispose();
     _commentaryStore.dispose();
     _passageChoice.dispose();
@@ -1412,8 +1420,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _ReaderMenuAction.apologetics,
     _ReaderMenuAction.tutor,
     _ReaderMenuAction.memorise,
-    if (_activeReader?._adminMode ?? false) _ReaderMenuAction.lexiconReview,
-    if (_activeReader?._adminMode ?? false) _ReaderMenuAction.reportIssue,
+    if (adminModeChanges.value) _ReaderMenuAction.lexiconReview,
+    if (adminModeChanges.value) _ReaderMenuAction.reportIssue,
     _ReaderMenuAction.settings,
     _ReaderMenuAction.about,
   ];
@@ -1502,9 +1510,6 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
         if (mounted) setState(() {});
       },
     );
-    for (final key in _readerKeys.values) {
-      key.currentState?._loadAdminMode();
-    }
   }
 
   void _handleWorkspaceMenuAction(_ReaderMenuAction action) {
@@ -2008,7 +2013,6 @@ class _ReaderSessionState extends State<_ReaderSession>
 
   // Gates the generic issue-report menu item, matching the word-info sheet's
   // admin-only flag button.
-  bool _adminMode = false;
 
   // Selected verse (across any section)
   int? _selectedBook;
@@ -2200,7 +2204,6 @@ class _ReaderSessionState extends State<_ReaderSession>
     widget.commentaryStore.addListener(_onCommentaryChanged);
     widget.passageChoice.addListener(_onCommentaryChanged);
     _loadPrefs();
-    _loadAdminMode();
   }
 
   void _onCommentaryChanged() {
@@ -2212,11 +2215,6 @@ class _ReaderSessionState extends State<_ReaderSession>
     setState(() {});
     // Workspaces from Rust can turn root highlighting on or off.
     _refreshLoadedChaptersForStudyRoots();
-  }
-
-  Future<void> _loadAdminMode() async {
-    final enabled = await adminModeEnabled();
-    if (mounted) setState(() => _adminMode = enabled);
   }
 
   /// A verse's syntax marks while the reader colours roles; null otherwise,
@@ -2987,9 +2985,6 @@ class _ReaderSessionState extends State<_ReaderSession>
       readingSettings: _readingSettings,
       onReadingSettingsChanged: _applyReadingSettings,
     );
-    // Admin mode can be toggled inside the settings sheet; it gates the
-    // issue-report menu item.
-    _loadAdminMode();
   }
 
   /// Generic issue entry, not tied to a specific word or card — reachable from

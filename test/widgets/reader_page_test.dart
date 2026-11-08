@@ -7,7 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:haqor/src/app_settings.dart' show ReaderText;
+import 'package:haqor/src/app_settings.dart'
+    show ReaderText, adminModeChanges, setAdminModeEnabled;
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/commentary.dart';
 import 'package:haqor/src/passage_selection.dart';
@@ -550,6 +551,32 @@ void main() {
     expect(find.text('Bereshit 5'), findsNWidgets(2)); // header and tab chip
     rust.deliverAll(); // prefetched neighbours
     await tester.pump();
+  });
+
+  testWidgets('the admin tools leave the menu when admin mode is turned off', (
+    tester,
+  ) async {
+    addTearDown(() => adminModeChanges.value = false);
+    final rust = await _pumpReader(tester, chapter: 5);
+    rust.deliverAll();
+    await tester.pump();
+    Future<bool> listed() async {
+      await tester.tap(find.byTooltip('Reader options'));
+      await tester.pumpAndSettle();
+      final shown = find.text('Lexicon review').evaluate().isNotEmpty;
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      return shown;
+    }
+
+    expect(await listed(), isFalse);
+    await setAdminModeEnabled(true);
+    await tester.pump();
+    expect(await listed(), isTrue);
+    // Turned off again (as the settings sheet does), gone at once.
+    await setAdminModeEnabled(false);
+    await tester.pump();
+    expect(await listed(), isFalse);
   });
 
   testWidgets('uses saved English book names in reader labels', (tester) async {
