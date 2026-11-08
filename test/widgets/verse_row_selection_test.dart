@@ -192,6 +192,85 @@ void main() {
     expect(verseChosen, 0);
   });
 
+  testWidgets('separated English spans keep their individual Aramaic owners', (
+    tester,
+  ) async {
+    TranslationWordEntry routeAt(int position) =>
+        TranslationWordEntry(chapter: 2, verse: 12, position: position);
+    final selected = <List<TranslationWordEntry>>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VerseRow(
+            entry: const VerseEntry(
+              verse: 12,
+              text: 'ובאורחא אחרתא',
+              glosses: [],
+              morphologies: [],
+              names: [],
+              roots: [],
+              ketivs: [],
+              crossReferenceScores: [],
+            ),
+            isSelected: false,
+            hebrewNumerals: false,
+            onTap: () {},
+            onWordTap: (_, _, _, _) {},
+            readerText: ReaderText.english,
+            translation: [
+              TranslationSpanEntry(
+                text: 'and by',
+                supplied: false,
+                words: [routeAt(0)],
+              ),
+              const TranslationSpanEntry(text: ' ', supplied: false, words: []),
+              TranslationSpanEntry(
+                text: 'another',
+                supplied: false,
+                words: [routeAt(1)],
+              ),
+              const TranslationSpanEntry(text: ' ', supplied: false, words: []),
+              TranslationSpanEntry(
+                text: 'way',
+                supplied: false,
+                words: [routeAt(0)],
+              ),
+            ],
+            translationWordSelected: (word) => word.position == 0,
+            onTranslationWordsSelected: selected.add,
+          ),
+        ),
+      ),
+    );
+    final children = tester
+        .widget<SelectableText>(find.byType(SelectableText))
+        .textSpan!
+        .children!
+        .whereType<TextSpan>()
+        .toList();
+    expect(
+      children.firstWhere((s) => s.text == 'and by').style?.backgroundColor,
+      isNotNull,
+    );
+    expect(
+      children.firstWhere((s) => s.text == 'way').style?.backgroundColor,
+      isNotNull,
+    );
+    expect(
+      children.firstWhere((s) => s.text == 'another').style?.backgroundColor,
+      isNull,
+    );
+    await drag(
+      tester,
+      TextDirection.ltr,
+      (text) => text.indexOf('another') + 1,
+      (text) => text.indexOf('another') + 5,
+    );
+    expect(selected, [
+      [routeAt(1)],
+    ]);
+  });
+
   testWidgets('a highlight in English naming no words chooses its verse', (
     tester,
   ) async {
