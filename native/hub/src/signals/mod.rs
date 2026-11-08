@@ -947,6 +947,9 @@ pub struct WordInfo {
     /// out), the tab opens on [`Self::lexemes`], which then lists only the
     /// root's words the entry does not hold.
     pub haqor_lexicon_covers_word: bool,
+    /// Haqor's name entry (haqor-core `data/lexicon/names`) for the person the
+    /// word names here, where it has one: what the name means, from its root.
+    pub haqor_name: Option<HaqorLexiconNameText>,
 }
 
 /// A Greek word a Peshitta lexeme renders, found by aligning the two texts:
@@ -1112,6 +1115,8 @@ pub struct NameEntityInfo {
     /// oldest first, and the works their links cite.
     pub artifacts: Vec<ArtifactEntry>,
     pub artifact_sources: Vec<ArtifactSourceEntry>,
+    /// Haqor's name entry for a person, where it has one.
+    pub haqor_name: Option<HaqorLexiconNameText>,
 }
 
 /// A verse naming a person, place or other named thing, and the words in it
@@ -2571,6 +2576,8 @@ pub struct HaqorLexicon {
     pub dir: String,
     pub error: String,
     pub entries: Vec<HaqorLexiconEntryText>,
+    /// The name entries, from the directory's `names`.
+    pub names: Vec<HaqorLexiconNameText>,
 }
 
 /// One entry: its JSON as written (the schema is haqor-core's
@@ -2584,6 +2591,17 @@ pub struct HaqorLexiconEntryText {
     /// uses, verses cited, cognates sharing its meaning and of another
     /// meaning, and kin senses.
     pub support: String,
+    /// The name entries formed from the root, which link back to this entry.
+    pub names: Vec<HaqorLexiconNameText>,
+}
+
+/// A name entry (haqor-core `data/lexicon/names`): its JSON as written, with
+/// the text of every verse it cites.
+#[derive(Debug, Serialize, SignalPiece)]
+pub struct HaqorLexiconNameText {
+    pub id: String,
+    pub json: String,
+    pub verses: Vec<HaqorLexiconVerse>,
 }
 
 /// A verse an entry cites, by the reference it writes (`Gen.2.7`): the

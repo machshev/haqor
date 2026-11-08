@@ -10,8 +10,8 @@ use rinf::{DartSignal, RustSignal, debug_print};
 
 use crate::functions::{SharedBible, lock};
 use crate::signals::{
-    GetHaqorLexicon, HaqorLexicon, HaqorLexiconEntryText, HaqorLexiconSaveStatus,
-    HaqorLexiconVerse, SaveHaqorLexiconEntry,
+    GetHaqorLexicon, HaqorLexicon, HaqorLexiconEntryText, HaqorLexiconNameText,
+    HaqorLexiconSaveStatus, HaqorLexiconVerse, SaveHaqorLexiconEntry,
 };
 
 /// The directory entries are reviewed in, when one is set. Never on the web.
@@ -62,10 +62,9 @@ fn verse(bible: &Bible, book: u8, chapter: u8, verse: u8) -> (String, String, St
     }
 }
 
-/// An entry as the app shows it: its JSON, the text of the verses it cites
-/// and its words' evidence counted.
-pub(crate) fn entry_text(bible: &Bible, id: String, json: String) -> HaqorLexiconEntryText {
-    let verses = haqor_lexicon::references_in(&json)
+/// The verses an entry's JSON cites, with their text.
+fn cited_verses(bible: &Bible, json: &str) -> Vec<HaqorLexiconVerse> {
+    haqor_lexicon::references_in(json)
         .into_iter()
         .map(|(reference, (book, chapter, v))| {
             let (original, english, peshitta) = verse(bible, book, chapter, v);
@@ -79,7 +78,37 @@ pub(crate) fn entry_text(bible: &Bible, id: String, json: String) -> HaqorLexico
                 peshitta,
             }
         })
-        .collect();
+        .collect()
+}
+
+/// A name entry as the app shows it: its JSON and the text of the verses it
+/// cites.
+pub(crate) fn name_text(bible: &Bible, id: String, json: String) -> HaqorLexiconNameText {
+    let verses = cited_verses(bible, &json);
+    HaqorLexiconNameText { id, json, verses }
+}
+
+/// The name entry of the person `entity_id`, where Haqor has one.
+pub(crate) fn person_name(bible: &Bible, entity_id: u32) -> Option<HaqorLexiconNameText> {
+    match bible.haqor_lexicon_name_for_entity(entity_id.into()) {
+        Ok(found) => found.map(|(id, json)| name_text(bible, id, json)),
+        Err(error) => {
+            debug_print!("haqor_lexicon_name_for_entity({entity_id}) error: {error:?}");
+            None
+        }
+    }
+}
+
+/// An entry as the app shows it: its JSON, the text of the verses it cites,
+/// its words' evidence counted, and `names`, the name entries formed from it
+/// as id and JSON.
+pub(crate) fn entry_text(
+    bible: &Bible,
+    id: String,
+    json: String,
+    names: Vec<(String, String)>,
+) -> HaqorLexiconEntryText {
+    let verses = cited_verses(bible, &json);
     // The counted evidence for each word, as JSON (haqor-core's
     // `WordSupport`); empty when the entry does not parse.
     let support = haqor_lexicon::entry_support_json(bible, &json).unwrap_or_default();
@@ -88,6 +117,10 @@ pub(crate) fn entry_text(bible: &Bible, id: String, json: String) -> HaqorLexico
         json,
         verses,
         support,
+        names: names
+            .into_iter()
+            .map(|(id, json)| name_text(bible, id, json))
+            .collect(),
     }
 }
 
@@ -101,7 +134,10 @@ pub(crate) fn word_entry(
     prefix: &str,
 ) -> Option<HaqorLexiconEntryText> {
     match bible.haqor_lexicon_entry(root, word, prefix) {
-        Ok(found) => found.map(|(id, json)| entry_text(bible, id, json)),
+        Ok(found) => found.map(|(id, json)| {
+            let names = bible.haqor_lexicon_names_of(&id).unwrap_or_default();
+            entry_text(bible, id, json, names)
+        }),
         Err(error) => {
             debug_print!("haqor_lexicon_entry({root:?}, {word:?}) error: {error:?}");
             None
@@ -109,11 +145,30 @@ pub(crate) fn word_entry(
     }
 }
 
-fn entries(bible: &Bible, dir: &std::path::Path) -> anyhow::Result<Vec<HaqorLexiconEntryText>> {
-    Ok(haqor_lexicon::read_entry_texts(dir)?
+/// The entries and the name entries under review in `dir`, each root entry
+/// with the names in `dir` that link back to it.
+fn entries(
+    bible: &Bible,
+    dir: &std::path::Path,
+) -> anyhow::Result<(Vec<HaqorLexiconEntryText>, Vec<HaqorLexiconNameText>)> {
+    let names = haqor_lexicon::read_name_texts(dir)?;
+    let entry_of = |json: &str| haqor_lexicon::name_entry_root(json).unwrap_or_default();
+    let entries = haqor_lexicon::read_entry_texts(dir)?
         .into_iter()
-        .map(|(id, json)| entry_text(bible, id, json))
-        .collect())
+        .map(|(id, json)| {
+            let own = names
+                .iter()
+                .filter(|(_, n)| entry_of(n) == id)
+                .cloned()
+                .collect();
+            entry_text(bible, id, json, own)
+        })
+        .collect();
+    let names = names
+        .into_iter()
+        .map(|(id, json)| name_text(bible, id, json))
+        .collect();
+    Ok((entries, names))
 }
 
 pub async fn get_haqor_lexicon(bible: SharedBible) {
@@ -128,6 +183,7 @@ pub async fn get_haqor_lexicon(bible: SharedBible) {
                 error: "Set HAQOR_LEXICON_DIR to haqor-core's data/lexicon to review entries."
                     .to_string(),
                 entries: Vec::new(),
+                names: Vec::new(),
             }
             .send_signal_to_dart();
             continue;
@@ -136,11 +192,11 @@ pub async fn get_haqor_lexicon(bible: SharedBible) {
             let bible = lock(&bible);
             entries(&bible, &dir)
         };
-        let (entries, error) = match read {
-            Ok(entries) => (entries, String::new()),
+        let ((entries, names), error) = match read {
+            Ok(read) => (read, String::new()),
             Err(error) => {
                 debug_print!("get_haqor_lexicon error: {error:?}");
-                (Vec::new(), format!("{error:#}"))
+                ((Vec::new(), Vec::new()), format!("{error:#}"))
             }
         };
         HaqorLexicon {
@@ -149,6 +205,7 @@ pub async fn get_haqor_lexicon(bible: SharedBible) {
             dir: dir.display().to_string(),
             error,
             entries,
+            names,
         }
         .send_signal_to_dart();
     }

@@ -1427,6 +1427,10 @@ class _WordInfoSheetState extends State<WordInfoSheet>
     // holds: the other lexicons are shown only for the root's words it does
     // not hold yet, in a tab of their own, which the sheet opens on when the
     // looked-up word is one of them.
+    // What the name means, where Haqor has an entry for the person's name.
+    final haqorName = info.haqorName == null
+        ? null
+        : _haqorNameEntry(info.haqorName!);
     if (info.haqorLexicon case final entry?) {
       final name = info.name;
       return HaqorLexiconEntryView(
@@ -1438,9 +1442,30 @@ class _WordInfoSheetState extends State<WordInfoSheet>
             ? null
             : Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: NameCard(name: name, onOpen: () => _openName(name)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    NameCard(name: name, onOpen: () => _openName(name)),
+                    if (haqorName != null) ...[
+                      const SizedBox(height: 8),
+                      HaqorNameCard(
+                        name: haqorName,
+                        // The root's entry is the sheet below it.
+                        onOpen: () => HaqorLexiconNamePage.open(
+                          context,
+                          name: haqorName,
+                          onNavigateToPassage: widget.onNavigateToPassage,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-        openOnExtraTab: !info.haqorLexiconCoversWord && rows.isNotEmpty,
+        // A name's meaning is the root's entry, on its overview.
+        openOnExtraTab:
+            !info.haqorLexiconCoversWord &&
+            rows.isNotEmpty &&
+            haqorName == null,
         extraTab: rows.isEmpty
             ? null
             : (
@@ -1489,7 +1514,20 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         // the name means.
         if (info.name case final name?) ...[
           NameCard(name: name, onOpen: () => _openName(name)),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
+          if (haqorName != null) ...[
+            HaqorNameCard(
+              name: haqorName,
+              onOpen: () => HaqorLexiconNamePage.open(
+                context,
+                name: haqorName,
+                onNavigateToPassage: widget.onNavigateToPassage,
+                rootBehind: false,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          const SizedBox(height: 8),
         ],
         // A Peshitta word's Greek: the words of the TR its lexeme renders.
         if (info.greekEquivalents.isNotEmpty)
@@ -1517,6 +1555,14 @@ class _WordInfoSheetState extends State<WordInfoSheet>
   }
 
   LexiconEntryDraft? _haqorDraft;
+  LexiconEntryDraft? _haqorNameDraft;
+
+  /// The name entry [name] as the views take it, read once per entry.
+  LexiconEntryDraft _haqorNameEntry(HaqorLexiconNameText name) {
+    final draft = _haqorNameDraft;
+    if (draft != null && draft.id == name.id) return draft;
+    return _haqorNameDraft = LexiconEntryDraft.fromName(name);
+  }
 
   /// The Haqor entry [entry] as the view takes it, read once per entry so the
   /// view keeps its state across rebuilds.

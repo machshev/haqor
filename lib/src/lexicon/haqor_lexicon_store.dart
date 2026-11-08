@@ -44,28 +44,25 @@ class LexiconEntryDraft {
     required this.data,
     required this.verses,
     this.support = const [],
+    this.names = const [],
   });
 
-  factory LexiconEntryDraft.fromSignal(HaqorLexiconEntryText entry) {
-    final decoded = jsonDecode(entry.json);
-    return LexiconEntryDraft(
-      id: entry.id,
-      data: decoded is Map<String, dynamic> ? decoded : <String, dynamic>{},
-      verses: {
-        for (final v in entry.verses)
-          v.reference: LexiconVerse(
-            reference: v.reference,
-            book: v.book,
-            chapter: v.chapter,
-            verse: v.verse,
-            original: v.original,
-            english: v.english,
-            peshitta: v.peshitta,
-          ),
-      },
-      support: _support(entry.support),
-    );
-  }
+  factory LexiconEntryDraft.fromSignal(HaqorLexiconEntryText entry) =>
+      LexiconEntryDraft(
+        id: entry.id,
+        data: _decode(entry.json),
+        verses: _verses(entry.verses),
+        support: _support(entry.support),
+        names: entry.names.map(LexiconEntryDraft.fromName).toList(),
+      );
+
+  /// A name entry (haqor-core `data/lexicon/names`).
+  factory LexiconEntryDraft.fromName(HaqorLexiconNameText name) =>
+      LexiconEntryDraft(
+        id: name.id,
+        data: _decode(name.json),
+        verses: _verses(name.verses),
+      );
 
   final String id;
 
@@ -79,6 +76,13 @@ class LexiconEntryDraft {
   /// `WordSupport`): uses, verses, cognates for and against, kin. As the
   /// entry was when read; edits do not recount it.
   final List<Map<String, dynamic>> support;
+
+  /// For a root entry, the name entries formed from it, which link back to it.
+  final List<LexiconEntryDraft> names;
+
+  /// Whether this is a name entry rather than a root's: it names people and
+  /// has no words.
+  bool get isName => data.containsKey('people') && !data.containsKey('words');
 
   /// Whether it has unsaved changes.
   bool dirty = false;
@@ -163,7 +167,10 @@ class HaqorLexiconStore {
     _send(GetHaqorLexicon(requestId: requestId));
     final message = await reply;
     return LexiconReview(
-      entries: message.entries.map(LexiconEntryDraft.fromSignal).toList(),
+      entries: [
+        ...message.entries.map(LexiconEntryDraft.fromSignal),
+        ...message.names.map(LexiconEntryDraft.fromName),
+      ],
       editable: message.editable,
       dir: message.dir,
       error: message.error,
@@ -181,6 +188,24 @@ class HaqorLexiconStore {
     return reply;
   }
 }
+
+Map<String, dynamic> _decode(String json) {
+  final decoded = jsonDecode(json);
+  return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+}
+
+Map<String, LexiconVerse> _verses(List<HaqorLexiconVerse> verses) => {
+  for (final v in verses)
+    v.reference: LexiconVerse(
+      reference: v.reference,
+      book: v.book,
+      chapter: v.chapter,
+      verse: v.verse,
+      original: v.original,
+      english: v.english,
+      peshitta: v.peshitta,
+    ),
+};
 
 List<Map<String, dynamic>> _support(String json) {
   if (json.isEmpty) return const [];

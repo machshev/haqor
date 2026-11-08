@@ -98,6 +98,7 @@ const _haqorText = HaqorLexiconEntryText(
     ),
   ],
   support: '',
+  names: [],
 );
 
 Future<void> _pumpSheet(
@@ -107,6 +108,8 @@ Future<void> _pumpSheet(
   List<GreekEquivalentEntry> greekEquivalents = const [],
   HaqorLexiconEntryText? haqorLexicon,
   bool haqorLexiconCoversWord = true,
+  NameSummaryEntry? name,
+  HaqorLexiconNameText? haqorName,
   void Function(GetDictionaryEntry)? onDictionaryRequest,
 }) async {
   SharedPreferences.setMockInitialValues({
@@ -169,6 +172,8 @@ Future<void> _pumpSheet(
       greekEquivalents: greekEquivalents,
       haqorLexicon: haqorLexicon,
       haqorLexiconCoversWord: haqorLexiconCoversWord,
+      name: name,
+      haqorName: haqorName,
     ).bincodeSerialize(),
     Uint8List(0),
   );
@@ -265,6 +270,93 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Whole, sound, at peace.'), findsOneWidget);
       expect(find.byType(LexiconSourceBadge), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    "a person's name shows its meaning, and its root's entry lists it",
+    (tester) async {
+      tester.view.physicalSize = const Size(900, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      const nameJson = '''
+{
+  "id": "shelomith",
+  "name": "שְׁלֹמִית",
+  "english": "Shelomith",
+  "root": "שלם",
+  "entry": "shalam",
+  "status": "draft",
+  "updated": "2026-11-08",
+  "people": ["Shelomith@Lev.24.11"],
+  "gloss": "peaceful",
+  "summary": "A woman of Dan, from the root of peace.",
+  "evidence": [{ "ref": "Gen.43.27", "role": "defining" }]
+}
+''';
+      const verse = HaqorLexiconVerse(
+        reference: 'Gen.43.27',
+        book: 1,
+        chapter: 43,
+        verse: 27,
+        original: 'וַיִּשְׁאַל לָהֶם לְשָׁלוֹם',
+        english: 'And he asked them of their welfare',
+        peshitta: '',
+      );
+      const name = HaqorLexiconNameText(
+        id: 'shelomith',
+        json: nameJson,
+        verses: [verse],
+      );
+      await _pumpSheet(
+        tester,
+        syriac: false,
+        haqorLexicon: HaqorLexiconEntryText(
+          id: _haqorText.id,
+          json: _haqorText.json,
+          verses: _haqorText.verses,
+          support: '',
+          names: const [name],
+        ),
+        haqorLexiconCoversWord: false,
+        name: const NameSummaryEntry(
+          id: 1,
+          name: 'Shelomith',
+          kind: 'person',
+          description: 'Woman of Dan',
+          origin: '',
+          occurrences: 1,
+        ),
+        haqorName: name,
+      );
+      // The name's meaning, under who it names; the sheet opens on the
+      // root's entry, which lists the names formed from it.
+      expect(
+        find.byKey(const ValueKey('haqor-name-card-shelomith')),
+        findsOneWidget,
+      );
+      expect(find.text('peaceful'), findsWidgets);
+      expect(find.text('Whole, sound, at peace.'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('haqor-name-row-shelomith')),
+        findsOneWidget,
+      );
+      // Its own page: the name, its meaning, its root and its evidence.
+      await tester.tap(find.byKey(const ValueKey('haqor-name-card-shelomith')));
+      await tester.pumpAndSettle();
+      expect(find.text('Shelomith'), findsWidgets);
+      expect(
+        find.text('A woman of Dan, from the root of peace.'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('haqor-name-root')), findsOneWidget);
+      expect(find.text('Evidence'), findsOneWidget);
+      expect(tester.takeException(), isNull, reason: 'opening the page');
+      // The root link goes back to the root's entry.
+      await tester.tap(find.byKey(const ValueKey('haqor-name-root')));
+      await tester.pumpAndSettle();
+      expect(find.text('Whole, sound, at peace.'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

@@ -9,6 +9,8 @@ import '../bible_data.dart';
 import '../bindings/bindings.dart';
 import '../external_link.dart';
 import '../study_workspace.dart';
+import '../lexicon/haqor_lexicon_store.dart';
+import '../lexicon/haqor_lexicon_view.dart';
 import 'archaeology_page.dart';
 import 'bible_timeline_page.dart';
 import 'chapter_span.dart';
@@ -534,6 +536,24 @@ class _NameDetailsPageState extends State<NameDetailsPage> {
       if (summary.description.isNotEmpty) ...[
         const SizedBox(height: 8),
         Text(summary.description, style: theme.textTheme.titleMedium),
+      ],
+      // What the name means, from Haqor's lexicon.
+      if (info.haqorName case final name?) ...[
+        const SizedBox(height: 12),
+        Builder(
+          builder: (context) {
+            final draft = LexiconEntryDraft.fromName(name);
+            return HaqorNameCard(
+              name: draft,
+              onOpen: () => HaqorLexiconNamePage.open(
+                context,
+                name: draft,
+                onNavigateToPassage: _navigate,
+                rootBehind: false,
+              ),
+            );
+          },
+        ),
       ],
       if (info.locations.isNotEmpty) ...[
         const SizedBox(height: 16),

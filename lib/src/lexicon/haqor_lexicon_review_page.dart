@@ -116,11 +116,18 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
     ];
   }
 
+  /// How the list names an entry: a name entry by the name, a root's by its
+  /// root.
+  static String _title(LexiconEntryDraft entry) =>
+      (entry.data[entry.isName ? 'name' : 'root'] as String?) ?? entry.id;
+
   static bool _matches(LexiconEntryDraft entry, String query) {
     final root = (entry.data['root'] as String?) ?? '';
     final gloss = ((entry.data['gloss'] as String?) ?? '').toLowerCase();
+    final english = ((entry.data['english'] as String?) ?? '').toLowerCase();
     return entry.id.contains(query) ||
         root.contains(query) ||
+        english.contains(query) ||
         gloss.contains(query);
   }
 
@@ -504,12 +511,9 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
                         key: ValueKey('lexicon-entry-${e.id}'),
                         selected: i == _selected,
                         title: Text(
-                          (e.data['root'] as String?) ?? e.id,
+                          _title(e),
                           textDirection: TextDirection.rtl,
-                          style: foreignStyle(
-                            (e.data['root'] as String?) ?? '',
-                            size: 20,
-                          ),
+                          style: foreignStyle(_title(e), size: 20),
                         ),
                         subtitle: Text(
                           '${e.id}${e.dirty ? ' •' : ''} · '

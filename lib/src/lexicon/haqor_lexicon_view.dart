@@ -175,6 +175,7 @@ class HaqorLexiconEntryView extends StatefulWidget {
     this.bottomInset = 0,
     this.extraTab,
     this.openOnExtraTab = false,
+    this.onOpenRoot,
   });
 
   final LexiconEntryDraft entry;
@@ -199,6 +200,10 @@ class HaqorLexiconEntryView extends StatefulWidget {
   /// Open on [extraTab] rather than the overview.
   final bool openOnExtraTab;
 
+  /// For a name entry, open the entry of the root it is formed from; the root
+  /// is shown without a link when null.
+  final VoidCallback? onOpenRoot;
+
   @override
   State<HaqorLexiconEntryView> createState() => _HaqorLexiconEntryViewState();
 }
@@ -208,13 +213,7 @@ enum _Tab { overview, words, cognates, doctrine, extra }
 class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
     with TickerProviderStateMixin {
   late List<_Tab> _tabs = _tabsFor(widget);
-  late TabController _controller = TabController(
-    length: _tabs.length,
-    vsync: this,
-    initialIndex: widget.openOnExtraTab && _tabs.contains(_Tab.extra)
-        ? _tabs.indexOf(_Tab.extra)
-        : 0,
-  );
+  late TabController _controller;
 
   /// The words opened to their detail, by index.
   final Set<int> _expanded = {};
@@ -231,6 +230,15 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
   @override
   void initState() {
     super.initState();
+    // Made here, not lazily: a name entry never builds the tabs, and a
+    // controller first made in dispose would look up a deactivated ticker.
+    _controller = TabController(
+      length: _tabs.length,
+      vsync: this,
+      initialIndex: widget.openOnExtraTab && _tabs.contains(_Tab.extra)
+          ? _tabs.indexOf(_Tab.extra)
+          : 0,
+    );
     // A lone word needs no click to open.
     if (_list(widget.entry.data, 'words').length == 1) _expanded.add(0);
   }
@@ -315,6 +323,23 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
     String counted(String name, String key) {
       final n = _list(data, key).length;
       return n == 0 ? name : '$name ($n)';
+    }
+
+    if (widget.entry.isName) {
+      return _EntryScopeProvider(
+        scope: scope,
+        child: Theme(
+          data: withScripts,
+          child: _NameEntryBody(
+            entry: widget.entry,
+            showSignOff: widget.showSignOff,
+            editing: widget.editing,
+            leading: widget.leading,
+            bottomInset: widget.bottomInset,
+            onOpenRoot: widget.onOpenRoot,
+          ),
+        ),
+      );
     }
 
     return _EntryScopeProvider(
@@ -497,6 +522,26 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
                     ),
                 ],
               ),
+            ],
+          ),
+        if (widget.entry.names.isNotEmpty)
+          _OverviewSection(
+            title: 'Names',
+            onOpen: () => HaqorLexiconNamePage.open(
+              context,
+              name: widget.entry.names.first,
+              onNavigateToPassage: widget.onNavigateToPassage,
+            ),
+            children: [
+              for (final name in widget.entry.names)
+                _NameRow(
+                  name: name,
+                  onTap: () => HaqorLexiconNamePage.open(
+                    context,
+                    name: name,
+                    onNavigateToPassage: widget.onNavigateToPassage,
+                  ),
+                ),
             ],
           ),
         if (doctrine.isNotEmpty)
@@ -1911,5 +1956,327 @@ class LexiconSignOffIcon extends StatelessWidget {
     };
     final glyph = Icon(icon, size: 18, color: color);
     return tooltip ? Tooltip(message: message, child: glyph) : glyph;
+  }
+}
+
+/// A name entry (haqor-core `data/lexicon/names`) in full: the name, what it
+/// means, the root it is formed from, and the evidence.
+class _NameEntryBody extends StatelessWidget {
+  const _NameEntryBody({
+    required this.entry,
+    required this.showSignOff,
+    required this.editing,
+    required this.bottomInset,
+    this.leading,
+    this.onOpenRoot,
+  });
+
+  final LexiconEntryDraft entry;
+  final bool showSignOff;
+  final bool editing;
+  final double bottomInset;
+  final Widget? leading;
+  final VoidCallback? onOpenRoot;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final data = entry.data;
+    final name = _str(data, 'name');
+    final root = _str(data, 'root');
+    final rootLabel = Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: 'From the root ', style: theme.textTheme.bodyMedium),
+          TextSpan(
+            text: root.split('').join(' '),
+            style: foreignStyle(root, size: 18),
+          ),
+        ],
+      ),
+    );
+    return ListView(
+      key: PageStorageKey('${entry.id}/name'),
+      padding: EdgeInsets.fromLTRB(16, 8, 16, 32 + bottomInset),
+      children: [
+        ?leading,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              name,
+              textDirection: TextDirection.rtl,
+              style: foreignStyle(name, size: 30),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _str(data, 'english'),
+                style: theme.textTheme.titleLarge,
+              ),
+            ),
+            if (showSignOff)
+              _SignOffChip(entry: entry)
+            else if (entry.signOff == LexiconSignOff.draft)
+              const Chip(
+                label: Text('Draft'),
+                visualDensity: VisualDensity.compact,
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        _EditableText(
+          node: data,
+          field: 'gloss',
+          label: 'gloss',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        if (onOpenRoot == null)
+          rootLabel
+        else
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              key: const ValueKey('haqor-name-root'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+              ),
+              icon: const Icon(Icons.account_tree_outlined, size: 18),
+              label: rootLabel,
+              onPressed: onOpenRoot,
+            ),
+          ),
+        const SizedBox(height: 12),
+        _EditableText(
+          node: data,
+          field: 'summary',
+          label: 'summary',
+          multiline: true,
+          style: theme.textTheme.bodyLarge?.copyWith(height: 1.45),
+        ),
+        const SizedBox(height: 16),
+        Text('Evidence', style: theme.textTheme.titleSmall),
+        _Citations(evidence: _list(data, 'evidence')),
+        if (editing) ...[
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.tertiaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Editor's note (not shown to readers)",
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onTertiaryContainer,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                _EditableText(
+                  node: data,
+                  field: 'note',
+                  label: "Editor's note",
+                  multiline: true,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onTertiaryContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A name formed from the root, in a root entry's overview.
+class _NameRow extends StatelessWidget {
+  const _NameRow({required this.name, required this.onTap});
+
+  final LexiconEntryDraft name;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hebrew = _str(name.data, 'name');
+    return InkWell(
+      key: ValueKey('haqor-name-row-${name.id}'),
+      borderRadius: BorderRadius.circular(4),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Text(
+              hebrew,
+              textDirection: TextDirection.rtl,
+              style: foreignStyle(hebrew, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: _str(name.data, 'english'),
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    TextSpan(
+                      text: '  ${_str(name.data, 'gloss')}',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: theme.colorScheme.outline,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A name entry on a page of its own, opened from its root's entry or from
+/// the people who bear it.
+class HaqorLexiconNamePage extends StatelessWidget {
+  const HaqorLexiconNamePage({
+    super.key,
+    required this.name,
+    this.onNavigateToPassage,
+    this.onOpenRoot,
+  });
+
+  final LexiconEntryDraft name;
+  final LexiconNavigate? onNavigateToPassage;
+  final VoidCallback? onOpenRoot;
+
+  /// Push the page for [name]. From a root's entry, the root link goes back.
+  static Future<void> open(
+    BuildContext context, {
+    required LexiconEntryDraft name,
+    LexiconNavigate? onNavigateToPassage,
+    bool rootBehind = true,
+  }) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (context) => HaqorLexiconNamePage(
+        name: name,
+        onNavigateToPassage: onNavigateToPassage == null
+            ? null
+            : (book, chapter, verse) {
+                Navigator.of(context).pop();
+                onNavigateToPassage(book, chapter, verse);
+              },
+        onOpenRoot: rootBehind ? () => Navigator.of(context).pop() : null,
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(_str(name.data, 'english'))),
+    body: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 820),
+        child: HaqorLexiconEntryView(
+          entry: name,
+          onNavigateToPassage: onNavigateToPassage,
+          onOpenRoot: onOpenRoot,
+        ),
+      ),
+    ),
+  );
+}
+
+/// What a person's name means, in brief, from Haqor's name entry: shown on
+/// the word sheet and the person's page; a tap opens the entry.
+class HaqorNameCard extends StatelessWidget {
+  const HaqorNameCard({super.key, required this.name, required this.onOpen});
+
+  final LexiconEntryDraft name;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final data = name.data;
+    final hebrew = _str(data, 'name');
+    final root = _str(data, 'root');
+    return Card(
+      key: ValueKey('haqor-name-card-${name.id}'),
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'The name',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    hebrew,
+                    textDirection: TextDirection.rtl,
+                    style: foreignStyle(hebrew, size: 18),
+                  ),
+                  const Spacer(),
+                  Text(
+                    root.split('').join(' '),
+                    textDirection: TextDirection.rtl,
+                    style: foreignStyle(
+                      root,
+                      size: 14,
+                    ).copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: theme.colorScheme.outline,
+                  ),
+                ],
+              ),
+              Text(
+                _str(data, 'gloss'),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                _str(data, 'summary'),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

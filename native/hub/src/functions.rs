@@ -1179,6 +1179,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         name: None,
                         haqor_lexicon,
                         haqor_lexicon_covers_word,
+                        haqor_name: None,
                         greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
@@ -1207,6 +1208,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         name: None,
                         haqor_lexicon: None,
                         haqor_lexicon_covers_word: false,
+                        haqor_name: None,
                         greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
@@ -1272,6 +1274,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         name: None,
                         haqor_lexicon,
                         haqor_lexicon_covers_word,
+                        haqor_name: None,
                         greek_equivalents: bible
                             .greek_equivalents(first.key_lexeme)
                             .unwrap_or_default()
@@ -1309,6 +1312,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         name: None,
                         haqor_lexicon: None,
                         haqor_lexicon_covers_word: false,
+                        haqor_name: None,
                         greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
@@ -1395,6 +1399,11 @@ pub async fn get_word_info(bible: SharedBible) {
                         ),
                         _ => (None, None),
                     };
+                    // What the name means, where the person it names has a Haqor name
+                    // entry.
+                    let haqor_name = name
+                        .as_ref()
+                        .and_then(|n| crate::haqor_lexicon::person_name(&bible, n.id));
                     WordInfo {
                         request_id: req.request_id,
                         found: true,
@@ -1417,6 +1426,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         name,
                         haqor_lexicon,
                         haqor_lexicon_covers_word,
+                        haqor_name,
                         greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
@@ -1445,6 +1455,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         name: None,
                         haqor_lexicon: None,
                         haqor_lexicon_covers_word: false,
+                        haqor_name: None,
                         greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
@@ -2298,6 +2309,7 @@ pub async fn get_name_entity(bible: SharedBible) {
                 events: Vec::new(),
                 artifacts: Vec::new(),
                 artifact_sources: Vec::new(),
+                haqor_name: None,
             }
             .send_signal_to_dart();
             continue;
@@ -2389,6 +2401,7 @@ pub async fn get_name_entity(bible: SharedBible) {
                 .into_iter()
                 .map(crate::archaeology::source)
                 .collect(),
+            haqor_name: crate::haqor_lexicon::person_name(&bible, req.id),
         }
         .send_signal_to_dart();
     }
