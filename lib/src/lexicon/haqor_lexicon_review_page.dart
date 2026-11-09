@@ -152,7 +152,9 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
             minLines: multiline ? 4 : 1,
             maxLines: multiline ? 12 : 1,
             style: foreignStyle(controller.text, size: 17),
-            textDirection: directionOf(controller.text),
+            textDirection: multiline
+                ? TextDirection.ltr
+                : directionOf(controller.text),
             decoration: const InputDecoration(border: OutlineInputBorder()),
             onSubmitted: multiline
                 ? null
