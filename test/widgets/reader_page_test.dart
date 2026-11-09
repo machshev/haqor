@@ -1021,7 +1021,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('the system back button steps back before closing the app', (
+  testWidgets('the system back button steps back before leaving the app', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(360, 800);
@@ -1030,15 +1030,15 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final platformCalls = <String>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
+      const MethodChannel('org.haqor/app'),
       (call) async {
         platformCalls.add(call.method);
-        return null;
+        return true;
       },
     );
     addTearDown(
       () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
+        const MethodChannel('org.haqor/app'),
         null,
       ),
     );
@@ -1098,11 +1098,12 @@ void main() {
     rust.deliverAll();
     await tester.pumpAndSettle();
     expect(_verse(1, 5, 1), findsOneWidget);
-    expect(platformCalls, isNot(contains('SystemNavigator.pop')));
+    expect(platformCalls, isEmpty);
 
-    // With nowhere left to go back to, the app closes.
+    // With nowhere left to go back to, the app goes to the background,
+    // still running, rather than closing.
     await back();
-    expect(platformCalls, contains('SystemNavigator.pop'));
+    expect(platformCalls, ['moveToBack']);
     expect(tester.takeException(), isNull);
   });
 

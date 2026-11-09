@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'about_page.dart';
 import 'apologetics.dart';
+import 'app_background.dart';
 import 'outlines.dart';
 import 'app_settings.dart';
 import 'bible_data.dart';
@@ -1544,7 +1545,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
   /// The system back button steps back within the workspace before it closes
   /// the app: a phone's study, word or cross-reference page returns to the
   /// reader (the word page first retracing its word history), and the reader
-  /// retraces the passages opened since the app started. Pages pushed over
+  /// retraces the passages opened since the app started, and only then does
+  /// the app go to the background. Pages pushed over
   /// the workspace pop as usual and never reach here.
   void _handleSystemBack() {
     if (_mobileLayout == true && _pageController.hasClients) {
@@ -1563,7 +1565,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       reader._goBack();
       return;
     }
-    SystemNavigator.pop();
+    leaveApp();
   }
 
   @override

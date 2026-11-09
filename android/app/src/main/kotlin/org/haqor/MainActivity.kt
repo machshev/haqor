@@ -13,6 +13,16 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // The system back button from the reader's first screen sends the app
+        // to the background (lib/src/app_background.dart) rather than
+        // finishing the activity, so it comes back as it was left.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "org.haqor/app")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "moveToBack" -> result.success(moveTaskToBack(true))
+                    else -> result.notImplemented()
+                }
+            }
         // The in-app updater (lib/src/app_update_service_native.dart): Dart
         // downloads and verifies the release APK into cache/updates, and this
         // hands it to Android's installer, which checks it is signed with the
