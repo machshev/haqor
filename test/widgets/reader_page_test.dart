@@ -1021,6 +1021,91 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('the system back button steps back before closing the app', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final platformCalls = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        platformCalls.add(call.method);
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final rust = await _pumpReader(tester, chapter: 5);
+    await tester.pumpAndSettle();
+
+    Future<void> finishNavigation() async {
+      await tester.pump();
+      for (var i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+    }
+
+    Future<void> back() async {
+      await tester.binding.handlePopRoute();
+      await finishNavigation();
+    }
+
+    double page() =>
+        tester.widget<PageView>(find.byType(PageView).first).controller!.page!;
+    WordInfoSheet current() =>
+        tester.widget<WordInfoSheet>(find.byType(WordInfoSheet));
+
+    tester
+        .widget<VerseRow>(find.byType(VerseRow).first)
+        .onWordTap('מלה', 'original gloss', 3, 'מלל');
+    await finishNavigation();
+    expect(page(), 2);
+    current().onOpenWord!('יָעַד', null);
+    await tester.pump();
+
+    // The word page first retraces its word history, then returns to the
+    // reader.
+    await back();
+    expect(page(), 2);
+    expect(current().word, 'מלה');
+    await back();
+    expect(page(), 1);
+
+    // The study page returns to the reader too.
+    await tester.tap(find.byTooltip('Study workspace'));
+    await finishNavigation();
+    expect(page(), 0);
+    await back();
+    expect(page(), 1);
+
+    // The reader retraces the passages opened since the app started.
+    await tester.tap(find.byTooltip('Word info'));
+    await finishNavigation();
+    current().onNavigateToPassage!(0, 7, 1);
+    await finishNavigation();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    expect(page(), 1);
+    expect(_verse(1, 7, 1), findsOneWidget);
+    await back();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+    expect(_verse(1, 5, 1), findsOneWidget);
+    expect(platformCalls, isNot(contains('SystemNavigator.pop')));
+
+    // With nowhere left to go back to, the app closes.
+    await back();
+    expect(platformCalls, contains('SystemNavigator.pop'));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'global mobile word page survives resizing and passage navigation',
     (tester) async {

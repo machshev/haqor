@@ -1541,8 +1541,41 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     _mobileBarTransitionTimer = Timer(const Duration(milliseconds: 200), () {});
   }
 
+  /// The system back button steps back within the workspace before it closes
+  /// the app: a phone's study, word or cross-reference page returns to the
+  /// reader (the word page first retracing its word history), and the reader
+  /// retraces the passages opened since the app started. Pages pushed over
+  /// the workspace pop as usual and never reach here.
+  void _handleSystemBack() {
+    if (_mobileLayout == true && _pageController.hasClients) {
+      final page = _pageTarget ?? _pageController.page?.round();
+      if (page != null && page != _activeReaderPage) {
+        if (page == _wordPageIndex && _hasWordPage && _canGoBackWord) {
+          _moveInspectorHistory(-1);
+        } else {
+          _showReaderPage();
+        }
+        return;
+      }
+    }
+    final reader = _activeReader;
+    if (reader != null && reader._canSystemBack) {
+      reader._goBack();
+      return;
+    }
+    SystemNavigator.pop();
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PopScope(
+    canPop: false,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) _handleSystemBack();
+    },
+    child: _buildWorkspace(context),
+  );
+
+  Widget _buildWorkspace(BuildContext context) {
     if (!_loaded) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -2025,7 +2058,13 @@ class _ReaderSessionState extends State<_ReaderSession>
   int _historyIndex = -1;
   bool _navigatingHistory = false;
 
+  // How many of the steps back in [_history] were taken since the app
+  // started. The system back button retraces only these, so it never walks
+  // into last week's reading before letting the app close.
+  int _sessionBackSteps = 0;
+
   bool get _canGoBack => _historyIndex > 0;
+  bool get _canSystemBack => _canGoBack && _sessionBackSteps > 0;
   bool get _canGoForward => _historyIndex < _history.length - 1;
 
   static const _chapterCacheLimit = 6;
@@ -5260,6 +5299,7 @@ class _ReaderSessionState extends State<_ReaderSession>
       );
       if (_history.length > 10) _history.removeAt(0);
       _historyIndex = _history.length - 1;
+      _sessionBackSteps = math.min(_sessionBackSteps + 1, _historyIndex);
     }
     setState(() {
       _pendingVerse = verse;
@@ -5274,6 +5314,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   void _goBack() {
     if (!_canGoBack) return;
     _historyIndex--;
+    if (_sessionBackSteps > 0) _sessionBackSteps--;
     final ref = _history[_historyIndex];
     _navigatingHistory = true;
     _navigateTo(ref.bookIndex, ref.chapter, verse: ref.verse);
@@ -5283,6 +5324,7 @@ class _ReaderSessionState extends State<_ReaderSession>
   void _goForward() {
     if (!_canGoForward) return;
     _historyIndex++;
+    _sessionBackSteps++;
     final ref = _history[_historyIndex];
     _navigatingHistory = true;
     _navigateTo(ref.bookIndex, ref.chapter, verse: ref.verse);
