@@ -99,6 +99,23 @@ pub(crate) fn person_name(bible: &Bible, entity_id: u32) -> Option<HaqorLexiconN
     }
 }
 
+/// The name entry for the word `surface`, which names the person
+/// `entity_id`: only one that is this word (the Deity's Yahweh entry is not
+/// shown on אֱלֹהִים).
+pub(crate) fn word_name(
+    bible: &Bible,
+    entity_id: u32,
+    surface: &str,
+) -> Option<HaqorLexiconNameText> {
+    match bible.haqor_lexicon_name_for_word(entity_id.into(), surface) {
+        Ok(found) => found.map(|(id, json)| name_text(bible, id, json)),
+        Err(error) => {
+            debug_print!("haqor_lexicon_name_for_word({entity_id}) error: {error:?}");
+            None
+        }
+    }
+}
+
 /// An entry as the app shows it: its JSON, the text of the verses it cites,
 /// its words' evidence counted, and `names`, the name entries formed from it
 /// as id and JSON.

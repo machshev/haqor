@@ -1403,7 +1403,7 @@ pub async fn get_word_info(bible: SharedBible) {
                     // entry.
                     let haqor_name = name
                         .as_ref()
-                        .and_then(|n| crate::haqor_lexicon::person_name(&bible, n.id));
+                        .and_then(|n| crate::haqor_lexicon::word_name(&bible, n.id, &info.word));
                     WordInfo {
                         request_id: req.request_id,
                         found: true,
