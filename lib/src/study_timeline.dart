@@ -1051,6 +1051,13 @@ class StudyTimeline {
 /// entries may link to (see [TimelineLink]).
 const bibleTimelineId = 'bible-timeline';
 
+/// Standard entry ids that were renamed, from the old id to the new, so
+/// links and pins saved before the rename still find their entry.
+const _renamedTimelineEntryIds = {'hezekiah-atonement': 'hezekiah-chattat'};
+
+/// [id] as it is now named, where a standard entry was renamed.
+String renamedTimelineEntryId(String id) => _renamedTimelineEntryIds[id] ?? id;
+
 /// A link from an entry to another, on another timeline or its own: a
 /// study's timeline, or the Bible timeline ([bibleTimelineId]). Passover
 /// on a timeline of the feasts may link to the crucifixion on the Bible
@@ -1084,7 +1091,7 @@ class TimelineLink {
     if (timeline is! String || entry is! String) return null;
     final link = TimelineLink(
       timeline,
-      entry,
+      renamedTimelineEntryId(entry),
       title: title is String ? title : '',
     );
     return link.isValid ? link : null;
@@ -1146,7 +1153,7 @@ class TimelinePin {
         .firstOrNull;
     if (amount is! num || unit == null) return null;
     final pin = TimelinePin(
-      anchor,
+      renamedTimelineEntryId(anchor),
       TimelineDuration(amount.toDouble(), unit),
       weekday: weekday as int?,
     );

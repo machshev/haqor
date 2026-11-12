@@ -1263,7 +1263,7 @@ void main() {
     expect(entry('ezekiel-chag-7').end, day(7, 21));
     // Hezekiah's pesach a month on, and its week twice over.
     expect(entry('hezekiah-porch').start, day(1, 8));
-    expect(entry('hezekiah-atonement').start, day(1, 17));
+    expect(entry('hezekiah-chattat').start, day(1, 17));
     expect(entry('hezekiah-matzot').start, day(2, 15));
     expect(entry('hezekiah-other-seven').start, day(2, 22));
     expect(entry('hezekiah-other-seven').end, day(2, 28));
@@ -1869,5 +1869,18 @@ void main() {
     expect(json.containsKey('timelines'), isFalse);
     expect(json.containsKey('timelineEntries'), isFalse);
     expect(json.containsKey('timelineMarkers'), isFalse);
+  });
+
+  test('links and pins to a renamed standard entry follow it', () {
+    final link = TimelineLink.fromJson({
+      'timeline': 'moadim',
+      'entry': 'hezekiah-atonement',
+    });
+    expect(link?.entryId, 'hezekiah-chattat');
+    final pin = TimelinePin.fromJson({
+      'anchor': 'hezekiah-atonement',
+      'offset': {'amount': 1, 'unit': 'days'},
+    });
+    expect(pin?.anchorId, 'hezekiah-chattat');
   });
 }

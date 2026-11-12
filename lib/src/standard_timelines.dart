@@ -901,7 +901,7 @@ final _hezekiahEntries = <StudyTimelineEntry>[
         '(2 Chronicles 30:3).',
   ),
   StudyTimelineEntry(
-    id: 'atonement',
+    id: 'chattat',
     title: 'Chattat (sin offering) for the kingdom',
     shortTitle: 'Chattat',
     timelineId: '',
