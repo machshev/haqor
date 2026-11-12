@@ -2570,7 +2570,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('timeline-entry-title')),
-      'Day of Atonement',
+      'Yom haKippurim',
     );
     await tester.enterText(
       find.byKey(const ValueKey('timeline-entry-start')),
