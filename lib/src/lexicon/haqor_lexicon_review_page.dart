@@ -152,9 +152,9 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
             minLines: multiline ? 4 : 1,
             maxLines: multiline ? 12 : 1,
             style: foreignStyle(controller.text, size: 17),
-            textDirection: multiline
-                ? TextDirection.ltr
-                : directionOf(controller.text),
+            // Every field edited here is English, even one opening on a
+            // Hebrew word.
+            textDirection: TextDirection.ltr,
             decoration: const InputDecoration(border: OutlineInputBorder()),
             onSubmitted: multiline
                 ? null

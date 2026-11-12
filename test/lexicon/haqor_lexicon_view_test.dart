@@ -360,4 +360,15 @@ void main() {
     expect(find.text('Utter words to someone.'), findsNothing);
     expect(find.text('What is said.'), findsNothing);
   });
+
+  testWidgets('a gloss opening on a Hebrew word still runs left to right', (
+    tester,
+  ) async {
+    final data = jsonDecode(_entry) as Map<String, dynamic>;
+    data['gloss'] = '(לְמַעַן) for the sake of';
+    final entry = LexiconEntryDraft(id: 'amar', data: data, verses: const {});
+    await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: entry)));
+    final gloss = tester.widget<Text>(find.text('(לְמַעַן) for the sake of'));
+    expect(gloss.textDirection, TextDirection.ltr);
+  });
 }

@@ -696,9 +696,10 @@ class _EditableText extends StatelessWidget {
   Widget build(BuildContext context) {
     final scope = _EntryScopeProvider.of(context);
     final text = _str(node, field);
-    // Prose is English even when it opens on a Hebrew word, so it always
-    // runs left to right; a single form takes its first strong character.
-    final direction = multiline ? TextDirection.ltr : directionOf(text);
+    // Glosses, notes and prose are English even when they open on a Hebrew
+    // word, so they always run left to right; the forms themselves are
+    // shown by their own widgets.
+    const direction = TextDirection.ltr;
     if (!scope.editing || scope.onEdit == null) {
       if (text.isEmpty) return const SizedBox.shrink();
       return Text(text, style: style, textDirection: direction);
