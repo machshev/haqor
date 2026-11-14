@@ -2944,6 +2944,23 @@ void crossReferenceDockTests() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('a paralleled passage is marked where it opens', (
+      tester,
+    ) async {
+      await pump(tester);
+      expect(find.byKey(const ValueKey('verse-parallels-2')), findsOneWidget);
+      // Within the passage, and Mark's own twice-told event, unmarked.
+      expect(find.byKey(const ValueKey('verse-parallels-3')), findsNothing);
+      expect(find.byKey(const ValueKey('verse-parallels-5')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('verse-parallels-2')));
+      await tester.pumpAndSettle();
+      expect(find.byType(GospelParallelsSheet), findsOneWidget);
+      expect(
+        find.textContaining(RegExp(r'^Parallel accounts · .* 1:2$')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('an unparalleled verse offers none', (tester) async {
       await pump(tester);
       await tester.longPress(

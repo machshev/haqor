@@ -12,12 +12,27 @@ class GospelParallels {
     : events = [
         for (final e in events)
           if (_gospelsTelling(e) > 1) e,
-      ];
+      ] {
+    for (final e in this.events) {
+      for (final p in e.passages) {
+        if (!isGospel(p.book)) continue;
+        final at = _starts.putIfAbsent((p.book, p.chapter, p.verse), () => []);
+        if (!at.contains(e)) at.add(e);
+      }
+    }
+  }
 
   static final empty = GospelParallels(const []);
 
   /// The events at least two Gospels tell.
   final List<BibleEventEntry> events;
+
+  final _starts = <(int, int, int), List<BibleEventEntry>>{};
+
+  /// The events whose account in [book] (1-based), a Gospel, opens at
+  /// [chapter]:[verse]: where the reader marks them.
+  List<BibleEventEntry> startingAt(int book, int chapter, int verse) =>
+      _starts[(book, chapter, verse)] ?? const [];
 
   /// Whether [book] (1-based) is a Gospel.
   static bool isGospel(int book) => book >= 40 && book <= 43;

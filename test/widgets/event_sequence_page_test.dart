@@ -185,6 +185,8 @@ void main() {
               onOpenPassage: opened.add,
               basemap: _basemap,
               sendVerseTextsRequest: (_) {},
+              sendChapterRequest: (_) {},
+              sendTranslationRequest: (_) {},
             ),
             child: const Text('Open'),
           ),

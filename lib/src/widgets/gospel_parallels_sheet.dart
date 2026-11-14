@@ -16,7 +16,8 @@ class GospelParallelsSheet extends StatelessWidget {
     required this.book,
     required this.useEnglishBookNames,
     required this.onOpenPassage,
-    this.sendVerseTextsRequest,
+    this.sendChapterRequest,
+    this.sendTranslationRequest,
   });
 
   final String heading;
@@ -24,7 +25,8 @@ class GospelParallelsSheet extends StatelessWidget {
   final int book;
   final bool useEnglishBookNames;
   final ValueChanged<StudyPassage> onOpenPassage;
-  final void Function(GetVerseTexts)? sendVerseTextsRequest;
+  final void Function(GetChapter)? sendChapterRequest;
+  final void Function(GetChapterTranslation)? sendTranslationRequest;
 
   static Future<void> show(
     BuildContext context, {
@@ -33,7 +35,8 @@ class GospelParallelsSheet extends StatelessWidget {
     required int book,
     required bool useEnglishBookNames,
     required ValueChanged<StudyPassage> onOpenPassage,
-    void Function(GetVerseTexts)? sendVerseTextsRequest,
+    void Function(GetChapter)? sendChapterRequest,
+    void Function(GetChapterTranslation)? sendTranslationRequest,
   }) => showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -44,7 +47,8 @@ class GospelParallelsSheet extends StatelessWidget {
       book: book,
       useEnglishBookNames: useEnglishBookNames,
       onOpenPassage: onOpenPassage,
-      sendVerseTextsRequest: sendVerseTextsRequest,
+      sendChapterRequest: sendChapterRequest,
+      sendTranslationRequest: sendTranslationRequest,
     ),
   );
 
@@ -117,7 +121,8 @@ class GospelParallelsSheet extends StatelessWidget {
                   passages: event.passages,
                   useEnglishBookNames: useEnglishBookNames,
                   onOpenPassage: onOpenPassage,
-                  sendVerseTextsRequest: sendVerseTextsRequest,
+                  sendChapterRequest: sendChapterRequest,
+                  sendTranslationRequest: sendTranslationRequest,
                 );
               },
               icon: const Icon(Icons.view_column_outlined, size: 18),

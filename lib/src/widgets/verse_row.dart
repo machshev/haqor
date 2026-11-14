@@ -176,6 +176,8 @@ class VerseRow extends StatefulWidget {
     this.onStudyTimeline,
     this.apologetics,
     this.onApologetics,
+    this.parallels,
+    this.onParallels,
     this.studyWordHighlightColors = const {},
     this.studyFormHighlightColors = const {},
     this.studyPhraseHighlightColors = const {},
@@ -255,6 +257,12 @@ class VerseRow extends StatefulWidget {
   /// [onApologetics] opens; null for none.
   final String? apologetics;
   final VoidCallback? onApologetics;
+
+  /// The events whose account in a Gospel opens at this verse and another
+  /// Gospel tells too, as a mark's tooltip; null for none. [onParallels]
+  /// shows their accounts.
+  final String? parallels;
+  final VoidCallback? onParallels;
   final Map<String, Color> studyWordHighlightColors;
   final Map<String, Color> studyFormHighlightColors;
 
@@ -860,6 +868,25 @@ class _VerseRowState extends State<VerseRow> {
                       Icons.shield_outlined,
                       size: 13,
                       color: theme.colorScheme.tertiary,
+                    ),
+                  ),
+                ),
+              ),
+            if (widget.parallels != null)
+              Padding(
+                padding: stacked
+                    ? const EdgeInsets.only(bottom: 4)
+                    : const EdgeInsets.only(right: 2),
+                child: Tooltip(
+                  message: 'Parallel accounts: ${widget.parallels!}',
+                  child: InkWell(
+                    key: ValueKey('verse-parallels-${widget.entry.verse}'),
+                    onTap: widget.onParallels,
+                    customBorder: const CircleBorder(),
+                    child: Icon(
+                      Icons.view_column_outlined,
+                      size: 14,
+                      color: theme.colorScheme.secondary,
                     ),
                   ),
                 ),

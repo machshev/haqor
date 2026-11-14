@@ -86,6 +86,8 @@ class EventSequencePage extends StatefulWidget {
     this.focusEventId,
     this.basemap,
     this.sendVerseTextsRequest,
+    this.sendChapterRequest,
+    this.sendTranslationRequest,
   });
 
   final EventSequenceEntry sequence;
@@ -110,6 +112,10 @@ class EventSequencePage extends StatefulWidget {
   /// How the verses of its parallels reach Rust; a test passes its own.
   final void Function(GetVerseTexts)? sendVerseTextsRequest;
 
+  /// How the text of its parallels reaches Rust; a test passes its own.
+  final void Function(GetChapter)? sendChapterRequest;
+  final void Function(GetChapterTranslation)? sendTranslationRequest;
+
   static Future<void> open(
     BuildContext context, {
     required EventSequenceEntry sequence,
@@ -120,6 +126,8 @@ class EventSequencePage extends StatefulWidget {
     int? focusEventId,
     Basemap? basemap,
     void Function(GetVerseTexts)? sendVerseTextsRequest,
+    void Function(GetChapter)? sendChapterRequest,
+    void Function(GetChapterTranslation)? sendTranslationRequest,
   }) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => EventSequencePage(
@@ -131,6 +139,8 @@ class EventSequencePage extends StatefulWidget {
         focusEventId: focusEventId,
         basemap: basemap,
         sendVerseTextsRequest: sendVerseTextsRequest,
+        sendChapterRequest: sendChapterRequest,
+        sendTranslationRequest: sendTranslationRequest,
       ),
     ),
   );
@@ -898,6 +908,8 @@ class _EventSequencePageState extends State<EventSequencePage> {
         focusEventId: focus,
         basemap: widget.basemap,
         sendVerseTextsRequest: widget.sendVerseTextsRequest,
+        sendChapterRequest: widget.sendChapterRequest,
+        sendTranslationRequest: widget.sendTranslationRequest,
       );
 
   /// The sequence's note, and its grouping's: what it orders, and how.
@@ -2946,7 +2958,8 @@ class _EventSequencePageState extends State<EventSequencePage> {
                   passages: entry.passages,
                   useEnglishBookNames: widget.useEnglishBookNames,
                   onOpenPassage: _openPassage,
-                  sendVerseTextsRequest: widget.sendVerseTextsRequest,
+                  sendChapterRequest: widget.sendChapterRequest,
+                  sendTranslationRequest: widget.sendTranslationRequest,
                 ),
                 icon: const Icon(Icons.view_column_outlined),
                 label: Text('Side by side: ${entry!.passages.length}'),

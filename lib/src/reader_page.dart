@@ -4467,7 +4467,8 @@ class _ReaderSessionState extends State<_ReaderSession>
     useEnglishBookNames: _englishBookNames,
     onOpenPassage: (passage) =>
         _navigateTo(passage.bookIndex, passage.chapter, verse: passage.verse),
-    sendVerseTextsRequest: widget.sendVerseTextsRequest,
+    sendChapterRequest: widget.sendChapterRequest,
+    sendTranslationRequest: widget.sendTranslationRequest,
   );
 
   Future<void> _showChapterContext() async {
@@ -6769,6 +6770,11 @@ class _ReaderSessionState extends State<_ReaderSession>
               entry.verse,
             );
             final translation = _translationFor(b, c, entry.verse);
+            final parallels = _gospelParallels.startingAt(
+              b + 1,
+              c,
+              entry.verse,
+            );
             final verseRow = VerseRow(
               key: section.verseKeys[entry.verse],
               entry: entry,
@@ -6847,6 +6853,15 @@ class _ReaderSessionState extends State<_ReaderSession>
                   : timelineEntries.map((e) => e.title).join('\n'),
               onStudyTimeline: () =>
                   _showStudyTimelineEntriesAt(b, c, entry.verse),
+              parallels: parallels.isEmpty
+                  ? null
+                  : parallels.map((e) => e.title).join('\n'),
+              onParallels: () => _showParallels(
+                '${bookDisplayName(b, useEnglish: _englishBookNames)} '
+                '$c:${entry.verse}',
+                b,
+                parallels,
+              ),
               apologetics: apologetics.isEmpty
                   ? null
                   : apologetics.map((e) => e.title).join('\n'),
