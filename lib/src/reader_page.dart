@@ -16,6 +16,7 @@ import 'app_settings.dart';
 import 'bible_data.dart';
 import 'christadelphian_readings.dart';
 import 'commentary.dart';
+import 'gospel_parallels.dart';
 import 'bindings/bindings.dart' hide StudyItem;
 import 'issue_reporting.dart';
 import 'prefs_read.dart';
@@ -32,6 +33,7 @@ import 'widgets/chapter_context_sheet.dart';
 import 'widgets/commentary_view.dart';
 import 'widgets/cross_references_sheet.dart';
 import 'widgets/greek_word_sheet.dart';
+import 'widgets/gospel_parallels_sheet.dart';
 import 'widgets/markdown_note.dart';
 import 'widgets/name_details.dart';
 import 'widgets/passage_picking.dart';
@@ -233,6 +235,7 @@ class _SelectedWord {
 enum _ReaderBarAction {
   search,
   chapterContext,
+  parallels,
   text,
   ntText,
   interlinear,
@@ -268,6 +271,7 @@ enum _ResolvedReaderLayout { focus, split, threePanel }
 enum _VerseMenuAction {
   crossReferences,
   chapterCrossReferences,
+  parallels,
   syntax,
   memoriseChapter,
   addCommentary,
@@ -335,6 +339,7 @@ class BibleReaderPage extends StatefulWidget {
     this.sendProphecyOverviewRequest,
     this.sendSyntaxTreesRequest,
     this.sendTranslationRequest,
+    this.sendBibleEventsRequest,
   });
 
   final void Function(GetChapter request)? sendChapterRequest;
@@ -366,6 +371,10 @@ class BibleReaderPage extends StatefulWidget {
   final void Function(GetProphecies request)? sendProphecyOverviewRequest;
   final void Function(GetSyntaxTrees request)? sendSyntaxTreesRequest;
   final void Function(GetChapterTranslation request)? sendTranslationRequest;
+
+  /// Stands in for the request for the Bible's events, whose Gospel
+  /// parallels the reader offers, for tests.
+  final void Function(GetBibleEvents request)? sendBibleEventsRequest;
 
   @override
   State<BibleReaderPage> createState() => _BibleReaderPageState();
@@ -766,6 +775,7 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     sendQuotationsRequest: widget.sendQuotationsRequest,
     sendThematicOverviewRequest: widget.sendThematicOverviewRequest,
     sendProphecyOverviewRequest: widget.sendProphecyOverviewRequest,
+    sendBibleEventsRequest: widget.sendBibleEventsRequest,
     onPassageChanged: () {
       if (mounted) setState(() {});
     },
@@ -1953,6 +1963,7 @@ class _ReaderSession extends StatefulWidget {
     this.sendQuotationsRequest,
     this.sendThematicOverviewRequest,
     this.sendProphecyOverviewRequest,
+    this.sendBibleEventsRequest,
   });
 
   final String sessionId;
@@ -2019,6 +2030,10 @@ class _ReaderSession extends StatefulWidget {
   final void Function(GetQuotations)? sendQuotationsRequest;
   final void Function(GetThematicOverview)? sendThematicOverviewRequest;
   final void Function(GetProphecies)? sendProphecyOverviewRequest;
+
+  /// Test seam: how the reader asks for the events whose Gospel parallels
+  /// it offers.
+  final void Function(GetBibleEvents)? sendBibleEventsRequest;
 
   static Future<void> seedNavigation(
     String sessionId,
@@ -2390,6 +2405,8 @@ class _ReaderSessionState extends State<_ReaderSession>
       for (final action in _ReaderBarAction.values)
         if (!switch (action) {
           _ReaderBarAction.ntText => _isOldTestament,
+          // Only a Gospel chapter telling an event another Gospel tells.
+          _ReaderBarAction.parallels => _chapterParallels.isEmpty,
           // Marking commentary means nothing until there is some.
           _ReaderBarAction.commentary => widget.commentaryStore.notes.isEmpty,
           _ReaderBarAction.interlinear ||
@@ -2444,11 +2461,13 @@ class _ReaderSessionState extends State<_ReaderSession>
     _ReaderBarAction.back,
     _ReaderBarAction.forward,
     _ReaderBarAction.chapterContext,
+    _ReaderBarAction.parallels,
   ];
 
   void _runBarAction(_ReaderBarAction action) => switch (action) {
     _ReaderBarAction.search => _openWordSearch(),
     _ReaderBarAction.chapterContext => _showChapterContext(),
+    _ReaderBarAction.parallels => _showChapterParallels(),
     _ReaderBarAction.text => _cycleReaderText(),
     _ReaderBarAction.ntText => _toggleNtGreek(),
     _ReaderBarAction.interlinear => _toggleInterlinear(),
@@ -2474,6 +2493,12 @@ class _ReaderSessionState extends State<_ReaderSession>
       selectedIcon: const Icon(Icons.explore),
       onPressed: () => _runBarAction(action),
       tooltip: 'Cross references, places, people and archaeology',
+    ),
+    _ReaderBarAction.parallels => IconButton(
+      key: const ValueKey('reader-gospel-parallels'),
+      icon: const Icon(Icons.view_column_outlined),
+      onPressed: _showChapterParallels,
+      tooltip: 'Parallel accounts',
     ),
     _ReaderBarAction.text => IconButton(
       key: const ValueKey('reader-text-toggle'),
@@ -2561,6 +2586,9 @@ class _ReaderSessionState extends State<_ReaderSession>
       _ReaderBarAction.search => [item(Icons.search, 'Find a word')],
       _ReaderBarAction.chapterContext => [
         item(Icons.explore_outlined, 'Chapter context'),
+      ],
+      _ReaderBarAction.parallels => [
+        item(Icons.view_column_outlined, 'Parallel accounts'),
       ],
       _ReaderBarAction.text => [
         for (final text in ReaderText.values)
@@ -4399,6 +4427,49 @@ class _ReaderSessionState extends State<_ReaderSession>
   /// The places, people and archaeological finds of the chapter at the top
   /// of the reader, a tab each: docked beside the reader where there is
   /// room, else in a sheet.
+  /// The events another Gospel tells too, once loaded; asked for when the
+  /// reader first reaches a Gospel.
+  GospelParallels _gospelParallels = GospelParallels.empty;
+  bool _gospelParallelsAsked = false;
+
+  void _askGospelParallels() {
+    if (_gospelParallelsAsked) return;
+    _gospelParallelsAsked = true;
+    loadGospelParallels(sendRequest: widget.sendBibleEventsRequest).then((
+      parallels,
+    ) {
+      if (mounted) setState(() => _gospelParallels = parallels);
+    });
+  }
+
+  /// The paralleled events of the chapter read, where it is a Gospel's.
+  List<BibleEventEntry> get _chapterParallels {
+    if (!GospelParallels.isGospel(_bookIndex + 1)) return const [];
+    _askGospelParallels();
+    return _gospelParallels.inChapter(_bookIndex + 1, _chapter);
+  }
+
+  void _showChapterParallels() => _showParallels(
+    '${bookDisplayName(_bookIndex, useEnglish: _englishBookNames)} $_chapter',
+    _bookIndex,
+    _chapterParallels,
+  );
+
+  void _showParallels(
+    String where,
+    int bookIndex,
+    List<BibleEventEntry> events,
+  ) => GospelParallelsSheet.show(
+    context,
+    heading: 'Parallel accounts · $where',
+    events: events,
+    book: bookIndex + 1,
+    useEnglishBookNames: _englishBookNames,
+    onOpenPassage: (passage) =>
+        _navigateTo(passage.bookIndex, passage.chapter, verse: passage.verse),
+    sendVerseTextsRequest: widget.sendVerseTextsRequest,
+  );
+
   Future<void> _showChapterContext() async {
     final dock = widget.onChapterContextToggled;
     if (dock != null && MediaQuery.sizeOf(context).width >= 900) {
@@ -5863,6 +5934,11 @@ class _ReaderSessionState extends State<_ReaderSession>
     int verse,
     Offset globalPosition,
   ) async {
+    final verseParallels = _gospelParallels.atVerse(
+      bookIndex + 1,
+      chapter,
+      verse,
+    );
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final at = overlay.globalToLocal(globalPosition);
     final theme = Theme.of(context);
@@ -5898,6 +5974,14 @@ class _ReaderSessionState extends State<_ReaderSession>
             title: Text('Chapter cross references'),
           ),
         ),
+        if (verseParallels.isNotEmpty)
+          const PopupMenuItem(
+            value: _VerseMenuAction.parallels,
+            child: ListTile(
+              leading: Icon(Icons.view_column_outlined),
+              title: Text('Parallel accounts'),
+            ),
+          ),
         // The trees cover the Hebrew Bible only.
         if (bookIndex < 39)
           const PopupMenuItem(
@@ -5952,6 +6036,13 @@ class _ReaderSessionState extends State<_ReaderSession>
         widget.onCrossReferencesRequested(bookIndex, chapter, verse);
       case _VerseMenuAction.chapterCrossReferences:
         widget.onCrossReferencesRequested(bookIndex, chapter, null);
+      case _VerseMenuAction.parallels:
+        _showParallels(
+          '${bookDisplayName(bookIndex, useEnglish: _englishBookNames)} '
+          '$chapter:$verse',
+          bookIndex,
+          verseParallels,
+        );
       case _VerseMenuAction.syntax:
         await _showSyntax(bookIndex, chapter, verse);
       case _VerseMenuAction.memoriseChapter:

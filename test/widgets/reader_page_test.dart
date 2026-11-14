@@ -11,12 +11,15 @@ import 'package:haqor/src/app_settings.dart'
     show ReaderText, adminModeChanges, setAdminModeEnabled;
 import 'package:haqor/src/bindings/bindings.dart';
 import 'package:haqor/src/commentary.dart';
+import 'package:haqor/src/gospel_parallels.dart';
 import 'package:haqor/src/passage_selection.dart';
 import 'package:haqor/src/reader_page.dart';
 import 'package:haqor/src/study_workspace.dart' as study;
 import 'package:haqor/src/widgets/chapter_context_sheet.dart';
 import 'package:haqor/src/widgets/commentary_view.dart';
 import 'package:haqor/src/widgets/cross_references_sheet.dart';
+import 'package:haqor/src/widgets/event_parallels_page.dart';
+import 'package:haqor/src/widgets/gospel_parallels_sheet.dart';
 import 'package:haqor/src/widgets/greek_word_sheet.dart';
 import 'package:haqor/src/widgets/lexicon_source.dart';
 import 'package:haqor/src/widgets/syntax_sheet.dart';
@@ -115,6 +118,7 @@ Future<_FakeRust> _pumpReader(
   required int chapter,
   bool englishBookNames = false,
   Map<String, Object> prefs = const {},
+  void Function(GetBibleEvents)? sendBibleEventsRequest,
 }) async {
   SharedPreferences.setMockInitialValues({
     'book': book,
@@ -137,6 +141,7 @@ Future<_FakeRust> _pumpReader(
         sendWordInfoRequest: rust.onWordInfo,
         sendWordOccurrencesRequest: rust.onOccurrences,
         sendVerseTextsRequest: rust.onVerseTexts,
+        sendBibleEventsRequest: sendBibleEventsRequest,
       ),
     ),
   );
@@ -2827,6 +2832,144 @@ void crossReferenceDockTests() {
     // The workspace route is still there.
     expect(find.byKey(const ValueKey('reader-chapter-context')), findsWidgets);
     expect(tester.takeException(), isNull);
+  });
+
+  group('Gospel parallels', () {
+    ThematicTarget span(int book, int c, int v, int lc, int lv) =>
+        ThematicTarget(
+          book: book,
+          chapter: c,
+          verse: v,
+          lastChapter: lc,
+          lastVerse: lv,
+        );
+    BibleEventEntry event(int id, String title, List<ThematicTarget> p) =>
+        BibleEventEntry(
+          id: id,
+          title: title,
+          year: 27,
+          duration: 1,
+          unit: 'D',
+          passages: p,
+          people: const [],
+          places: const [],
+          note: '',
+          estimated: false,
+        );
+    final events = [
+      // Told by Mark and Luke: offered in Mark 1.
+      event(283, 'The Demoniac', [
+        span(41, 1, 2, 1, 3),
+        span(42, 4, 32, 4, 37),
+      ]),
+      // Told by Mark alone, twice over: no parallel.
+      event(9, 'Mark alone', [span(41, 1, 5, 1, 6), span(41, 1, 8, 1, 9)]),
+      // In Genesis: no Gospel's.
+      event(1, 'Creation', [span(1, 1, 1, 2, 3), span(43, 1, 1, 1, 3)]),
+    ];
+
+    setUp(resetGospelParallelsForTest);
+
+    Future<_FakeRust> pump(WidgetTester tester, {int book = 40}) async {
+      final requests = <GetBibleEvents>[];
+      final rust = await _pumpReader(
+        tester,
+        book: book,
+        chapter: 1,
+        sendBibleEventsRequest: requests.add,
+      );
+      for (final r in requests) {
+        assignRustSignal['BibleEvents']!(
+          BibleEvents(
+            requestId: r.requestId,
+            events: events,
+            sequences: const [],
+          ).bincodeSerialize(),
+          Uint8List(0),
+        );
+      }
+      await tester.pumpAndSettle();
+      return rust;
+    }
+
+    test('only events two Gospels tell are parallels', () {
+      final parallels = GospelParallels(events);
+      expect(parallels.events.map((e) => e.id), [283]);
+      expect(parallels.inChapter(41, 1).single.id, 283);
+      expect(parallels.inChapter(42, 4).single.id, 283);
+      expect(parallels.inChapter(41, 2), isEmpty);
+      expect(parallels.atVerse(41, 1, 2).single.id, 283);
+      expect(parallels.atVerse(41, 1, 3).single.id, 283);
+      expect(parallels.atVerse(41, 1, 4), isEmpty);
+      expect(parallels.atVerse(41, 1, 1), isEmpty);
+    });
+
+    testWidgets('a Gospel chapter opens its parallels and reads another', (
+      tester,
+    ) async {
+      final rust = await pump(tester);
+      await tester.tap(find.byKey(const ValueKey('reader-gospel-parallels')));
+      await tester.pumpAndSettle();
+      expect(find.byType(GospelParallelsSheet), findsOneWidget);
+      expect(find.text('The Demoniac'), findsOneWidget);
+      expect(find.text('Mark alone'), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey('gospel-parallels-account-283-42-4:32')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(GospelParallelsSheet), findsNothing);
+      expect(
+        rust.chapterRequests.any((r) => r.book == 42 && r.chapter == 4),
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a paralleled verse\'s menu sets the accounts side by side', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tester.longPress(
+        find.byKey(const ValueKey('verse-number-2')).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Parallel accounts'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('gospel-parallels-side-by-side-283')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(EventParallelsPage), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('an unparalleled verse offers none', (tester) async {
+      await pump(tester);
+      await tester.longPress(
+        find.byKey(const ValueKey('verse-number-5')).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Chapter cross references'), findsOneWidget);
+      expect(find.text('Parallel accounts'), findsNothing);
+    });
+
+    testWidgets('a chapter of the Law shows no parallels button', (
+      tester,
+    ) async {
+      final requests = <GetBibleEvents>[];
+      await _pumpReader(
+        tester,
+        chapter: 1,
+        sendBibleEventsRequest: requests.add,
+      );
+      await tester.pumpAndSettle();
+      expect(requests, isEmpty);
+      expect(
+        find.byKey(const ValueKey('reader-gospel-parallels')),
+        findsNothing,
+      );
+    });
   });
 
   testWidgets('a phone shows the chapter context in a sheet', (tester) async {
