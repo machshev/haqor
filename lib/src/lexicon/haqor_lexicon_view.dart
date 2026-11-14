@@ -750,46 +750,51 @@ class _Header extends StatelessWidget {
     final data = entry.data;
     final root = _str(data, 'root');
     final homograph = data['homograph'];
-    final signOff = entry.signOff;
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Tooltip(
+          message: 'Root',
+          child: Text(
+            root.split('').join(' '),
+            textDirection: TextDirection.rtl,
+            style: foreignStyle(root, size: 24),
+          ),
+        ),
+        if (homograph is int)
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Text('$homograph', style: theme.textTheme.labelSmall),
+          ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: _EditableText(
+            node: data,
+            field: 'gloss',
+            label: 'gloss',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        if (showSignOff) _SignOffChip(entry: entry),
+      ],
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Tooltip(
-            message: 'Root',
-            child: Text(
-              root.split('').join(' '),
-              textDirection: TextDirection.rtl,
-              style: foreignStyle(root, size: 24),
-            ),
-          ),
-          if (homograph is int)
-            Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: Text('$homograph', style: theme.textTheme.labelSmall),
-            ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: _EditableText(
-              node: data,
-              field: 'gloss',
-              label: 'gloss',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (showSignOff)
-            _SignOffChip(entry: entry)
-          else if (signOff == LexiconSignOff.draft)
-            const Chip(
-              label: Text('Draft'),
-              visualDensity: VisualDensity.compact,
-            ),
-        ],
-      ),
+      // Not yet signed off: marked on a line of its own, so the reader sees
+      // it even on a phone.
+      child: !showSignOff && entry.signOff.toReview
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                row,
+                const SizedBox(height: 4),
+                LexiconUnreviewedMark(entry: entry),
+              ],
+            )
+          : row,
     );
   }
 }
@@ -1923,6 +1928,71 @@ class _SignOffChip extends StatelessWidget {
   }
 }
 
+/// The reader's mark on an entry not yet signed off, or changed since it
+/// was: it has not been checked by hand. A signed-off entry carries no mark.
+class LexiconUnreviewedMark extends StatelessWidget {
+  const LexiconUnreviewedMark({
+    super.key,
+    required this.entry,
+    this.dense = false,
+  });
+
+  final LexiconEntryDraft entry;
+
+  /// Smaller, for a card.
+  final bool dense;
+
+  @override
+  Widget build(BuildContext context) {
+    final signOff = entry.signOff;
+    if (!signOff.toReview) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final changed = signOff == LexiconSignOff.changed;
+    final label = changed ? 'Changed since review' : 'Not yet reviewed';
+    final message = changed
+        ? 'This entry has changed since it was reviewed and signed off; '
+              'the changes have not been checked yet.'
+        : 'This entry is a draft: it has not yet been reviewed and signed '
+              'off by hand.';
+    final textStyle = dense
+        ? theme.textTheme.labelSmall
+        : theme.textTheme.labelMedium;
+    return Tooltip(
+      message: message,
+      child: Container(
+        key: ValueKey('lexicon-unreviewed-${entry.id}'),
+        padding: EdgeInsets.symmetric(
+          horizontal: dense ? 6 : 8,
+          vertical: dense ? 2 : 4,
+        ),
+        decoration: BoxDecoration(
+          color: scheme.tertiaryContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              changed ? Icons.history : Icons.rate_review_outlined,
+              size: dense ? 14 : 16,
+              color: scheme.onTertiaryContainer,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: textStyle?.copyWith(
+                color: scheme.onTertiaryContainer,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// An icon for where an entry stands in review, as the review list marks
 /// each entry.
 class LexiconSignOffIcon extends StatelessWidget {
@@ -2018,15 +2088,16 @@ class _NameEntryBody extends StatelessWidget {
                 style: theme.textTheme.titleLarge,
               ),
             ),
-            if (showSignOff)
-              _SignOffChip(entry: entry)
-            else if (entry.signOff == LexiconSignOff.draft)
-              const Chip(
-                label: Text('Draft'),
-                visualDensity: VisualDensity.compact,
-              ),
+            if (showSignOff) _SignOffChip(entry: entry),
           ],
         ),
+        if (!showSignOff && entry.signOff.toReview) ...[
+          const SizedBox(height: 4),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: LexiconUnreviewedMark(entry: entry),
+          ),
+        ],
         const SizedBox(height: 4),
         _EditableText(
           node: data,
@@ -2269,6 +2340,10 @@ class HaqorNameCard extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              if (name.signOff.toReview) ...[
+                const SizedBox(height: 4),
+                LexiconUnreviewedMark(entry: name, dense: true),
+              ],
               const SizedBox(height: 2),
               Text(
                 _str(data, 'summary'),

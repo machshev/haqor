@@ -371,4 +371,37 @@ void main() {
     final gloss = tester.widget<Text>(find.text('(לְמַעַן) for the sake of'));
     expect(gloss.textDirection, TextDirection.ltr);
   });
+
+  testWidgets('marks an entry not yet signed off, and only that', (
+    tester,
+  ) async {
+    LexiconEntryDraft entry(Map<String, dynamic> status) {
+      final data = jsonDecode(_entry) as Map<String, dynamic>..addAll(status);
+      return LexiconEntryDraft(id: 'amar', data: data, verses: const {});
+    }
+
+    await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: _draft())));
+    expect(find.text('Not yet reviewed'), findsOneWidget);
+
+    await tester.pumpWidget(
+      _host(
+        HaqorLexiconEntryView(
+          key: const ValueKey('changed'),
+          entry: entry({'status': 'reviewed', 'reviewed': '2026-11-01'}),
+        ),
+      ),
+    );
+    expect(find.text('Changed since review'), findsOneWidget);
+
+    await tester.pumpWidget(
+      _host(
+        HaqorLexiconEntryView(
+          key: const ValueKey('signed'),
+          entry: entry({'status': 'reviewed', 'reviewed': '2026-11-06'}),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('lexicon-unreviewed-amar')), findsNothing);
+    expect(find.text('Not yet reviewed'), findsNothing);
+  });
 }
