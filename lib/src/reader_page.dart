@@ -299,6 +299,10 @@ class _WordPane {
   final String id;
   final List<_SelectedWord> history;
   int index = 0;
+  // Where a phone's system back stops retracing [history] and returns to the
+  // reader: the word last opened from the text, so back does not step
+  // through the words of earlier visits to the word page.
+  int systemBackFloor = 0;
 
   _SelectedWord get word => history[index];
   bool get canGoBack => index > 0;
@@ -736,6 +740,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
       setState(() => _activeTabId = tab.id);
       _selectInspectorWord(selected, newPane: newPane);
       if (_mobileLayout == true) {
+        final pane = _activeWordPane;
+        if (pane != null) pane.systemBackFloor = pane.index;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _hasWordPage) _showPage(_wordPageIndex);
         });
@@ -1544,7 +1550,8 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
 
   /// The system back button steps back within the workspace before it closes
   /// the app: a phone's study, word or cross-reference page returns to the
-  /// reader (the word page first retracing its word history), and the reader
+  /// reader (the word page first retracing the words followed from it since
+  /// it was opened from the text), and the reader
   /// retraces the passages opened since the app started, and only then does
   /// the app go to the background. Pages pushed over
   /// the workspace pop as usual and never reach here.
@@ -1552,7 +1559,11 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     if (_mobileLayout == true && _pageController.hasClients) {
       final page = _pageTarget ?? _pageController.page?.round();
       if (page != null && page != _activeReaderPage) {
-        if (page == _wordPageIndex && _hasWordPage && _canGoBackWord) {
+        final pane = _activeWordPane;
+        if (page == _wordPageIndex &&
+            _hasWordPage &&
+            pane != null &&
+            pane.index > pane.systemBackFloor) {
           _moveInspectorHistory(-1);
         } else {
           _showReaderPage();

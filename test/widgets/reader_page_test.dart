@@ -1078,6 +1078,17 @@ void main() {
     await back();
     expect(page(), 1);
 
+    // Another word tapped in the text is a fresh visit: back returns straight
+    // to the reader without stepping through the earlier words.
+    tester
+        .widget<VerseRow>(find.byType(VerseRow).first)
+        .onWordTap('דבר', 'word', 4, 'דבר');
+    await finishNavigation();
+    expect(page(), 2);
+    expect(current().word, 'דבר');
+    await back();
+    expect(page(), 1);
+
     // The study page returns to the reader too.
     await tester.tap(find.byTooltip('Study workspace'));
     await finishNavigation();
