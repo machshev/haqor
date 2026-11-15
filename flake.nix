@@ -48,6 +48,11 @@
       # Rust via rustup (flutter rinf uses rustup rust-overlay doesn't work)
       # Might be able to modify the plugin to not require rustup?
       overrides = builtins.fromTOML (builtins.readFile (self + "/rust-toolchain.toml"));
+      updateLocalCoreLock = pkgs.writeShellApplication {
+        name = "update-local-core-lock";
+        runtimeInputs = [pkgs.cargo];
+        text = builtins.readFile ./scripts/update-local-core-lock.sh;
+      };
     in {
       packages = pkgs.lib.optionalAttrs (system == "x86_64-linux") rec {
         haqor = pkgs.callPackage ./pkgs/haqor {};
@@ -59,6 +64,10 @@
           program = "${self.packages.${system}.haqor}/bin/haqor";
         };
         default = haqor;
+        update-local-core-lock = {
+          type = "app";
+          program = "${updateLocalCoreLock}/bin/update-local-core-lock";
+        };
       };
       devShells = {
         default = pkgs.mkShell rec {
