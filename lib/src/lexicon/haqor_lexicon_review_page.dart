@@ -7,8 +7,8 @@ import 'haqor_lexicon_view.dart';
 import 'semitic_sounds_page.dart';
 
 /// Review and edit the Haqor lexicon's entries in the form the reader will
-/// see them, and sign them off. On desktop, with `HAQOR_LEXICON_DIR` set to
-/// haqor-core's `data/lexicon`, entries are read from there and saved back,
+/// see them, and sign them off. On desktop, entries are read from a sibling
+/// haqor-core checkout, or from `HAQOR_LEXICON_DIR` when set, and saved back,
 /// each save checked against the schema and the text first.
 class HaqorLexiconReviewPage extends StatefulWidget {
   const HaqorLexiconReviewPage({
@@ -61,11 +61,19 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
   int _selected = 0;
   bool _editing = false;
   bool _saving = false;
+  final Set<String> _detailsLoaded = {};
+  String? _detailLoading;
+  Object? _detailError;
+  int _loadVersion = 0;
+
+  String _detailKey(LexiconEntryDraft entry) =>
+      '${entry.isName ? 'name' : 'root'}:${entry.id}';
 
   /// Which entries the list shows: on the first load, those still to review
   /// if there are any.
   _ListFilter? _filter;
   String _query = '';
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -73,17 +81,27 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
     unawaited(_load());
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   String _today() =>
       widget.today?.call() ?? DateTime.now().toIso8601String().substring(0, 10);
 
   Future<void> _load() async {
+    final version = ++_loadVersion;
     setState(() {
       _review = null;
       _loadError = null;
+      _detailsLoaded.clear();
+      _detailLoading = null;
+      _detailError = null;
     });
     try {
       final review = await _store.load();
-      if (!mounted) return;
+      if (!mounted || version != _loadVersion) return;
       setState(() {
         _review = review;
         if (review.entries.isEmpty) return;
@@ -96,8 +114,42 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
           if (first != null) _selected = first.$1;
         }
       });
+      unawaited(_loadDetails());
     } catch (error) {
-      if (mounted) setState(() => _loadError = error);
+      if (mounted && version == _loadVersion)
+        setState(() => _loadError = error);
+    }
+  }
+
+  Future<void> _loadDetails() async {
+    final entry = _entry;
+    if (entry == null) return;
+    final key = _detailKey(entry);
+    if (_detailsLoaded.contains(key)) return;
+    final version = _loadVersion;
+    setState(() {
+      _detailLoading = key;
+      _detailError = null;
+    });
+    try {
+      final detail = await _store.loadEntry(entry);
+      if (!mounted || version != _loadVersion) return;
+      final entries = _review?.entries;
+      if (entries == null) return;
+      final index = entries.indexWhere((e) => _detailKey(e) == key);
+      if (index < 0 || entries[index].dirty) return;
+      setState(() {
+        entries[index] = detail;
+        _detailsLoaded.add(key);
+        if (_detailLoading == key) _detailLoading = null;
+      });
+    } catch (error) {
+      if (mounted && version == _loadVersion && _detailLoading == key) {
+        setState(() {
+          _detailLoading = null;
+          _detailError = error;
+        });
+      }
     }
   }
 
@@ -315,7 +367,13 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
     if (entry != null && entry.dirty) {
       await _load();
     }
-    if (mounted) setState(() => _selected = index);
+    if (mounted) {
+      setState(() {
+        _selected = index;
+        _detailError = null;
+      });
+      unawaited(_loadDetails());
+    }
   }
 
   @override
@@ -340,7 +398,9 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
                 : 'Lexicon: ${entry.id}${entry.dirty ? ' •' : ''}',
           ),
           actions: [
-            if ((review?.editable ?? false) && entry != null) ...[
+            if ((review?.editable ?? false) &&
+                entry != null &&
+                _detailsLoaded.contains(_detailKey(entry))) ...[
               _signOffButton(entry),
               const SizedBox(width: 8),
               Row(
@@ -419,6 +479,15 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
     if (entry == null) {
       return _message('No entries in ${review.dir}.', retry: true);
     }
+    if (!_detailsLoaded.contains(_detailKey(entry))) {
+      if (_detailError != null && _detailLoading == null) {
+        return _message(
+          'Could not load ${entry.id}: $_detailError',
+          retry: true,
+        );
+      }
+      return const Center(child: CircularProgressIndicator());
+    }
     final view = HaqorLexiconEntryView(
       key: ValueKey(entry.id),
       entry: entry,
@@ -465,11 +534,23 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
           child: TextField(
             key: const ValueKey('lexicon-review-search'),
-            decoration: const InputDecoration(
+            controller: _searchController,
+            decoration: InputDecoration(
               isDense: true,
-              prefixIcon: Icon(Icons.search, size: 20),
+              prefixIcon: const Icon(Icons.search, size: 20),
               hintText: 'id, root or gloss',
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      key: const ValueKey('lexicon-review-clear-search'),
+                      tooltip: 'Clear search',
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _query = '');
+                      },
+                    ),
             ),
             onChanged: (v) => setState(() => _query = v),
           ),

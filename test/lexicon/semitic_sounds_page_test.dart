@@ -17,6 +17,8 @@ void main() {
         ),
       );
       expect(find.text('Semitic sound correspondences'), findsOneWidget);
+      expect(find.text('MANDAIC'), findsOneWidget);
+      expect(find.text('ࡃ'), findsWidgets);
       // Every older consonant has a row; ḏ is one Hebrew and Aramaic split.
       expect(find.text('ḏ (often d)'), findsOneWidget);
       expect(find.text('Old Aram. ש'), findsNWidgets(2));

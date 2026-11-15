@@ -115,3 +115,21 @@ flutter:
     - family: Noto Sans Phoenician
       fonts:
         - asset: fonts/NotoSansPhoenician-Regular.ttf
+    - family: Noto Sans Ugaritic
+      fonts:
+        - asset: fonts/NotoSansUgaritic-Regular.ttf
+    - family: Noto Sans Syriac
+      fonts:
+        - asset: fonts/NotoSansSyriac-Regular.ttf
+    - family: Noto Sans Mandaic
+      fonts:
+        - asset: fonts/NotoSansMandaic-Regular.ttf
+    - family: Noto Sans Imperial Aramaic
+      fonts:
+        - asset: fonts/NotoSansImperialAramaic-Regular.ttf
+    - family: Noto Sans Old South Arabian
+      fonts:
+        - asset: fonts/NotoSansOldSouthArabian-Regular.ttf
+    - family: Noto Sans Old North Arabian
+      fonts:
+        - asset: fonts/NotoSansOldNorthArabian-Regular.ttf

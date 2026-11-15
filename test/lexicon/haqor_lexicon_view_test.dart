@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:haqor/src/lexicon/haqor_lexicon_store.dart';
@@ -148,6 +150,27 @@ void main() {
       greaterThanOrEqualTo(0),
     );
     expect(find.text('Overview').hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mouse wheel scrolls adjacent lexicon tabs on desktop', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    tester.view.physicalSize = const Size(800, 420);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: _draft())));
+    await _openTab(tester, 'Words');
+    final mouse = TestPointer(1, PointerDeviceKind.mouse);
+    final wheelAt = tester.getCenter(find.byType(TabBarView));
+    await tester.sendEventToBinding(mouse.hover(wheelAt));
+    await tester.sendEventToBinding(mouse.scroll(const Offset(0, 300)));
+    await tester.pumpAndSettle();
+
+    debugDefaultTargetPlatformOverride = null;
+    expect(find.byTooltip('Root').hitTestable(), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

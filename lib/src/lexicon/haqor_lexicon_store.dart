@@ -164,7 +164,7 @@ class HaqorLexiconStore {
         .map((pack) => pack.message)
         .firstWhere((m) => m.requestId == requestId)
         .timeout(requestTimeout);
-    _send(GetHaqorLexicon(requestId: requestId));
+    _send(GetHaqorLexicon(requestId: requestId, entryId: '', isName: false));
     final message = await reply;
     return LexiconReview(
       entries: [
@@ -175,6 +175,31 @@ class HaqorLexiconStore {
       dir: message.dir,
       error: message.error,
     );
+  }
+
+  /// Fetch the selected entry's evidence and cited verses on demand.
+  Future<LexiconEntryDraft> loadEntry(LexiconEntryDraft entry) async {
+    final requestId = _nextRequestId++;
+    final reply = HaqorLexicon.rustSignalStream
+        .map((pack) => pack.message)
+        .firstWhere((m) => m.requestId == requestId)
+        .timeout(requestTimeout);
+    _send(
+      GetHaqorLexicon(
+        requestId: requestId,
+        entryId: entry.id,
+        isName: entry.isName,
+      ),
+    );
+    final message = await reply;
+    if (message.error.isNotEmpty) throw StateError(message.error);
+    if (entry.isName && message.names.isNotEmpty) {
+      return LexiconEntryDraft.fromName(message.names.single);
+    }
+    if (!entry.isName && message.entries.isNotEmpty) {
+      return LexiconEntryDraft.fromSignal(message.entries.single);
+    }
+    throw StateError('No details returned for ${entry.id}');
   }
 
   /// Save [entry]; the reply says whether the whole lexicon still checks

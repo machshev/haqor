@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderSliverPadding;
 import 'package:flutter/services.dart';
@@ -560,6 +561,33 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
     }
     _pageTarget = null;
     if (controller.hasClients) _selectPage(controller.page!.round());
+  }
+
+  void _onWorkspaceWheel(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent ||
+        !HardwareKeyboard.instance.isShiftPressed ||
+        !_pageController.hasClients) {
+      return;
+    }
+    final delta = event.scrollDelta.dx != 0
+        ? event.scrollDelta.dx
+        : event.scrollDelta.dy;
+    if (delta == 0) return;
+    final current = _pageTarget ?? _pageController.page!.round();
+    final last =
+        _readerPageOffset +
+        _tabs.length +
+        (_hasWordPage ? 1 : 0) +
+        (_hasCrossReferencesPage ? 1 : 0) -
+        1;
+    final next = (current + (delta > 0 ? 1 : -1)).clamp(0, last);
+    if (next != current) {
+      // Let the PageView finish handling this pointer signal before its
+      // partial wheel movement can interrupt the page animation.
+      scheduleMicrotask(() {
+        if (mounted) _showPage(next);
+      });
+    }
   }
 
   void _showReaderPage() => _showPage(_activeReaderPage);
@@ -1756,43 +1784,47 @@ class _BibleReaderPageState extends State<BibleReaderPage> {
                         onAuxiliaryPanelResizeEnd: _saveWorkspace,
                       )
                     : _responsiveWorkspaceBody(
-                        PageView(
-                          key: ValueKey(mobile),
-                          controller: _pageController,
-                          onPageChanged: (index) {
-                            if (_pageTarget == null) _selectPage(index);
-                          },
-                          children: [
-                            if (mobile)
-                              Material(
-                                key: const ValueKey('study-workspace-page'),
-                                child:
-                                    _activeReader?._studyWorkspacePanel(
-                                      onOpenReader: _showReaderPage,
-                                    ) ??
-                                    const SizedBox.shrink(),
-                              ),
-                            for (final tab in _tabs) _reader(tab, tiled: false),
-                            if (_hasWordPage)
-                              _WordInfoPage(
-                                key: const ValueKey('word-info-page'),
-                                active: _wordPageSelected,
-                                // Leave a swipe margin outside the inspector's
-                                // text selection and lexicon/occurrence tabs.
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                  child: _wordInspector(),
+                        Listener(
+                          onPointerSignal: _onWorkspaceWheel,
+                          child: PageView(
+                            key: ValueKey(mobile),
+                            controller: _pageController,
+                            onPageChanged: (index) {
+                              if (_pageTarget == null) _selectPage(index);
+                            },
+                            children: [
+                              if (mobile)
+                                Material(
+                                  key: const ValueKey('study-workspace-page'),
+                                  child:
+                                      _activeReader?._studyWorkspacePanel(
+                                        onOpenReader: _showReaderPage,
+                                      ) ??
+                                      const SizedBox.shrink(),
                                 ),
-                              ),
-                            if (_hasCrossReferencesPage)
-                              _WordInfoPage(
-                                key: const ValueKey('cross-references-page'),
-                                active: _crossReferencesPageSelected,
-                                child: _crossReferencesPanel(),
-                              ),
-                          ],
+                              for (final tab in _tabs)
+                                _reader(tab, tiled: false),
+                              if (_hasWordPage)
+                                _WordInfoPage(
+                                  key: const ValueKey('word-info-page'),
+                                  active: _wordPageSelected,
+                                  // Leave a swipe margin outside the inspector's
+                                  // text selection and lexicon/occurrence tabs.
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                    child: _wordInspector(),
+                                  ),
+                                ),
+                              if (_hasCrossReferencesPage)
+                                _WordInfoPage(
+                                  key: const ValueKey('cross-references-page'),
+                                  active: _crossReferencesPageSelected,
+                                  child: _crossReferencesPanel(),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
               ),

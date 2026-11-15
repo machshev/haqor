@@ -14,6 +14,18 @@ void main() {
     await tester.tap(find.text('Semitic sounds'));
     await tester.pumpAndSettle();
     expect(find.byType(SemiticSoundsPage), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('𐎀 𐎛 𐎜'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('𐎀 𐎛 𐎜'), findsOneWidget);
+    expect(find.text('PHOENICIAN'), findsOneWidget);
+    expect(find.text('𐤀'), findsOneWidget);
+    expect(find.text('ܐ'), findsOneWidget);
+    expect(find.text('𐡀'), findsOneWidget);
+    expect(find.text('𐩱'), findsOneWidget);
+    expect(find.text('𐪑'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
 
@@ -53,6 +65,8 @@ void main() {
       400,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(link);
+    await tester.pumpAndSettle();
     await tester.tap(link);
     await tester.pumpAndSettle();
     expect(went, isNotNull);

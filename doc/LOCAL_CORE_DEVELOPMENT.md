@@ -23,6 +23,10 @@ Cargo, Rinf, and Flutter's Rust build then use the local crate automatically.
 The checkout's package version must satisfy the exact version in
 `native/hub/Cargo.toml`.
 
+When running Haqor from this checkout, Lexicon review automatically reads and
+saves entries in a sibling `haqor-core/data/lexicon` directory. Set
+`HAQOR_LEXICON_DIR` to use a different lexicon directory.
+
 Keep the local `Cargo.lock` change local; `cargo --locked` will reject a
 path-patched build until the lockfile has been updated. After rebuilding the
 runtime database in `haqor-core`, run `bash tool/sync-dbs.sh` here so the app

@@ -2558,12 +2558,16 @@ pub struct Outlines {
     pub outlines: Vec<OutlineEntry>,
 }
 
-/// Ask for the Haqor lexicon's entries for the review page. On desktop, when
-/// `HAQOR_LEXICON_DIR` names haqor-core's `data/lexicon`, they are read from
-/// there, so an edit shows at once and can be saved back.
+/// Ask for the Haqor lexicon's entries for the review page. On desktop, a
+/// sibling haqor-core checkout is found automatically; `HAQOR_LEXICON_DIR`
+/// can name another directory. Edits are saved back to that directory.
 #[derive(Debug, Deserialize, DartSignal)]
 pub struct GetHaqorLexicon {
     pub request_id: u32,
+    /// Empty for the entry list; otherwise load this entry's verse text and evidence.
+    pub entry_id: String,
+    /// Name entries can share an id with a root entry.
+    pub is_name: bool,
 }
 
 /// The Haqor lexicon's entries. `editable` when they were read from a

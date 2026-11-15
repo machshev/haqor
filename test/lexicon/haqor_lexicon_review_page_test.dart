@@ -27,6 +27,7 @@ class _FakeStore extends HaqorLexiconStore {
 
   final bool accept;
   final saved = <String, Map<String, dynamic>>{};
+  final loaded = <String>[];
 
   @override
   Future<LexiconReview> load() async => LexiconReview(
@@ -54,6 +55,12 @@ class _FakeStore extends HaqorLexiconStore {
   );
 
   @override
+  Future<LexiconEntryDraft> loadEntry(LexiconEntryDraft entry) async {
+    loaded.add(entry.id);
+    return entry;
+  }
+
+  @override
   Future<HaqorLexiconSaveStatus> save(LexiconEntryDraft entry) async {
     if (accept) saved[entry.id] = jsonDecode(entry.encode());
     return HaqorLexiconSaveStatus(
@@ -79,6 +86,18 @@ Future<void> _pump(WidgetTester tester, _FakeStore store) async {
 Finder _listed(String id) => find.byKey(ValueKey('lexicon-entry-$id'));
 
 void main() {
+  testWidgets('loads details for the selected entry once', (tester) async {
+    final store = _FakeStore();
+    await _pump(tester, store);
+    expect(store.loaded, ['amar']);
+
+    await tester.tap(_listed('changed'));
+    await tester.pumpAndSettle();
+    await tester.tap(_listed('amar'));
+    await tester.pumpAndSettle();
+    expect(store.loaded, ['amar', 'changed']);
+  });
+
   testWidgets('opens on the entries still to review, and filters', (
     tester,
   ) async {
@@ -106,6 +125,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(_listed('ashar'), findsOneWidget);
     expect(_listed('amar'), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey('lexicon-review-clear-search')),
+    );
+    await tester.pumpAndSettle();
+    expect(_listed('ashar'), findsOneWidget);
+    expect(_listed('amar'), findsOneWidget);
+    expect(_listed('changed'), findsOneWidget);
   });
 
   testWidgets('a changed entry is marked as changed since sign-off', (

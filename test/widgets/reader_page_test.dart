@@ -660,6 +660,39 @@ void main() {
     );
   });
 
+  testWidgets('shift mouse wheel switches a reader panel one page at a time', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final rust = await _pumpReader(tester, chapter: 5);
+    await tester.tap(find.byTooltip('New reader tab'));
+    await tester.pump();
+    await tester.pump();
+    rust.deliverAll();
+    await tester.pumpAndSettle();
+
+    final page = tester.widget<PageView>(find.byType(PageView));
+    expect(page.controller!.page, 1);
+    final mouse = TestPointer(1, PointerDeviceKind.mouse);
+    final wheelAt = tester.getCenter(find.byType(PageView));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    expect(HardwareKeyboard.instance.isShiftPressed, isTrue);
+    await tester.sendEventToBinding(mouse.hover(wheelAt));
+    await tester.sendEventToBinding(mouse.scroll(const Offset(0, -120)));
+    await tester.pumpAndSettle();
+    expect(page.controller!.page, 0);
+
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.sendEventToBinding(mouse.scroll(const Offset(0, 120)));
+    await tester.pumpAndSettle();
+    expect(page.controller!.page, 1);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('mobile shows a lone tab without close and swipes between tabs', (
     tester,
   ) async {

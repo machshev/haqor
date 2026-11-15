@@ -1,8 +1,8 @@
 //! Handlers for the Haqor lexicon's review page (haqor-core ADR 7): its
-//! entries, read from haqor-core's `data/lexicon` when `HAQOR_LEXICON_DIR`
-//! names it, with the text of the verses they cite, and saves back to it.
+//! entries, read from a sibling haqor-core checkout (or `HAQOR_LEXICON_DIR`),
+//! with the text of the verses they cite, and saved back to it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use haqor_core::bible::Bible;
 use haqor_core::haqor_lexicon;
@@ -14,13 +14,36 @@ use crate::signals::{
     HaqorLexiconSaveStatus, HaqorLexiconVerse, SaveHaqorLexiconEntry,
 };
 
-/// The directory entries are reviewed in, when one is set. Never on the web.
+/// Find a sibling checkout when running from the Haqor repository or one of
+/// its subdirectories.
+#[cfg(not(target_arch = "wasm32"))]
+fn sibling_review_dir(cwd: &Path) -> Option<PathBuf> {
+    cwd.ancestors()
+        .find(|ancestor| ancestor.file_name().is_some_and(|name| name == "haqor"))
+        .and_then(Path::parent)
+        .map(|parent| parent.join("haqor-core/data/lexicon"))
+}
+
+/// The directory entries are reviewed in. An explicit path takes precedence
+/// over discovery, including when that path cannot be read. Never on the web.
 fn review_dir() -> Option<PathBuf> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         std::env::var_os("HAQOR_LEXICON_DIR")
             .filter(|dir| !dir.is_empty())
             .map(PathBuf::from)
+            .or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .and_then(|cwd| sibling_review_dir(&cwd))
+                    .filter(|dir| dir.is_dir())
+            })
+            .or_else(|| {
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|exe| sibling_review_dir(&exe))
+                    .filter(|dir| dir.is_dir())
+            })
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -162,42 +185,78 @@ pub(crate) fn word_entry(
     }
 }
 
-/// The entries and the name entries under review in `dir`, each root entry
-/// with the names in `dir` that link back to it.
-fn entries(
-    bible: &Bible,
-    dir: &std::path::Path,
-) -> anyhow::Result<(Vec<HaqorLexiconEntryText>, Vec<HaqorLexiconNameText>)> {
-    let names = haqor_lexicon::read_name_texts(dir)?;
-    let entry_of = |json: &str| haqor_lexicon::name_entry_root(json).unwrap_or_default();
+/// The list can be shown and searched without calculating every entry's
+/// evidence or fetching every cited verse.
+fn index(dir: &Path) -> anyhow::Result<(Vec<HaqorLexiconEntryText>, Vec<HaqorLexiconNameText>)> {
     let entries = haqor_lexicon::read_entry_texts(dir)?
         .into_iter()
-        .map(|(id, json)| {
-            let own = names
-                .iter()
-                .filter(|(_, n)| entry_of(n) == id)
-                .cloned()
-                .collect();
-            entry_text(bible, id, json, own)
+        .map(|(id, json)| HaqorLexiconEntryText {
+            id,
+            json,
+            verses: Vec::new(),
+            support: String::new(),
+            names: Vec::new(),
         })
         .collect();
-    let names = names
+    let names = haqor_lexicon::read_name_texts(dir)?
         .into_iter()
-        .map(|(id, json)| name_text(bible, id, json))
+        .map(|(id, json)| HaqorLexiconNameText {
+            id,
+            json,
+            verses: Vec::new(),
+        })
         .collect();
     Ok((entries, names))
+}
+
+/// Load only the selected JSON file, then add its evidence and cited verses.
+fn detail(
+    bible: &Bible,
+    dir: &Path,
+    id: &str,
+    is_name: bool,
+) -> anyhow::Result<(Vec<HaqorLexiconEntryText>, Vec<HaqorLexiconNameText>)> {
+    anyhow::ensure!(
+        !id.is_empty()
+            && id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'),
+        "Invalid lexicon entry id"
+    );
+    let file = if is_name {
+        dir.join("names")
+    } else {
+        dir.to_path_buf()
+    }
+    .join(format!("{id}.json"));
+    let json = std::fs::read_to_string(&file)
+        .map_err(|error| anyhow::anyhow!("reading {}: {error}", file.display()))?;
+    if is_name {
+        Ok((Vec::new(), vec![name_text(bible, id.to_string(), json)]))
+    } else {
+        let names = haqor_lexicon::read_name_texts(dir)?
+            .into_iter()
+            .filter(|(_, name)| haqor_lexicon::name_entry_root(name).as_deref() == Some(id))
+            .collect();
+        Ok((
+            vec![entry_text(bible, id.to_string(), json, names)],
+            Vec::new(),
+        ))
+    }
 }
 
 pub async fn get_haqor_lexicon(bible: SharedBible) {
     let receiver = GetHaqorLexicon::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let request_id = signal_pack.message.request_id;
+        let entry_id = signal_pack.message.entry_id;
+        let is_name = signal_pack.message.is_name;
         let Some(dir) = review_dir() else {
             HaqorLexicon {
                 request_id,
                 editable: false,
                 dir: String::new(),
-                error: "Set HAQOR_LEXICON_DIR to haqor-core's data/lexicon to review entries."
+                error: "No sibling haqor-core/data/lexicon found. Set HAQOR_LEXICON_DIR to review entries."
                     .to_string(),
                 entries: Vec::new(),
                 names: Vec::new(),
@@ -205,9 +264,11 @@ pub async fn get_haqor_lexicon(bible: SharedBible) {
             .send_signal_to_dart();
             continue;
         };
-        let read = {
+        let read = if entry_id.is_empty() {
+            index(&dir)
+        } else {
             let bible = lock(&bible);
-            entries(&bible, &dir)
+            detail(&bible, &dir, &entry_id, is_name)
         };
         let ((entries, names), error) = match read {
             Ok(read) => (read, String::new()),
@@ -233,7 +294,9 @@ pub async fn save_haqor_lexicon_entry(bible: SharedBible) {
     while let Some(signal_pack) = receiver.recv().await {
         let save = signal_pack.message;
         let result = match review_dir() {
-            None => Err(anyhow::anyhow!("HAQOR_LEXICON_DIR is not set")),
+            None => Err(anyhow::anyhow!(
+                "No sibling haqor-core/data/lexicon found; set HAQOR_LEXICON_DIR"
+            )),
             Some(dir) => {
                 let bible = lock(&bible);
                 bible

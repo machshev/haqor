@@ -76,7 +76,12 @@ class SemiticSoundsPage extends StatelessWidget {
             para(
               'Each row is one older consonant, in the standard notation of '
               'Semitic studies, with the letter each language uses for it. '
-              'A dash (∅) means the sound was lost.',
+              'A dash (∅) means the sound was lost. The pronunciation '
+              'guide gives a practical approximation; the precise ancient '
+              'sounds, especially the emphatic consonants, are debated. '
+              'Phoenician has the same 22-letter system as Hebrew, so one '
+              'Phoenician sign can also stand for several older sounds. '
+              'Old South and Old North Arabian write more of them apart.',
             ),
             const SizedBox(height: 12),
             Wrap(
@@ -103,7 +108,39 @@ class SemiticSoundsPage extends StatelessWidget {
               'marks the spelling of the earliest Aramaic inscriptions, which '
               'borrowed the nearest Phoenician letter for a sound the alphabet '
               'had no letter for, and changed it once the sound itself had '
-              'shifted.',
+              'shifted. The Imperial Aramaic signs follow the Aramaic '
+              'letter in this table; the “Old Aram.” note can differ.',
+              style: text.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            para(
+              'Old North Arabian shows the Dadanitic forms used by Unicode; '
+              'other northern traditions shaped some letters differently. '
+              'The three sibilants are labelled by their older sound '
+              'correspondences, not by the similar-looking letter names.',
+              style: text.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            para(
+              'Mandaic shows the traditional letter corresponding to each '
+              'Aramaic spelling. Its script is fully vocalised: older '
+              'gutturals have weakened or disappeared, and ࡀ and ࡏ also '
+              'write vowels. These signs show spelling ancestry, not that '
+              'Mandaic still pronounced every older consonant.',
+              style: text.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            para(
+              'Akkadian was written in cuneiform syllable and word signs, '
+              'not an alphabet with one sign per consonant. Its column '
+              'therefore shows sounds in Latin letters rather than '
+              'cuneiform signs.',
               style: text.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -498,6 +535,190 @@ const _sounds = [
   _Sound('t', 'ת', 'ת', 'ܬ', 't', 'ت', 'ተ', 't'),
 ];
 
+// Practical approximations, keyed by the older sound in each table row.
+const _pronunciations = <String, String>{
+  'ʾ': 'A brief catch in the throat, as between the two parts of “uh-oh”.',
+  'b': 'b in “bat”.',
+  'g': 'Hard g in “go”.',
+  'd': 'd in “dog”.',
+  'ḏ': 'th in “this”.',
+  'h': 'h in “hat”.',
+  'w': 'w in “wet”.',
+  'z': 'z in “zoo”.',
+  'ḥ': 'A strong breathy h made deep in the throat, as in Arabic ح.',
+  'ḫ': 'ch in Scottish “loch”, made at the back of the mouth.',
+  'ṭ': 'An emphatic t: say t with the throat tightened.',
+  'ṯ̣': 'An emphatic th: start with th in “thin” and tighten the throat.',
+  'y': 'y in “yes”.',
+  'k': 'k in “kite”.',
+  'l': 'l in “light”.',
+  'm': 'm in “man”.',
+  'n': 'n in “no”.',
+  's': 's in “sun”.',
+  'ś': 'A sideways hiss, roughly like Welsh ll.',
+  'š': 'sh in “ship”.',
+  'ṣ': 'An emphatic s: say s with the throat tightened.',
+  'ṣ́':
+      'An emphatic sideways hiss, roughly Welsh ll with the throat tightened.',
+  'ʿ': 'A voiced sound made by tightening the throat, as in Arabic ع.',
+  'ġ': 'A voiced ḫ, roughly like the throaty French r.',
+  'p': 'p in “pin”.',
+  'q': 'A k made farther back in the mouth.',
+  'r': 'A tapped or rolled r, as in Spanish.',
+  'ṯ': 'th in “thin”.',
+  't': 't in “ten”.',
+};
+
+// Unicode signs corresponding to the transliterations in _Sound. A few
+// older sounds share one Ugaritic sign, and ʾ has three vowel-specific signs.
+const _ugariticSigns = <String, String>{
+  'ʾ': '𐎀 𐎛 𐎜',
+  'b': '𐎁',
+  'g': '𐎂',
+  'd': '𐎄',
+  'ḏ': '𐎏',
+  'h': '𐎅',
+  'w': '𐎆',
+  'z': '𐎇',
+  'ḥ': '𐎈',
+  'ḫ': '𐎃',
+  'ṭ': '𐎉',
+  'ṯ̣': '𐎑',
+  'y': '𐎊',
+  'k': '𐎋',
+  'l': '𐎍',
+  'm': '𐎎',
+  'n': '𐎐',
+  's': '𐎒',
+  'ś': '𐎌',
+  'š': '𐎌',
+  'ṣ': '𐎕',
+  'ṣ́': '𐎕',
+  'ʿ': '𐎓',
+  'ġ': '𐎙',
+  'p': '𐎔',
+  'q': '𐎖',
+  'r': '𐎗',
+  'ṯ': '𐎘',
+  't': '𐎚',
+};
+
+// Phoenician and Hebrew use corresponding letters in the same 22-sign
+// alphabet. Pointing on Hebrew ש does not change its Phoenician sign.
+const _phoenicianSigns = <String, String>{
+  'א': '𐤀',
+  'ב': '𐤁',
+  'ג': '𐤂',
+  'ד': '𐤃',
+  'ה': '𐤄',
+  'ו': '𐤅',
+  'ז': '𐤆',
+  'ח': '𐤇',
+  'ט': '𐤈',
+  'י': '𐤉',
+  'כ': '𐤊',
+  'ל': '𐤋',
+  'מ': '𐤌',
+  'נ': '𐤍',
+  'ס': '𐤎',
+  'ע': '𐤏',
+  'פ': '𐤐',
+  'צ': '𐤑',
+  'ק': '𐤒',
+  'ר': '𐤓',
+  'ש': '𐤔',
+  'ת': '𐤕',
+};
+
+// Imperial Aramaic's 22 letters follow the Aramaic spelling in _Sound.
+const _imperialAramaicSigns = <String, String>{
+  'א': '𐡀',
+  'ב': '𐡁',
+  'ג': '𐡂',
+  'ד': '𐡃',
+  'ה': '𐡄',
+  'ו': '𐡅',
+  'ז': '𐡆',
+  'ח': '𐡇',
+  'ט': '𐡈',
+  'י': '𐡉',
+  'כ': '𐡊',
+  'ל': '𐡋',
+  'מ': '𐡌',
+  'נ': '𐡍',
+  'ס': '𐡎',
+  'ע': '𐡏',
+  'פ': '𐡐',
+  'צ': '𐡑',
+  'ק': '𐡒',
+  'ר': '𐡓',
+  'ש': '𐡔',
+  'ת': '𐡕',
+};
+
+// The traditional Mandaic letters corresponding to the Aramaic spellings.
+// Several of these no longer represent the older consonant in speech.
+// Older ś follows the later Aramaic spelling with samekh.
+const _mandaicSigns = <String, String>{
+  'א': 'ࡀ',
+  'ב': 'ࡁ',
+  'ג': 'ࡂ',
+  'ד': 'ࡃ',
+  'ה': 'ࡄ',
+  'ו': 'ࡅ',
+  'ז': 'ࡆ',
+  'ח': 'ࡇ',
+  'ט': 'ࡈ',
+  'י': 'ࡉ',
+  'כ': 'ࡊ',
+  'ל': 'ࡋ',
+  'מ': 'ࡌ',
+  'נ': 'ࡍ',
+  'ס': 'ࡎ',
+  'ע': 'ࡏ',
+  'פ': 'ࡐ',
+  'צ': 'ࡑ',
+  'ק': 'ࡒ',
+  'ר': 'ࡓ',
+  'ש': 'ࡔ',
+  'ת': 'ࡕ',
+};
+
+// Old South Arabian signs in the Unicode chart. The parallel Old North
+// Arabian (Dadanitic) signs have the same order, 0x20 code points later.
+// The sibilants follow the older sound correspondences: s3=s, s1=š, s2=ś.
+const _southArabianCodepoints = <String, int>{
+  'ʾ': 0x10A71,
+  'b': 0x10A68,
+  'g': 0x10A74,
+  'd': 0x10A75,
+  'ḏ': 0x10A79,
+  'h': 0x10A60,
+  'w': 0x10A65,
+  'z': 0x10A78,
+  'ḥ': 0x10A62,
+  'ḫ': 0x10A6D,
+  'ṭ': 0x10A77,
+  'ṯ̣': 0x10A7C,
+  'y': 0x10A7A,
+  'k': 0x10A6B,
+  'l': 0x10A61,
+  'm': 0x10A63,
+  'n': 0x10A6C,
+  's': 0x10A6F,
+  'ś': 0x10A66,
+  'š': 0x10A6A,
+  'ṣ': 0x10A6E,
+  'ṣ́': 0x10A73,
+  'ʿ': 0x10A72,
+  'ġ': 0x10A76,
+  'p': 0x10A70,
+  'q': 0x10A64,
+  'r': 0x10A67,
+  'ṯ': 0x10A7B,
+  't': 0x10A69,
+};
+
 class _SoundTable extends StatelessWidget {
   const _SoundTable({required this.colors});
 
@@ -535,10 +756,16 @@ class _SoundTable extends StatelessWidget {
     );
     const columns = [
       'OLDER SOUND',
+      'HOW TO SAY IT',
       'HEBREW',
+      'PHOENICIAN',
       'ARAMAIC',
+      'IMPERIAL ARAMAIC',
       'SYRIAC',
+      'MANDAIC',
       'UGARITIC',
+      'OLD SOUTH ARABIAN',
+      'OLD NORTH ARABIAN',
       'ARABIC',
       'GEʿEZ',
       'AKKADIAN',
@@ -553,7 +780,13 @@ class _SoundTable extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         child: Table(
           defaultColumnWidth: const IntrinsicColumnWidth(),
-          columnWidths: const {8: FixedColumnWidth(320)},
+          columnWidths: const {
+            1: FixedColumnWidth(230),
+            5: FixedColumnWidth(135),
+            9: FixedColumnWidth(135),
+            10: FixedColumnWidth(135),
+            14: FixedColumnWidth(320),
+          },
           defaultVerticalAlignment: TableCellVerticalAlignment.intrinsicHeight,
           border: TableBorder(horizontalInside: line),
           children: [
@@ -578,10 +811,27 @@ class _SoundTable extends StatelessWidget {
                     centre: false,
                   ),
                   cell(
+                    Text(
+                      _pronunciations[s.sound]!,
+                      style: _mixed(theme.textTheme.bodySmall),
+                    ),
+                    centre: false,
+                  ),
+                  cell(
                     script(
                       s.hebrew,
                       color: s.merges ? colors.merge : null,
                       bold: s.merges,
+                    ),
+                    fill: s.merges ? colors.mergeBg : null,
+                  ),
+                  cell(
+                    Text(
+                      _phoenicianSigns[s.hebrew[0]]!,
+                      style: const TextStyle(
+                        fontFamily: 'Noto Sans Phoenician',
+                        fontSize: 24,
+                      ),
                     ),
                     fill: s.merges ? colors.mergeBg : null,
                   ),
@@ -607,8 +857,64 @@ class _SoundTable extends StatelessWidget {
                     ),
                     fill: s.differs ? colors.divBg : null,
                   ),
+                  cell(
+                    Text(
+                      _imperialAramaicSigns[s.aramaic[0]]!,
+                      style: const TextStyle(
+                        fontFamily: 'Noto Sans Imperial Aramaic',
+                        fontSize: 24,
+                      ),
+                    ),
+                    fill: s.differs ? colors.divBg : null,
+                  ),
                   cell(script(s.syriac)),
-                  cell(translit(s.ugaritic), centre: false),
+                  cell(
+                    Text(
+                      s.sound == 'ś' ? 'ࡎ' : _mandaicSigns[s.aramaic[0]]!,
+                      style: const TextStyle(
+                        fontFamily: 'Noto Sans Mandaic',
+                        fontSize: 24,
+                      ),
+                    ),
+                    fill: s.differs ? colors.divBg : null,
+                  ),
+                  cell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _ugariticSigns[s.sound]!,
+                          style: const TextStyle(
+                            fontFamily: 'Noto Sans Ugaritic',
+                            fontSize: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        translit(s.ugaritic),
+                      ],
+                    ),
+                    centre: false,
+                  ),
+                  cell(
+                    Text(
+                      String.fromCharCode(_southArabianCodepoints[s.sound]!),
+                      style: const TextStyle(
+                        fontFamily: 'Noto Sans Old South Arabian',
+                        fontSize: 24,
+                      ),
+                    ),
+                  ),
+                  cell(
+                    Text(
+                      String.fromCharCode(
+                        _southArabianCodepoints[s.sound]! + 0x20,
+                      ),
+                      style: const TextStyle(
+                        fontFamily: 'Noto Sans Old North Arabian',
+                        fontSize: 24,
+                      ),
+                    ),
+                  ),
                   cell(script(s.arabic)),
                   cell(script(s.geez)),
                   cell(translit(s.akkadian), centre: false),
@@ -851,6 +1157,12 @@ const _sizes = [
     'Arabic',
     'Built on a 22-letter Aramaic-derived script, with dots added to '
         'recover the extra sounds its speakers still made. Merges s and š.',
+  ),
+  _ScriptSize(
+    23,
+    'Mandaic',
+    'Its traditional alphabet has 23 letters, including the special '
+        'letter ࡖ for the relative particle. Several letters also write vowels.',
   ),
   _ScriptSize(
     22,

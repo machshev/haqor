@@ -66,6 +66,7 @@ TextDirection directionOf(String text) {
 const cognateFontFallback = [
   'Noto Naskh Arabic',
   'Noto Sans Syriac',
+  'Noto Sans Mandaic',
   'Noto Sans Phoenician',
   'Noto Sans Ugaritic',
   'Noto Serif Ethiopic',
@@ -350,73 +351,80 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
           // The whole entry scrolls: the header scrolls away with the tab's
           // content, so on a phone the content has the height, and the tab
           // bar stays pinned at the top.
-          builder: (context) => NestedScrollView(
-            headerSliverBuilder: (context, _) => [
-              SliverToBoxAdapter(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ?widget.leading,
-                    _Header(
-                      entry: widget.entry,
-                      showSignOff: widget.showSignOff,
-                    ),
-                  ],
-                ),
-              ),
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _PinnedTabBar(
-                  color: theme.colorScheme.surface,
-                  tabBar: TabBar(
-                    controller: _controller,
-                    isScrollable: true,
-                    tabAlignment: TabAlignment.start,
-                    tabs: [
-                      for (final tab in _tabs)
-                        Tab(
-                          height: 36,
-                          text: switch (tab) {
-                            _Tab.overview => 'Overview',
-                            _Tab.words => counted('Words', 'words'),
-                            _Tab.cognates => counted('Cognates', 'cognates'),
-                            _Tab.doctrine => counted('Doctrine', 'doctrine'),
-                            _Tab.extra => widget.extraTab!.label,
-                          },
-                        ),
+          builder: (context) => ScrollConfiguration(
+            // TabBarView keeps adjacent lists attached to the nested primary
+            // controller. A desktop auto scrollbar cannot use that controller.
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(scrollbars: false),
+            child: NestedScrollView(
+              headerSliverBuilder: (context, _) => [
+                SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ?widget.leading,
+                      _Header(
+                        entry: widget.entry,
+                        showSignOff: widget.showSignOff,
+                      ),
                     ],
                   ),
                 ),
-              ),
-            ],
-            body: Builder(
-              builder: (context) => TabBarView(
-                controller: _controller,
-                children: [
-                  for (final tab in _tabs)
-                    switch (tab) {
-                      _Tab.overview => _overview(context),
-                      _Tab.words => _words(context),
-                      _Tab.cognates => _tabList(
-                        tab,
-                        subtitle:
-                            'The same root in the other Semitic languages',
-                        children: [
-                          for (final c in _list(data, 'cognates'))
-                            _CognateRow(cognate: c),
-                        ],
-                      ),
-                      _Tab.doctrine => _tabList(
-                        tab,
-                        subtitle: "What scripture's use of the word teaches",
-                        children: [
-                          for (final d in _list(data, 'doctrine'))
-                            _DoctrineItem(item: d),
-                        ],
-                      ),
-                      _Tab.extra => widget.extraTab!.build(context),
-                    },
-                ],
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _PinnedTabBar(
+                    color: theme.colorScheme.surface,
+                    tabBar: TabBar(
+                      controller: _controller,
+                      isScrollable: true,
+                      tabAlignment: TabAlignment.start,
+                      tabs: [
+                        for (final tab in _tabs)
+                          Tab(
+                            height: 36,
+                            text: switch (tab) {
+                              _Tab.overview => 'Overview',
+                              _Tab.words => counted('Words', 'words'),
+                              _Tab.cognates => counted('Cognates', 'cognates'),
+                              _Tab.doctrine => counted('Doctrine', 'doctrine'),
+                              _Tab.extra => widget.extraTab!.label,
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              body: Builder(
+                builder: (context) => TabBarView(
+                  controller: _controller,
+                  children: [
+                    for (final tab in _tabs)
+                      switch (tab) {
+                        _Tab.overview => _overview(context),
+                        _Tab.words => _words(context),
+                        _Tab.cognates => _tabList(
+                          tab,
+                          subtitle:
+                              'The same root in the other Semitic languages',
+                          children: [
+                            for (final c in _list(data, 'cognates'))
+                              _CognateRow(cognate: c),
+                          ],
+                        ),
+                        _Tab.doctrine => _tabList(
+                          tab,
+                          subtitle: "What scripture's use of the word teaches",
+                          children: [
+                            for (final d in _list(data, 'doctrine'))
+                              _DoctrineItem(item: d),
+                          ],
+                        ),
+                        _Tab.extra => widget.extraTab!.build(context),
+                      },
+                  ],
+                ),
               ),
             ),
           ),
