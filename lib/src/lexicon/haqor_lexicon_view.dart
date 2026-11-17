@@ -16,6 +16,7 @@ typedef LexiconEdit =
 
 /// Go to a passage: Haqor's 0-based book index, chapter and verse.
 typedef LexiconNavigate = void Function(int bookIndex, int chapter, int verse);
+typedef LexiconReviewNote = void Function(String targetKind, String targetKey);
 
 const _hebrewFont = 'Noto Serif Hebrew';
 
@@ -34,6 +35,24 @@ List<String> _strings(Map<String, dynamic> node, String key) {
   final value = node[key];
   if (value is! List) return const [];
   return value.whereType<String>().toList();
+}
+
+/// Locate an unnamed sense in the exact JSON version being reviewed.
+String? _nodePointer(dynamic root, Object target, [String path = '']) {
+  if (identical(root, target)) return path;
+  if (root is Map<String, dynamic>) {
+    for (final entry in root.entries) {
+      final key = entry.key.replaceAll('~', '~0').replaceAll('/', '~1');
+      final found = _nodePointer(entry.value, target, '$path/$key');
+      if (found != null) return found;
+    }
+  } else if (root is List) {
+    for (final (index, item) in root.indexed) {
+      final found = _nodePointer(item, target, '$path/$index');
+      if (found != null) return found;
+    }
+  }
+  return null;
 }
 
 /// The direction of a string's first strong character: Hebrew, Arabic,
@@ -170,6 +189,7 @@ class HaqorLexiconEntryView extends StatefulWidget {
     required this.entry,
     this.editing = false,
     this.onEdit,
+    this.onReviewNote,
     this.showSignOff = false,
     this.onNavigateToPassage,
     this.leading,
@@ -182,6 +202,7 @@ class HaqorLexiconEntryView extends StatefulWidget {
   final LexiconEntryDraft entry;
   final bool editing;
   final LexiconEdit? onEdit;
+  final LexiconReviewNote? onReviewNote;
 
   /// Show where the entry stands in review (signed off, changed since, or
   /// draft), as the review page does; otherwise only a draft is marked.
@@ -308,6 +329,7 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
       entry: widget.entry,
       editing: widget.editing,
       onEdit: widget.onEdit,
+      onReviewNote: widget.onReviewNote,
       onNavigateToPassage: widget.onNavigateToPassage,
     );
     // English text quotes Hebrew and the cognates' scripts inline, which the
@@ -663,12 +685,14 @@ class _EntryScope {
     required this.entry,
     required this.editing,
     required this.onEdit,
+    required this.onReviewNote,
     required this.onNavigateToPassage,
   });
 
   final LexiconEntryDraft entry;
   final bool editing;
   final LexiconEdit? onEdit;
+  final LexiconReviewNote? onReviewNote;
   final LexiconNavigate? onNavigateToPassage;
 }
 
@@ -938,6 +962,7 @@ class _WordCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final reviewNote = _EntryScopeProvider.of(context).onReviewNote;
     final lemma = _str(word, 'lemma');
     final stems = _list(word, 'stems');
     final senses = _list(word, 'senses');
@@ -1017,6 +1042,19 @@ class _WordCard extends StatelessWidget {
                             ),
                           ),
                         if (support != null) _SupportLine(support: support!),
+                        if (reviewNote != null)
+                          TextButton.icon(
+                            icon: const Icon(
+                              Icons.rate_review_outlined,
+                              size: 16,
+                            ),
+                            label: const Text('Note on word'),
+                            onPressed: () {
+                              final scope = _EntryScopeProvider.of(context);
+                              final key = _nodePointer(scope.entry.data, word);
+                              if (key != null) reviewNote('word', key);
+                            },
+                          ),
                       ],
                     ),
                   ),
@@ -1129,6 +1167,7 @@ class _SenseList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final reviewNote = _EntryScopeProvider.of(context).onReviewNote;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1166,6 +1205,21 @@ class _SenseList extends StatelessWidget {
                         multiline: true,
                         style: theme.textTheme.bodyMedium,
                       ),
+                      if (reviewNote != null)
+                        TextButton.icon(
+                          icon: const Icon(
+                            Icons.rate_review_outlined,
+                            size: 16,
+                          ),
+                          label: const Text('Note on sense'),
+                          onPressed: () {
+                            final scope = _EntryScopeProvider.of(context);
+                            final key = _str(sense, 'id').isNotEmpty
+                                ? _str(sense, 'id')
+                                : _nodePointer(scope.entry.data, sense);
+                            if (key != null) reviewNote('sense', key);
+                          },
+                        ),
                       if (_strings(sense, 'tags').isNotEmpty)
                         Text(
                           _strings(sense, 'tags').join(', '),
@@ -1413,6 +1467,7 @@ class _DoctrineItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final reviewNote = _EntryScopeProvider.of(context).onReviewNote;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
@@ -1422,6 +1477,16 @@ class _DoctrineItem extends StatelessWidget {
             _topicTitle(_str(item, 'topic')),
             style: theme.textTheme.titleSmall,
           ),
+          if (reviewNote != null)
+            TextButton.icon(
+              icon: const Icon(Icons.rate_review_outlined, size: 16),
+              label: const Text('Note on doctrine'),
+              onPressed: () {
+                final scope = _EntryScopeProvider.of(context);
+                final key = _nodePointer(scope.entry.data, item);
+                if (key != null) reviewNote('doctrine', key);
+              },
+            ),
           const SizedBox(height: 4),
           _EditableText(
             node: item,

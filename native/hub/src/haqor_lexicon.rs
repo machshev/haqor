@@ -1,12 +1,16 @@
-//! Handlers for the Haqor lexicon's review page (haqor-core ADR 7): its
-//! entries, read from a sibling haqor-core checkout (or `HAQOR_LEXICON_DIR`),
-//! with the text of the verses they cite, and saved back to it.
+//! Handlers for the Haqor lexicon review page (haqor-core ADR 7). A source
+//! checkout permits validated editing; a phone uses bundled database entries
+//! and records approvals or notes in synced progress.
 
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use haqor_core::bible::Bible;
 use haqor_core::haqor_lexicon;
+use haqor_core::lexicon_review::{self, LexiconReviewRecord};
 use rinf::{DartSignal, RustSignal, debug_print};
+use serde::Deserialize;
+use serde_json::{Value, json};
 
 use crate::functions::{SharedBible, lock};
 use crate::signals::{
@@ -245,30 +249,241 @@ fn detail(
     }
 }
 
+/// Add local review state to a database entry without changing its source
+/// JSON. The store strips these private fields before displaying the entry.
+fn mobile_json(records: &[LexiconReviewRecord], kind: &str, id: &str, source: &str) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(source) else {
+        return source.to_string();
+    };
+    let Some(object) = value.as_object_mut() else {
+        return source.to_string();
+    };
+    let hash = lexicon_review::source_hash(source);
+    object.insert("_mobileSourceHash".into(), json!(hash));
+    if let Some(approval) = records.iter().find(|record| {
+        record.approved
+            && record.entry_kind == kind
+            && record.entry_id == id
+            && record.source_hash == hash
+    }) {
+        let day = chrono_day(approval.updated_epoch);
+        object.insert("_mobileApprovedOn".into(), json!(day));
+    }
+    let notes: Vec<Value> = records
+        .iter()
+        .filter(|record| !record.approved && record.entry_kind == kind && record.entry_id == id)
+        .map(|record| {
+            json!({
+                "targetKind": record.target_kind,
+                "targetKey": record.target_key,
+                "note": record.note,
+                "sourceHash": record.source_hash,
+            })
+        })
+        .collect();
+    object.insert("_mobileNotes".into(), json!(notes));
+    value.to_string()
+}
+
+fn chrono_day(epoch: i64) -> String {
+    // SQLite's date format, without pulling a date library into the hub.
+    // A review's exact epoch remains in the progress record.
+    let days = epoch.div_euclid(86_400);
+    let z = days + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let mut y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = mp + if mp < 10 { 3 } else { -9 };
+    y += i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MobileReviewRequest {
+    entry_id: String,
+    is_name: bool,
+    source_hash: String,
+    target_kind: String,
+    target_key: String,
+    note: String,
+    approved: bool,
+}
+
+fn contains_sense(value: &Value, id: &str) -> bool {
+    match value {
+        Value::Object(map) => {
+            map.get("id").and_then(Value::as_str) == Some(id) && map.contains_key("definition")
+                || map.values().any(|child| contains_sense(child, id))
+        }
+        Value::Array(items) => items.iter().any(|child| contains_sense(child, id)),
+        _ => false,
+    }
+}
+
+fn save_mobile_review(bible: &Bible, text: &str) -> anyhow::Result<String> {
+    let request: MobileReviewRequest = serde_json::from_str(text)?;
+    let source = bible
+        .haqor_lexicon_review_entry(&request.entry_id, request.is_name)?
+        .ok_or_else(|| anyhow::anyhow!("Entry is not in the bundled lexicon"))?;
+    anyhow::ensure!(
+        lexicon_review::source_hash(&source) == request.source_hash,
+        "This entry changed since it was opened; reload before reviewing"
+    );
+    let value: Value = serde_json::from_str(&source)?;
+    let valid_target = match request.target_kind.as_str() {
+        "entry" => request.target_key.is_empty(),
+        "word" => {
+            value["words"].as_array().is_some_and(|words| {
+                words
+                    .iter()
+                    .any(|word| word["lemma"].as_str() == Some(request.target_key.as_str()))
+            }) || value
+                .pointer(&request.target_key)
+                .is_some_and(|word| word.get("lemma").is_some())
+        }
+        "sense" => {
+            contains_sense(&value, &request.target_key)
+                || value
+                    .pointer(&request.target_key)
+                    .is_some_and(|sense| sense.get("definition").is_some())
+        }
+        "doctrine" => {
+            value["doctrine"].as_array().is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|item| item["topic"].as_str() == Some(request.target_key.as_str()))
+            }) || value
+                .pointer(&request.target_key)
+                .is_some_and(|item| item.get("topic").is_some())
+        }
+        _ => false,
+    };
+    anyhow::ensure!(valid_target, "This review target is no longer in the entry");
+    let kind = if request.is_name { "name" } else { "root" };
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+    let existing = bible.lexicon_reviews()?;
+    if request.approved {
+        anyhow::ensure!(
+            !existing.iter().any(|record| {
+                !record.approved
+                    && record.entry_kind == kind
+                    && record.entry_id == request.entry_id
+                    && record.source_hash == request.source_hash
+            }),
+            "This version has open review notes; resolve them before approving"
+        );
+    } else if let Some(mut approval) = existing.into_iter().find(|record| {
+        record.approved
+            && record.entry_kind == kind
+            && record.entry_id == request.entry_id
+            && record.source_hash == request.source_hash
+    }) {
+        approval.deleted = true;
+        approval.updated_epoch = (now.as_secs() as i64).max(approval.updated_epoch + 1);
+        bible.save_lexicon_review(&approval)?;
+    }
+    let id = if request.approved {
+        format!("approval:{kind}:{}", request.entry_id)
+    } else {
+        format!("note:{kind}:{}:{}", request.entry_id, now.as_nanos())
+    };
+    let record = LexiconReviewRecord {
+        id,
+        entry_id: request.entry_id,
+        entry_kind: kind.to_string(),
+        source_hash: request.source_hash,
+        target_kind: request.target_kind,
+        target_key: request.target_key,
+        note: request.note,
+        approved: request.approved,
+        created_epoch: now.as_secs() as i64,
+        updated_epoch: now.as_secs() as i64,
+        handled: false,
+        deleted: false,
+    };
+    bible.save_lexicon_review(&record)?;
+    Ok(if record.approved {
+        "Approval saved; it will sync with your progress".to_string()
+    } else {
+        "Review note saved; it will sync with your progress".to_string()
+    })
+}
+
 pub async fn get_haqor_lexicon(bible: SharedBible) {
     let receiver = GetHaqorLexicon::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let request_id = signal_pack.message.request_id;
         let entry_id = signal_pack.message.entry_id;
         let is_name = signal_pack.message.is_name;
-        let Some(dir) = review_dir() else {
-            HaqorLexicon {
-                request_id,
-                editable: false,
-                dir: String::new(),
-                error: "No sibling haqor-core/data/lexicon found. Set HAQOR_LEXICON_DIR to review entries."
-                    .to_string(),
-                entries: Vec::new(),
-                names: Vec::new(),
+        let dir = review_dir();
+        let read = if let Some(dir) = &dir {
+            if entry_id.is_empty() {
+                index(dir)
+            } else {
+                let bible = lock(&bible);
+                detail(&bible, dir, &entry_id, is_name)
             }
-            .send_signal_to_dart();
-            continue;
-        };
-        let read = if entry_id.is_empty() {
-            index(&dir)
         } else {
             let bible = lock(&bible);
-            detail(&bible, &dir, &entry_id, is_name)
+            (|| -> anyhow::Result<_> {
+                let reviews = bible.lexicon_reviews()?;
+                let (roots, names) = if entry_id.is_empty() {
+                    bible.haqor_lexicon_review_index()?
+                } else {
+                    let source = bible.haqor_lexicon_review_entry(&entry_id, is_name)?;
+                    let row = source
+                        .into_iter()
+                        .map(|json| (entry_id.clone(), json))
+                        .collect();
+                    if is_name {
+                        (Vec::new(), row)
+                    } else {
+                        (row, Vec::new())
+                    }
+                };
+                let entries = roots
+                    .into_iter()
+                    .map(|(id, json)| {
+                        let decorated = mobile_json(&reviews, "root", &id, &json);
+                        if entry_id.is_empty() {
+                            HaqorLexiconEntryText {
+                                id,
+                                json: decorated,
+                                verses: Vec::new(),
+                                support: String::new(),
+                                names: Vec::new(),
+                            }
+                        } else {
+                            let mut entry = entry_text(&bible, id, json, Vec::new());
+                            entry.json = decorated;
+                            entry
+                        }
+                    })
+                    .collect();
+                let names = names
+                    .into_iter()
+                    .map(|(id, json)| {
+                        let decorated = mobile_json(&reviews, "name", &id, &json);
+                        if entry_id.is_empty() {
+                            HaqorLexiconNameText {
+                                id,
+                                json: decorated,
+                                verses: Vec::new(),
+                            }
+                        } else {
+                            let mut name = name_text(&bible, id, json);
+                            name.json = decorated;
+                            name
+                        }
+                    })
+                    .collect();
+                Ok((entries, names))
+            })()
         };
         let ((entries, names), error) = match read {
             Ok(read) => (read, String::new()),
@@ -279,8 +494,10 @@ pub async fn get_haqor_lexicon(bible: SharedBible) {
         };
         HaqorLexicon {
             request_id,
-            editable: true,
-            dir: dir.display().to_string(),
+            editable: dir.is_some(),
+            dir: dir
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "bundled database".into()),
             error,
             entries,
             names,
@@ -293,26 +510,31 @@ pub async fn save_haqor_lexicon_entry(bible: SharedBible) {
     let receiver = SaveHaqorLexiconEntry::get_dart_signal_receiver();
     while let Some(signal_pack) = receiver.recv().await {
         let save = signal_pack.message;
-        let result = match review_dir() {
-            None => Err(anyhow::anyhow!(
-                "No sibling haqor-core/data/lexicon found; set HAQOR_LEXICON_DIR"
-            )),
-            Some(dir) => {
-                let bible = lock(&bible);
-                bible
-                    .verse_refs()
-                    .map_err(anyhow::Error::from)
-                    .and_then(|verses| haqor_lexicon::save_entry(&dir, &save.json, &verses))
+        let result = if save.id.starts_with("mobile-review:") {
+            let bible = lock(&bible);
+            save_mobile_review(&bible, &save.json)
+        } else {
+            match review_dir() {
+                None => Err(anyhow::anyhow!(
+                    "No sibling haqor-core/data/lexicon found; set HAQOR_LEXICON_DIR"
+                )),
+                Some(dir) => {
+                    let bible = lock(&bible);
+                    bible
+                        .verse_refs()
+                        .map_err(anyhow::Error::from)
+                        .and_then(|verses| haqor_lexicon::save_entry(&dir, &save.json, &verses))
+                }
             }
-        };
-        let (success, message) = match result {
-            Ok(summary) => (
-                true,
+            .map(|summary| {
                 format!(
                     "Saved. The lexicon checks clean: {} entries ({} reviewed), {} citations.",
                     summary.entries, summary.reviewed, summary.citations
-                ),
-            ),
+                )
+            })
+        };
+        let (success, message) = match result {
+            Ok(message) => (true, message),
             Err(error) => (false, format!("{error:#}")),
         };
         HaqorLexiconSaveStatus {

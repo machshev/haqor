@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../bindings/bindings.dart';
 import '../request_failure.dart' show requestTimeout;
+import '../tutor/progress_sync.dart' show scheduleProgressSync;
 
 /// A verse an entry cites, with its text, as the hub sends it.
 @immutable
@@ -43,31 +44,49 @@ class LexiconEntryDraft {
     required this.id,
     required this.data,
     required this.verses,
+    this.mobileSourceHash = '',
+    this.mobileApprovedOn,
+    List<Map<String, dynamic>> mobileNotes = const [],
     this.support = const [],
     this.names = const [],
-  });
+  }) : mobileNotes = List.of(mobileNotes);
 
-  factory LexiconEntryDraft.fromSignal(HaqorLexiconEntryText entry) =>
-      LexiconEntryDraft(
-        id: entry.id,
-        data: _decode(entry.json),
-        verses: _verses(entry.verses),
-        support: _support(entry.support),
-        names: entry.names.map(LexiconEntryDraft.fromName).toList(),
-      );
+  factory LexiconEntryDraft.fromSignal(HaqorLexiconEntryText entry) {
+    final data = _decode(entry.json);
+    final mobile = _takeMobile(data);
+    return LexiconEntryDraft(
+      id: entry.id,
+      data: data,
+      verses: _verses(entry.verses),
+      mobileSourceHash: mobile.$1,
+      mobileApprovedOn: mobile.$2,
+      mobileNotes: mobile.$3,
+      support: _support(entry.support),
+      names: entry.names.map(LexiconEntryDraft.fromName).toList(),
+    );
+  }
 
   /// A name entry (haqor-core `data/lexicon/names`).
-  factory LexiconEntryDraft.fromName(HaqorLexiconNameText name) =>
-      LexiconEntryDraft(
-        id: name.id,
-        data: _decode(name.json),
-        verses: _verses(name.verses),
-      );
+  factory LexiconEntryDraft.fromName(HaqorLexiconNameText name) {
+    final data = _decode(name.json);
+    final mobile = _takeMobile(data);
+    return LexiconEntryDraft(
+      id: name.id,
+      data: data,
+      verses: _verses(name.verses),
+      mobileSourceHash: mobile.$1,
+      mobileApprovedOn: mobile.$2,
+      mobileNotes: mobile.$3,
+    );
+  }
 
   final String id;
 
   /// The entry, in the schema's shape (haqor-core `data/lexicon/README.md`).
   final Map<String, dynamic> data;
+  final String mobileSourceHash;
+  String? mobileApprovedOn;
+  final List<Map<String, dynamic>> mobileNotes;
 
   /// The verses the entry cites, by reference.
   final Map<String, LexiconVerse> verses;
@@ -90,6 +109,7 @@ class LexiconEntryDraft {
   /// Where the entry stands in review: a draft, signed off, or signed off
   /// and changed since (`updated` later than the `reviewed` date).
   LexiconSignOff get signOff {
+    if (mobileApprovedOn != null) return LexiconSignOff.signedOff;
     if (data['status'] != 'reviewed') return LexiconSignOff.draft;
     final reviewed = data['reviewed'];
     final updated = data['updated'];
@@ -103,9 +123,10 @@ class LexiconEntryDraft {
 
   /// The day it was signed off, `YYYY-MM-DD`, if it has been.
   String? get signedOffOn =>
-      data['status'] == 'reviewed' && data['reviewed'] is String
-      ? data['reviewed'] as String
-      : null;
+      mobileApprovedOn ??
+      (data['status'] == 'reviewed' && data['reviewed'] is String
+          ? data['reviewed'] as String
+          : null);
 
   /// Sign the entry off on [day] (`YYYY-MM-DD`), or with [day] null put it
   /// back to draft. `reviewed` is kept straight after `status`, where the
@@ -212,11 +233,59 @@ class HaqorLexiconStore {
     _save(SaveHaqorLexiconEntry(id: entry.id, json: entry.encode()));
     return reply;
   }
+
+  /// Record a decision against the exact bundled entry shown on the phone.
+  Future<HaqorLexiconSaveStatus> saveMobileReview(
+    LexiconEntryDraft entry, {
+    required String targetKind,
+    String targetKey = '',
+    String note = '',
+    bool approved = false,
+  }) async {
+    if (entry.mobileSourceHash.isEmpty) {
+      throw StateError('This entry is not available for mobile review');
+    }
+    final id = 'mobile-review:${entry.id}';
+    final reply = HaqorLexiconSaveStatus.rustSignalStream
+        .map((pack) => pack.message)
+        .firstWhere((message) => message.id == id)
+        .timeout(requestTimeout);
+    _save(
+      SaveHaqorLexiconEntry(
+        id: id,
+        json: jsonEncode({
+          'entryId': entry.id,
+          'isName': entry.isName,
+          'sourceHash': entry.mobileSourceHash,
+          'targetKind': targetKind,
+          'targetKey': targetKey,
+          'note': note,
+          'approved': approved,
+        }),
+      ),
+    );
+    final result = await reply;
+    if (result.success) scheduleProgressSync();
+    return result;
+  }
 }
 
 Map<String, dynamic> _decode(String json) {
   final decoded = jsonDecode(json);
   return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+}
+
+(String, String?, List<Map<String, dynamic>>) _takeMobile(
+  Map<String, dynamic> data,
+) {
+  final hash = data.remove('_mobileSourceHash');
+  final approved = data.remove('_mobileApprovedOn');
+  final notes = data.remove('_mobileNotes');
+  return (
+    hash is String ? hash : '',
+    approved is String ? approved : null,
+    notes is List ? notes.whereType<Map<String, dynamic>>().toList() : [],
+  );
 }
 
 Map<String, LexiconVerse> _verses(List<HaqorLexiconVerse> verses) => {
