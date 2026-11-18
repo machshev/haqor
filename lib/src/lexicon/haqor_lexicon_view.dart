@@ -140,6 +140,7 @@ const Map<String, String> _stemNames = {
   'hishtaphel': 'Hishtaphel',
   'tiphil': 'Tiphil',
   'nithpael': 'Nithpael',
+  'hothpaal': 'Hothpaal',
   // Aramaic: Biblical Aramaic's and the Peshitta's.
   'peal': 'Peal',
   'peil': 'Peil',
