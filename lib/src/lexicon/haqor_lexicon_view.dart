@@ -158,6 +158,7 @@ const Map<String, String> _stemNames = {
   'eshtaphal': 'Eshtaphal',
   'palpel': 'Palpel',
   'ethpalpal': 'Ethpalpal',
+  'ithpolel': 'Ithpolel',
 };
 
 /// The languages of scripture's words besides Hebrew, by the schema's codes.
