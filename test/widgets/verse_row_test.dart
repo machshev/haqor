@@ -951,11 +951,9 @@ void main() {
 
     test('a reading anchors after the last word it stands behind', () {
       final tokens = words.split(' ');
-      expect(
-        ketivAnchors(tokens, const [ketiv]).keys,
-        [2],
-        reason: 'a one-word reading anchors on that word',
-      );
+      expect(ketivAnchors(tokens, const [ketiv]).keys, [
+        2,
+      ], reason: 'a one-word reading anchors on that word');
       expect(
         ketivAnchors(tokens, const [
           KetivEntry(position: 1, span: 2, text: 'א ב'),
