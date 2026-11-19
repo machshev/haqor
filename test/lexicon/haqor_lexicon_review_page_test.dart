@@ -28,10 +28,17 @@ String _json(String id, String root, String gloss, String status) =>
 /// Serves three entries (one draft, one signed off, one changed since its
 /// sign-off) and records what is saved.
 class _FakeStore extends HaqorLexiconStore {
-  _FakeStore({this.accept = true, this.includeName = false});
+  _FakeStore({
+    this.accept = true,
+    this.includeName = false,
+    this.includeSharedName = false,
+  });
 
   final bool accept;
   final bool includeName;
+
+  /// Adds a name entry with the same id as the `amar` root entry.
+  final bool includeSharedName;
   final saved = <String, Map<String, dynamic>>{};
   final loaded = <String>[];
 
@@ -65,6 +72,21 @@ class _FakeStore extends HaqorLexiconStore {
             'created': '2026-11-04',
             'updated': '2026-11-02',
             'gloss': 'midwife',
+            'summary': 'A summary.',
+          },
+          verses: const {},
+        ),
+      if (includeSharedName)
+        LexiconEntryDraft(
+          id: 'amar',
+          data: {
+            'id': 'amar',
+            'name': 'אִמֵּר',
+            'people': <String>[],
+            'status': 'draft',
+            'created': '2026-11-04',
+            'updated': '2026-11-02',
+            'gloss': 'Immer',
             'summary': 'A summary.',
           },
           verses: const {},
@@ -164,7 +186,8 @@ Future<void> _pump(WidgetTester tester, HaqorLexiconStore store) async {
   await tester.pumpAndSettle();
 }
 
-Finder _listed(String id) => find.byKey(ValueKey('lexicon-entry-$id'));
+Finder _listed(String id, {bool name = false}) =>
+    find.byKey(ValueKey('lexicon-entry-${name ? 'name' : 'root'}:$id'));
 
 void main() {
   testWidgets('phone approval records a decision without editing entry JSON', (
@@ -258,7 +281,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Names').last);
     await tester.pumpAndSettle();
-    expect(_listed('shifrah'), findsOneWidget);
+    expect(_listed('shifrah', name: true), findsOneWidget);
     expect(_listed('amar'), findsNothing);
     expect(find.text('Lexicon: shifrah'), findsOneWidget);
 
@@ -272,7 +295,7 @@ void main() {
     await tester.tap(find.text('Date created').last);
     await tester.pumpAndSettle();
     expect(
-      tester.getTopLeft(_listed('shifrah')).dy,
+      tester.getTopLeft(_listed('shifrah', name: true)).dy,
       lessThan(tester.getTopLeft(_listed('ashar')).dy),
     );
     expect(
@@ -286,8 +309,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester.getTopLeft(_listed('changed')).dy,
-      lessThan(tester.getTopLeft(_listed('shifrah')).dy),
+      lessThan(tester.getTopLeft(_listed('shifrah', name: true)).dy),
     );
+  });
+
+  testWidgets('a name and a root entry may share an id', (tester) async {
+    await _pump(tester, _FakeStore(includeSharedName: true));
+    await tester.tap(find.byKey(const ValueKey('lexicon-filter-all')));
+    await tester.pumpAndSettle();
+    expect(_listed('amar'), findsOneWidget);
+    expect(_listed('amar', name: true), findsOneWidget);
+
+    await tester.tap(_listed('amar', name: true));
+    await tester.pumpAndSettle();
+    await tester.tap(_listed('amar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('lexicon-sort-order')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Last updated').last);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a changed entry is marked as changed since sign-off', (

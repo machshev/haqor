@@ -658,7 +658,7 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
       return const Center(child: CircularProgressIndicator());
     }
     final view = HaqorLexiconEntryView(
-      key: ValueKey(entry.id),
+      key: ValueKey(_detailKey(entry)),
       entry: entry,
       editing: _editing && review.editable,
       onEdit: _edit,
@@ -828,7 +828,7 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
                   children: [
                     for (final (i, e) in visible)
                       ListTile(
-                        key: ValueKey('lexicon-entry-${e.id}'),
+                        key: ValueKey('lexicon-entry-${_detailKey(e)}'),
                         selected: i == _selected,
                         title: Text(
                           _title(e),
