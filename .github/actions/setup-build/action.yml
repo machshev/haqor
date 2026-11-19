@@ -11,7 +11,7 @@ description: >
 inputs:
   flutter-version:
     description: Flutter SDK version (match the Nix devshell's Flutter)
-    default: "3.38.3"
+    default: "3.47.4"
   rust-targets:
     description: Extra Rust targets to install (comma separated)
     default: ""

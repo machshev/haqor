@@ -1,7 +1,7 @@
 {
   description = "Haqor packages and development environment";
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };
   outputs = {
@@ -98,8 +98,8 @@
             libsepol
             libthai
             libdatrie
-            xorg.libXdmcp
-            xorg.libXtst
+            libxdmcp
+            libxtst
             lerc.dev
             libxkbcommon
             libepoxy
