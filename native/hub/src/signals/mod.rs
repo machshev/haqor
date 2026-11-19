@@ -2595,6 +2595,9 @@ pub struct HaqorLexiconEntryText {
     /// uses, verses cited, cognates sharing its meaning and of another
     /// meaning, and kin senses.
     pub support: String,
+    /// How often its words are used in the Hebrew Bible, for sorting the
+    /// review list.
+    pub uses: u32,
     /// The name entries formed from the root, which link back to this entry.
     pub names: Vec<HaqorLexiconNameText>,
 }
@@ -2606,6 +2609,9 @@ pub struct HaqorLexiconNameText {
     pub id: String,
     pub json: String,
     pub verses: Vec<HaqorLexiconVerse>,
+    /// How often the name is used in the Hebrew Bible, for sorting the
+    /// review list.
+    pub uses: u32,
 }
 
 /// A verse an entry cites, by the reference it writes (`Gen.2.7`): the

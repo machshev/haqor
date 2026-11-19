@@ -60,6 +60,7 @@ class _FakeStore extends HaqorLexiconStore {
                   )
                   as Map<String, dynamic>,
           verses: const {},
+          uses: const {'amar': 5000, 'changed': 1000}[id] ?? 100,
         ),
       if (includeName)
         LexiconEntryDraft(
@@ -311,6 +312,21 @@ void main() {
       tester.getTopLeft(_listed('changed')).dy,
       lessThan(tester.getTopLeft(_listed('shifrah', name: true)).dy),
     );
+  });
+
+  testWidgets('sorts by how often the entries are used', (tester) async {
+    await _pump(tester, _FakeStore());
+    await tester.tap(find.byKey(const ValueKey('lexicon-filter-all')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('lexicon-sort-order')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Most used').last);
+    await tester.pumpAndSettle();
+
+    double top(String id) => tester.getTopLeft(_listed(id)).dy;
+    expect(top('amar'), lessThan(top('changed')));
+    expect(top('changed'), lessThan(top('ashar')));
+    expect(find.textContaining('5000 uses'), findsOneWidget);
   });
 
   testWidgets('a name and a root entry may share an id', (tester) async {

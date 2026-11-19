@@ -98,6 +98,7 @@ const _haqorText = HaqorLexiconEntryText(
     ),
   ],
   support: '',
+  uses: 0,
   names: [],
 );
 
@@ -308,6 +309,7 @@ void main() {
         id: 'shelomith',
         json: nameJson,
         verses: [verse],
+        uses: 0,
       );
       await _pumpSheet(
         tester,
@@ -317,6 +319,7 @@ void main() {
           json: _haqorText.json,
           verses: _haqorText.verses,
           support: '',
+          uses: 0,
           names: const [name],
         ),
         haqorLexiconCoversWord: false,

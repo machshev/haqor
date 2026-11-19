@@ -48,6 +48,7 @@ class LexiconEntryDraft {
     this.mobileApprovedOn,
     List<Map<String, dynamic>> mobileNotes = const [],
     this.support = const [],
+    this.uses = 0,
     this.names = const [],
   }) : mobileNotes = List.of(mobileNotes);
 
@@ -62,6 +63,7 @@ class LexiconEntryDraft {
       mobileApprovedOn: mobile.$2,
       mobileNotes: mobile.$3,
       support: _support(entry.support),
+      uses: entry.uses,
       names: entry.names.map(LexiconEntryDraft.fromName).toList(),
     );
   }
@@ -77,6 +79,7 @@ class LexiconEntryDraft {
       mobileSourceHash: mobile.$1,
       mobileApprovedOn: mobile.$2,
       mobileNotes: mobile.$3,
+      uses: name.uses,
     );
   }
 
@@ -95,6 +98,10 @@ class LexiconEntryDraft {
   /// `WordSupport`): uses, verses, cognates for and against, kin. As the
   /// entry was when read; edits do not recount it.
   final List<Map<String, dynamic>> support;
+
+  /// How often its words, or for a name the name, are used in the Hebrew
+  /// Bible, as the entry was when read.
+  final int uses;
 
   /// For a root entry, the name entries formed from it, which link back to it.
   final List<LexiconEntryDraft> names;

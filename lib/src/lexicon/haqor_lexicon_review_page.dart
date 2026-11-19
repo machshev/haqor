@@ -71,7 +71,8 @@ enum _EntryTypeFilter {
 enum _SortOrder {
   alphabetical('Alphabetical'),
   created('Date created'),
-  updated('Last updated');
+  updated('Last updated'),
+  uses('Most used');
 
   const _SortOrder(this.label);
   final String label;
@@ -196,7 +197,10 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
           (i, e),
     ];
     entries.sort((a, b) {
-      if (_sortOrder != _SortOrder.alphabetical) {
+      if (_sortOrder == _SortOrder.uses) {
+        final usesOrder = b.$2.uses.compareTo(a.$2.uses);
+        if (usesOrder != 0) return usesOrder;
+      } else if (_sortOrder != _SortOrder.alphabetical) {
         final field = _sortOrder == _SortOrder.created ? 'created' : 'updated';
         final left = a.$2.data[field] as String? ?? '';
         final right = b.$2.data[field] as String? ?? '';
@@ -837,6 +841,7 @@ class _HaqorLexiconReviewPageState extends State<HaqorLexiconReviewPage> {
                         ),
                         subtitle: Text(
                           '${e.id}${e.dirty ? ' •' : ''} · '
+                          '${_sortOrder == _SortOrder.uses ? '${e.uses} uses · ' : ''}'
                           '${(e.data['gloss'] as String?) ?? ''}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

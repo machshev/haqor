@@ -112,7 +112,21 @@ fn cited_verses(bible: &Bible, json: &str) -> Vec<HaqorLexiconVerse> {
 /// cites.
 pub(crate) fn name_text(bible: &Bible, id: String, json: String) -> HaqorLexiconNameText {
     let verses = cited_verses(bible, &json);
-    HaqorLexiconNameText { id, json, verses }
+    let uses = uses(bible, &json);
+    HaqorLexiconNameText {
+        id,
+        json,
+        verses,
+        uses,
+    }
+}
+
+/// How often the entry written as `json` is used in the Hebrew Bible; the
+/// review list sorts by it.
+fn uses(bible: &Bible, json: &str) -> u32 {
+    haqor_lexicon::entry_uses(bible, json)
+        .try_into()
+        .unwrap_or(u32::MAX)
 }
 
 /// The name entry of the person `entity_id`, where Haqor has one.
@@ -156,11 +170,13 @@ pub(crate) fn entry_text(
     // The counted evidence for each word, as JSON (haqor-core's
     // `WordSupport`); empty when the entry does not parse.
     let support = haqor_lexicon::entry_support_json(bible, &json).unwrap_or_default();
+    let uses = uses(bible, &json);
     HaqorLexiconEntryText {
         id,
         json,
         verses,
         support,
+        uses,
         names: names
             .into_iter()
             .map(|(id, json)| name_text(bible, id, json))
@@ -190,11 +206,16 @@ pub(crate) fn word_entry(
 }
 
 /// The list can be shown and searched without calculating every entry's
-/// evidence or fetching every cited verse.
-fn index(dir: &Path) -> anyhow::Result<(Vec<HaqorLexiconEntryText>, Vec<HaqorLexiconNameText>)> {
+/// evidence or fetching every cited verse; only its uses are counted, so it
+/// can be sorted by them.
+fn index(
+    bible: &Bible,
+    dir: &Path,
+) -> anyhow::Result<(Vec<HaqorLexiconEntryText>, Vec<HaqorLexiconNameText>)> {
     let entries = haqor_lexicon::read_entry_texts(dir)?
         .into_iter()
         .map(|(id, json)| HaqorLexiconEntryText {
+            uses: uses(bible, &json),
             id,
             json,
             verses: Vec::new(),
@@ -205,6 +226,7 @@ fn index(dir: &Path) -> anyhow::Result<(Vec<HaqorLexiconEntryText>, Vec<HaqorLex
     let names = haqor_lexicon::read_name_texts(dir)?
         .into_iter()
         .map(|(id, json)| HaqorLexiconNameText {
+            uses: uses(bible, &json),
             id,
             json,
             verses: Vec::new(),
@@ -422,10 +444,10 @@ pub async fn get_haqor_lexicon(bible: SharedBible) {
         let is_name = signal_pack.message.is_name;
         let dir = review_dir();
         let read = if let Some(dir) = &dir {
+            let bible = lock(&bible);
             if entry_id.is_empty() {
-                index(dir)
+                index(&bible, dir)
             } else {
-                let bible = lock(&bible);
                 detail(&bible, dir, &entry_id, is_name)
             }
         } else {
@@ -452,6 +474,7 @@ pub async fn get_haqor_lexicon(bible: SharedBible) {
                         let decorated = mobile_json(&reviews, "root", &id, &json);
                         if entry_id.is_empty() {
                             HaqorLexiconEntryText {
+                                uses: uses(&bible, &json),
                                 id,
                                 json: decorated,
                                 verses: Vec::new(),
@@ -471,6 +494,7 @@ pub async fn get_haqor_lexicon(bible: SharedBible) {
                         let decorated = mobile_json(&reviews, "name", &id, &json);
                         if entry_id.is_empty() {
                             HaqorLexiconNameText {
+                                uses: uses(&bible, &json),
                                 id,
                                 json: decorated,
                                 verses: Vec::new(),
