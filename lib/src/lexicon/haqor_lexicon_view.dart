@@ -2133,6 +2133,7 @@ class _NameEntryBody extends StatelessWidget {
     final data = entry.data;
     final name = _str(data, 'name');
     final root = _str(data, 'root');
+    final hasEtymology = root.isNotEmpty && _str(data, 'entry').isNotEmpty;
     final rootLabel = Text.rich(
       TextSpan(
         children: [
@@ -2184,7 +2185,14 @@ class _NameEntryBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        if (onOpenRoot == null)
+        if (!hasEtymology)
+          Text(
+            'Etymology not established',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontStyle: FontStyle.italic,
+            ),
+          )
+        else if (onOpenRoot == null)
           rootLabel
         else
           Align(
