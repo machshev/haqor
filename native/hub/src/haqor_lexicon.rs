@@ -205,6 +205,27 @@ pub(crate) fn word_entry(
     }
 }
 
+pub(crate) fn word_entry_at(
+    bible: &Bible,
+    root: &str,
+    word: &str,
+    prefix: &str,
+    context: Option<(u8, u8, u8, u32)>,
+) -> Option<HaqorLexiconEntryText> {
+    let found = context
+        .and_then(|(book, chapter, verse, position)| {
+            bible
+                .haqor_lexicon_entry_at(book, chapter, verse, position)
+                .ok()
+                .flatten()
+        })
+        .or_else(|| bible.haqor_lexicon_entry(root, word, prefix).ok().flatten());
+    found.map(|(id, json)| {
+        let names = bible.haqor_lexicon_names_of(&id).unwrap_or_default();
+        entry_text(bible, id, json, names)
+    })
+}
+
 /// The list can be shown and searched without calculating every entry's
 /// evidence or fetching every cited verse; only its uses are counted, so it
 /// can be sorted by them.

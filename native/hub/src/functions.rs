@@ -159,9 +159,10 @@ fn word_lexicon(
     prefix: &str,
     tree: Vec<BdbEntry>,
     sedra: Vec<SedraLexemeSummary>,
+    context: Option<(u8, u8, u8, u32)>,
     covers: impl FnOnce(&HaqorLexiconEntryText, &HashSet<String>) -> bool,
 ) -> (Vec<LexemeSummary>, Option<HaqorLexiconEntryText>, bool) {
-    let Some(entry) = crate::haqor_lexicon::word_entry(bible, root, word, prefix) else {
+    let Some(entry) = crate::haqor_lexicon::word_entry_at(bible, root, word, prefix, context) else {
         return (lexicon_rows(bible, root, tree, sedra), None, false);
     };
     let keys = bible.haqor_lexicon_keys(&entry.id).unwrap_or_default();
@@ -1155,6 +1156,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         "",
                         tree,
                         Vec::new(),
+                        None,
                         |_, keys| keys.contains(&key),
                     );
                     WordInfo {
@@ -1262,6 +1264,11 @@ pub async fn get_word_info(bible: SharedBible) {
                             .hebrew_bdb_by_syriac_root(&first.root)
                             .unwrap_or_default(),
                         sedra,
+                        match (req.book, req.chapter, req.verse, req.position) {
+                            (Some(book), Some(chapter), Some(verse), Some(position)) =>
+                                Some((book, chapter, verse, position)),
+                            _ => None,
+                        },
                         |_, _| true,
                     );
                     let gloss = first.meanings.first().cloned().unwrap_or_default();
@@ -1384,6 +1391,11 @@ pub async fn get_word_info(bible: SharedBible) {
                         info.prefix.as_deref().unwrap_or(""),
                         tree,
                         sedra,
+                        match (req.book, req.chapter, req.verse, req.position) {
+                            (Some(book), Some(chapter), Some(verse), Some(position)) =>
+                                Some((book, chapter, verse, position)),
+                            _ => None,
+                        },
                         |entry, _| {
                             bible
                                 .haqor_lexicon_covers_surface(&entry.id, &info.word)
