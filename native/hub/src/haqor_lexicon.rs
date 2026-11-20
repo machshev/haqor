@@ -278,14 +278,16 @@ fn detail(
                 .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'),
         "Invalid lexicon entry id"
     );
-    let file = if is_name {
-        dir.join("names")
+    let json = if is_name {
+        let file = dir
+            .join(haqor_lexicon::NAMES_DIR)
+            .join(format!("{id}.json"));
+        std::fs::read_to_string(&file)
+            .map_err(|error| anyhow::anyhow!("reading {}: {error}", file.display()))?
     } else {
-        dir.to_path_buf()
-    }
-    .join(format!("{id}.json"));
-    let json = std::fs::read_to_string(&file)
-        .map_err(|error| anyhow::anyhow!("reading {}: {error}", file.display()))?;
+        // A root entry, or a one-word entry under `nouns/`.
+        haqor_lexicon::read_entry_text(dir, id)?
+    };
     if is_name {
         Ok((Vec::new(), vec![name_text(bible, id.to_string(), json)]))
     } else {
