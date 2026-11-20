@@ -1222,6 +1222,21 @@ pub async fn get_word_info(bible: SharedBible) {
             // lexemes, words, english) keyed directly on the displayed Hebrew
             // word, which is the same bijective transliteration SEDRA stores.
             // A word shown in Syriac script is read back into it first.
+            let name = match (req.book, req.chapter, req.verse, req.position) {
+                (Some(book), Some(chapter), Some(verse), Some(position)) => bible
+                    .word_name(book, chapter, verse, position)
+                    .ok()
+                    .flatten()
+                    .map(|entity| name_summary_entry(entity.summary)),
+                _ => None,
+            };
+            let haqor_name = name.as_ref().and_then(|entity| {
+                crate::haqor_lexicon::word_name(
+                    &bible,
+                    entity.id,
+                    &haqor_core::transliterate::syriac_to_hebrew(&lookup),
+                )
+            });
             let words = bible
                 .sedra_word_info(&haqor_core::transliterate::syriac_to_hebrew(&lookup))
                 .unwrap_or_default();
@@ -1271,10 +1286,10 @@ pub async fn get_word_info(bible: SharedBible) {
                         // each lexeme under exactly one.
                         roots: Vec::new(),
                         sense: None,
-                        name: None,
+                        name,
                         haqor_lexicon,
                         haqor_lexicon_covers_word,
-                        haqor_name: None,
+                        haqor_name,
                         greek_equivalents: bible
                             .greek_equivalents(first.key_lexeme)
                             .unwrap_or_default()
@@ -1292,7 +1307,7 @@ pub async fn get_word_info(bible: SharedBible) {
                     debug_print!("get_word_info: no SEDRA match for {:?}", lookup);
                     WordInfo {
                         request_id: req.request_id,
-                        found: false,
+                        found: name.is_some(),
                         word: req.word,
                         root: String::new(),
                         gloss: String::new(),
@@ -1309,10 +1324,10 @@ pub async fn get_word_info(bible: SharedBible) {
                         form: None,
                         roots: Vec::new(),
                         sense: None,
-                        name: None,
+                        name,
                         haqor_lexicon: None,
                         haqor_lexicon_covers_word: false,
-                        haqor_name: None,
+                        haqor_name,
                         greek_equivalents: Vec::new(),
                     }
                     .send_signal_to_dart();
@@ -2343,12 +2358,17 @@ pub async fn get_name_entity(bible: SharedBible) {
                 }),
             }
         }
-        // The New Testament's, which name it by verse alone.
+        // Preserve exact reviewed positions wherever the Peshitta has them.
+        let positioned: HashSet<_> = verses
+            .iter()
+            .map(|v| (v.book, v.chapter, v.verse))
+            .collect();
         verses.extend(
             bible
                 .name_verses(req.id)
                 .unwrap_or_default()
                 .into_iter()
+                .filter(|v| !positioned.contains(&(v.book, v.chapter, v.verse)))
                 .map(|v| NameVerse {
                     book: v.book,
                     chapter: v.chapter,
@@ -2356,6 +2376,7 @@ pub async fn get_name_entity(bible: SharedBible) {
                     positions: Vec::new(),
                 }),
         );
+        verses.sort_by_key(|v| (v.book, v.chapter, v.verse));
         NameEntityInfo {
             request_id: req.request_id,
             found: true,
