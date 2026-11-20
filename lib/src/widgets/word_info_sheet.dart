@@ -1438,6 +1438,7 @@ class _WordInfoSheetState extends State<WordInfoSheet>
         entry: _haqorEntry(entry),
         onNavigateToPassage: widget.onNavigateToPassage,
         bottomInset: bottomPad,
+        initialWord: info.haqorLexiconWord,
         leading: name == null
             ? null
             : Padding(

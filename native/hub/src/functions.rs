@@ -161,16 +161,23 @@ fn word_lexicon(
     sedra: Vec<SedraLexemeSummary>,
     context: Option<(u8, u8, u8, u32)>,
     covers: impl FnOnce(&HaqorLexiconEntryText, &HashSet<String>) -> bool,
-) -> (Vec<LexemeSummary>, Option<HaqorLexiconEntryText>, bool) {
-    let Some(entry) = crate::haqor_lexicon::word_entry_at(bible, root, word, prefix, context)
+) -> (
+    Vec<LexemeSummary>,
+    Option<HaqorLexiconEntryText>,
+    bool,
+    Option<u32>,
+) {
+    let Some((entry, lexeme)) =
+        crate::haqor_lexicon::word_entry_at(bible, root, word, prefix, context)
     else {
-        return (lexicon_rows(bible, root, tree, sedra), None, false);
+        return (lexicon_rows(bible, root, tree, sedra), None, false, None);
     };
     let keys = bible.haqor_lexicon_keys(&entry.id).unwrap_or_default();
-    let covers_word = covers(&entry, &keys);
+    // A reviewed occurrence names its own word of the entry.
+    let covers_word = lexeme.is_some() || covers(&entry, &keys);
     let (held, rest): (Vec<_>, Vec<_>) = tree.into_iter().partition(|e| keys.contains(&e.key));
     if rest.is_empty() {
-        return (Vec::new(), Some(entry), covers_word);
+        return (Vec::new(), Some(entry), covers_word, lexeme);
     }
     // Klein's and Jastrow's articles on a word the entry holds go with it.
     let held: HashSet<String> = held
@@ -179,7 +186,7 @@ fn word_lexicon(
         .collect();
     let mut rows = lexicon_rows(bible, root, rest, Vec::new());
     rows.retain(|l| !held.contains(&haqor_core::normalize_surface(&l.headword)));
-    (rows, Some(entry), covers_word)
+    (rows, Some(entry), covers_word, lexeme)
 }
 
 fn lexicon_summary(e: LexiconEntry) -> BdbSummary {
@@ -1150,16 +1157,17 @@ pub async fn get_word_info(bible: SharedBible) {
                         });
                     }
                     let key = entry.key.clone();
-                    let (lexicon, haqor_lexicon, haqor_lexicon_covers_word) = word_lexicon(
-                        &bible,
-                        &entry.root,
-                        &entry.headword,
-                        "",
-                        tree,
-                        Vec::new(),
-                        None,
-                        |_, keys| keys.contains(&key),
-                    );
+                    let (lexicon, haqor_lexicon, haqor_lexicon_covers_word, haqor_lexicon_word) =
+                        word_lexicon(
+                            &bible,
+                            &entry.root,
+                            &entry.headword,
+                            "",
+                            tree,
+                            Vec::new(),
+                            None,
+                            |_, keys| keys.contains(&key),
+                        );
                     WordInfo {
                         request_id: req.request_id,
                         found: true,
@@ -1182,6 +1190,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         name: None,
                         haqor_lexicon,
                         haqor_lexicon_covers_word,
+                        haqor_lexicon_word,
                         haqor_name: None,
                         greek_equivalents: Vec::new(),
                     }
@@ -1211,6 +1220,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         name: None,
                         haqor_lexicon: None,
                         haqor_lexicon_covers_word: false,
+                        haqor_lexicon_word: None,
                         haqor_name: None,
                         greek_equivalents: Vec::new(),
                     }
@@ -1256,23 +1266,24 @@ pub async fn get_word_info(bible: SharedBible) {
                         .unwrap_or_default();
                     // Haqor's entry, where it has one, holds the Peshitta's words
                     // of the root beside the Hebrew.
-                    let (lexicon, haqor_lexicon, haqor_lexicon_covers_word) = word_lexicon(
-                        &bible,
-                        &first.root,
-                        "",
-                        "",
-                        bible
-                            .hebrew_bdb_by_syriac_root(&first.root)
-                            .unwrap_or_default(),
-                        sedra,
-                        match (req.book, req.chapter, req.verse, req.position) {
-                            (Some(book), Some(chapter), Some(verse), Some(position)) => {
-                                Some((book, chapter, verse, position))
-                            }
-                            _ => None,
-                        },
-                        |_, _| true,
-                    );
+                    let (lexicon, haqor_lexicon, haqor_lexicon_covers_word, haqor_lexicon_word) =
+                        word_lexicon(
+                            &bible,
+                            &first.root,
+                            "",
+                            "",
+                            bible
+                                .hebrew_bdb_by_syriac_root(&first.root)
+                                .unwrap_or_default(),
+                            sedra,
+                            match (req.book, req.chapter, req.verse, req.position) {
+                                (Some(book), Some(chapter), Some(verse), Some(position)) => {
+                                    Some((book, chapter, verse, position))
+                                }
+                                _ => None,
+                            },
+                            |_, _| true,
+                        );
                     let gloss = first.meanings.first().cloned().unwrap_or_default();
                     WordInfo {
                         request_id: req.request_id,
@@ -1298,6 +1309,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         name,
                         haqor_lexicon,
                         haqor_lexicon_covers_word,
+                        haqor_lexicon_word,
                         haqor_name,
                         greek_equivalents: bible
                             .greek_equivalents(first.key_lexeme)
@@ -1336,6 +1348,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         name,
                         haqor_lexicon: None,
                         haqor_lexicon_covers_word: false,
+                        haqor_lexicon_word: None,
                         haqor_name,
                         greek_equivalents: Vec::new(),
                     }
@@ -1386,27 +1399,28 @@ pub async fn get_word_info(bible: SharedBible) {
                         .unwrap_or_default();
                     // Haqor's own entry, where it has one, stands in for the
                     // other lexicons' on the words it holds.
-                    let (lexicon, haqor_lexicon, haqor_lexicon_covers_word) = word_lexicon(
-                        &bible,
-                        &selected,
-                        &info.word,
-                        info.prefix.as_deref().unwrap_or(""),
-                        tree,
-                        sedra,
-                        match (req.book, req.chapter, req.verse, req.position) {
-                            (Some(book), Some(chapter), Some(verse), Some(position)) => {
-                                Some((book, chapter, verse, position))
-                            }
-                            _ => None,
-                        },
-                        |entry, _| {
-                            bible
-                                .haqor_lexicon_covers_surface(&entry.id, &info.word)
-                                .ok()
-                                .flatten()
-                                .unwrap_or(!info.is_name)
-                        },
-                    );
+                    let (lexicon, haqor_lexicon, haqor_lexicon_covers_word, haqor_lexicon_word) =
+                        word_lexicon(
+                            &bible,
+                            &selected,
+                            &info.word,
+                            info.prefix.as_deref().unwrap_or(""),
+                            tree,
+                            sedra,
+                            match (req.book, req.chapter, req.verse, req.position) {
+                                (Some(book), Some(chapter), Some(verse), Some(position)) => {
+                                    Some((book, chapter, verse, position))
+                                }
+                                _ => None,
+                            },
+                            |entry, _| {
+                                bible
+                                    .haqor_lexicon_covers_surface(&entry.id, &info.word)
+                                    .ok()
+                                    .flatten()
+                                    .unwrap_or(!info.is_name)
+                            },
+                        );
                     // The headline describes this occurrence, not merely its
                     // dictionary lemma. Keep the BDB entries below as lexeme
                     // definitions, while rendering proclitics and noun/verb
@@ -1456,6 +1470,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         name,
                         haqor_lexicon,
                         haqor_lexicon_covers_word,
+                        haqor_lexicon_word,
                         haqor_name,
                         greek_equivalents: Vec::new(),
                     }
@@ -1485,6 +1500,7 @@ pub async fn get_word_info(bible: SharedBible) {
                         name: None,
                         haqor_lexicon: None,
                         haqor_lexicon_covers_word: false,
+                        haqor_lexicon_word: None,
                         haqor_name: None,
                         greek_equivalents: Vec::new(),
                     }

@@ -205,13 +205,15 @@ pub(crate) fn word_entry(
     }
 }
 
+/// The entry for a word at a place in the text, and the word of it the
+/// review assigned there (its index in the entry's `words`), where reviewed.
 pub(crate) fn word_entry_at(
     bible: &Bible,
     root: &str,
     word: &str,
     prefix: &str,
     context: Option<(u8, u8, u8, u32)>,
-) -> Option<HaqorLexiconEntryText> {
+) -> Option<(HaqorLexiconEntryText, Option<u32>)> {
     let found = context
         .and_then(|(book, chapter, verse, position)| {
             bible
@@ -219,10 +221,16 @@ pub(crate) fn word_entry_at(
                 .ok()
                 .flatten()
         })
-        .or_else(|| bible.haqor_lexicon_entry(root, word, prefix).ok().flatten());
-    found.map(|(id, json)| {
+        .or_else(|| {
+            bible
+                .haqor_lexicon_entry(root, word, prefix)
+                .ok()
+                .flatten()
+                .map(|(id, json)| (id, json, None))
+        });
+    found.map(|(id, json, lexeme)| {
         let names = bible.haqor_lexicon_names_of(&id).unwrap_or_default();
-        entry_text(bible, id, json, names)
+        (entry_text(bible, id, json, names), lexeme)
     })
 }
 

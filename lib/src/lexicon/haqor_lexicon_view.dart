@@ -199,6 +199,7 @@ class HaqorLexiconEntryView extends StatefulWidget {
     this.bottomInset = 0,
     this.extraTab,
     this.openOnExtraTab = false,
+    this.initialWord,
     this.onOpenRoot,
   });
 
@@ -224,6 +225,10 @@ class HaqorLexiconEntryView extends StatefulWidget {
 
   /// Open on [extraTab] rather than the overview.
   final bool openOnExtraTab;
+
+  /// Open on this word of the entry (its index in `words`), expanded in the
+  /// Words tab: in the word sheet, the lexeme the review assigned the word.
+  final int? initialWord;
 
   /// For a name entry, open the entry of the root it is formed from; the root
   /// is shown without a link when null.
@@ -265,7 +270,14 @@ class _HaqorLexiconEntryViewState extends State<HaqorLexiconEntryView>
           : 0,
     );
     // A lone word needs no click to open.
-    if (_list(widget.entry.data, 'words').length == 1) _expanded.add(0);
+    final words = _list(widget.entry.data, 'words').length;
+    if (words == 1) _expanded.add(0);
+    final initial = widget.initialWord;
+    if (initial != null && initial < words && !widget.openOnExtraTab) {
+      _expanded.add(initial);
+      _controller.index = _tabs.indexOf(_Tab.words);
+      _reveal(initial, 30);
+    }
   }
 
   @override

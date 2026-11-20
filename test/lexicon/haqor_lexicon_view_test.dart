@@ -407,6 +407,28 @@ void main() {
     expect(find.text('What is said.'), findsNothing);
   });
 
+  testWidgets('opens on the word the review assigned the occurrence', (
+    tester,
+  ) async {
+    final data = jsonDecode(_entry) as Map<String, dynamic>;
+    (data['words'] as List).add({
+      'lemma': 'אֵמֶר',
+      'pos': 'noun',
+      'gloss': 'utterance',
+      'senses': [
+        {'gloss': 'speech', 'definition': 'What is said.'},
+      ],
+    });
+    final entry = LexiconEntryDraft(id: 'amar', data: data, verses: const {});
+    await tester.pumpWidget(
+      _host(HaqorLexiconEntryView(entry: entry, initialWord: 1)),
+    );
+    await tester.pumpAndSettle();
+    // Word 1 is open in the Words tab; word 0 stays closed.
+    expect(find.text('What is said.'), findsOneWidget);
+    expect(find.text('Utter words to someone.'), findsNothing);
+  });
+
   testWidgets('a gloss opening on a Hebrew word still runs left to right', (
     tester,
   ) async {

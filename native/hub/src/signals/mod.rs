@@ -947,6 +947,9 @@ pub struct WordInfo {
     /// out), the tab opens on [`Self::lexemes`], which then lists only the
     /// root's words the entry does not hold.
     pub haqor_lexicon_covers_word: bool,
+    /// The word of [`Self::haqor_lexicon`] the corpus review assigned this
+    /// occurrence: its index in the entry's `words`. The tab opens on it.
+    pub haqor_lexicon_word: Option<u32>,
     /// Haqor's name entry (haqor-core `data/lexicon/names`) for the person the
     /// word names here, where it has one: what the name means, from its root.
     pub haqor_name: Option<HaqorLexiconNameText>,
