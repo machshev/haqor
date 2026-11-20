@@ -162,7 +162,8 @@ fn word_lexicon(
     context: Option<(u8, u8, u8, u32)>,
     covers: impl FnOnce(&HaqorLexiconEntryText, &HashSet<String>) -> bool,
 ) -> (Vec<LexemeSummary>, Option<HaqorLexiconEntryText>, bool) {
-    let Some(entry) = crate::haqor_lexicon::word_entry_at(bible, root, word, prefix, context) else {
+    let Some(entry) = crate::haqor_lexicon::word_entry_at(bible, root, word, prefix, context)
+    else {
         return (lexicon_rows(bible, root, tree, sedra), None, false);
     };
     let keys = bible.haqor_lexicon_keys(&entry.id).unwrap_or_default();
@@ -1265,8 +1266,9 @@ pub async fn get_word_info(bible: SharedBible) {
                             .unwrap_or_default(),
                         sedra,
                         match (req.book, req.chapter, req.verse, req.position) {
-                            (Some(book), Some(chapter), Some(verse), Some(position)) =>
-                                Some((book, chapter, verse, position)),
+                            (Some(book), Some(chapter), Some(verse), Some(position)) => {
+                                Some((book, chapter, verse, position))
+                            }
                             _ => None,
                         },
                         |_, _| true,
@@ -1392,8 +1394,9 @@ pub async fn get_word_info(bible: SharedBible) {
                         tree,
                         sedra,
                         match (req.book, req.chapter, req.verse, req.position) {
-                            (Some(book), Some(chapter), Some(verse), Some(position)) =>
-                                Some((book, chapter, verse, position)),
+                            (Some(book), Some(chapter), Some(verse), Some(position)) => {
+                                Some((book, chapter, verse, position))
+                            }
                             _ => None,
                         },
                         |entry, _| {
