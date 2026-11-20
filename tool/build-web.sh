@@ -49,6 +49,6 @@ wasm-bindgen target/wasm32-unknown-unknown/release/hub.wasm \
 
 dart run "$here/patch_bindings.dart"
 flutter build web --release "$@"
-"$here/patch-web-service-worker.sh"
+dart run "$here/generate_service_worker.dart"
 
 echo "PWA bundle ready in build/web"
