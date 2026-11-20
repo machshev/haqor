@@ -136,6 +136,7 @@ const Map<String, String> _stemNames = {
   'pilpel': 'Pilpel',
   'pilpal': 'Pilpal',
   'hithpalpel': 'Hithpalpel',
+  'pealal': 'Pealal',
   'piel-passive': 'Piel passive',
   'hishtaphel': 'Hishtaphel',
   'tiphil': 'Tiphil',

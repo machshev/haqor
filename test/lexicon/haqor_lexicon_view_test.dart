@@ -131,6 +131,29 @@ void main() {
     expect(find.byIcon(Icons.edit_outlined), findsNothing);
   });
 
+  testWidgets('labels the reduplicated Hebrew stem Pealal', (tester) async {
+    final entry = LexiconEntryDraft(
+      id: 'sachar',
+      data: {
+        'id': 'sachar',
+        'root': 'סחר',
+        'words': [
+          {
+            'lemma': 'סָחַר',
+            'pos': 'verb',
+            'stems': [
+              {'stem': 'pealal', 'gloss': 'pound'},
+            ],
+          },
+        ],
+      },
+      verses: const {},
+    );
+    await tester.pumpWidget(_host(HaqorLexiconEntryView(entry: entry)));
+    await _openTab(tester, 'Words');
+    expect(find.text('Pealal'), findsWidgets);
+  });
+
   testWidgets('on a phone the header scrolls away and the tabs stay', (
     tester,
   ) async {
